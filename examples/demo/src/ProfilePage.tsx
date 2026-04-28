@@ -22,7 +22,8 @@ export default function ProfilePage() {
           onError={e => { (e.currentTarget as HTMLImageElement).src = PRODUCT_ICON; }}
         />
         <div className="min-w-0">
-          <h1 className="text-lg font-semibold text-gray-900">Demo User</h1>
+          <h1 className="text-lg font-semibold text-gray-900">{prefs.profile_display_name || 'Demo User'}</h1>
+          {prefs.profile_role && <p className="text-xs text-gray-600">{prefs.profile_role}</p>}
           <p className="text-xs text-gray-500">demo@example.com</p>
         </div>
       </header>
