@@ -35,6 +35,17 @@ export function useWindowMenuItem(label: string, onClick: () => void, icon?: Rea
   }, [id, label, onClick, icon]);
 }
 
+/** Hook to update the title bar of the surrounding window from a child
+ *  component. Useful for apps whose title reflects open-document state
+ *  (e.g. "Untitled - Spreadsheets" → "Budget 2026 - Spreadsheets"). */
+export function useWindowTitle(title: string) {
+  const id = useContext(ModalIdContext);
+  useEffect(() => {
+    if (!id) return;
+    window.dispatchEvent(new CustomEvent('window-title-update', { detail: { id, title } }));
+  }, [id, title]);
+}
+
 /**
  * Portal component — renders children into the nearest Modal's footer actions area.
  * position="left" for destructive actions (Delete), default is right for primary actions.
@@ -238,6 +249,8 @@ export { triggerSplitView };
 
 
 export default function Modal({ open, onClose, title, icon, copyText, size = 'lg', dirty = false, onNext, onPrev, footer, bodyScroll, onMinimize, initialBox, actions, actionsLeft, allowPinOnTop, initialPosition, widget, compact, autoHeight, widgetMenu, dimensions, windowKey, children }: ModalProps) {
+  const [displayTitle, setDisplayTitle] = useState<React.ReactNode>(title);
+  useEffect(() => { setDisplayTitle(title); }, [title]);
   const [touched, setTouched] = useState(false);
   const [pinnedOnTop, setPinnedOnTop] = useState(false);
   const [windowMenu, setWindowMenu] = useState<{ x: number; y: number } | null>(null);
@@ -252,6 +265,15 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   const padding = 40;
   const { minimize: globalMinimize, items: minimizedItems, restoreIfMinimized } = useWindowManager();
   const modalId = useRef(`modal-${Math.random().toString(36).slice(2, 8)}`).current;
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.id === modalId) setDisplayTitle(detail.title);
+    };
+    window.addEventListener('window-title-update', handler);
+    return () => window.removeEventListener('window-title-update', handler);
+  }, [modalId]);
   const [zIndex, setZIndex] = useState(50);
   const isActive = useIsActiveModal(modalId);
 
@@ -729,7 +751,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
             <div className="text-sm font-medium min-w-0 flex-1 truncate flex items-center gap-1.5" style={{ color: isActive ? 'rgb(17 24 39)' : 'rgb(156 163 175)' }}>
               {icon && <button onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); const rect = e.currentTarget.getBoundingClientRect(); setWindowMenu(prev => prev ? null : { x: rect.left, y: rect.bottom + 4 }); }}
                 className="shrink-0 p-0.5 rounded hover:bg-gray-200/50 transition-colors" title="Window menu">{icon}</button>}
-              <span className="truncate">{title}</span>
+              <span className="truncate">{displayTitle}</span>
             </div>
             <div className="flex items-center gap-1 shrink-0 ml-2">
               {allowPinOnTop && (
@@ -750,7 +772,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
           <div className="text-lg font-semibold min-w-0 flex-1 truncate flex items-center gap-2" style={{ color: isActive ? 'var(--window-title-active, rgb(17 24 39))' : 'var(--window-title-inactive, rgb(156 163 175))' }}>
             {icon && <button onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); const rect = e.currentTarget.getBoundingClientRect(); setWindowMenu(prev => prev ? null : { x: rect.left, y: rect.bottom + 4 }); }}
               className="shrink-0 p-0.5 rounded hover:bg-gray-200/50 transition-colors" title="Window menu">{icon}</button>}
-            <span className="truncate">{title}</span>
+            <span className="truncate">{displayTitle}</span>
           </div>
           <div className="flex items-center gap-1.5 shrink-0 ml-4">
             {hasNav && (

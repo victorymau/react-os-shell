@@ -51,13 +51,20 @@ setShellAuthBridge({
 
 const queryClient = new QueryClient();
 
+// Top-level flat items shown directly in the main start menu (alongside the
+// built-in Notifications entry). The remaining utility/game apps stay in their
+// category sub-trays below.
+const TOP_LEVEL_ROUTES = new Set(['/spreadsheet', '/notepad', '/email', '/gemini']);
+const lookupLabel = (to: string) =>
+  (utilityApps as any)[to]?.label ?? (gameApps as any)[to]?.label ?? (googleApps as any)[to]?.label ?? to;
+
 const NAV_SECTIONS = [
+  ...Array.from(TOP_LEVEL_ROUTES).map(to => ({ to, label: lookupLabel(to) })),
   {
     label: 'Utilities',
-    items: [
-      ...Object.entries(utilityApps).map(([to, e]) => ({ to, label: (e as any).label })),
-      ...Object.entries(googleApps).map(([to, e]) => ({ to, label: (e as any).label })),
-    ],
+    items: Object.entries(utilityApps)
+      .filter(([to]) => !TOP_LEVEL_ROUTES.has(to))
+      .map(([to, e]) => ({ to, label: (e as any).label })),
   },
   { label: 'Games', items: Object.entries(gameApps).map(([to, e]) => ({ to, label: (e as any).label })) },
   { label: 'Settings', items: [{ to: '/settings/customization', label: 'Customization' }] },

@@ -1,6 +1,12 @@
 import { useState, useCallback, useRef } from 'react';
 import EditableGrid from '../shell/EditableGrid';
 import type { GridColumn } from '../shell/EditableGrid';
+import { useWindowTitle } from '../shell/Modal';
+
+const TITLE_DISPLAY_MAX = 24;
+function truncateForTitle(s: string) {
+  return s.length > TITLE_DISPLAY_MAX ? `${s.slice(0, TITLE_DISPLAY_MAX - 1)}…` : s;
+}
 
 const ALPHA = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const DEFAULT_COLS = 10;
@@ -59,6 +65,7 @@ export default function Spreadsheet() {
   const [sheets, setSheets] = useState<Sheet[]>([newSheet('Sheet 1')]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [title, setTitle] = useState('Untitled');
+  useWindowTitle(`${truncateForTitle(title || 'Untitled')} - Spreadsheets`);
   const [editingTitle, setEditingTitle] = useState(false);
   const [editingTab, setEditingTab] = useState<number | null>(null);
   const [tabName, setTabName] = useState('');

@@ -42,7 +42,7 @@ const GeminiChat = lazy(() => import('./GeminiChat'));
 
 export const utilityApps: WindowRegistry = {
   '/calculator': { component: Calculator, label: 'Calculator', size: 'sm', allowPinOnTop: true, utility: true, widget: true, dimensions: [280, 420] },
-  '/spreadsheet': { component: Spreadsheet, label: 'Untitled - Spreadsheets', size: '2xl', compact: true },
+  '/spreadsheet': { component: Spreadsheet, label: 'Spreadsheets', size: '2xl', compact: true },
   '/notepad': { component: Notepad, label: 'Notepad', size: 'lg' },
   '/weather': { component: Weather, label: 'Weather', size: 'sm', utility: true, widget: true, autoHeight: true, dimensions: [320, 400] },
   '/currency': { component: CurrencyConverter, label: 'Currency Converter', size: 'sm', utility: true, widget: true, dimensions: [320, 480] },
