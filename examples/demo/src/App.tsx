@@ -69,11 +69,25 @@ const WALLPAPER_OPTIONS = [
 const WALLPAPER_URLS = WALLPAPER_OPTIONS.map(w => w.src);
 
 function LoginSplash({ onSignIn }: { onSignIn: () => void }) {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const time = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const date = now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+
   return (
     <div
-      className="flex h-screen items-center justify-center"
+      className="flex h-screen flex-col items-center justify-center gap-10"
       style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%)' }}
     >
+      <div className="text-center">
+        <p className="text-7xl font-light text-white tracking-tight tabular-nums">{time}</p>
+        <p className="mt-2 text-sm text-white/60 tracking-wide">{date}</p>
+      </div>
+
       <div className="w-80 rounded-2xl bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl p-8 text-center">
         <img src={PRODUCT_ICON} alt="" className="h-16 w-16 mx-auto mb-4" />
         <h1 className="text-xl font-semibold text-white tracking-wide">react-os-shell</h1>
