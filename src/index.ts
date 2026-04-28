@@ -73,6 +73,9 @@ export type { LayoutProps } from './shell/Layout';
 export { default as StartMenu } from './shell/StartMenu';
 export { default as Desktop } from './shell/Desktop';
 
+// ── Built-in settings pages (consumer registers via window registry) ──
+export { default as Customization } from './settings/Customization';
+
 // ── Bridge surfaces (consumer wires these once at App startup) ──
 export { ShellAuthProvider, useShellAuth } from './shell/ShellAuth';
 export type { ShellAuth } from './shell/ShellAuth';

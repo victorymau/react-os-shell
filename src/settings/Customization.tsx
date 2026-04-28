@@ -2,6 +2,7 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getMe, updateMe } from '../api/auth';
 import { ModalActions } from '../shell/Modal';
+import { useDesktopHost } from '../shell/Desktop';
 import { SOUND_PACKS, SOUND_PACK_KEYS, SOUND_TYPES, SOUND_TYPE_LABELS, getSoundConfig, setSoundForType, setAllSounds, soundsEnabled, previewSound, type SoundType } from '../utils/sounds';
 
 // Preview tiles use literal hex values via arbitrary Tailwind syntax so that the
@@ -17,18 +18,8 @@ const THEMES = [
   { key: 'blue', label: 'Ocean', bar1: 'bg-[#bfdbfe]', bar2: 'bg-[#bfdbfe]' },
 ];
 
-const WALLPAPERS = [
-  { src: '/login-bg.avif', label: 'Default' },
-  { src: '/wallpaper-ocean.jpg', label: 'Ocean' },
-  { src: '/wallpaper-retro.jpg', label: 'Retro' },
-  { src: '/wallpaper-stars.jpg', label: 'Stars' },
-  { src: '/wallpaper-lake.jpg', label: 'Lake' },
-  { src: '/wallpaper-wanaka.jpg', label: 'Wanaka' },
-  { src: '/wallpaper-mojave.jpg', label: 'Mojave' },
-  { src: '/wallpaper-yosemite.jpg', label: 'Yosemite' },
-  { src: '/wallpaper-winter.jpg', label: 'Winter' },
-  { src: '/wallpaper-bridge.jpg', label: 'Bridge' },
-];
+// Default wallpaper list (consumer-overridable via DesktopHostProvider).
+const DEFAULT_WALLPAPERS: { src: string; label: string }[] = [];
 
 /** Resolve what data-theme is actually active (for preview rendering) */
 function resolveTheme(key: string): string {
@@ -54,6 +45,8 @@ function previewColor(resolved: string, light: string, dark: string, pink: strin
 
 export default function Customization() {
   const queryClient = useQueryClient();
+  const host = useDesktopHost();
+  const WALLPAPERS = host.wallpapers && host.wallpapers.length > 0 ? host.wallpapers : DEFAULT_WALLPAPERS;
   const { data: profile } = useQuery({
     queryKey: ['my-profile-sidebar'],
     queryFn: () => getMe(),
@@ -62,8 +55,8 @@ export default function Customization() {
   const prefs = profile?.preferences || {};
   const currentTheme: string = prefs.theme || 'system';
   const resolved = resolveTheme(currentTheme);
-  const rawBg: string = prefs.desktop_bg || 'random';
-  const randomPickRef = useRef(WALLPAPERS[Math.floor(Math.random() * WALLPAPERS.length)].src);
+  const rawBg: string = prefs.desktop_bg || (WALLPAPERS.length > 0 ? 'random' : 'none');
+  const randomPickRef = useRef(WALLPAPERS.length > 0 ? WALLPAPERS[Math.floor(Math.random() * WALLPAPERS.length)].src : 'none');
   const desktopBg = rawBg === 'random' ? randomPickRef.current : rawBg;
   const customBg: string = prefs.desktop_bg_custom || '';
   const isColor = desktopBg?.startsWith('#');

@@ -83,6 +83,8 @@ export interface DesktopHostConfig {
   productTagline?: string;
   /** Icon URL shown in the About dialog. Defaults to `/favicon.svg`. */
   productIcon?: string;
+  /** Wallpaper picker options for the Customization settings page. */
+  wallpapers?: { src: string; label: string }[];
   /** Resolves sticky-note refs (e.g. "SO#27150") to window-registry coords. */
   stickyResolver?: StickyResolver;
   /** Persists the user's desktop shortcut list. */

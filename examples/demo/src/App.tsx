@@ -11,7 +11,7 @@
  * the Utilities / Games trays to see the windowing system in action. Cmd-K
  * opens the global search. Logout returns you to the demo's login splash.
  */
-import { useEffect, useState } from 'react';
+import { lazy, useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
@@ -30,7 +30,16 @@ import {
 } from 'react-os-shell';
 import { bundledApps, utilityApps, gameApps, googleApps } from 'react-os-shell/apps';
 
-setShellWindowRegistry(createWindowRegistry(bundledApps));
+// Settings → Customization page (theme picker, wallpaper picker, hotkeys, etc.)
+const Customization = lazy(() => import('react-os-shell').then(m => ({ default: m.Customization })));
+
+setShellWindowRegistry(createWindowRegistry(bundledApps, {
+  '/settings/customization': {
+    component: Customization,
+    label: 'Customization',
+    size: 'lg',
+  },
+}));
 
 // Logout dispatches a CustomEvent the App listens for (the auth bridge is
 // set once at module-load and can't close over React state).
@@ -50,13 +59,14 @@ const NAV_SECTIONS = [
 const START_MENU_CATEGORIES = { erp: [], system: ['Utilities', 'Games', 'Google'] };
 
 const PRODUCT_ICON = `${import.meta.env.BASE_URL}favicon.svg`;
-const WALLPAPERS = [
-  `${import.meta.env.BASE_URL}wallpaper-aurora.svg`,
-  `${import.meta.env.BASE_URL}wallpaper-sunset.svg`,
-  `${import.meta.env.BASE_URL}wallpaper-ocean.svg`,
-  `${import.meta.env.BASE_URL}wallpaper-forest.svg`,
-  `${import.meta.env.BASE_URL}wallpaper-rose.svg`,
+const WALLPAPER_OPTIONS = [
+  { src: `${import.meta.env.BASE_URL}wallpaper-aurora.svg`, label: 'Aurora' },
+  { src: `${import.meta.env.BASE_URL}wallpaper-sunset.svg`, label: 'Sunset' },
+  { src: `${import.meta.env.BASE_URL}wallpaper-ocean.svg`, label: 'Ocean' },
+  { src: `${import.meta.env.BASE_URL}wallpaper-forest.svg`, label: 'Forest' },
+  { src: `${import.meta.env.BASE_URL}wallpaper-rose.svg`, label: 'Rose' },
 ];
+const WALLPAPER_URLS = WALLPAPER_OPTIONS.map(w => w.src);
 
 function LoginSplash({ onSignIn }: { onSignIn: () => void }) {
   return (
@@ -104,6 +114,7 @@ export default function App() {
                     productName: 'react-os-shell',
                     productTagline: 'Desktop UI shell for React',
                     productIcon: PRODUCT_ICON,
+                    wallpapers: WALLPAPER_OPTIONS,
                   }}>
                     <WindowManagerProvider>
                       <Routes>
@@ -113,7 +124,7 @@ export default function App() {
                             <Layout
                               productName="react-os-shell"
                               productIcon={PRODUCT_ICON}
-                              wallpapers={WALLPAPERS}
+                              wallpapers={WALLPAPER_URLS}
                               navSections={NAV_SECTIONS as any}
                               navIcons={{}}
                               sectionIcons={{}}
