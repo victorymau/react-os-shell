@@ -27,6 +27,7 @@ import {
   setShellWindowRegistry,
   createWindowRegistry,
   useLocalStoragePrefs,
+  useWindowManager,
   type NotificationsConfig,
 } from 'react-os-shell';
 import { bundledApps, utilityApps, gameApps, googleApps } from 'react-os-shell/apps';
@@ -139,6 +140,16 @@ const DEMO_NOTIFICATIONS: NotificationsConfig = {
 // Pick a wallpaper once per page load; reused across renders.
 const LOGIN_WALLPAPER = WALLPAPER_URLS[Math.floor(Math.random() * WALLPAPER_URLS.length)];
 
+// Opens the default widgets once when the desktop first mounts after sign-in.
+function DefaultWindows() {
+  const { openPage } = useWindowManager();
+  useEffect(() => {
+    openPage('/weather');
+    openPage('/currency');
+  }, [openPage]);
+  return null;
+}
+
 function LoginSplash({ onSignIn }: { onSignIn: () => void }) {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -207,6 +218,7 @@ export default function App() {
                     wallpapers: WALLPAPER_OPTIONS,
                   }}>
                     <WindowManagerProvider>
+                      <DefaultWindows />
                       <Routes>
                         <Route
                           path="*"
