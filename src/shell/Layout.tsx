@@ -49,6 +49,9 @@ export interface LayoutProps {
   productName?: string;
   /** Icon URL rendered next to the brand label. Defaults to `/favicon.svg`. */
   productIcon?: string;
+  /** Wallpaper image URLs for the desktop background. When omitted, the
+   *  desktop renders with no image (just the dark fallback). */
+  wallpapers?: string[];
   /** Override the default nav sections shown in the start menu. */
   navSections?: (NavSection | NavItem)[];
   /** Override the per-route icon map used by start menu and favorites. */
@@ -204,7 +207,7 @@ const NAV_CATEGORIES = [
   ]},
 ];
 
-function useFavorites() {
+function useFavorites(wallpapers?: string[]) {
   const queryClient = useQueryClient();
   const { data: profile } = useQuery({
     queryKey: ['my-profile-sidebar'],
@@ -223,9 +226,9 @@ function useFavorites() {
     });
   }, [profile, queryClient]);
 
-  const RANDOM_WALLPAPERS = ['/login-bg.avif', '/wallpaper-ocean.jpg', '/wallpaper-retro.jpg', '/wallpaper-stars.jpg', '/wallpaper-lake.jpg', '/wallpaper-wanaka.jpg', '/wallpaper-mojave.jpg', '/wallpaper-yosemite.jpg', '/wallpaper-winter.jpg', '/wallpaper-bridge.jpg'];
-  const randomPickRef = useRef(RANDOM_WALLPAPERS[Math.floor(Math.random() * RANDOM_WALLPAPERS.length)]);
-  const rawBg: string = (profile?.preferences || {}).desktop_bg || 'random';
+  const wallpaperPool = wallpapers && wallpapers.length > 0 ? wallpapers : [];
+  const randomPickRef = useRef(wallpaperPool.length > 0 ? wallpaperPool[Math.floor(Math.random() * wallpaperPool.length)] : 'none');
+  const rawBg: string = (profile?.preferences || {}).desktop_bg || (wallpaperPool.length > 0 ? 'random' : 'none');
   const desktopBg: string = rawBg === 'random' ? randomPickRef.current : rawBg;
 
   const setDesktopBg = useCallback((bg: string) => {
@@ -480,6 +483,7 @@ function TaskbarContextMenu({ x, y, position, size, onChangePosition, onChangeSi
 export default function Layout({
   productName = 'react-os-shell',
   productIcon = '/favicon.svg',
+  wallpapers,
   navSections = defaultNavSections,
   navIcons = defaultNavIcons,
   sectionIcons = defaultSectionIcons,
@@ -501,7 +505,7 @@ export default function Layout({
   });
 
   useTheme();
-  const { favorites, toggle: toggleFavorite, isFavorite, desktopBg, setDesktopBg } = useFavorites();
+  const { favorites, toggle: toggleFavorite, isFavorite, desktopBg, setDesktopBg } = useFavorites(wallpapers);
 
   // Preferences
   const prefs = profile?.preferences || {};

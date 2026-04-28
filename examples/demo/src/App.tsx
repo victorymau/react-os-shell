@@ -50,6 +50,13 @@ const NAV_SECTIONS = [
 const START_MENU_CATEGORIES = { erp: [], system: ['Utilities', 'Games', 'Google'] };
 
 const PRODUCT_ICON = `${import.meta.env.BASE_URL}favicon.svg`;
+const WALLPAPERS = [
+  `${import.meta.env.BASE_URL}wallpaper-aurora.svg`,
+  `${import.meta.env.BASE_URL}wallpaper-sunset.svg`,
+  `${import.meta.env.BASE_URL}wallpaper-ocean.svg`,
+  `${import.meta.env.BASE_URL}wallpaper-forest.svg`,
+  `${import.meta.env.BASE_URL}wallpaper-rose.svg`,
+];
 
 function LoginSplash({ onSignIn }: { onSignIn: () => void }) {
   return (
@@ -106,6 +113,7 @@ export default function App() {
                             <Layout
                               productName="react-os-shell"
                               productIcon={PRODUCT_ICON}
+                              wallpapers={WALLPAPERS}
                               navSections={NAV_SECTIONS as any}
                               navIcons={{}}
                               sectionIcons={{}}
