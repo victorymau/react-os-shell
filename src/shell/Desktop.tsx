@@ -81,6 +81,8 @@ export interface DesktopHostConfig {
   productName?: string;
   /** Tagline shown under the product name in the About dialog. */
   productTagline?: string;
+  /** Icon URL shown in the About dialog. Defaults to `/favicon.svg`. */
+  productIcon?: string;
   /** Resolves sticky-note refs (e.g. "SO#27150") to window-registry coords. */
   stickyResolver?: StickyResolver;
   /** Persists the user's desktop shortcut list. */
@@ -864,7 +866,7 @@ export default function Desktop({ profile }: { profile: any }) {
           <div className="flex flex-col items-center">
             {/* Logo & Title */}
             <div className="flex flex-col items-center gap-2 pt-4 pb-3 w-full">
-              <img src="/favicon.svg" alt="" className="h-16 w-16" />
+              <img src={host.productIcon ?? '/favicon.svg'} alt="" className="h-16 w-16" />
               <div className="text-center">
                 <h2 className="text-lg font-bold text-gray-900 tracking-wide">{host.productName ?? 'react-os-shell'}</h2>
                 {host.productTagline && <p className="text-xs text-gray-500">{host.productTagline}</p>}

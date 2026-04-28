@@ -21,6 +21,7 @@ import {
   ShellPrefsProvider,
   ShellEntityFetcherProvider,
   StatusBadgeProvider,
+  DesktopHostProvider,
   setShellAuthBridge,
   setShellWindowRegistry,
   createWindowRegistry,
@@ -59,6 +60,10 @@ const START_MENU_CATEGORIES = {
   system: ['Utilities', 'Games', 'Google'],
 };
 
+// Resolve favicon under the correct base path (works both in dev and on the
+// /react-os-shell/ GH Pages subpath).
+const PRODUCT_ICON = `${import.meta.env.BASE_URL}favicon.svg`;
+
 export default function App() {
   const prefs = useLocalStoragePrefs('react-os-shell-demo');
 
@@ -70,21 +75,29 @@ export default function App() {
             <ShellPrefsProvider value={prefs}>
               <ShellEntityFetcherProvider value={() => Promise.resolve({})}>
                 <StatusBadgeProvider groups={{}}>
-                  <WindowManagerProvider>
-                    <Routes>
-                      <Route
-                        path="*"
-                        element={
-                          <Layout
-                            navSections={NAV_SECTIONS as any}
-                            navIcons={{}}
-                            sectionIcons={{}}
-                            categories={START_MENU_CATEGORIES}
-                          />
-                        }
-                      />
-                    </Routes>
-                  </WindowManagerProvider>
+                  <DesktopHostProvider value={{
+                    productName: 'react-os-shell',
+                    productTagline: 'Desktop UI shell for React',
+                    productIcon: PRODUCT_ICON,
+                  }}>
+                    <WindowManagerProvider>
+                      <Routes>
+                        <Route
+                          path="*"
+                          element={
+                            <Layout
+                              productName="react-os-shell"
+                              productIcon={PRODUCT_ICON}
+                              navSections={NAV_SECTIONS as any}
+                              navIcons={{}}
+                              sectionIcons={{}}
+                              categories={START_MENU_CATEGORIES}
+                            />
+                          }
+                        />
+                      </Routes>
+                    </WindowManagerProvider>
+                  </DesktopHostProvider>
                 </StatusBadgeProvider>
               </ShellEntityFetcherProvider>
             </ShellPrefsProvider>
