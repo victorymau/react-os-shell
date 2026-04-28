@@ -17,7 +17,7 @@ export type {
 } from './windowRegistry/types';
 
 // ── Shell components ──
-export { default as Modal, ModalActions, CopyButton, CancelButton, useWindowMenuItem, useWindowTitle, useModalActive, useWidgetSettings } from './shell/Modal';
+export { default as Modal, ModalActions, CopyButton, CancelButton, useWindowMenuItem, WindowTitle, useWindowTitle, useModalActive, useWidgetSettings } from './shell/Modal';
 export { PopupMenu, PopupMenuItem, PopupMenuDivider, PopupMenuLabel } from './shell/PopupMenu';
 export { ConfirmProvider, confirm, confirmDestructive } from './shell/ConfirmDialog';
 export { default as GlobalSearch } from './shell/GlobalSearch';

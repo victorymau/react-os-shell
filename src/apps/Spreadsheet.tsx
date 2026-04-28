@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import EditableGrid from '../shell/EditableGrid';
 import type { GridColumn } from '../shell/EditableGrid';
-import { useWindowTitle } from '../shell/Modal';
+import { WindowTitle } from '../shell/Modal';
 
 const TITLE_DISPLAY_MAX = 24;
 function truncateForTitle(s: string) {
@@ -65,7 +65,6 @@ export default function Spreadsheet() {
   const [sheets, setSheets] = useState<Sheet[]>([newSheet('Sheet 1')]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [title, setTitle] = useState('Untitled');
-  useWindowTitle(`${truncateForTitle(title || 'Untitled')} - Spreadsheets`);
   const [editingTitle, setEditingTitle] = useState(false);
   const [editingTab, setEditingTab] = useState<number | null>(null);
   const [tabName, setTabName] = useState('');
@@ -198,6 +197,7 @@ export default function Spreadsheet() {
 
   return (
     <div className="flex flex-col h-full">
+      <WindowTitle title={`${truncateForTitle(title || 'Untitled')} - Spreadsheets`} />
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 bg-gray-50 shrink-0">
         {editingTitle ? (

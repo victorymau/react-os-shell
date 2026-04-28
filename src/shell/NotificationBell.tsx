@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDate } from '../utils/date';
@@ -150,9 +150,14 @@ export default function NotificationBell({
     else if (taskbarPos === 'top') setDropdownPos({ right: 8, top: taskbarH + 8, maxHeight });
     else setDropdownPos({ right: 8, bottom: taskbarH + 8, maxHeight });
   }, [popDirection]);
-  useEffect(() => {
+  // Run synchronously before paint so the dropdown renders at the right
+  // position on first open (otherwise it briefly flashes at viewport origin).
+  useLayoutEffect(() => {
     if (!open) return;
     calcPos();
+  }, [open, calcPos]);
+  useEffect(() => {
+    if (!open) return;
     window.addEventListener('resize', calcPos);
     return () => window.removeEventListener('resize', calcPos);
   }, [open, calcPos]);

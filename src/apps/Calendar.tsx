@@ -1,9 +1,8 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getMe, updateMe } from '../api/auth';
 import Modal, { ModalActions } from '../shell/Modal';
 import toast from '../shell/toast';
 import useGoogleAuth, { getGoogleAccessToken } from '../hooks/useGoogleAuth';
+import { useShellPrefs } from '../shell/ShellPrefs';
 
 // ── Types ──
 interface CalendarEvent {
@@ -79,14 +78,9 @@ function getWeekDays(date: Date) {
 
 // ── Main Component ──
 export default function Calendar() {
-  const queryClient = useQueryClient();
-  const { data: profile } = useQuery({
-    queryKey: ['my-profile-sidebar'],
-    queryFn: () => getMe(),
-  });
-
+  const { prefs, save } = useShellPrefs();
   const google = useGoogleAuth();
-  const localEvents: CalendarEvent[] = (profile?.preferences || {}).calendar_events || [];
+  const localEvents: CalendarEvent[] = prefs.calendar_events || [];
   const [googleEvents, setGoogleEvents] = useState<CalendarEvent[]>([]);
   const events = useMemo(() => [...localEvents, ...googleEvents], [localEvents, googleEvents]);
   const today = new Date();
@@ -132,10 +126,8 @@ export default function Calendar() {
   const [newEventDate, setNewEventDate] = useState<string | null>(null);
 
   const saveLocalEvents = useCallback((updated: CalendarEvent[]) => {
-    updateMe({ preferences: { calendar_events: updated } } as any).then(() => {
-      queryClient.invalidateQueries({ queryKey: ['my-profile-sidebar'] });
-    });
-  }, [queryClient]);
+    save({ calendar_events: updated });
+  }, [save]);
 
   const saveEvent = (evt: CalendarEvent) => {
     const existing = localEvents.find(e => e.id === evt.id);

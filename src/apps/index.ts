@@ -39,6 +39,7 @@ const Minesweeper = lazy(() => import('./Minesweeper'));
 // ── Google apps ──
 const Email = lazy(() => import('./Email'));
 const GeminiChat = lazy(() => import('./GeminiChat'));
+const Calendar = lazy(() => import('./Calendar'));
 
 export const utilityApps: WindowRegistry = {
   '/calculator': { component: Calculator, label: 'Calculator', size: 'sm', allowPinOnTop: true, utility: true, widget: true, dimensions: [280, 420] },
@@ -61,6 +62,7 @@ export const gameApps: WindowRegistry = {
 export const googleApps: WindowRegistry = {
   '/email': { component: Email, label: 'Email', size: '2xl' },
   '/gemini': { component: GeminiChat, label: 'Gemini AI', size: 'lg' },
+  '/calendar': { component: Calendar, label: 'Calendar', size: 'xl' },
 };
 
 export const bundledApps: WindowRegistry = {
@@ -84,4 +86,5 @@ export {
   Minesweeper,
   Email,
   GeminiChat,
+  Calendar,
 };

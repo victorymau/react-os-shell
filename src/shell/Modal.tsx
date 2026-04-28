@@ -35,20 +35,26 @@ export function useWindowMenuItem(label: string, onClick: () => void, icon?: Rea
   }, [id, label, onClick, icon]);
 }
 
-/** Hook to update the title bar of the surrounding window from a child
- *  component. Useful for apps whose title reflects open-document state
- *  (e.g. "Untitled - Spreadsheets" → "Budget 2026 - Spreadsheets"). */
-export function useWindowTitle(title: string) {
-  const id = useContext(ModalIdContext);
+/** Component that updates the surrounding window's title bar. Render anywhere
+ *  inside a Modal-rendered page. Cross-bundle safe (uses DOM traversal rather
+ *  than React Context, which has separate instances in each bundle). */
+export function WindowTitle({ title }: { title: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
   useEffect(() => {
-    if (!id) return;
-    // Defer to next tick — on initial mount the parent Modal attaches its
-    // listener after this child effect runs, so a synchronous dispatch is lost.
     const handle = setTimeout(() => {
-      window.dispatchEvent(new CustomEvent('window-title-update', { detail: { id, title } }));
+      const panel = ref.current?.closest('[data-modal-id]');
+      const id = panel?.getAttribute('data-modal-id');
+      if (id) window.dispatchEvent(new CustomEvent('window-title-update', { detail: { id, title } }));
     }, 0);
     return () => clearTimeout(handle);
-  }, [id, title]);
+  }, [title]);
+  return <span ref={ref} style={{ display: 'none' }} aria-hidden="true" />;
+}
+
+/** @deprecated Use <WindowTitle> instead — the hook variant doesn't work
+ *  across bundle boundaries (apps barrel has its own ModalIdContext). */
+export function useWindowTitle(_title: string) {
+  // Intentionally a no-op now. Kept for type compatibility during migration.
 }
 
 /**
