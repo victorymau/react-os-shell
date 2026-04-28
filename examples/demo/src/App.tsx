@@ -68,6 +68,9 @@ const WALLPAPER_OPTIONS = [
 ];
 const WALLPAPER_URLS = WALLPAPER_OPTIONS.map(w => w.src);
 
+// Pick a wallpaper once per page load; reused across renders.
+const LOGIN_WALLPAPER = WALLPAPER_URLS[Math.floor(Math.random() * WALLPAPER_URLS.length)];
+
 function LoginSplash({ onSignIn }: { onSignIn: () => void }) {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -81,7 +84,12 @@ function LoginSplash({ onSignIn }: { onSignIn: () => void }) {
   return (
     <div
       className="flex h-screen flex-col items-center justify-center gap-10"
-      style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%)' }}
+      style={{
+        backgroundImage: `url(${LOGIN_WALLPAPER})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundColor: '#1e1b4b',
+      }}
     >
       <div className="text-center">
         <p className="text-7xl font-light text-white tracking-tight tabular-nums">{time}</p>
