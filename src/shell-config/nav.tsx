@@ -11,7 +11,24 @@
 import type { ReactNode } from 'react';
 import type { NavItem, NavSection, StartMenuCategories, VirtualSection } from '../shell/nav-types';
 
-export const navIcons: Record<string, ReactNode> = {};
+// Live proxy: WindowManager reads window-title icons from this module-level
+// map. Consumers register their full icon set once at app startup so the
+// title bars show the same glyphs as the start menu.
+const _navIcons: Record<string, ReactNode> = {};
+export const navIcons: Record<string, ReactNode> = new Proxy(_navIcons, {
+  get(_t, k: string) { return _navIcons[k]; },
+  has(_t, k: string) { return k in _navIcons; },
+  ownKeys() { return Object.keys(_navIcons); },
+  getOwnPropertyDescriptor(_t, k: string) {
+    if (k in _navIcons) return { configurable: true, enumerable: true, value: _navIcons[k] };
+    return undefined;
+  },
+});
+export function setShellNavIcons(icons: Record<string, ReactNode>): void {
+  for (const k of Object.keys(_navIcons)) delete _navIcons[k];
+  Object.assign(_navIcons, icons);
+}
+
 export const sectionIcons: Record<string, ReactNode> = {};
 export const navSections: (NavSection | NavItem)[] = [];
 export const startMenuCategories: StartMenuCategories = { erp: [], system: [], virtual: [] };

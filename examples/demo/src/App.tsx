@@ -25,6 +25,7 @@ import {
   DesktopHostProvider,
   setShellAuthBridge,
   setShellWindowRegistry,
+  setShellNavIcons,
   createWindowRegistry,
   useLocalStoragePrefs,
   useWindowManager,
@@ -111,6 +112,8 @@ const NAV_ICONS: Record<string, JSX.Element> = {
   '/profile': path('M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z'),
 };
 
+setShellNavIcons(NAV_ICONS);
+
 // Section header icons (matched by section label).
 const SECTION_ICONS: Record<string, JSX.Element> = {
   Utilities: path('M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437L12 10.5'),
@@ -139,6 +142,17 @@ const DEMO_NOTIFICATIONS: NotificationsConfig = {
 
 // Pick a wallpaper once per page load; reused across renders.
 const LOGIN_WALLPAPER = WALLPAPER_URLS[Math.floor(Math.random() * WALLPAPER_URLS.length)];
+
+function VersionBadge() {
+  return (
+    <div
+      className="fixed right-3 text-[11px] font-mono text-white/60 pointer-events-none select-none drop-shadow z-10"
+      style={{ bottom: 'calc(var(--taskbar-height, 56px) * 1px + 8px)' }}
+    >
+      v{import.meta.env.VITE_APP_VERSION || '0.1.0'}
+    </div>
+  );
+}
 
 // Opens the default widgets once when the desktop first mounts after sign-in.
 function DefaultWindows() {
@@ -219,6 +233,7 @@ export default function App() {
                   }}>
                     <WindowManagerProvider>
                       <DefaultWindows />
+                      <VersionBadge />
                       <Routes>
                         <Route
                           path="*"

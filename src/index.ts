@@ -4,6 +4,7 @@
 
 // ── Window registry composer + types ──
 export { createWindowRegistry } from './windowRegistry/createWindowRegistry';
+export { setShellNavIcons } from './shell-config/nav';
 export {
   isPageEntry,
   isEntityEntry,
