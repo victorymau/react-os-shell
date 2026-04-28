@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+.env
+.env.local
+coverage/
+.vscode/
+.idea/
+*.tgz
+examples/demo/node_modules/
+examples/demo/dist/
+examples/demo/tsconfig.tsbuildinfo
+examples/demo/src/*.js
+*.tsbuildinfo

@@ -1,0 +1,4 @@
+@import 'react-os-shell/styles.css';
+
+html, body, #root { height: 100%; margin: 0; }
+body { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }

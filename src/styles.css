@@ -1,0 +1,169 @@
+/**
+ * react-os-shell base styles — Tailwind v4 @theme + dark-mode tone-down rules.
+ *
+ * Consumers import this once near their app entry:
+ *
+ *   import 'react-os-shell/styles.css';
+ *
+ * The CSS custom properties are namespaced `--window-*` / `--taskbar-*` /
+ * `--menu-*` so they don't collide with consumer styles. Dark mode is
+ * activated by setting `data-theme="dark"` on the document element; the
+ * package's `useTheme()` hook handles this.
+ *
+ * Scope:
+ *   - :root variables for window header/footer/content tints
+ *   - [data-theme="dark"] overrides for bg-/text-/border-/shadow-/divide-
+ *     Tailwind utility classes so the desktop, modals, and start menu
+ *     all stay readable on dark glass
+ *   - Status-badge tone-downs (matches the 8 semantic groups in StatusBadge)
+ *   - Scrollbar styling for editable grids and dark-mode containers
+ *
+ * Per-theme variants (pink / green / grey / blue) ship as extension
+ * stylesheets the consumer can opt into separately — not included here.
+ */
+
+@import "tailwindcss";
+
+/* Base theme colors for transparent windows */
+:root {
+  --window-header-rgb: 243 244 246;
+  --window-footer-rgb: 249 250 251;
+  --window-content-rgb: 255 255 255;
+}
+[data-theme="pink"] {
+  --window-header-rgb: 252 231 243;
+  --window-footer-rgb: 253 242 248;
+  --window-content-rgb: 255 245 249;
+}
+[data-theme="green"] {
+  --window-header-rgb: 220 252 231;
+  --window-footer-rgb: 236 253 245;
+  --window-content-rgb: 245 254 247;
+}
+[data-theme="grey"] {
+  --window-header-rgb: 229 231 235;
+  --window-footer-rgb: 243 244 246;
+  --window-content-rgb: 249 250 251;
+}
+[data-theme="blue"] {
+  --window-header-rgb: 219 234 254;
+  --window-footer-rgb: 239 246 255;
+  --window-content-rgb: 245 249 255;
+}
+[data-theme="dark"] {
+  --window-header-rgb: 49 50 68;
+  --window-footer-rgb: 24 24 37;
+  --window-content-rgb: 30 30 46;
+}
+
+/* ═══════════════════════════════════════════════════
+   Theme: Dark
+   ═══════════════════════════════════════════════════ */
+[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+/* Backgrounds */
+[data-theme="dark"] .bg-white { background-color: #1e1e2e !important; }
+[data-theme="dark"] .bg-gray-50 { background-color: #181825 !important; }
+[data-theme="dark"] .bg-gray-100 { background-color: #1e1e2e !important; }
+[data-theme="dark"] .bg-gray-200 { background-color: #313244 !important; }
+
+/* Text */
+[data-theme="dark"] .text-gray-900 { color: #cdd6f4 !important; }
+[data-theme="dark"] .text-gray-800 { color: #bac2de !important; }
+[data-theme="dark"] .text-gray-700 { color: #a6adc8 !important; }
+[data-theme="dark"] .text-gray-600 { color: #9399b2 !important; }
+[data-theme="dark"] .text-gray-500 { color: #7f849c !important; }
+[data-theme="dark"] .text-gray-400 { color: #6c7086 !important; }
+
+/* Borders */
+[data-theme="dark"] .border-gray-200 { border-color: #313244 !important; }
+[data-theme="dark"] .border-gray-300 { border-color: #45475a !important; }
+[data-theme="dark"] .border-gray-100 { border-color: #2a2a3c !important; }
+
+/* Cards, shadows, tables */
+[data-theme="dark"] .shadow { --tw-shadow-color: rgba(0,0,0,0.4) !important; }
+[data-theme="dark"] .shadow-lg { --tw-shadow-color: rgba(0,0,0,0.5) !important; }
+[data-theme="dark"] .shadow-xl { --tw-shadow-color: rgba(0,0,0,0.5) !important; }
+[data-theme="dark"] .shadow-2xl { --tw-shadow-color: rgba(0,0,0,0.6) !important; }
+[data-theme="dark"] .divide-gray-200 > :not(:last-child) { border-color: #313244 !important; }
+[data-theme="dark"] .divide-gray-100 > :not(:last-child) { border-color: #2a2a3c !important; }
+
+/* Hover states */
+[data-theme="dark"] .hover\:bg-gray-50:hover { background-color: #2a2a3c !important; }
+[data-theme="dark"] .hover\:bg-gray-100:hover { background-color: #313244 !important; }
+[data-theme="dark"] .hover\:bg-gray-200:hover { background-color: #45475a !important; }
+
+/* Blue hover states — used by menu items, profile row, etc.
+   In dark mode swap the near-white bg for a dark blue tint and the dark
+   blue text for a light shade so highlighted items stay readable. */
+[data-theme="dark"] .bg-blue-50,
+[data-theme="dark"] .hover\:bg-blue-50:hover { background-color: rgba(59, 130, 246, 0.18) !important; }
+[data-theme="dark"] .text-blue-700,
+[data-theme="dark"] .hover\:text-blue-700:hover { color: #93c5fd !important; }
+[data-theme="dark"] .text-blue-600 { color: #93c5fd !important; }
+[data-theme="dark"] .text-blue-800 { color: #bfdbfe !important; }
+
+/* Brighten taskbar button text so it stays readable on dark glass.
+   The default override (#9399b2) is too dim for short button labels. */
+[data-theme="dark"] .text-gray-600 { color: #a6adc8 !important; }
+
+/* Translucent button backgrounds — Tailwind generates separate classes for the
+   /40 /60 alpha variants (bg-gray-50\/40 etc.) so the bare .bg-gray-50 override
+   doesn't match. Override them explicitly with dark equivalents so taskbar
+   tabs and the start-menu button don't look too bright in Dark mode. */
+[data-theme="dark"] .bg-gray-50\/40 { background-color: rgba(24, 24, 37, 0.4) !important; }
+[data-theme="dark"] .bg-gray-100\/40 { background-color: rgba(30, 30, 46, 0.4) !important; }
+[data-theme="dark"] .bg-gray-100\/60 { background-color: rgba(30, 30, 46, 0.6) !important; }
+[data-theme="dark"] .bg-gray-200\/40 { background-color: rgba(49, 50, 68, 0.4) !important; }
+[data-theme="dark"] .bg-gray-200\/50 { background-color: rgba(49, 50, 68, 0.5) !important; }
+[data-theme="dark"] .bg-blue-100\/60 { background-color: rgba(59, 130, 246, 0.22) !important; }
+[data-theme="dark"] .border-gray-200\/40 { border-color: rgba(69, 71, 90, 0.4) !important; }
+[data-theme="dark"] .border-gray-300\/40 { border-color: rgba(88, 91, 112, 0.4) !important; }
+[data-theme="dark"] .border-blue-400\/60 { border-color: rgba(96, 165, 250, 0.45) !important; }
+[data-theme="dark"] .hover\:bg-gray-200\/40:hover { background-color: rgba(49, 50, 68, 0.4) !important; }
+
+/* Inputs */
+[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]),
+[data-theme="dark"] select,
+[data-theme="dark"] textarea {
+  background-color: #181825 !important;
+  border-color: #45475a !important;
+  color: #cdd6f4 !important;
+}
+
+/* Window title colors — read by Modal.tsx */
+[data-theme="dark"] {
+  --window-title-active: #cdd6f4;
+  --window-title-inactive: #6c7086;
+  --taskbar-bg-rgb: 24 24 37;            /* Catppuccin mantle */
+  --taskbar-border-color: #313244;
+}
+
+/* Status badges — tone down brightness in dark mode (matches StatusBadge.tsx semantic groups) */
+[data-theme="dark"] .bg-gray-100.text-gray-800 { background-color: #313244 !important; color: #a6adc8 !important; }
+[data-theme="dark"] .bg-gray-300.text-gray-800 { background-color: #45475a !important; color: #cdd6f4 !important; }
+[data-theme="dark"] .bg-green-100.text-green-800 { background-color: rgba(34, 197, 94, 0.18) !important; color: #86efac !important; }
+[data-theme="dark"] .bg-blue-100.text-blue-800 { background-color: rgba(59, 130, 246, 0.18) !important; color: #93c5fd !important; }
+[data-theme="dark"] .bg-indigo-100.text-indigo-800 { background-color: rgba(99, 102, 241, 0.18) !important; color: #a5b4fc !important; }
+[data-theme="dark"] .bg-sky-100.text-sky-800 { background-color: rgba(14, 165, 233, 0.18) !important; color: #7dd3fc !important; }
+[data-theme="dark"] .bg-yellow-100.text-yellow-800 { background-color: rgba(234, 179, 8, 0.18) !important; color: #fde68a !important; }
+[data-theme="dark"] .bg-orange-100.text-orange-800 { background-color: rgba(249, 115, 22, 0.18) !important; color: #fdba74 !important; }
+[data-theme="dark"] .bg-red-100.text-red-800 { background-color: rgba(239, 68, 68, 0.18) !important; color: #fca5a5 !important; }
+
+/* Scrollbar */
+/* Force visible scrollbars on editable grids (macOS hides them by default) */
+.grid-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+.grid-scroll::-webkit-scrollbar-track { background: #f1f5f9; }
+.grid-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 5px; border: 2px solid #f1f5f9; }
+.grid-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+.grid-scroll::-webkit-scrollbar-corner { background: #f1f5f9; }
+
+[data-theme="dark"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+[data-theme="dark"] ::-webkit-scrollbar-track { background: #181825; }
+[data-theme="dark"] ::-webkit-scrollbar-thumb { background: #45475a; border-radius: 4px; }
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: #585b70; }
+
+
+/* ═══════════════════════════════════════════════════

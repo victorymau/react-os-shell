@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify dist artifacts
+        run: |
+          test -f dist/index.js || (echo "dist/index.js missing" && exit 1)
+          test -f dist/index.d.ts || (echo "dist/index.d.ts missing" && exit 1)
+          test -f dist/apps/index.js || (echo "dist/apps/index.js missing" && exit 1)
+          test -f dist/styles.css || (echo "dist/styles.css missing" && exit 1)
+          echo "Build artifacts present."

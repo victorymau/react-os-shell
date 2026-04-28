@@ -1,0 +1,74 @@
+{
+  "name": "react-os-shell",
+  "version": "0.1.0",
+  "description": "Desktop-style React UI shell — windows, taskbar, start menu, sticky notes, frosted glass theming, plus 16 bundled apps (utilities, games, Google integrations).",
+  "license": "MIT",
+  "author": "Victor Y. Mau",
+  "type": "module",
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./apps": {
+      "types": "./dist/apps/index.d.ts",
+      "import": "./dist/apps/index.js"
+    },
+    "./styles.css": "./dist/styles.css"
+  },
+  "files": [
+    "dist"
+  ],
+  "peerDependencies": {
+    "@headlessui/react": ">=2",
+    "@heroicons/react": ">=2",
+    "@tanstack/react-query": ">=5",
+    "react": ">=18",
+    "react-dom": ">=18",
+    "react-hook-form": ">=7",
+    "react-router-dom": ">=6",
+    "tailwindcss": ">=4",
+    "xlsx": "*"
+  },
+  "dependencies": {
+    "axios": "^1.6.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.3.0",
+    "xlsx": "^0.18.5"
+  },
+  "scripts": {
+    "build": "tsup && cp src/styles.css dist/styles.css",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "react",
+    "desktop",
+    "ui-shell",
+    "window-manager",
+    "tailwind",
+    "macos",
+    "frosted-glass"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependenciesMeta": {
+    "xlsx": {
+      "optional": true
+    }
+  }
+}
