@@ -27,6 +27,7 @@ import {
   setShellWindowRegistry,
   createWindowRegistry,
   useLocalStoragePrefs,
+  type NotificationsConfig,
 } from 'react-os-shell';
 import { bundledApps, utilityApps, gameApps, googleApps } from 'react-os-shell/apps';
 
@@ -51,22 +52,37 @@ setShellAuthBridge({
 const queryClient = new QueryClient();
 
 const NAV_SECTIONS = [
-  { label: 'Utilities', items: Object.entries(utilityApps).map(([to, e]) => ({ to, label: (e as any).label })) },
+  {
+    label: 'Utilities',
+    items: [
+      ...Object.entries(utilityApps).map(([to, e]) => ({ to, label: (e as any).label })),
+      ...Object.entries(googleApps).map(([to, e]) => ({ to, label: (e as any).label })),
+    ],
+  },
   { label: 'Games', items: Object.entries(gameApps).map(([to, e]) => ({ to, label: (e as any).label })) },
-  { label: 'Google', items: Object.entries(googleApps).map(([to, e]) => ({ to, label: (e as any).label })) },
+  { label: 'Settings', items: [{ to: '/settings/customization', label: 'Customization' }] },
 ];
 
-const START_MENU_CATEGORIES = { erp: [], system: ['Utilities', 'Games', 'Google'] };
+const START_MENU_CATEGORIES = { erp: [], system: ['Utilities', 'Games', 'Settings'] };
 
 const PRODUCT_ICON = `${import.meta.env.BASE_URL}favicon.svg`;
 const WALLPAPER_OPTIONS = [
-  { src: `${import.meta.env.BASE_URL}wallpaper-aurora.svg`, label: 'Aurora' },
-  { src: `${import.meta.env.BASE_URL}wallpaper-sunset.svg`, label: 'Sunset' },
-  { src: `${import.meta.env.BASE_URL}wallpaper-ocean.svg`, label: 'Ocean' },
-  { src: `${import.meta.env.BASE_URL}wallpaper-forest.svg`, label: 'Forest' },
-  { src: `${import.meta.env.BASE_URL}wallpaper-rose.svg`, label: 'Rose' },
+  { src: `${import.meta.env.BASE_URL}wallpaper-yosemite.jpg`, label: 'Yosemite' },
+  { src: `${import.meta.env.BASE_URL}wallpaper-winter.jpg`, label: 'Winter' },
+  { src: `${import.meta.env.BASE_URL}wallpaper-mojave.jpg`, label: 'Mojave' },
+  { src: `${import.meta.env.BASE_URL}wallpaper-wanaka.jpg`, label: 'Wanaka' },
+  { src: `${import.meta.env.BASE_URL}wallpaper-lake.jpg`, label: 'Lake' },
 ];
 const WALLPAPER_URLS = WALLPAPER_OPTIONS.map(w => w.src);
+
+// Demo notification config — purely in-memory.
+const DEMO_NOTIFICATIONS: NotificationsConfig = {
+  useUnreadCount: () => 0,
+  list: async () => ({ results: [] }),
+  markRead: async () => {},
+  markAllRead: async () => {},
+  onItemClick: () => {},
+};
 
 // Pick a wallpaper once per page load; reused across renders.
 const LOGIN_WALLPAPER = WALLPAPER_URLS[Math.floor(Math.random() * WALLPAPER_URLS.length)];
@@ -151,6 +167,7 @@ export default function App() {
                               navIcons={{}}
                               sectionIcons={{}}
                               categories={START_MENU_CATEGORIES}
+                              notifications={DEMO_NOTIFICATIONS}
                             />
                           }
                         />

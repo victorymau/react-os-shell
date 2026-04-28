@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getMe, updateMe } from '../api/auth';
+import { useQuery } from '@tanstack/react-query';
 import { getNumberingConfigs } from '../api/auth';
 import apiClient from '../api/client';
 import toast from '../shell/toast';
 import { useWindowManager } from '../shell/WindowManager';
+import { useShellPrefs } from '../shell/ShellPrefs';
 
 interface Note {
   id: string;
@@ -61,17 +61,15 @@ const ENTITY_TYPE_MAP: Record<string, { entityType: string; endpoint: string }> 
 const CHECKBOX_REGEX = /\[([ xX]?)\]/g;
 
 export default function Notepad() {
-  const queryClient = useQueryClient();
   const { openEntity } = useWindowManager();
-  const { data: profile } = useQuery({
-    queryKey: ['my-profile-sidebar'],
-    queryFn: () => getMe(),
-  });
+  const { prefs, save } = useShellPrefs();
 
-  // Fetch numbering configs to build dynamic prefix map
+  // Fetch numbering configs to build dynamic prefix map (optional — only used
+  // for entity-reference autolinking; safe to fail when no apiClient is wired).
   const { data: numberingConfigs } = useQuery({
     queryKey: ['numbering-configs'],
     queryFn: () => getNumberingConfigs(),
+    retry: false,
   });
 
   // Build prefix → { entityType, endpoint } map from DB configs
@@ -96,7 +94,7 @@ export default function Notepad() {
     prefixMap.current = map;
   }, [numberingConfigs]);
 
-  const notes: Note[] = (profile?.preferences || {}).notepad_notes || [];
+  const notes: Note[] = prefs.notepad_notes || [];
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
@@ -120,10 +118,8 @@ export default function Notepad() {
   }, [notes.length]);
 
   const saveNotes = useCallback((updated: Note[]) => {
-    updateMe({ preferences: { notepad_notes: updated } } as any).then(() => {
-      queryClient.invalidateQueries({ queryKey: ['my-profile-sidebar'] });
-    });
-  }, [queryClient]);
+    save({ notepad_notes: updated });
+  }, [save]);
 
   const autoSave = useCallback(() => {
     if (!selectedId || !dirty) return;

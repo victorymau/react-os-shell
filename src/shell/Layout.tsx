@@ -6,6 +6,7 @@ import apiClient from '../api/client';
 import GlobalSearch, { type SearchConfig } from './GlobalSearch';
 import ShortcutHelp from './ShortcutHelp';
 import NotificationBell, { type NotificationsConfig } from './NotificationBell';
+import { useShellPrefs } from './ShellPrefs';
 import { useWindowManager } from './WindowManager';
 import Modal from './Modal';
 import { useTheme } from '../hooks/useTheme';
@@ -208,36 +209,22 @@ const NAV_CATEGORIES = [
 ];
 
 function useFavorites(wallpapers?: string[]) {
-  const queryClient = useQueryClient();
-  const { data: profile } = useQuery({
-    queryKey: ['my-profile-sidebar'],
-    queryFn: () => apiClient.get('/auth/me/').then(r => r.data),
-  });
-  const favorites: string[] = (profile?.preferences || {}).favorite_pages || [];
+  const { prefs, save } = useShellPrefs();
+  const favorites: string[] = prefs.favorite_pages || [];
 
   const toggle = useCallback((path: string) => {
-    const current: string[] = (profile?.preferences || {}).favorite_pages || [];
-    const next = current.includes(path) ? current.filter((p: string) => p !== path) : [...current, path];
-    apiClient.patch('/auth/me/', {
-      preferences: { ...(profile?.preferences || {}), favorite_pages: next },
-    }).then(() => {
-      queryClient.invalidateQueries({ queryKey: ['my-profile-sidebar'] });
-      queryClient.invalidateQueries({ queryKey: ['my-profile'] });
-    });
-  }, [profile, queryClient]);
+    const next = favorites.includes(path) ? favorites.filter((p: string) => p !== path) : [...favorites, path];
+    save({ favorite_pages: next });
+  }, [favorites, save]);
 
   const wallpaperPool = wallpapers && wallpapers.length > 0 ? wallpapers : [];
   const randomPickRef = useRef(wallpaperPool.length > 0 ? wallpaperPool[Math.floor(Math.random() * wallpaperPool.length)] : 'none');
-  const rawBg: string = (profile?.preferences || {}).desktop_bg || (wallpaperPool.length > 0 ? 'random' : 'none');
+  const rawBg: string = prefs.desktop_bg || (wallpaperPool.length > 0 ? 'random' : 'none');
   const desktopBg: string = rawBg === 'random' ? randomPickRef.current : rawBg;
 
   const setDesktopBg = useCallback((bg: string) => {
-    apiClient.patch('/auth/me/', {
-      preferences: { ...(profile?.preferences || {}), desktop_bg: bg },
-    }).then(() => {
-      queryClient.invalidateQueries({ queryKey: ['my-profile-sidebar'] });
-    });
-  }, [profile, queryClient]);
+    save({ desktop_bg: bg });
+  }, [save]);
 
   return { favorites, toggle, isFavorite: (path: string) => favorites.includes(path), desktopBg, setDesktopBg };
 }
@@ -349,13 +336,8 @@ function TaskbarClock() {
   const [pinned, setPinned] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const queryClient = useQueryClient();
-
-  const { data: profile } = useQuery({
-    queryKey: ['my-profile-sidebar'],
-    queryFn: () => apiClient.get('/auth/me/').then(r => r.data),
-  });
-  const worldClocks: string[] = (profile?.preferences || {}).world_clocks || ['Europe/London', 'Asia/Shanghai', 'America/Los_Angeles', 'America/New_York'];
+  const { prefs, save } = useShellPrefs();
+  const worldClocks: string[] = prefs.world_clocks || ['Europe/London', 'Asia/Shanghai', 'America/Los_Angeles', 'America/New_York'];
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 10000);
@@ -372,9 +354,7 @@ function TaskbarClock() {
   };
 
   const saveClocks = (clocks: string[]) => {
-    apiClient.patch('/auth/me/', { preferences: { world_clocks: clocks } }).then(() => {
-      queryClient.invalidateQueries({ queryKey: ['my-profile-sidebar'] });
-    });
+    save({ world_clocks: clocks });
   };
 
   const addClock = (tz: string) => {
@@ -494,21 +474,16 @@ export default function Layout({
   const bugReport = useBugReport();
   const { user, logout, hasAnyPerm } = useAuth();
   const { openPage, openEntity, openWindows } = useWindowManager();
-  const queryClient = useQueryClient();
   const [menuOpen, setMenuOpen] = useState(false);
   const emailUnreadCount = useEmailUnreadCount();
 
-  const { data: profile } = useQuery({
-    queryKey: ['my-profile-sidebar'],
-    queryFn: () => apiClient.get('/auth/me/').then(r => r.data),
-    enabled: !!user,
-  });
+  // Profile is reserved for consumer integration; the shell only consumes prefs.
+  const profile: any = { first_name: user?.first_name, email: user?.email };
 
   useTheme();
   const { favorites, toggle: toggleFavorite, isFavorite, desktopBg, setDesktopBg } = useFavorites(wallpapers);
 
-  // Preferences
-  const prefs = profile?.preferences || {};
+  const { prefs, save: savePrefs } = useShellPrefs();
 
   // Taskbar layout
   const taskbarPosition: string = prefs.taskbar_position || 'bottom';
@@ -570,10 +545,8 @@ export default function Layout({
   }, []);
 
   const savePref = useCallback((key: string, value: any) => {
-    apiClient.patch('/auth/me/', { preferences: { [key]: value } }).then(() => {
-      queryClient.invalidateQueries({ queryKey: ['my-profile-sidebar'] });
-    });
-  }, [queryClient]);
+    savePrefs({ [key]: value });
+  }, [savePrefs]);
 
   const toggleFullscreen = useCallback(async () => {
     if (document.fullscreenElement) {

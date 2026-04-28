@@ -138,15 +138,17 @@ export default function NotificationBell({
     });
   };
 
-  const [dropdownPos, setDropdownPos] = useState<Record<string, number>>({});
+  const [dropdownPos, setDropdownPos] = useState<Record<string, number | string>>({});
   const calcPos = useCallback(() => {
     const taskbarPos = getComputedStyle(document.documentElement).getPropertyValue('--taskbar-position')?.trim() || 'bottom';
     const taskbarH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--taskbar-height')) || 56;
     const taskbarW = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--taskbar-width')) || 0;
-    if (popDirection === 'right') setDropdownPos({ left: taskbarW + 8, bottom: 8 });
-    else if (popDirection === 'left') setDropdownPos({ right: taskbarW + 8, bottom: 8 });
-    else if (taskbarPos === 'top') setDropdownPos({ right: 8, top: taskbarH + 8 });
-    else setDropdownPos({ right: 8, bottom: taskbarH + 8 });
+    const verticalReserve = (taskbarPos === 'top' || taskbarPos === 'bottom') ? taskbarH + 16 : 16;
+    const maxHeight = `calc(100vh - ${verticalReserve}px)`;
+    if (popDirection === 'right') setDropdownPos({ left: taskbarW + 8, bottom: 8, maxHeight });
+    else if (popDirection === 'left') setDropdownPos({ right: taskbarW + 8, bottom: 8, maxHeight });
+    else if (taskbarPos === 'top') setDropdownPos({ right: 8, top: taskbarH + 8, maxHeight });
+    else setDropdownPos({ right: 8, bottom: taskbarH + 8, maxHeight });
   }, [popDirection]);
   useEffect(() => {
     if (!open) return;
@@ -173,7 +175,7 @@ export default function NotificationBell({
       </button>
 
       {open && createPortal(
-        <PopupMenu minWidth={320} className="w-80" style={{ ...dropdownPos }} onClose={() => setOpen(false)}>
+        <PopupMenu minWidth={320} className="w-80 flex flex-col overflow-hidden" style={{ ...dropdownPos }} onClose={() => setOpen(false)}>
           <PopupMenuLabel>
             <span className="flex items-center justify-between w-full">
               <span>Notifications</span>
@@ -185,7 +187,7 @@ export default function NotificationBell({
             </span>
           </PopupMenuLabel>
           <PopupMenuDivider />
-          <div className="overflow-y-auto" style={{ maxHeight: '60vh' }}>
+          <div className="overflow-y-auto" style={{ flex: '1 1 auto', minHeight: 0 }}>
           {notifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
               <svg className="h-8 w-8 text-gray-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>

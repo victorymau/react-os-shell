@@ -1,8 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getMe, updateMe } from '../api/auth';
 import { ModalActions } from '../shell/Modal';
 import { useDesktopHost } from '../shell/Desktop';
+import { useShellPrefs } from '../shell/ShellPrefs';
 import { SOUND_PACKS, SOUND_PACK_KEYS, SOUND_TYPES, SOUND_TYPE_LABELS, getSoundConfig, setSoundForType, setAllSounds, soundsEnabled, previewSound, type SoundType } from '../utils/sounds';
 
 // Preview tiles use literal hex values via arbitrary Tailwind syntax so that the
@@ -44,15 +43,10 @@ function previewColor(resolved: string, light: string, dark: string, pink: strin
 }
 
 export default function Customization() {
-  const queryClient = useQueryClient();
   const host = useDesktopHost();
   const WALLPAPERS = host.wallpapers && host.wallpapers.length > 0 ? host.wallpapers : DEFAULT_WALLPAPERS;
-  const { data: profile } = useQuery({
-    queryKey: ['my-profile-sidebar'],
-    queryFn: () => getMe(),
-  });
+  const { prefs, save } = useShellPrefs();
 
-  const prefs = profile?.preferences || {};
   const currentTheme: string = prefs.theme || 'system';
   const resolved = resolveTheme(currentTheme);
   const rawBg: string = prefs.desktop_bg || (WALLPAPERS.length > 0 ? 'random' : 'none');
@@ -64,18 +58,7 @@ export default function Customization() {
   const isCustom = !isColor && desktopBg !== 'none' && rawBg !== 'random' && desktopBg && !presetPaths.has(desktopBg);
 
   const savePref = (key: string, value: any) => {
-    // Optimistic update — apply immediately so theme/settings change instantly
-    queryClient.setQueryData(['my-profile-sidebar'], (old: any) => old ? {
-      ...old, preferences: { ...(old.preferences || {}), [key]: value },
-    } : old);
-    queryClient.setQueryData(['my-profile'], (old: any) => old ? {
-      ...old, preferences: { ...(old.preferences || {}), [key]: value },
-    } : old);
-    updateMe({ preferences: { [key]: value } } as any).catch(() => {
-      // Revert on failure
-      queryClient.invalidateQueries({ queryKey: ['my-profile-sidebar'] });
-      queryClient.invalidateQueries({ queryKey: ['my-profile'] });
-    });
+    save({ [key]: value });
   };
 
   // Debounced save for sliders — updates local state instantly, saves after 300ms idle
@@ -286,12 +269,8 @@ export default function Customization() {
                 className={`w-28 h-20 rounded border-2 overflow-hidden ${isCustom ? 'border-blue-500' : 'border-gray-300'}`}>
                 <img src={customBg || desktopBg} alt="Custom" loading="lazy" className="w-full h-full object-cover" />
               </button>
-              <button onClick={() => {
-                updateMe({ preferences: { desktop_bg: '/login-bg.avif', desktop_bg_custom: '' } } as any).then(() => {
-                  queryClient.invalidateQueries({ queryKey: ['my-profile-sidebar'] });
-                  queryClient.invalidateQueries({ queryKey: ['my-profile'] });
-                });
-              }} className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full bg-red-500 text-white flex items-center justify-center text-[10px] leading-none opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600 shadow">&times;</button>
+              <button onClick={() => save({ desktop_bg: 'random', desktop_bg_custom: '' })}
+                className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full bg-red-500 text-white flex items-center justify-center text-[10px] leading-none opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600 shadow">&times;</button>
             </div>
           )}
           <label className="w-28 h-20 rounded border-2 border-gray-300 border-dashed overflow-hidden cursor-pointer flex items-center justify-center text-gray-400 hover:text-gray-600">
@@ -302,12 +281,7 @@ export default function Customization() {
               const reader = new FileReader();
               reader.onloadend = () => {
                 if (reader.result) {
-                  updateMe({
-                    preferences: { desktop_bg: reader.result as string, desktop_bg_custom: reader.result as string },
-                  } as any).then(() => {
-                    queryClient.invalidateQueries({ queryKey: ['my-profile-sidebar'] });
-                    queryClient.invalidateQueries({ queryKey: ['my-profile'] });
-                  });
+                  save({ desktop_bg: reader.result as string, desktop_bg_custom: reader.result as string });
                 }
               };
               reader.readAsDataURL(file);

@@ -1,6 +1,5 @@
 import { useEffect, useSyncExternalStore } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import apiClient from '../api/client';
+import { useShellPrefs } from '../shell/ShellPrefs';
 
 export type Theme = 'system' | 'light' | 'dark' | 'pink' | 'green' | 'grey' | 'blue';
 
@@ -40,18 +39,14 @@ function hslToHex(h: number, s: number, l: number): string {
 }
 
 export function useTheme() {
-  const { data: profile } = useQuery({
-    queryKey: ['my-profile-sidebar'],
-    queryFn: () => apiClient.get('/auth/me/').then(r => r.data),
-  });
-
+  const { prefs } = useShellPrefs();
   const systemDark = useSyncExternalStore(subscribeMediaQuery, getSystemIsDark);
-  const saved: Theme = (profile?.preferences?.theme as Theme) || 'system';
-  const accentColor: string | null = profile?.preferences?.accent_color || null;
-  const customBgColor: string | null = profile?.preferences?.custom_bg_color || null;
-  const customTitleColor: string | null = profile?.preferences?.custom_title_color || null;
-  const customWindowColor: string | null = profile?.preferences?.custom_window_color || null;
-  const customButtonColor: string | null = profile?.preferences?.custom_button_color || null;
+  const saved: Theme = (prefs.theme as Theme) || 'system';
+  const accentColor: string | null = prefs.accent_color || null;
+  const customBgColor: string | null = prefs.custom_bg_color || null;
+  const customTitleColor: string | null = prefs.custom_title_color || null;
+  const customWindowColor: string | null = prefs.custom_window_color || null;
+  const customButtonColor: string | null = prefs.custom_button_color || null;
 
   // Resolve "system" to actual theme
   const resolved = saved === 'system' ? (systemDark ? 'dark' : 'light') : saved;

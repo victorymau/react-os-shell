@@ -173,18 +173,19 @@ export default function Minesweeper() {
     if (status === 'won' && !scoreSubmitted.current) {
       scoreSubmitted.current = true;
       const t = finalTimeRef.current || timeSeconds;
-      submitGameScore({ game: 'minesweeper', won: true, time_seconds: parseFloat(t.toFixed(2)), clicks })
-        .then(res => { toast.success(`You won! Rank #${res.rank} with ${t.toFixed(2)}s and ${clicks} clicks`); })
-        .catch(() => {});
+      const tFixed = parseFloat(t.toFixed(2));
+      submitGameScore({ game: 'minesweeper', won: true, time_seconds: tFixed, clicks })
+        .then(res => { toast.success(`You won! Rank #${res.rank} with ${tFixed}s and ${clicks} clicks`); })
+        .catch(() => { toast.success(`You won! ${tFixed}s and ${clicks} clicks`); });
     }
   }, [status, clicks]);
 
-  // Fetch leaderboard
+  // Fetch leaderboard (no-op when apiClient isn't wired)
   const fetchLeaderboard = useCallback(() => {
     setLoadingLb(true);
     getGameLeaderboard('minesweeper')
       .then(res => setLeaderboard(res.results || []))
-      .catch(() => toast.error('Failed to load leaderboard'))
+      .catch(() => setLeaderboard([]))
       .finally(() => setLoadingLb(false));
   }, []);
 
