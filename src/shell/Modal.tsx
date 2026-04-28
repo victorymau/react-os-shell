@@ -42,7 +42,12 @@ export function useWindowTitle(title: string) {
   const id = useContext(ModalIdContext);
   useEffect(() => {
     if (!id) return;
-    window.dispatchEvent(new CustomEvent('window-title-update', { detail: { id, title } }));
+    // Defer to next tick — on initial mount the parent Modal attaches its
+    // listener after this child effect runs, so a synchronous dispatch is lost.
+    const handle = setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('window-title-update', { detail: { id, title } }));
+    }, 0);
+    return () => clearTimeout(handle);
   }, [id, title]);
 }
 

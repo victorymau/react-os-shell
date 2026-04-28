@@ -478,7 +478,7 @@ export default function Layout({
   const emailUnreadCount = useEmailUnreadCount();
 
   // Profile is reserved for consumer integration; the shell only consumes prefs.
-  const profile: any = { first_name: user?.first_name, email: user?.email };
+  const profile: any = user || {};
 
   useTheme();
   const { favorites, toggle: toggleFavorite, isFavorite, desktopBg, setDesktopBg } = useFavorites(wallpapers);
