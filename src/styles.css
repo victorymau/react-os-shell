@@ -24,6 +24,11 @@
 
 @import "tailwindcss";
 
+/* Tailwind v4 doesn't scan node_modules by default — tell it to scan this
+   package's compiled JS so utility classes used in shell components get
+   generated when consumers import react-os-shell/styles.css. */
+@source "./**/*.js";
+
 /* Base theme colors for transparent windows */
 :root {
   --window-header-rgb: 243 244 246;
