@@ -172,7 +172,7 @@ function VersionBadge() {
         v{VERSION || '0.0.0'}
       </button>
       {open && (
-        <Modal open onClose={() => setOpen(false)} title={`Changelog · v${VERSION}`} size="lg" bodyScroll>
+        <Modal open onClose={() => setOpen(false)} title={`Changelog · v${VERSION}`} size="lg">
           {error ? (
             <div className="p-6 text-sm text-red-600">
               Could not load changelog: {error}.{' '}

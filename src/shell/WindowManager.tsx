@@ -386,7 +386,10 @@ function ThumbCard({ id, label, maxW, maxH, onClick, onClose }: {
 
 /** Hover popover — single thumbnail for a single window, or a row of
  *  thumbnails for a grouped set so the user can pick which instance to
- *  activate. Each thumb sizes to its window's aspect ratio (clamped). */
+ *  activate. Each thumb sizes to its window's aspect ratio (clamped).
+ *  After mount, the popover measures its own bounding box and centers
+ *  itself horizontally on the button below — fixed-width math doesn't
+ *  hold once cards reflect their source aspect ratios. */
 function TaskbarTabPreview({ items, anchorEl, onActivate, onClose, onMouseEnter, onMouseLeave }: {
   items: MinimizedItem[]; anchorEl: HTMLElement; onActivate: (id: string) => void; onClose: (id: string) => void;
   onMouseEnter: () => void; onMouseLeave: () => void;
@@ -394,24 +397,49 @@ function TaskbarTabPreview({ items, anchorEl, onActivate, onClose, onMouseEnter,
   const MAX_W = 240;
   const MAX_H = 160;
   const isGroup = items.length > 1;
+  const popoverRef = useRef<HTMLDivElement>(null);
+  // Provisional position (off-screen above viewport) so we can measure the
+  // actual rendered size before snapping into place. This avoids a single
+  // mis-aligned frame.
+  const [pos, setPos] = useState<{ left: number; top: number; ready: boolean }>({ left: -9999, top: -9999, ready: false });
 
-  const rect = anchorEl.getBoundingClientRect();
-  const taskbarPos = getComputedStyle(document.documentElement).getPropertyValue('--taskbar-position')?.trim() || 'bottom';
-  // Position above (or beside) the tab. We anchor on tab center; the popup
-  // is allowed to grow and is clamped to viewport via max-width.
-  const top = taskbarPos === 'top'
-    ? rect.bottom + 8
-    : taskbarPos === 'bottom'
-      ? Math.max(8, rect.top - MAX_H - 24)
-      : rect.top + rect.height / 2 - MAX_H / 2;
-  const left = (taskbarPos === 'left' || taskbarPos === 'right')
-    ? (taskbarPos === 'left' ? rect.right + 8 : rect.left - MAX_W - 8)
-    : Math.max(8, rect.left + rect.width / 2 - (isGroup ? MAX_W : MAX_W / 2));
+  useLayoutEffect(() => {
+    const el = popoverRef.current;
+    if (!el) return;
+    const tabRect = anchorEl.getBoundingClientRect();
+    const popRect = el.getBoundingClientRect();
+    const taskbarPos = getComputedStyle(document.documentElement).getPropertyValue('--taskbar-position')?.trim() || 'bottom';
+    let left = tabRect.left + tabRect.width / 2 - popRect.width / 2;
+    let top: number;
+    if (taskbarPos === 'top') {
+      top = tabRect.bottom + 8;
+    } else if (taskbarPos === 'left') {
+      left = tabRect.right + 8;
+      top = tabRect.top + tabRect.height / 2 - popRect.height / 2;
+    } else if (taskbarPos === 'right') {
+      left = tabRect.left - popRect.width - 8;
+      top = tabRect.top + tabRect.height / 2 - popRect.height / 2;
+    } else {
+      // bottom
+      top = tabRect.top - popRect.height - 8;
+    }
+    // Clamp to viewport.
+    left = Math.max(8, Math.min(left, window.innerWidth - popRect.width - 8));
+    top = Math.max(8, Math.min(top, window.innerHeight - popRect.height - 8));
+    setPos({ left, top, ready: true });
+  }, [anchorEl, items.length]);
 
   return createPortal(
     <div
-      style={{ position: 'fixed', left, top, zIndex: 9999, maxWidth: 'calc(100vw - 16px)' }}
-      className={isGroup ? 'flex gap-2 p-2 rounded-lg bg-white/40 backdrop-blur-sm border border-white/30 shadow-2xl flex-wrap' : ''}
+      ref={popoverRef}
+      style={{
+        position: 'fixed', left: pos.left, top: pos.top, zIndex: 9999,
+        maxWidth: 'calc(100vw - 16px)',
+        opacity: pos.ready ? 1 : 0,
+      }}
+      className={isGroup
+        ? 'flex gap-2 p-2 rounded-lg bg-white/40 backdrop-blur-sm border border-white/30 shadow-2xl flex-wrap'
+        : ''}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
