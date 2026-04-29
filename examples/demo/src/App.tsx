@@ -33,7 +33,7 @@ import {
   VERSION,
   type NotificationsConfig,
 } from 'react-os-shell';
-import { bundledApps, utilityApps, gameApps, googleApps, documentApps } from 'react-os-shell/apps';
+import { bundledApps, utilityApps, gameApps, googleApps, documentApps, webApps } from 'react-os-shell/apps';
 
 // Floating panel toggled with Alt+Shift+T to test toast / notification /
 // confirm / confirmDestructive / prompt visually. Eagerly imported because
@@ -82,6 +82,7 @@ const lookupLabel = (to: string) =>
   ?? (gameApps as any)[to]?.label
   ?? (googleApps as any)[to]?.label
   ?? (documentApps as any)[to]?.label
+  ?? (webApps as any)[to]?.label
   ?? to;
 
 const NAV_SECTIONS = [
