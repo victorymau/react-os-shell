@@ -255,8 +255,25 @@ export default function EditableGrid({ columns, data, onChange, onColumnsChange,
       nextCol = col + 1;
     } else if (e.key === 'Delete' || e.key === 'Backspace') {
       const target = e.target as HTMLElement;
-      if (target.textContent && window.getSelection()?.toString() === target.textContent) {
-        e.preventDefault();
+      // While editing, only intercept when the whole cell text is selected.
+      if (target.isContentEditable) {
+        if (target.textContent && window.getSelection()?.toString() === target.textContent) {
+          e.preventDefault();
+          updateCell(row, col, '');
+        }
+        return;
+      }
+      // Not editing — clear the selection range (or just this cell).
+      e.preventDefault();
+      if (selAnchor && selEnd) {
+        const r1 = Math.min(selAnchor.row, selEnd.row), r2 = Math.max(selAnchor.row, selEnd.row);
+        const c1 = Math.min(selAnchor.col, selEnd.col), c2 = Math.max(selAnchor.col, selEnd.col);
+        const next = rows.map(r => [...r]);
+        for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) {
+          if (next[r] && !columns[c]?.readOnly) next[r][c] = '';
+        }
+        onChange(next);
+      } else {
         updateCell(row, col, '');
       }
       return;
@@ -280,7 +297,7 @@ export default function EditableGrid({ columns, data, onChange, onColumnsChange,
         setSelEnd({ row: nextRow, col: nextCol });
       }
     }
-  }, [columns, rows.length, updateCell]);
+  }, [columns, rows, rows.length, updateCell, selAnchor, selEnd, onChange]);
 
   // Add rows when typing in the last row
   const ensureRows = useCallback((row: number) => {
@@ -397,6 +414,34 @@ export default function EditableGrid({ columns, data, onChange, onColumnsChange,
     rowResizing.current = { row: ri, startY: e.clientY, startH: getRowHeight(ri) };
     document.body.style.cursor = 'row-resize';
   };
+
+  // Auto-fit column to the widest cell content (data + header).
+  const autoFitColumn = useCallback((ci: number) => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.font = '12px ui-monospace, SFMono-Regular, Menlo, monospace';
+    let maxW = 0;
+    for (const row of rows) {
+      const plain = String(row[ci] ?? '').replace(/<[^>]*>/g, '');
+      const w = ctx.measureText(plain).width;
+      if (w > maxW) maxW = w;
+    }
+    const headerW = ctx.measureText(columns[ci]?.title ?? '').width;
+    if (headerW > maxW) maxW = headerW;
+    const finalW = Math.max(40, Math.ceil(maxW + 24));
+    setColWidths(prev => ({ ...prev, [ci]: finalW }));
+    if (onColumnsChange) {
+      const updated = columns.map((c, i) => ({ ...c, width: i === ci ? finalW : (colWidths[i] ?? c.width) }));
+      onColumnsChange(updated);
+    }
+  }, [rows, columns, colWidths, onColumnsChange]);
+
+  // Auto-fit row — reset to the default height (cells use whitespace-nowrap so
+  // a single row line is the natural fit).
+  const autoFitRow = useCallback((ri: number) => {
+    setRowHeights(prev => { const next = { ...prev }; delete next[ri]; return next; });
+  }, []);
 
   // Fill handle — drag the small square at the bottom-right of the selection
   // to copy / extrapolate values into adjacent cells.
@@ -607,10 +652,11 @@ export default function EditableGrid({ columns, data, onChange, onColumnsChange,
                     onContextMenu={(e) => handleColCtx(e, ci)}>
                     {c.title}
                     {/* Resize handle — thin edge, wider hover target */}
-                    <div className="absolute -right-1 top-0 bottom-0 w-2 cursor-col-resize z-20 group"
-                      onMouseDown={(e) => startColResize(e, ci)}>
-                      <div className="absolute right-[3px] top-0 bottom-0 w-[2px] group-hover:bg-blue-400" />
-                    </div>
+                    <div className="absolute -right-1 top-0 bottom-0 w-2 cursor-col-resize z-20"
+                      onMouseDown={(e) => startColResize(e, ci)}
+                      onDoubleClick={(e) => { e.stopPropagation(); autoFitColumn(ci); }}
+                      title="Drag to resize · double-click to auto-fit"
+                    />
                   </th>
                 );
               })}
@@ -640,10 +686,11 @@ export default function EditableGrid({ columns, data, onChange, onColumnsChange,
                   onContextMenu={(e) => handleRowCtx(e, ri)}>
                   {ri + 1}
                   {/* Row resize handle — slim bar at the bottom of the row header */}
-                  <div className="absolute -bottom-1 left-0 right-0 h-2 cursor-row-resize z-20 group"
-                    onMouseDown={(e) => startRowResize(e, ri)}>
-                    <div className="absolute bottom-[3px] left-0 right-0 h-[2px] group-hover:bg-blue-400" />
-                  </div>
+                  <div className="absolute -bottom-1 left-0 right-0 h-2 cursor-row-resize z-20"
+                    onMouseDown={(e) => startRowResize(e, ri)}
+                    onDoubleClick={(e) => { e.stopPropagation(); autoFitRow(ri); }}
+                    title="Drag to resize · double-click to auto-fit"
+                  />
                 </td>
                 {columns.map((col, ci) => {
                   const inRange = selAnchor && selEnd && rangeContains(selAnchor, selEnd, ri, ci);
@@ -693,7 +740,7 @@ export default function EditableGrid({ columns, data, onChange, onColumnsChange,
                         tabIndex={0}
                         data-row={ri}
                         data-col={ci}
-                        className={`w-full h-full px-2 py-1 outline-none ${
+                        className={`w-full h-full px-2 py-1 outline-none whitespace-nowrap overflow-hidden ${
                           col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : ''
                         } ${col.readOnly ? 'cursor-default' : 'cursor-cell'} font-mono ${fontSizeCls}${styleCls}`}
                         onMouseDown={(e) => handleMouseDown(e, ri, ci)}

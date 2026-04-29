@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import EditableGrid from '../shell/EditableGrid';
 import type { GridColumn, CellStyle } from '../shell/EditableGrid';
 import { WindowTitle } from '../shell/Modal';
@@ -65,8 +65,42 @@ function parseCSV(text: string): string[][] {
 }
 
 export default function Spreadsheet() {
+  const containerRef = useRef<HTMLDivElement>(null);
   const [sheets, setSheets] = useState<Sheet[]>([newSheet('Sheet 1')]);
   const [activeIdx, setActiveIdx] = useState(0);
+
+  // Undo history — push a snapshot whenever sheets change, except when the
+  // change came from undo itself.
+  const undoStackRef = useRef<Sheet[][]>([]);
+  const lastCommittedRef = useRef<Sheet[]>(sheets);
+  const skipRecordRef = useRef(false);
+  useEffect(() => {
+    if (skipRecordRef.current) {
+      skipRecordRef.current = false;
+    } else if (lastCommittedRef.current !== sheets) {
+      undoStackRef.current.push(lastCommittedRef.current);
+      if (undoStackRef.current.length > 50) undoStackRef.current.shift();
+    }
+    lastCommittedRef.current = sheets;
+  }, [sheets]);
+  const undo = useCallback(() => {
+    const prev = undoStackRef.current.pop();
+    if (!prev) return;
+    skipRecordRef.current = true;
+    setSheets(prev);
+  }, []);
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!containerRef.current?.contains(document.activeElement) && !containerRef.current?.matches(':focus-within')) return;
+      const isUndo = (e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'z' || e.key === 'Z');
+      if (isUndo) {
+        e.preventDefault();
+        undo();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [undo]);
   const [title, setTitle] = useState('Untitled');
   const [editingTitle, setEditingTitle] = useState(false);
   const [editingTab, setEditingTab] = useState<number | null>(null);
@@ -240,7 +274,7 @@ export default function Spreadsheet() {
   const filledCount = data.reduce((c, row) => c + row.filter(cell => cell.trim()).length, 0);
 
   return (
-    <div className="flex flex-col h-full">
+    <div ref={containerRef} className="flex flex-col h-full">
       <WindowTitle title={`${truncateForTitle(title || 'Untitled')} - Spreadsheets`} />
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 bg-gray-50 shrink-0">
