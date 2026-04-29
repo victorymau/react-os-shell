@@ -795,6 +795,7 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
   const [sectionAxis, setSectionAxis] = useState<'x' | 'y' | 'z'>('z');
   const [sectionFlip, setSectionFlip] = useState(false);
   const [sectionPosition, setSectionPosition] = useState(0.5); // 0–1 within bbox
+  const [sectionCapColor, setSectionCapColor] = useState('#c8ccd1');
 
   // Persistent section state — stencil helpers, cap mesh, original material
   // settings — held in a ref so we can mutate the plane in place on slider
@@ -946,19 +947,23 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
 
   // Section view — set / tear down on enable.
   //
-  // We use plain clipping (no cap), per the user's preference. The plane is
-  // a duck-typed object: { normal: {x,y,z}, constant: number }. three.js's
-  // WebGLClipping only calls `.copy()` on it (which reads .normal.x/y/z and
-  // .constant), so we DON'T need to import three. That matters here because
-  // online-3d-viewer bundles its own three transitively, and a separate
-  // `import('three')` would resolve to a different three instance — breaking
-  // instanceof checks and sharing nothing.
+  // Capped clipping using the standard three.js stencil technique. The
+  // tricky bit is that we can't `import('three')` — it resolves to a
+  // different three instance than the one online-3d-viewer bundles
+  // (transitive duplicate), which breaks instanceof checks against the
+  // renderer's THREE. Workaround: pluck constructors (Mesh, BufferGeometry,
+  // BufferAttribute, MeshPhongMaterial) from a sample mesh in the loaded
+  // scene — those are guaranteed to be from the renderer's THREE. The
+  // stencil/side constants are universal numeric values, so we hardcode
+  // them. The plane itself stays duck-typed — three's WebGLClipping just
+  // calls `.copy()` on it (reads .normal.x/y/z and .constant).
   useEffect(() => {
     const v = viewerRef.current;
     if (!v?.viewer || loading) return;
 
     const renderer = v.viewer.renderer;
-    if (!renderer) return;
+    const scene = v.viewer.scene;
+    if (!renderer || !scene) return;
 
     // Tear down any previous state.
     if (sectionRef.current) {
@@ -967,6 +972,16 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
         mat.clippingPlanes = prev.clippingPlanes;
         mat.clipShadows = prev.clipShadows;
         mat.needsUpdate = true;
+      }
+      for (const helper of s.helpers) {
+        helper.parent?.remove(helper);
+        // Don't dispose helper.geometry — it's shared with the original mesh.
+        helper.material?.dispose?.();
+      }
+      if (s.capMesh) {
+        scene.remove(s.capMesh);
+        s.capMesh.geometry?.dispose?.();
+        s.capMesh.material?.dispose?.();
       }
       sectionRef.current = null;
     }
@@ -980,7 +995,38 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
     const bbox = v.viewer.GetBoundingBox?.(() => true);
     if (!bbox) return;
 
+    // Snapshot the mesh list — never traverse-and-mutate.
+    const targets: any[] = [];
+    v.viewer.mainModel?.EnumerateMeshes?.((mesh: any) => {
+      if (!mesh.userData?.__sectionHelper) targets.push(mesh);
+    });
+    if (!targets.length) {
+      renderer.localClippingEnabled = false;
+      v.viewer.Render?.();
+      return;
+    }
+
+    // Pluck THREE constructors from a sample mesh (these come from the
+    // renderer's THREE, so the renderer recognizes the resulting objects).
+    const sample = targets[0];
+    const Mesh = sample.constructor;
+    const Material = sample.material?.constructor; // MeshPhongMaterial
+    const Geometry = sample.geometry?.constructor;
+    const BufferAttr = sample.geometry?.attributes?.position?.constructor;
+    if (!Mesh || !Material || !Geometry || !BufferAttr) {
+      // Fallback to plain clipping if we can't pluck constructors.
+      // eslint-disable-next-line no-console
+      console.warn('[Preview] section: missing THREE constructors, falling back to no cap');
+    }
+
+    // Universal three.js / WebGL constants.
+    const FrontSide = 0, BackSide = 1, DoubleSide = 2;
+    const AlwaysStencilFunc = 519, NotEqualStencilFunc = 517;
+    const IncrementWrapStencilOp = 7682, DecrementWrapStencilOp = 7683;
+    const ReplaceStencilOp = 7681;
+
     const plane: any = { normal: { x: 0, y: 0, z: -1 }, constant: 0 };
+    const helpers: any[] = [];
     const materialState = new Map<any, { clippingPlanes: any; clipShadows: any }>();
 
     const applyToMaterial = (mat: any) => {
@@ -991,22 +1037,95 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
       mat.needsUpdate = true;
     };
 
-    v.viewer.mainModel?.EnumerateMeshes?.((mesh: any) => {
-      if (mesh.userData?.__sectionHelper) return;
+    for (const mesh of targets) {
       const mat = mesh.material;
       if (Array.isArray(mat)) for (const m of mat) applyToMaterial(m);
       else applyToMaterial(mat);
-    });
+
+      // Stencil-only helpers per mesh: back-faces increment the stencil,
+      // front-faces decrement. Where the running count is non-zero on the
+      // cap plane, we're inside the solid → cap renders.
+      if (Mesh && Material) {
+        const makeStencil = (side: number, op: number) => {
+          const m: any = new Material();
+          m.depthWrite = false;
+          m.depthTest = false;
+          m.colorWrite = false;
+          m.stencilWrite = true;
+          m.stencilFunc = AlwaysStencilFunc;
+          m.stencilFail = op;
+          m.stencilZFail = op;
+          m.stencilZPass = op;
+          m.side = side;
+          m.clippingPlanes = [plane];
+          m.clipShadows = true;
+          const helper = new Mesh(mesh.geometry, m);
+          helper.matrixAutoUpdate = false;
+          helper.renderOrder = 1;
+          helper.userData.__sectionHelper = true;
+          mesh.add(helper);
+          helpers.push(helper);
+        };
+        makeStencil(BackSide, IncrementWrapStencilOp);
+        makeStencil(FrontSide, DecrementWrapStencilOp);
+      }
+    }
+
+    // Edges — clip them too so the cut isn't framed by a stale outline.
     v.viewer.mainModel?.EnumerateEdges?.((edge: any) => {
       const mat = edge.material;
       if (Array.isArray(mat)) for (const m of mat) applyToMaterial(m);
       else applyToMaterial(mat);
     });
 
+    // Cap quad — sized to the bbox diagonal × 2 so it always covers the cut,
+    // built as a manual BufferGeometry quad (4 verts, 2 tris).
+    let capMesh: any = null;
+    if (Mesh && Material && Geometry && BufferAttr) {
+      const dx = bbox.max.x - bbox.min.x;
+      const dy = bbox.max.y - bbox.min.y;
+      const dz = bbox.max.z - bbox.min.z;
+      const capSize = Math.max(dx, dy, dz, 1) * 2;
+      const half = capSize / 2;
+
+      const capGeom: any = new Geometry();
+      const positions = new Float32Array([
+        -half, -half, 0,
+         half, -half, 0,
+         half,  half, 0,
+        -half,  half, 0,
+      ]);
+      const normals = new Float32Array([
+        0, 0, 1,  0, 0, 1,  0, 0, 1,  0, 0, 1,
+      ]);
+      capGeom.setAttribute('position', new BufferAttr(positions, 3));
+      capGeom.setAttribute('normal', new BufferAttr(normals, 3));
+      capGeom.setIndex([0, 1, 2, 0, 2, 3]);
+
+      const capMat: any = new Material();
+      const m = /^#?([0-9a-f]{6})$/i.exec(sectionCapColor);
+      const colorHex = m ? parseInt(m[1], 16) : 0xc8ccd1;
+      capMat.color?.setHex?.(colorHex);
+      capMat.side = DoubleSide;
+      capMat.stencilWrite = true;
+      capMat.stencilRef = 0;
+      capMat.stencilFunc = NotEqualStencilFunc;
+      capMat.stencilFail = ReplaceStencilOp;
+      capMat.stencilZFail = ReplaceStencilOp;
+      capMat.stencilZPass = ReplaceStencilOp;
+      // Don't clip the cap itself by the same plane.
+      capMat.clippingPlanes = [];
+
+      capMesh = new Mesh(capGeom, capMat);
+      capMesh.renderOrder = 2;
+      capMesh.userData.__sectionHelper = true;
+      scene.add(capMesh);
+    }
+
     renderer.localClippingEnabled = true;
-    sectionRef.current = { plane, capMesh: null, helpers: [], materialState, bbox };
+    sectionRef.current = { plane, capMesh, helpers, materialState, bbox };
     v.viewer.Render?.();
-  }, [sectionEnabled, loading, tree]);
+  }, [sectionEnabled, loading, tree, sectionCapColor]);
 
   // Section view — update plane orientation/position on axis/flip/slider change.
   useEffect(() => {
@@ -1023,10 +1142,28 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
       // three.js clips fragments where (normal · p) + constant < 0.
       // Default direction (not flipped): keep "axis < value", clip "axis > value".
       const dir = sectionFlip ? 1 : -1;
-      s.plane.normal.x = sectionAxis === 'x' ? dir : 0;
-      s.plane.normal.y = sectionAxis === 'y' ? dir : 0;
-      s.plane.normal.z = sectionAxis === 'z' ? dir : 0;
+      const nx = sectionAxis === 'x' ? dir : 0;
+      const ny = sectionAxis === 'y' ? dir : 0;
+      const nz = sectionAxis === 'z' ? dir : 0;
+      s.plane.normal.x = nx;
+      s.plane.normal.y = ny;
+      s.plane.normal.z = nz;
       s.plane.constant = -dir * value;
+
+      // Re-position the cap mesh on the plane and orient it so its visible
+      // face points along the plane normal.
+      if (s.capMesh) {
+        const cx = (bbox.min.x + bbox.max.x) / 2;
+        const cy = (bbox.min.y + bbox.max.y) / 2;
+        const cz = (bbox.min.z + bbox.max.z) / 2;
+        // Distance from bbox center to plane along the normal.
+        const dist = nx * cx + ny * cy + nz * cz + s.plane.constant;
+        const px = cx - nx * dist;
+        const py = cy - ny * dist;
+        const pz = cz - nz * dist;
+        s.capMesh.position.set(px, py, pz);
+        s.capMesh.lookAt?.(px + nx, py + ny, pz + nz);
+      }
 
       v.viewer.Render?.();
     } catch (err) {
@@ -1133,6 +1270,7 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
     setSectionAxis('z');
     setSectionFlip(false);
     setSectionPosition(0.5);
+    setSectionCapColor('#c8ccd1');
   };
 
   const handleDefaultDownload = () => {
@@ -1410,6 +1548,16 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
                       className="w-full accent-blue-500"
                     />
                   </div>
+
+                  <label className="flex items-center justify-between gap-2">
+                    <span>Cap Color</span>
+                    <input
+                      type="color"
+                      value={sectionCapColor}
+                      onChange={(e) => setSectionCapColor(e.target.value)}
+                      className="h-6 w-10 rounded border border-gray-300 bg-white"
+                    />
+                  </label>
 
                 </div>
               </div>

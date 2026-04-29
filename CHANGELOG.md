@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.1.36] — 2026-04-30
+
+### Changed
+- Preview 3D section view: brought back capping so the cut surface reads as solid instead of a hollow opening. Uses the standard three.js stencil-cap technique (back-face increments / front-face decrements / cap quad masked by `NotEqualStencilFunc`). To work around the duplicate-three.js issue (online-3d-viewer bundles 0.176, the root has 0.161), THREE constructors are plucked from a sample mesh in the loaded scene rather than imported — that guarantees the renderer recognizes the resulting objects. Stencil/side constants are universal numeric values and are hardcoded.
+
+### Added
+- Preview 3D Cap Color picker is back in the section view panel, defaulting to `#c8ccd1`.
+
 ## [0.1.35] — 2026-04-30
 
 ### Changed
