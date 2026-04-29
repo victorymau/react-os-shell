@@ -88,33 +88,116 @@ export default function Preview() {
   // Window title reflects whatever is loaded — same pattern Spreadsheets uses.
   const titleName = data?.filename ? truncateForTitle(data.filename) : 'Untitled';
 
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const handlePick = () => fileRef.current?.click();
+  const ingestFile = (file: File) => {
+    const url = URL.createObjectURL(file);
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    const kind: 'pdf' | 'image' | 'dxf' | undefined =
+      ext === 'pdf' ? 'pdf'
+      : ext === 'dxf' ? 'dxf'
+      : ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'avif', 'bmp'].includes(ext) ? 'image'
+      : undefined;
+    if (!kind) {
+      URL.revokeObjectURL(url);
+      if (ext === 'dwg') toast.error('DWG files need server-side conversion. Convert to PDF or DXF first.');
+      else toast.error(`Unsupported file type: .${ext || 'unknown'}`);
+      return;
+    }
+    setPdfPreview({ url, filename: file.name, kind });
+  };
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) ingestFile(file);
+    if (fileRef.current) fileRef.current.value = '';
+  };
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) ingestFile(file);
+  };
+
+  const Toolbar = (
+    <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 bg-gray-50 shrink-0">
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".pdf,.dxf,.jpg,.jpeg,.png,.gif,.webp,.svg,.avif,.bmp"
+        onChange={handleFile}
+        className="hidden"
+      />
+      <button
+        onClick={handlePick}
+        className="text-xs text-gray-700 hover:text-gray-900 px-2 py-1 rounded hover:bg-gray-200 transition-colors flex items-center gap-1"
+      >
+        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 00-1.883 2.542l.857 6a2.25 2.25 0 002.227 1.932H19.05a2.25 2.25 0 002.227-1.932l.857-6a2.25 2.25 0 00-1.883-2.542m-16.5 0V6A2.25 2.25 0 016 3.75h3.879a1.5 1.5 0 011.06.44l2.122 2.12a1.5 1.5 0 001.06.44H18A2.25 2.25 0 0120.25 9v.776" />
+        </svg>
+        Open
+      </button>
+      <span className="text-[10px] text-gray-400 ml-1">PDF · DXF · Images</span>
+      {data?.filename && (
+        <>
+          <div className="h-4 w-px bg-gray-300 mx-1" />
+          <span className="text-xs font-medium text-gray-700 truncate max-w-[200px]" title={data.filename}>{data.filename}</span>
+        </>
+      )}
+    </div>
+  );
+
+  let body: React.ReactNode;
   if (!data) {
-    return (
-      <>
-        <WindowTitle title={`${titleName} - Preview`} />
-        <div className="flex flex-col items-center justify-center h-full text-gray-400 text-sm gap-2">
-          <svg className="h-10 w-10 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
-          No PDF loaded
+    body = (
+      <div className="flex flex-1 flex-col items-center justify-center text-gray-500 text-sm gap-3 p-8 text-center">
+        <svg className="h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+        </svg>
+        <p className="font-medium text-gray-700">Drop a file here, or click <button onClick={handlePick} className="text-blue-600 hover:underline">Open</button>.</p>
+        <div className="text-xs text-gray-500 max-w-sm">
+          <p className="font-semibold uppercase tracking-wide text-[10px] text-gray-400 mb-1">Supported formats</p>
+          <ul className="space-y-0.5">
+            <li><span className="font-mono text-gray-700">.pdf</span> — multi-page document viewer</li>
+            <li><span className="font-mono text-gray-700">.dxf</span> — vector CAD drawings (requires the optional <span className="font-mono">dxf-viewer</span> peer dep)</li>
+            <li><span className="font-mono text-gray-700">.jpg .jpeg .png .gif .webp .svg .avif .bmp</span> — raster images</li>
+          </ul>
+          <p className="mt-2 text-[11px] text-gray-400 italic">DWG files need to be converted to PDF or DXF first (server-side).</p>
         </div>
-      </>
+      </div>
     );
+  } else if (data.converting || !data.url) {
+    body = <ConvertingPanel filename={data.filename} message={data.convertingMessage} />;
+  } else if (data.kind === 'dxf') {
+    body = <DxfPanel key={data.url} url={data.url} filename={data.filename} onDownload={data.onDownload} onEmail={data.onEmail} />;
+  } else if (data.kind === 'image') {
+    body = <ImagePanel key={data.url} url={data.url} filename={data.filename} onDownload={data.onDownload} onEmail={data.onEmail} />;
+  } else {
+    body = <PdfPanel key={data.url} url={data.url} filename={data.filename} onDownload={data.onDownload} onEmail={data.onEmail} />;
   }
 
-  const titlePill = <WindowTitle title={`${titleName} - Preview`} />;
-
-  if (data.converting || !data.url) {
-    return <>{titlePill}<ConvertingPanel filename={data.filename} message={data.convertingMessage} /></>;
-  }
-
-  if (data.kind === 'dxf') {
-    return <>{titlePill}<DxfPanel key={data.url} url={data.url} filename={data.filename} onDownload={data.onDownload} onEmail={data.onEmail} /></>;
-  }
-
-  if (data.kind === 'image') {
-    return <>{titlePill}<ImagePanel key={data.url} url={data.url} filename={data.filename} onDownload={data.onDownload} onEmail={data.onEmail} /></>;
-  }
-
-  return <>{titlePill}<PdfPanel key={data.url} url={data.url} filename={data.filename} onDownload={data.onDownload} onEmail={data.onEmail} /></>;
+  return (
+    <div
+      className="relative flex flex-col h-full"
+      onDragOver={(e) => { e.preventDefault(); if (!isDragging) setIsDragging(true); }}
+      onDragLeave={(e) => {
+        // Only clear when leaving the outer container, not transitioning between children.
+        if (e.currentTarget === e.target) setIsDragging(false);
+      }}
+      onDrop={handleDrop}
+    >
+      <WindowTitle title={`${titleName} - Preview`} />
+      {Toolbar}
+      <div className="flex-1 min-h-0">{body}</div>
+      {isDragging && (
+        <div className="absolute inset-0 bg-blue-500/15 border-4 border-dashed border-blue-500 pointer-events-none flex items-center justify-center z-20">
+          <div className="px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-medium shadow-lg">
+            Drop to open
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ConvertingPanel({ filename, message }: { filename: string; message?: string }) {
