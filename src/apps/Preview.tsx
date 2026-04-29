@@ -25,6 +25,9 @@ export interface PdfPreviewData {
   url?: string;
   /** Display name (and download filename). */
   filename: string;
+  /** Renderer to use. Defaults to `'pdf'`. `'dxf'` requires the consumer to
+   *  have `dxf-viewer` installed (it's an optional peer dep). */
+  kind?: 'pdf' | 'dxf';
   /** Optional download handler — replaces the built-in "save URL as filename" if supplied. */
   onDownload?: () => void;
   /** Optional email handler — only shown when supplied. */
@@ -86,6 +89,10 @@ export default function Preview() {
 
   if (data.converting || !data.url) {
     return <ConvertingPanel filename={data.filename} message={data.convertingMessage} />;
+  }
+
+  if (data.kind === 'dxf') {
+    return <DxfPanel key={data.url} url={data.url} filename={data.filename} onDownload={data.onDownload} onEmail={data.onEmail} />;
   }
 
   return <PdfPanel key={data.url} url={data.url} filename={data.filename} onDownload={data.onDownload} onEmail={data.onEmail} />;
@@ -248,6 +255,110 @@ function PdfPanel({ url, filename, onDownload, onEmail }: PdfPanelProps) {
           <div className="flex items-center justify-center py-20 text-gray-400 text-sm">Loading PDF...</div>
         ) : (
           <canvas ref={canvasRef} className="shadow-lg rounded" />
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface DxfPanelProps {
+  url: string;
+  filename: string;
+  onDownload?: () => void;
+  onEmail?: () => void;
+}
+
+function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const viewerRef = useRef<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let viewer: any = null;
+    setLoading(true);
+    setError(null);
+
+    (async () => {
+      let DxfViewer: any;
+      try {
+        const mod = await import('dxf-viewer');
+        DxfViewer = (mod as any).DxfViewer;
+      } catch (e) {
+        if (!cancelled) {
+          setError('dxf-viewer is not installed in this app.');
+          setLoading(false);
+        }
+        return;
+      }
+      if (cancelled || !containerRef.current) return;
+      try {
+        viewer = new DxfViewer(containerRef.current, {
+          clearColor: { r: 1, g: 1, b: 1, alpha: 1 },
+          autoResize: true,
+          colorCorrection: true,
+        });
+        viewerRef.current = viewer;
+        await viewer.Load({ url, fonts: [], workerFactory: null });
+        if (cancelled) return;
+        setLoading(false);
+      } catch (e: any) {
+        if (!cancelled) {
+          setError(e?.message || 'Failed to render DXF.');
+          setLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      try { viewer?.Destroy?.(); } catch {}
+      viewerRef.current = null;
+    };
+  }, [url]);
+
+  const handleDefaultDownload = () => {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+  };
+
+  const handleResetView = () => {
+    try { viewerRef.current?.FitView?.(); } catch {}
+  };
+
+  const btn = 'px-2 py-1 rounded hover:bg-gray-200 transition-colors text-gray-600 flex items-center gap-1';
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-200 bg-gray-50 shrink-0 text-xs">
+        <div className="flex items-center gap-1">
+          <span className="font-medium text-gray-600">DXF</span>
+          <span className="text-gray-400 truncate max-w-xs">{filename}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <button onClick={handleResetView} className={btn} title="Fit drawing to view">Fit</button>
+          <button onClick={onDownload ?? handleDefaultDownload} className={btn}>
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+            Download
+          </button>
+          {onEmail && (
+            <button onClick={onEmail} className={btn}>
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" /></svg>
+              Email
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="relative flex-1 bg-white">
+        <div ref={containerRef} className="absolute inset-0" />
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white/80 text-sm text-gray-500">Loading drawing…</div>
+        )}
+        {error && (
+          <div className="absolute inset-0 flex items-center justify-center text-sm text-red-600 px-6 text-center">{error}</div>
         )}
       </div>
     </div>

@@ -28,5 +28,6 @@ export default defineConfig({
     '@heroicons/react/20/solid',
     'tailwindcss',
     'pdfjs-dist',
+    'dxf-viewer',
   ],
 });
