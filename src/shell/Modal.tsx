@@ -281,6 +281,20 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
       <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75A2.25 2.25 0 016 4.5h12a2.25 2.25 0 012.25 2.25v10.5A2.25 2.25 0 0118 19.5H6a2.25 2.25 0 01-2.25-2.25V6.75z M3.75 9h16.5" />
     </svg>
   );
+  const renderIconButton = () => (
+    <button
+      onPointerDown={e => e.stopPropagation()}
+      onClick={e => {
+        e.stopPropagation();
+        const rect = e.currentTarget.getBoundingClientRect();
+        setWindowMenu(prev => prev ? null : { x: rect.left, y: rect.bottom + 4 });
+      }}
+      className="shrink-0 p-0.5 rounded hover:bg-gray-200/50 transition-colors"
+      title="Window menu"
+    >
+      {effectiveIcon}
+    </button>
+  );
   const padding = 40;
   const { minimize: globalMinimize, items: minimizedItems, restoreIfMinimized } = useWindowManager();
   const modalId = useRef(`modal-${Math.random().toString(36).slice(2, 8)}`).current;
@@ -768,8 +782,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
             className={`flex items-center justify-between px-3 py-1.5 border-b border-gray-200 shrink-0 cursor-move select-none rounded-t-lg ${isActive ? 'backdrop-blur-sm' : ''}`}
             style={{ touchAction: 'none', backgroundColor: isActive ? `rgb(var(--window-header-rgb) / var(--active-header-opacity, 0.8))` : `rgb(var(--window-header-rgb) / var(--inactive-header-opacity, 0.7))` }}>
             <div className="text-sm font-medium min-w-0 flex-1 truncate flex items-center gap-1.5" style={{ color: isActive ? 'rgb(17 24 39)' : 'rgb(156 163 175)' }}>
-              <button onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); const rect = e.currentTarget.getBoundingClientRect(); setWindowMenu(prev => prev ? null : { x: rect.left, y: rect.bottom + 4 }); }}
-                className="shrink-0 p-0.5 rounded hover:bg-gray-200/50 transition-colors" title="Window menu">{effectiveIcon}</button>
+              {renderIconButton()}
               <span className="truncate">{displayTitle}</span>
             </div>
             <div className="flex items-center gap-1 shrink-0 ml-2">
@@ -789,8 +802,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
           className={`flex items-center justify-between px-4 py-2.5 border-b border-gray-200 shrink-0 cursor-move select-none rounded-t-lg ${isActive ? 'backdrop-blur-sm' : ''}`}
           style={{ touchAction: 'none', backgroundColor: isActive ? `rgb(var(--window-header-rgb) / var(--active-header-opacity, 0.8))` : `rgb(var(--window-header-rgb) / var(--inactive-header-opacity, 0.7))` }}>
           <div className="text-lg font-semibold min-w-0 flex-1 truncate flex items-center gap-2" style={{ color: isActive ? 'var(--window-title-active, rgb(17 24 39))' : 'var(--window-title-inactive, rgb(156 163 175))' }}>
-            <button onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); const rect = e.currentTarget.getBoundingClientRect(); setWindowMenu(prev => prev ? null : { x: rect.left, y: rect.bottom + 4 }); }}
-              className="shrink-0 p-0.5 rounded hover:bg-gray-200/50 transition-colors" title="Window menu">{effectiveIcon}</button>
+            {renderIconButton()}
             <span className="truncate">{displayTitle}</span>
           </div>
           <div className="flex items-center gap-1.5 shrink-0 ml-4">
