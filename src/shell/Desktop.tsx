@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, isValidElement, cloneElement,
 import { useQueryClient } from '@tanstack/react-query';
 import { useWindowManager } from './WindowManager';
 import { navIcons } from '../shell-config/nav';
+import { useShellPrefs } from './ShellPrefs';
 import Modal from './Modal';
 import { APP_VERSION } from '../version';
 import changelog from '../changelog';
@@ -117,14 +118,19 @@ export default function Desktop({ profile }: { profile: any }) {
   const bugReport = useBugReport();
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Data from preferences
-  const favDocs: DesktopItem[] = (profile?.preferences || {}).favorite_documents || [];
-  const folders: DesktopFolder[] = (profile?.preferences || {}).desktop_folders || [];
-  const snapEnabled: boolean = (profile?.preferences || {}).desktop_snap ?? false;
+  // Read desktop preferences from the consumer prefs adapter so they stay
+  // in sync with what apps like Notepad write. Some legacy code paths
+  // also expect them under profile.preferences — fall back to that for
+  // consumers who haven't migrated.
+  const { prefs: shellPrefs } = useShellPrefs();
+  const prefs = { ...(profile?.preferences || {}), ...shellPrefs };
+  const favDocs: DesktopItem[] = prefs.favorite_documents || [];
+  const folders: DesktopFolder[] = prefs.desktop_folders || [];
+  const snapEnabled: boolean = prefs.desktop_snap ?? false;
 
   // Sticky notes from notepad
   interface StickyNote { id: string; title: string; content: string; color: string; sticky: boolean; sticky_x?: number; sticky_y?: number; sticky_w?: number; sticky_h?: number; sticky_on_top?: boolean; sticky_anchor?: 'left' | 'right'; updated_at: string; }
-  const allNotes: StickyNote[] = (profile?.preferences || {}).notepad_notes || [];
+  const allNotes: StickyNote[] = prefs.notepad_notes || [];
   const stickyNotes = allNotes.filter(n => n.sticky);
 
   // ── Entity reference support for sticky notes ──
@@ -335,12 +341,14 @@ export default function Desktop({ profile }: { profile: any }) {
   useEffect(() => { setLocalPositions({}); }, [favDocsKey, foldersKey]);
 
   // ── Rubber band selection ──
+  const didRubberBandDragRef = useRef(false);
   const startRubberBand = (e: React.PointerEvent) => {
     if (e.button !== 0 || e.target !== containerRef.current) return;
     const rect = containerRef.current!.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     setRubberBand({ startX: x, startY: y, endX: x, endY: y });
+    didRubberBandDragRef.current = false;
     setSelected(new Set());
   };
 
@@ -349,7 +357,13 @@ export default function Desktop({ profile }: { profile: any }) {
     const move = (e: PointerEvent) => {
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return;
-      setRubberBand(prev => prev ? { ...prev, endX: e.clientX - rect.left, endY: e.clientY - rect.top } : null);
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      // Mark as a real drag once the cursor has moved more than a tap.
+      const dx = x - rubberBand.startX;
+      const dy = y - rubberBand.startY;
+      if (dx * dx + dy * dy > 16) didRubberBandDragRef.current = true;
+      setRubberBand(prev => prev ? { ...prev, endX: x, endY: y } : null);
     };
     const up = () => {
       if (rubberBand) {
@@ -612,7 +626,12 @@ export default function Desktop({ profile }: { profile: any }) {
     <div ref={containerRef} className="flex-1 relative overflow-hidden"
       onPointerDown={startRubberBand}
       onContextMenu={handleDesktopContextMenu}
-      onClick={() => { setSelected(new Set()); setContextMenu(null); }}
+      onClick={() => {
+        // Don't clear selection if the user just finished a rubber-band drag.
+        if (didRubberBandDragRef.current) { didRubberBandDragRef.current = false; return; }
+        setSelected(new Set());
+        setContextMenu(null);
+      }}
     >
       {/* Desktop items */}
       {desktopItems.map((doc, i) => {
@@ -866,7 +885,7 @@ export default function Desktop({ profile }: { profile: any }) {
       {/* About dialog */}
       {aboutOpen && (() => {
         const version = APP_VERSION;
-        const showVersion: boolean = (profile?.preferences || {}).show_desktop_version ?? true;
+        const showVersion: boolean = prefs.show_desktop_version ?? true;
         return (
         <Modal open={true} onClose={() => setAboutOpen(false)} title={`About ${host.productName ?? 'this app'}`} size="sm" bodyScroll={false} compact dimensions={[340, 420]}>
           <div className="flex flex-col items-center">
@@ -935,13 +954,13 @@ export default function Desktop({ profile }: { profile: any }) {
       })()}
 
       {/* Version watermark on desktop — clickable to open What's New */}
-      {((profile?.preferences || {}).show_desktop_version ?? true) && (
+      {(prefs.show_desktop_version ?? true) && (
         <button
           onClick={(e) => { e.stopPropagation(); setWhatsNewOpen(true); }}
           className={`absolute bottom-3 text-[10px] text-white/50 font-mono select-none drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)] hover:text-white/80 transition-colors cursor-pointer ${
-            (profile?.preferences || {}).taskbar_position === 'top' ? 'right-3' :
-            (profile?.preferences || {}).taskbar_position === 'left' ? 'right-3' :
-            (profile?.preferences || {}).taskbar_position === 'right' ? 'left-3' :
+            prefs.taskbar_position === 'top' ? 'right-3' :
+            prefs.taskbar_position === 'left' ? 'right-3' :
+            prefs.taskbar_position === 'right' ? 'left-3' :
             'right-3 !bottom-16'
           }`}
         >
