@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef, useState, createContext, useContext, useSyncExternalStore } from 'react';
+import { useEffect, useCallback, useRef, useState, createContext, useContext, useSyncExternalStore, cloneElement, isValidElement } from 'react';
 import { createPortal } from 'react-dom';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { confirm } from './ConfirmDialog';
@@ -275,12 +275,19 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   const [hasActions, setHasActions] = useState(false);
   // Every window must surface a clickable icon — it's the only entry point
   // to the window menu. Fall back to a generic "window" glyph when the
-  // consumer hasn't supplied one.
-  const effectiveIcon = icon ?? (
+  // consumer hasn't supplied one. Consumer icons rarely include explicit
+  // size classes (the start menu adds them via cloneElement), so we also
+  // size them here to keep the title bar layout stable.
+  const fallbackIcon = (
     <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75A2.25 2.25 0 016 4.5h12a2.25 2.25 0 012.25 2.25v10.5A2.25 2.25 0 0118 19.5H6a2.25 2.25 0 01-2.25-2.25V6.75z M3.75 9h16.5" />
     </svg>
   );
+  const effectiveIcon = icon && isValidElement(icon)
+    ? cloneElement(icon as React.ReactElement, {
+        className: `h-4 w-4 ${(icon as React.ReactElement).props?.className ?? ''}`.trim(),
+      } as any)
+    : (icon ?? fallbackIcon);
   const renderIconButton = () => (
     <button
       onPointerDown={e => e.stopPropagation()}
