@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.1.44] — 2026-04-30
+
+### Added
+- New **Browser** app (`/browser`, multi-instance). Iframe-backed: URL bar with back / forward / refresh / home, bookmark bar (persisted to localStorage, right-click to remove, defaults to Wikipedia / MDN / example.com), star toggle to bookmark / unbookmark the current page, "set as homepage" link, and an "open in new tab" escape hatch for sites that refuse iframe embedding (Google, GitHub, banks — most majors block via `X-Frame-Options` / CSP). Bare URLs and search terms in the address bar are normalized: `wikipedia.org` → `https://wikipedia.org`, free text → `https://duckduckgo.com/?q=…`. Iframe is sandboxed with `allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-modals`.
+- New `webApps` registry export collecting all browser/web-related apps; rolls up into `bundledApps` alongside `utilityApps` / `gameApps` / `googleApps` / `documentApps`.
+
 ## [0.1.43] — 2026-04-30
 
 ### Added

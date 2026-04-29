@@ -46,6 +46,9 @@ const Preview = lazy(() => import('./Preview'));
 const Documents = lazy(() => import('./Documents'));
 const Files = lazy(() => import('./Files'));
 
+// ── Web ──
+const Browser = lazy(() => import('./Browser'));
+
 export const utilityApps: WindowRegistry = {
   '/calculator': { component: Calculator, label: 'Calculator', size: 'sm', allowPinOnTop: true, utility: true, widget: true, autoHeight: true, dimensions: [280, 420] },
   '/spreadsheet': { component: Spreadsheet, label: 'Spreadsheets', size: '2xl', compact: true, multiInstance: true },
@@ -76,11 +79,16 @@ export const documentApps: WindowRegistry = {
   '/files': { component: Files, label: 'Files', size: 'xl' },
 };
 
+export const webApps: WindowRegistry = {
+  '/browser': { component: Browser, label: 'Browser', size: '2xl', multiInstance: true },
+};
+
 export const bundledApps: WindowRegistry = {
   ...utilityApps,
   ...gameApps,
   ...googleApps,
   ...documentApps,
+  ...webApps,
 };
 
 export {
@@ -102,6 +110,7 @@ export {
   Preview,
   Documents,
   Files,
+  Browser,
 };
 
 export { setPdfPreview } from './Preview';
