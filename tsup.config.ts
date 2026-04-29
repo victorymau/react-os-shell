@@ -29,5 +29,6 @@ export default defineConfig({
     'tailwindcss',
     'pdfjs-dist',
     'dxf-viewer',
+    'mammoth',
   ],
 });
