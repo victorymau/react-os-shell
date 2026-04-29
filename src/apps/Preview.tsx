@@ -411,19 +411,35 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
         viewerRef.current = viewer;
         await viewer.Load({ url, fonts: [], workerFactory: null });
         if (cancelled) return;
-        // The drawing loaded but the camera is at its default position;
-        // without an explicit fit the geometry usually sits off-screen
-        // and the canvas reads as fully white. FitView frames it.
-        try { viewer.FitView?.(); } catch {}
-        // dxf-viewer with autoResize:true subscribes to size changes via
-        // ResizeObserver, but the canvas can be measured before the
-        // window's flex layout has settled (initial size 0). Force a
-        // resize once we know the container has a real size.
-        try {
-          const rect = containerRef.current.getBoundingClientRect();
-          viewer.SetSize?.(Math.round(rect.width), Math.round(rect.height));
-        } catch {}
-        try { viewer.FitView?.(); } catch {}
+        // dxf-viewer.Load() already calls FitView() at the end, but it uses
+        // the canvas size measured at Modal-mount time — which is 0×0 if
+        // the modal layout hasn't settled. With aspect = 0/0 the camera
+        // ends up with NaN coords and the canvas paints empty. Wait one
+        // frame, force the canvas to its real size, then re-FitView with
+        // the loaded bounds.
+        const refit = () => {
+          try {
+            const rect = containerRef.current?.getBoundingClientRect();
+            if (rect && rect.width > 0 && rect.height > 0) {
+              viewer.SetSize?.(Math.round(rect.width), Math.round(rect.height));
+            }
+            const bounds = viewer.GetBounds?.();
+            const origin = viewer.GetOrigin?.();
+            if (bounds && origin) {
+              viewer.FitView(
+                bounds.minX - origin.x,
+                bounds.maxX - origin.x,
+                bounds.minY - origin.y,
+                bounds.maxY - origin.y,
+              );
+            }
+            viewer.Render?.();
+          } catch {}
+        };
+        // Run twice — once now, once on the next frame, so we cover the case
+        // where the layout is just settling.
+        refit();
+        requestAnimationFrame(refit);
         setLoading(false);
       } catch (e: any) {
         if (!cancelled) {
