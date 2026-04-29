@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.1.42] — 2026-04-30
+
+### Changed
+- Preview 3D section view: cap now matches the model's main material color automatically (sampled from the source material) so the cut surface reads as a slice of the same material instead of a contrasting fill. The Cap Color picker is gone — a low-intensity emissive of the same hue keeps the cap visible regardless of scene lighting.
+
 ## [0.1.41] — 2026-04-30
 
 ### Fixed

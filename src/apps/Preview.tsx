@@ -823,7 +823,6 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
   const [sectionAxis, setSectionAxis] = useState<'x' | 'y' | 'z'>('z');
   const [sectionFlip, setSectionFlip] = useState(false);
   const [sectionPosition, setSectionPosition] = useState(0.5); // 0–1 within bbox
-  const [sectionCapColor, setSectionCapColor] = useState('#c8ccd1');
 
   // Persistent section state — stencil helpers, cap mesh, original material
   // settings — held in a ref so we can mutate the plane in place on slider
@@ -1192,14 +1191,15 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
       capGeom.setIndex([0, 1, 2, 0, 2, 3]);
 
       const capMat: any = sourceMat.clone();
-      const mhex = /^#?([0-9a-f]{6})$/i.exec(sectionCapColor);
-      const colorHex = mhex ? parseInt(mhex[1], 16) : 0xc8ccd1;
-      capMat.color?.setHex?.(colorHex);
-      // Self-illuminate the cap so it doesn't depend on scene lights /
-      // surface normals — important when cloning from a Phong material
-      // whose lit color may end up indistinguishable from the model.
-      capMat.emissive?.setHex?.(colorHex);
-      if ('emissiveIntensity' in capMat) capMat.emissiveIntensity = 0.6;
+      // Match the body's main color — the cap should look like a slice of
+      // the same material, not a contrasting fill. The cloned material
+      // already carries the source color; we just keep it. Add a low-
+      // intensity emissive of the same color so the cap is still visible
+      // even on faces facing away from any scene light, without changing
+      // its hue.
+      const sourceColorHex = (sourceMat.color?.getHex?.() ?? 0xb4bcc8) as number;
+      capMat.emissive?.setHex?.(sourceColorHex);
+      if ('emissiveIntensity' in capMat) capMat.emissiveIntensity = 0.25;
       capMat.side = DoubleSide;
       capMat.transparent = false;
       capMat.opacity = 1;
@@ -1228,7 +1228,7 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
     // eslint-disable-next-line no-console
     console.info('[Preview] section: helpers =', helpers.length, 'cap =', !!capMesh);
     v.viewer.Render?.();
-  }, [sectionEnabled, loading, tree, sectionCapColor]);
+  }, [sectionEnabled, loading, tree]);
 
   // Section view — update plane orientation/position on axis/flip/slider change.
   useEffect(() => {
@@ -1373,7 +1373,6 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
     setSectionAxis('z');
     setSectionFlip(false);
     setSectionPosition(0.5);
-    setSectionCapColor('#c8ccd1');
   };
 
   const handleDefaultDownload = () => {
@@ -1655,16 +1654,6 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
                       className="w-full accent-blue-500"
                     />
                   </div>
-
-                  <label className="flex items-center justify-between gap-2">
-                    <span>Cap Color</span>
-                    <input
-                      type="color"
-                      value={sectionCapColor}
-                      onChange={(e) => setSectionCapColor(e.target.value)}
-                      className="h-6 w-10 rounded border border-gray-300 bg-white"
-                    />
-                  </label>
 
                 </div>
               </div>
