@@ -19,14 +19,20 @@ if (typeof window !== 'undefined' && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
 }
 
 export interface PdfPreviewData {
-  /** Object URL or remote URL of the PDF. Blob URLs are revoked when the window unmounts. */
-  url: string;
+  /** Object URL or remote URL of the PDF. Blob URLs are revoked when the window unmounts.
+   *  Leave blank when staging a `converting: true` placeholder; call `setPdfPreview` again
+   *  with the resolved URL once conversion finishes. */
+  url?: string;
   /** Display name (and download filename). */
   filename: string;
   /** Optional download handler — replaces the built-in "save URL as filename" if supplied. */
   onDownload?: () => void;
   /** Optional email handler — only shown when supplied. */
   onEmail?: () => void;
+  /** Show a progress placeholder while the consumer fetches/converts the file. */
+  converting?: boolean;
+  /** Headline shown on the converting placeholder (e.g. "CONVERTING DWG FILE"). */
+  convertingMessage?: string;
 }
 
 const EVENT_NAME = 'react-os-shell:pdf-preview';
@@ -78,10 +84,40 @@ export default function Preview() {
     );
   }
 
-  return <PdfPanel key={data.url} {...data} />;
+  if (data.converting || !data.url) {
+    return <ConvertingPanel filename={data.filename} message={data.convertingMessage} />;
+  }
+
+  return <PdfPanel key={data.url} url={data.url} filename={data.filename} onDownload={data.onDownload} onEmail={data.onEmail} />;
 }
 
-function PdfPanel({ url, filename, onDownload, onEmail }: PdfPreviewData) {
+function ConvertingPanel({ filename, message }: { filename: string; message?: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center h-full bg-gray-100 gap-4 px-8">
+      <div className="flex flex-col items-center gap-3">
+        <svg className="h-12 w-12 text-blue-500 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+          <circle cx="12" cy="12" r="10" strokeOpacity="0.2" />
+          <path d="M22 12a10 10 0 0 1-10 10" strokeLinecap="round" />
+        </svg>
+        <div className="text-base font-semibold tracking-wide text-gray-700 uppercase">{message || 'Converting file'}</div>
+        <div className="text-xs text-gray-400 truncate max-w-md">{filename}</div>
+      </div>
+      <div className="w-72 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+        <div className="h-full w-1/3 bg-blue-500 rounded-full animate-pulse" style={{ animation: 'preview-bar 1.4s ease-in-out infinite' }} />
+      </div>
+      <style>{`@keyframes preview-bar { 0% { transform: translateX(-110%); } 100% { transform: translateX(310%); } }`}</style>
+    </div>
+  );
+}
+
+interface PdfPanelProps {
+  url: string;
+  filename: string;
+  onDownload?: () => void;
+  onEmail?: () => void;
+}
+
+function PdfPanel({ url, filename, onDownload, onEmail }: PdfPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [pdf, setPdf] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
