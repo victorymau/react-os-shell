@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.1.40] — 2026-04-30
+
+### Fixed
+- Preview 3D capped section, real fix this time: the v0.1.39 canvas patch only added `stencil: true` when `attrs.stencil === undefined`, but three.js 0.176 explicitly passes `stencil: false`, so the override was skipped and the WebGL context was still created without stencil. Patch now forces `stencil: true` unconditionally on all webgl/webgl2/experimental-webgl context requests.
+
 ## [0.1.39] — 2026-04-30
 
 ### Fixed

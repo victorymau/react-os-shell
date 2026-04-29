@@ -14,8 +14,9 @@ import { WindowTitle, getActiveModalId } from '../shell/Modal';
 // attribute defaults to FALSE. Without a stencil buffer the capped section
 // view's mask test always reads zero and the cap never renders. Patch the
 // canvas getContext call once so the WebGL context is created with stencil
-// enabled. Idempotent — safe to call from anywhere; only the FIRST call
-// installs the wrapper, and the wrapper is a no-op for non-WebGL contexts.
+// enabled. Always force stencil:true on webgl context requests — three.js
+// passes stencil:false explicitly when it isn't user-specified, so a
+// "preserve if already set" check would skip the path that needs us most.
 let _stencilContextPatched = false;
 function ensureStencilContextAttribute() {
   if (_stencilContextPatched) return;
@@ -27,12 +28,14 @@ function ensureStencilContextAttribute() {
     type: string,
     attrs?: any,
   ) {
-    if ((type === 'webgl' || type === 'webgl2' || type === 'experimental-webgl')
-        && (!attrs || attrs.stencil === undefined)) {
+    if (type === 'webgl' || type === 'webgl2' || type === 'experimental-webgl') {
+      // Force stencil regardless of what the caller asked for.
       attrs = { ...(attrs || {}), stencil: true };
     }
     return (orig as any).call(this, type, attrs);
   } as any;
+  // eslint-disable-next-line no-console
+  console.info('[Preview] section: canvas getContext patched (force stencil=true)');
 }
 
 const TITLE_DISPLAY_MAX = 24;
