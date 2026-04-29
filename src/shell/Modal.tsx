@@ -227,8 +227,15 @@ export function activateModal(id: string) {
   activeListeners.forEach(fn => fn());
   window.dispatchEvent(new CustomEvent('modal-reorder'));
 }
+// Track which modal IDs belong to widget windows; widgets stay visible when
+// the user double-clicks the desktop ("show desktop"), only regular windows
+// are hidden.
+const widgetIds = new Set<string>();
 export function deactivateAllModals() {
-  activationOrder.length = 0;
+  // Drop everything that is not a widget.
+  for (let i = activationOrder.length - 1; i >= 0; i--) {
+    if (!widgetIds.has(activationOrder[i])) activationOrder.splice(i, 1);
+  }
   activeListeners.forEach(fn => fn());
   window.dispatchEvent(new CustomEvent('modal-reorder'));
 }
@@ -305,6 +312,14 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   const padding = 40;
   const { minimize: globalMinimize, items: minimizedItems, restoreIfMinimized } = useWindowManager();
   const modalId = useRef(`modal-${Math.random().toString(36).slice(2, 8)}`).current;
+
+  // Mark widget windows so deactivate-all (show desktop) skips them.
+  useEffect(() => {
+    if (widget) {
+      widgetIds.add(modalId);
+      return () => { widgetIds.delete(modalId); };
+    }
+  }, [widget, modalId]);
 
   useEffect(() => {
     const handler = (e: Event) => {
