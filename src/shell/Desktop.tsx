@@ -423,8 +423,11 @@ export default function Desktop({ profile }: { profile: any }) {
   }, [dragging, snapEnabled, favDocs, folders, desktopItems]);
 
   // Clear local position overrides when profile data updates
-  const favDocsKey = JSON.stringify(favDocs.map(d => d.entityId));
-  const foldersKey = JSON.stringify(folders.map(f => f.id));
+  // Cache key has to include positions too — otherwise "Snap to Grid"
+  // updates favDocs.x/y but the entityId list is unchanged, so the
+  // localPositions overlay keeps the pre-snap values pinned in place.
+  const favDocsKey = JSON.stringify(favDocs.map(d => `${d.entityId}:${d.x ?? ''}:${d.y ?? ''}:${d.folderId ?? ''}`));
+  const foldersKey = JSON.stringify(folders.map(f => `${f.id}:${f.x ?? ''}:${f.y ?? ''}`));
   useEffect(() => { setLocalPositions({}); }, [favDocsKey, foldersKey]);
 
   // ── Rubber band selection ──

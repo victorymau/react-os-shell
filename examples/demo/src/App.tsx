@@ -246,8 +246,13 @@ function LoginSplash({ onSignIn }: { onSignIn: () => void }) {
 
 export default function App() {
   // Hide the bundled desktop version watermark — the demo renders its own
-  // VersionBadge that opens the in-app changelog modal.
+  // VersionBadge that opens the in-app changelog modal. Force the value on
+  // every mount so existing users (who already have show_desktop_version:
+  // true stored from before the dedup) drop the duplicate badge too.
   const prefs = useLocalStoragePrefs('react-os-shell-demo', { show_desktop_version: false });
+  useEffect(() => {
+    if (prefs.prefs.show_desktop_version !== false) prefs.save({ show_desktop_version: false });
+  }, []);
   const [signedIn, setSignedIn] = useState(false);
 
   useEffect(() => {
