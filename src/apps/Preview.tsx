@@ -8,6 +8,12 @@
 import { useState, useEffect, useRef } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import toast from '../shell/toast';
+import { WindowTitle } from '../shell/Modal';
+
+const TITLE_DISPLAY_MAX = 24;
+function truncateForTitle(s: string) {
+  return s.length > TITLE_DISPLAY_MAX ? `${s.slice(0, TITLE_DISPLAY_MAX - 1)}…` : s;
+}
 
 // Default the worker to the matching unpkg build (mirrors the consumer's
 // installed npm version exactly). Consumers can override by setting
@@ -79,28 +85,36 @@ export default function Preview() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Window title reflects whatever is loaded — same pattern Spreadsheets uses.
+  const titleName = data?.filename ? truncateForTitle(data.filename) : 'Untitled';
+
   if (!data) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-gray-400 text-sm gap-2">
-        <svg className="h-10 w-10 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
-        No PDF loaded
-      </div>
+      <>
+        <WindowTitle title={`${titleName} - Preview`} />
+        <div className="flex flex-col items-center justify-center h-full text-gray-400 text-sm gap-2">
+          <svg className="h-10 w-10 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
+          No PDF loaded
+        </div>
+      </>
     );
   }
 
+  const titlePill = <WindowTitle title={`${titleName} - Preview`} />;
+
   if (data.converting || !data.url) {
-    return <ConvertingPanel filename={data.filename} message={data.convertingMessage} />;
+    return <>{titlePill}<ConvertingPanel filename={data.filename} message={data.convertingMessage} /></>;
   }
 
   if (data.kind === 'dxf') {
-    return <DxfPanel key={data.url} url={data.url} filename={data.filename} onDownload={data.onDownload} onEmail={data.onEmail} />;
+    return <>{titlePill}<DxfPanel key={data.url} url={data.url} filename={data.filename} onDownload={data.onDownload} onEmail={data.onEmail} /></>;
   }
 
   if (data.kind === 'image') {
-    return <ImagePanel key={data.url} url={data.url} filename={data.filename} onDownload={data.onDownload} onEmail={data.onEmail} />;
+    return <>{titlePill}<ImagePanel key={data.url} url={data.url} filename={data.filename} onDownload={data.onDownload} onEmail={data.onEmail} /></>;
   }
 
-  return <PdfPanel key={data.url} url={data.url} filename={data.filename} onDownload={data.onDownload} onEmail={data.onEmail} />;
+  return <>{titlePill}<PdfPanel key={data.url} url={data.url} filename={data.filename} onDownload={data.onDownload} onEmail={data.onEmail} /></>;
 }
 
 function ConvertingPanel({ filename, message }: { filename: string; message?: string }) {
