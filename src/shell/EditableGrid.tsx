@@ -76,6 +76,12 @@ export default function EditableGrid({ columns, data, onChange, onColumnsChange,
   }, [selAnchor, selEnd, onSelectionChange]);
   const dragging = useRef(false);
 
+  // Fill handle state
+  const [fillTarget, setFillTarget] = useState<CellPos | null>(null);
+  const filling = useRef(false);
+  const selRefForFill = useRef<{ a: CellPos | null; e: CellPos | null }>({ a: null, e: null });
+  selRefForFill.current = { a: selAnchor, e: selEnd };
+
   const hasRange = selAnchor && selEnd && (selAnchor.row !== selEnd.row || selAnchor.col !== selEnd.col);
 
   // Ensure minimum rows
@@ -392,6 +398,116 @@ export default function EditableGrid({ columns, data, onChange, onColumnsChange,
     document.body.style.cursor = 'row-resize';
   };
 
+  // Fill handle — drag the small square at the bottom-right of the selection
+  // to copy / extrapolate values into adjacent cells.
+  const applyFill = useCallback((target: CellPos) => {
+    const { a: sa, e: se } = selRefForFill.current;
+    if (!sa || !se) return;
+    const r1 = Math.min(sa.row, se.row);
+    const r2 = Math.max(sa.row, se.row);
+    const c1 = Math.min(sa.col, se.col);
+    const c2 = Math.max(sa.col, se.col);
+
+    let nr1 = r1, nr2 = r2, nc1 = c1, nc2 = c2;
+    if (target.row > r2) nr2 = target.row;
+    else if (target.row < r1) nr1 = target.row;
+    if (target.col > c2) nc2 = target.col;
+    else if (target.col < c1) nc1 = target.col;
+
+    const selH = r2 - r1 + 1;
+    const selW = c2 - c1 + 1;
+    const next = rows.map(r => [...r]);
+    while (next.length <= nr2) next.push(Array(columns.length).fill(''));
+    for (const row of next) while (row.length <= nc2) row.push('');
+
+    // Detect a 1-d numeric arithmetic sequence so vertical/horizontal drags
+    // continue the series instead of repeating the pattern.
+    function asSeries(values: string[]): { step: number } | null {
+      const nums = values.map(v => parseFloat(v));
+      if (nums.length < 2 || nums.some(n => Number.isNaN(n))) return null;
+      const step = nums[1] - nums[0];
+      for (let i = 2; i < nums.length; i++) {
+        if (Math.abs((nums[i] - nums[i - 1]) - step) > 1e-9) return null;
+      }
+      return { step };
+    }
+
+    for (let r = nr1; r <= nr2; r++) {
+      for (let c = nc1; c <= nc2; c++) {
+        if (r >= r1 && r <= r2 && c >= c1 && c <= c2) continue; // inside original
+        let value: string;
+        if (selW === 1 && nc1 === c1 && nc2 === c2) {
+          // Vertical fill (same column as selection).
+          const colVals = Array.from({ length: selH }, (_, i) => next[r1 + i]?.[c] ?? '');
+          const series = asSeries(colVals);
+          if (series) {
+            const last = parseFloat(next[r2]?.[c] ?? '0');
+            const first = parseFloat(next[r1]?.[c] ?? '0');
+            const offset = r > r2 ? r - r2 : -(r1 - r);
+            value = String((r > r2 ? last : first) + series.step * offset);
+          } else {
+            const dr = ((r - r1) % selH + selH) % selH;
+            value = next[r1 + dr]?.[c] ?? '';
+          }
+        } else if (selH === 1 && nr1 === r1 && nr2 === r2) {
+          // Horizontal fill (same row as selection).
+          const rowVals = Array.from({ length: selW }, (_, i) => next[r]?.[c1 + i] ?? '');
+          const series = asSeries(rowVals);
+          if (series) {
+            const last = parseFloat(next[r]?.[c2] ?? '0');
+            const first = parseFloat(next[r]?.[c1] ?? '0');
+            const offset = c > c2 ? c - c2 : -(c1 - c);
+            value = String((c > c2 ? last : first) + series.step * offset);
+          } else {
+            const dc = ((c - c1) % selW + selW) % selW;
+            value = next[r]?.[c1 + dc] ?? '';
+          }
+        } else {
+          // 2-d fill — tile the selection rectangle.
+          const dr = ((r - r1) % selH + selH) % selH;
+          const dc = ((c - c1) % selW + selW) % selW;
+          value = next[r1 + dr]?.[c1 + dc] ?? '';
+        }
+        next[r][c] = value;
+      }
+    }
+
+    onChange(next);
+    setSelAnchor({ row: nr1, col: nc1 });
+    setSelEnd({ row: nr2, col: nc2 });
+  }, [rows, columns.length, onChange]);
+
+  useEffect(() => {
+    const handleMove = (e: MouseEvent) => {
+      if (!filling.current) return;
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const inner = (el as HTMLElement)?.closest?.('[data-row][data-col]') as HTMLElement | null;
+      if (!inner) return;
+      const r = parseInt(inner.dataset.row!);
+      const c = parseInt(inner.dataset.col!);
+      setFillTarget({ row: r, col: c });
+    };
+    const handleUp = () => {
+      if (filling.current && fillTarget) applyFill(fillTarget);
+      filling.current = false;
+      setFillTarget(null);
+      document.body.style.cursor = '';
+    };
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+  }, [fillTarget, applyFill]);
+
+  const startFill = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    filling.current = true;
+    document.body.style.cursor = 'crosshair';
+  };
+
   // Row drag reorder
   const handleRowDragStart = (ri: number) => setDragRow(ri);
   const handleRowDragOver = (e: React.DragEvent, ri: number) => { e.preventDefault(); setDragOverRow(ri); };
@@ -534,6 +650,17 @@ export default function EditableGrid({ columns, data, onChange, onColumnsChange,
                   const isEditing = editingCell?.row === ri && editingCell?.col === ci && !col.readOnly;
                   const isFocused = focus?.row === ri && focus?.col === ci;
                   const cellStyle = cellStyles?.[`${ri}:${ci}`];
+                  const selR2 = selAnchor && selEnd ? Math.max(selAnchor.row, selEnd.row) : -1;
+                  const selC2 = selAnchor && selEnd ? Math.max(selAnchor.col, selEnd.col) : -1;
+                  const isFillCorner = selAnchor && selEnd && ri === selR2 && ci === selC2;
+                  const inFillPreview = filling.current && fillTarget && selAnchor && selEnd && (() => {
+                    const r1 = Math.min(selAnchor.row, selEnd.row), r2 = Math.max(selAnchor.row, selEnd.row);
+                    const c1 = Math.min(selAnchor.col, selEnd.col), c2 = Math.max(selAnchor.col, selEnd.col);
+                    let nr1 = r1, nr2 = r2, nc1 = c1, nc2 = c2;
+                    if (fillTarget.row > r2) nr2 = fillTarget.row; else if (fillTarget.row < r1) nr1 = fillTarget.row;
+                    if (fillTarget.col > c2) nc2 = fillTarget.col; else if (fillTarget.col < c1) nc1 = fillTarget.col;
+                    return ri >= nr1 && ri <= nr2 && ci >= nc1 && ci <= nc2 && !(ri >= r1 && ri <= r2 && ci >= c1 && ci <= c2);
+                  })();
                   const fontSizeCls = cellStyle?.fontSize === 'sm' ? 'text-[11px]'
                     : cellStyle?.fontSize === 'lg' ? 'text-sm'
                     : cellStyle?.fontSize === 'xl' ? 'text-base'
@@ -541,7 +668,7 @@ export default function EditableGrid({ columns, data, onChange, onColumnsChange,
                   const styleCls = `${cellStyle?.bold ? ' font-bold' : ''}${cellStyle?.italic ? ' italic' : ''}${cellStyle?.underline ? ' underline' : ''}`;
                   return (
                     <td key={ci}
-                      className={`${tdCls}${col.readOnly ? ' bg-gray-50 text-gray-500 cursor-default' : ' cursor-cell'}${inRange ? ' !bg-blue-100' : ''}${isFocused && !inRange ? ' ring-2 ring-inset ring-blue-400' : ''}`}
+                      className={`relative ${tdCls}${col.readOnly ? ' bg-gray-50 text-gray-500 cursor-default' : ' cursor-cell'}${inRange ? ' !bg-blue-100' : ''}${isFocused && !inRange ? ' ring-2 ring-inset ring-blue-400' : ''}${inFillPreview ? ' !bg-blue-50 ring-1 ring-inset ring-blue-300' : ''}`}
                       onMouseDown={(e) => {
                         // td-level handler so clicks anywhere in the cell (incl. borders) select.
                         if (e.target === e.currentTarget) {
@@ -611,6 +738,13 @@ export default function EditableGrid({ columns, data, onChange, onColumnsChange,
                         }}
                         dangerouslySetInnerHTML={{ __html: row[ci] || '' }}
                       />
+                      {isFillCorner && (
+                        <div
+                          onMouseDown={startFill}
+                          title="Drag to fill"
+                          className="absolute -bottom-[3px] -right-[3px] w-[7px] h-[7px] bg-blue-500 border border-white cursor-crosshair z-30 hover:bg-blue-600"
+                        />
+                      )}
                     </td>
                   );
                 })}
