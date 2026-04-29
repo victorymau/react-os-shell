@@ -35,13 +35,16 @@ import {
 } from 'react-os-shell';
 import { bundledApps, utilityApps, gameApps, googleApps, documentApps } from 'react-os-shell/apps';
 
+// Floating panel toggled with Alt+Shift+T to test toast / notification /
+// confirm / confirmDestructive / prompt visually. Eagerly imported because
+// it's mounted outside the Routes' Suspense boundary — a lazy() here
+// throws to a missing boundary and trips React error #426.
+import DevToolbox from './DevToolbox';
+
 // Settings → Customization page (theme picker, wallpaper picker, hotkeys, etc.)
 const Customization = lazy(() => import('react-os-shell').then(m => ({ default: m.Customization })));
 // Demo profile page wired to the shell's start-menu profile row.
 const ProfilePage = lazy(() => import('./ProfilePage'));
-// Floating panel toggled with Alt+Shift+T to test toast / notification /
-// confirm / confirmDestructive / prompt visually.
-const DevToolbox = lazy(() => import('./DevToolbox'));
 
 setShellWindowRegistry(createWindowRegistry(bundledApps, {
   '/settings/customization': {
