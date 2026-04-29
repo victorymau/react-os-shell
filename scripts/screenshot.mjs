@@ -34,9 +34,7 @@ await page.waitForSelector('[data-menu-toggle]', { timeout: 15000 });
 
 // Dismiss the "Click here to start" balloon so it's not in the shot.
 await page.evaluate(() => {
-  const btn = document.querySelector('button[onclick]');
-  // Balloon X is inside the bouncing pill; close any visible "Click here to start"
-  document.querySelectorAll('.animate-bounce button').forEach((b) => (b as HTMLButtonElement).click());
+  document.querySelectorAll('.animate-bounce button').forEach((b) => b.click());
 });
 
 // Let the wallpaper, default widgets (Weather + Currency), and animations settle.
