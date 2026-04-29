@@ -963,27 +963,78 @@ export default function Desktop({ profile }: { profile: any }) {
         setContextMenu(null);
       }}
     >
-      {/* Fixed Trash icon — bottom-right, not in favDocs so it can't be
-          deleted, renamed, or dragged. Double-click opens the Files app
-          in trash view via the side-channel defined in Files.tsx. */}
-      <div
-        data-desktop-icon="trash"
-        style={{ position: 'absolute', right: 20, bottom: 20, zIndex: 1 }}
-        onPointerDown={e => e.stopPropagation()}
-        onClick={e => e.stopPropagation()}
-        onContextMenu={e => e.preventDefault()}
-        onDoubleClick={e => {
+      {/* Built-in Trash icon. Lives outside favDocs so it can't be
+          deleted, renamed, or dropped into a folder, but the user can
+          drag it around — its position persists to
+          `prefs.desktop_trash_position`. Default position is the
+          bottom-right corner, shifted in to clear the taskbar (the
+          taskbar is `position: fixed` and overlays this container, so
+          a naive `bottom: 20` would hide the icon under it). Double-
+          click opens the Files app in trash view via the side-channel
+          defined in Files.tsx. */}
+      {(() => {
+        const cs = typeof document !== 'undefined' ? getComputedStyle(document.documentElement) : null;
+        const tbH = parseInt(cs?.getPropertyValue('--taskbar-height') || '0') || 0;
+        const tbW = parseInt(cs?.getPropertyValue('--taskbar-width') || '0') || 0;
+        const tbPos = (cs?.getPropertyValue('--taskbar-position') || 'bottom').trim();
+        const defaultRight = 20 + (tbPos === 'right' ? tbW : 0);
+        const defaultBottom = 20 + (tbPos === 'bottom' ? tbH : 0);
+        const trashPos = (prefs as any).desktop_trash_position as { right: number; bottom: number } | undefined;
+        const right = trashPos?.right ?? defaultRight;
+        const bottom = trashPos?.bottom ?? defaultBottom;
+
+        const startTrashDrag = (e: React.PointerEvent) => {
+          if (e.button !== 0) return;
+          e.preventDefault();
           e.stopPropagation();
-          // Side-channel contract owned by src/apps/Files.tsx:
-          // - global flag is read on mount when Files isn't open yet
-          // - event tells an already-open Files instance to flip view
-          (window as any).__REACT_OS_SHELL_FILES_VIEW__ = 'trash';
-          window.dispatchEvent(new CustomEvent('react-os-shell:files-show-trash'));
-          openPage('/files');
-        }}
-        className="cursor-default select-none"
-        title="Trash — double-click to open"
-      >
+          const el = e.currentTarget as HTMLElement;
+          const startX = e.clientX, startY = e.clientY;
+          let moved = false;
+          const move = (ev: PointerEvent) => {
+            const dx = ev.clientX - startX;
+            const dy = ev.clientY - startY;
+            if (!moved && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) moved = true;
+            if (!moved) return;
+            // Drag is from-bottom-right, so cursor moving right shrinks the
+            // right offset, and moving down shrinks the bottom offset.
+            el.style.right = `${right - dx}px`;
+            el.style.bottom = `${bottom - dy}px`;
+            el.style.opacity = '0.7';
+            el.style.zIndex = '100';
+          };
+          const up = (ev: PointerEvent) => {
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', up);
+            el.style.opacity = '';
+            el.style.zIndex = '';
+            if (!moved) return;
+            const newRight = Math.max(0, right - (ev.clientX - startX));
+            const newBottom = Math.max(0, bottom - (ev.clientY - startY));
+            saveShellPrefs({ desktop_trash_position: { right: newRight, bottom: newBottom } } as any);
+          };
+          window.addEventListener('pointermove', move);
+          window.addEventListener('pointerup', up);
+        };
+
+        return (
+          <div
+            data-desktop-icon="trash"
+            style={{ position: 'absolute', right, bottom, zIndex: 1 }}
+            onPointerDown={startTrashDrag}
+            onClick={e => e.stopPropagation()}
+            onContextMenu={e => e.preventDefault()}
+            onDoubleClick={e => {
+              e.stopPropagation();
+              // Side-channel contract owned by src/apps/Files.tsx:
+              // - global flag is read on mount when Files isn't open yet
+              // - event tells an already-open Files instance to flip view
+              (window as any).__REACT_OS_SHELL_FILES_VIEW__ = 'trash';
+              window.dispatchEvent(new CustomEvent('react-os-shell:files-show-trash'));
+              openPage('/files');
+            }}
+            className="cursor-default select-none"
+            title="Trash — double-click to open, drag to move"
+          >
         <div className="flex flex-col items-center gap-1 w-20 p-2">
           <div className="w-12 h-12 flex items-center justify-center">
             <svg className="h-12 w-12 drop-shadow-[0_2px_3px_rgba(0,0,0,0.4)] text-gray-100" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -995,6 +1046,8 @@ export default function Desktop({ profile }: { profile: any }) {
           </span>
         </div>
       </div>
+        );
+      })()}
 
       {/* Desktop items */}
       {desktopItems.map((doc, i) => {

@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.1.51] — 2026-04-30
+
+### Fixed
+- Trash desktop icon was hidden underneath the bottom taskbar. Default position now offsets by `--taskbar-height` (or `--taskbar-width` when the taskbar is on the right) so it always sits on the work-area edge.
+
+### Added
+- Trash desktop icon is now draggable. New `prefs.desktop_trash_position` saves a `{ right, bottom }` offset; the position persists across reloads. Pure click / double-click still work — only movement past a 3 px threshold counts as a drag. Still excluded from favDocs so it can't be deleted, renamed, or dropped into a folder.
+
 ## [0.1.50] — 2026-04-30
 
 ### Added
