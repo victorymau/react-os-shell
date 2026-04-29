@@ -325,9 +325,10 @@ function findPanelByLabel(label: string): HTMLElement | null {
  *  the card with no empty letterboxing. When the source window is
  *  hidden (zero rect — e.g. show-desktop just minimised it) we fall
  *  back to a frosted card with the icon + label so the preview is
- *  never empty. */
-function ThumbCard({ id, label, maxW, maxH, onClick, onClose }: {
-  id: string; label: string; maxW: number; maxH: number; onClick?: () => void; onClose?: () => void;
+ *  never empty. When `titleAbove` is true the bottom overlay label
+ *  is dropped — the parent renders the title in a row above instead. */
+function ThumbCard({ id, label, maxW, maxH, titleAbove = false, onClick, onClose }: {
+  id: string; label: string; maxW: number; maxH: number; titleAbove?: boolean; onClick?: () => void; onClose?: () => void;
 }) {
   const previewRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<{ w: number; h: number }>({ w: maxW, h: Math.round(maxH * 0.75) });
@@ -379,9 +380,11 @@ function ThumbCard({ id, label, maxW, maxH, onClick, onClose }: {
           <span className="mt-1 text-[10px] uppercase tracking-wide">Hidden</span>
         </div>
       )}
-      <div className="absolute bottom-0 left-0 right-0 px-2 py-1 text-[10px] font-medium text-white bg-gradient-to-t from-black/80 to-transparent truncate pointer-events-none">
-        {label}
-      </div>
+      {!titleAbove && (
+        <div className="absolute bottom-0 left-0 right-0 px-2 py-1 text-[10px] font-medium text-white bg-gradient-to-t from-black/80 to-transparent truncate pointer-events-none">
+          {label}
+        </div>
+      )}
       {onClose && (
         <button
           onClick={(e) => { e.stopPropagation(); onClose(); }}
@@ -463,15 +466,20 @@ function TaskbarTabPreview({ items, anchorEl, onActivate, onClose, onMouseEnter,
       onMouseLeave={onMouseLeave}
     >
       {items.map(it => (
-        <ThumbCard
-          key={it.id}
-          id={it.id}
-          label={it.label}
-          maxW={MAX_W}
-          maxH={MAX_H}
-          onClick={() => onActivate(it.id)}
-          onClose={() => onClose(it.id)}
-        />
+        <div key={it.id} className="flex flex-col items-center">
+          <span className="mb-1 max-w-[240px] truncate text-[11px] font-medium text-gray-900 bg-white/80 px-2 py-0.5 rounded shadow-sm">
+            {it.label}
+          </span>
+          <ThumbCard
+            id={it.id}
+            label={it.label}
+            maxW={MAX_W}
+            maxH={MAX_H}
+            titleAbove
+            onClick={() => onActivate(it.id)}
+            onClose={() => onClose(it.id)}
+          />
+        </div>
       ))}
     </div>,
     document.body,
