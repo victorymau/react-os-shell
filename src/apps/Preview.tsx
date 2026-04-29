@@ -396,27 +396,32 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
       }
       if (cancelled || !containerRef.current) return;
       try {
-        // dxf-viewer expects clearColor to be a THREE.Color instance (it
-        // calls .getHex() on it). dxf-viewer re-exports three internally,
-        // so reuse whichever copy ships with the consumer's bundle.
+        // dxf-viewer reads container dimensions in its constructor (with
+        // autoResize:true, those become the canvas size). If the Modal is
+        // still settling we may be measured as 0×0, breaking aspect math
+        // and the WebGL viewport. Wait until the container has a real
+        // bounding box before constructing the viewer.
+        await new Promise<void>(resolve => {
+          const tryStart = () => {
+            const r = containerRef.current?.getBoundingClientRect();
+            if (r && r.width > 4 && r.height > 4) resolve();
+            else requestAnimationFrame(tryStart);
+          };
+          tryStart();
+        });
+        if (cancelled || !containerRef.current) return;
+
+        // clearColor must be a THREE.Color (Library calls .getHex()).
         let three: any = null;
         try { three = await import(/* @vite-ignore */ 'three' as any); } catch {}
         const ClearColor = three?.Color ?? null;
-        const viewerOpts: any = {
-          autoResize: true,
-          colorCorrection: true,
-        };
+        const viewerOpts: any = { autoResize: true };
         if (ClearColor) viewerOpts.clearColor = new ClearColor(0xffffff);
         viewer = new DxfViewer(containerRef.current, viewerOpts);
         viewerRef.current = viewer;
-        await viewer.Load({ url, fonts: [], workerFactory: null });
+        await viewer.Load({ url, fonts: null, workerFactory: null });
         if (cancelled) return;
-        // dxf-viewer.Load() already calls FitView() at the end, but it uses
-        // the canvas size measured at Modal-mount time — which is 0×0 if
-        // the modal layout hasn't settled. With aspect = 0/0 the camera
-        // ends up with NaN coords and the canvas paints empty. Wait one
-        // frame, force the canvas to its real size, then re-FitView with
-        // the loaded bounds.
+        // Force-fit using the actual loaded bounds and refresh canvas size.
         const refit = () => {
           try {
             const rect = containerRef.current?.getBoundingClientRect();
@@ -427,17 +432,16 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
             const origin = viewer.GetOrigin?.();
             if (bounds && origin) {
               viewer.FitView(
-                bounds.minX - origin.x,
-                bounds.maxX - origin.x,
-                bounds.minY - origin.y,
-                bounds.maxY - origin.y,
+                bounds.minX - origin.x, bounds.maxX - origin.x,
+                bounds.minY - origin.y, bounds.maxY - origin.y,
               );
             }
             viewer.Render?.();
-          } catch {}
+          } catch (err) {
+            // eslint-disable-next-line no-console
+            console.warn('[Preview] DXF refit failed', err);
+          }
         };
-        // Run twice — once now, once on the next frame, so we cover the case
-        // where the layout is just settling.
         refit();
         requestAnimationFrame(refit);
         setLoading(false);
@@ -490,8 +494,11 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
           )}
         </div>
       </div>
-      <div className="relative flex-1 bg-white">
-        <div ref={containerRef} className="absolute inset-0" />
+      <div className="relative flex-1 bg-white min-h-0">
+        {/* dxf-viewer overrides container's `position` to `relative` in its
+         *  constructor, which kills any `inset: 0` sizing. Use explicit
+         *  width/height: 100% so the container always fills its flex parent. */}
+        <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-white/80 text-sm text-gray-500">Loading drawing…</div>
         )}
