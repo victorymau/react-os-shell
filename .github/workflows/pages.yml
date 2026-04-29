@@ -10,6 +10,10 @@ permissions:
   pages: write
   id-token: write
 
+# Opt-in to Node 24 for JavaScript actions (Node 20 deprecation, Sep 2026).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 concurrency:
   group: pages
   cancel-in-progress: true

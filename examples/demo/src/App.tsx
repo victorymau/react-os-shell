@@ -238,6 +238,8 @@ function LoginSplash({ onSignIn }: { onSignIn: () => void }) {
         </button>
         <p className="mt-4 text-[11px] text-white/40">No real auth — local-only demo.</p>
       </div>
+
+      <p className="absolute bottom-4 right-4 text-[10px] font-mono text-white/40 select-none">v{VERSION || '0.0.0'}</p>
     </div>
   );
 }

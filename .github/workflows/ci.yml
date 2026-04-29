@@ -6,12 +6,17 @@ on:
   pull_request:
     branches: [main]
 
+# Opt-in to Node 24 for JavaScript actions so the runner stops warning about
+# the upcoming Node 20 deprecation (Sep 2026).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node: [20, 22]
+        node: [22, 24]
     steps:
       - uses: actions/checkout@v4
 

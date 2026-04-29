@@ -228,20 +228,23 @@ export default function Desktop({ profile }: { profile: any }) {
   const [stickyDrag, setStickyDrag] = useState<{ id: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
   const [stickyResize, setStickyResize] = useState<{ id: string; startX: number; startY: number; origW: number; origH: number } | null>(null);
 
-  // Save helpers — delegate persistence to the consumer-supplied callbacks.
-  // Falls back to no-op when the host hasn't wired persistence; in that case
-  // the in-memory state still updates but doesn't survive a reload.
+  // Save helpers — delegate persistence to the consumer-supplied callbacks
+  // when wired, otherwise write through the prefs adapter so backend-less
+  // demos still survive a reload.
   const saveDocs = useCallback((docs: DesktopItem[]) => {
-    host.saveShortcuts?.(docs);
-  }, [host]);
+    if (host.saveShortcuts) host.saveShortcuts(docs);
+    else saveShellPrefs({ favorite_documents: docs });
+  }, [host, saveShellPrefs]);
 
   const saveFolders = useCallback((f: DesktopFolder[]) => {
-    host.saveFolders?.(f);
-  }, [host]);
+    if (host.saveFolders) host.saveFolders(f);
+    else saveShellPrefs({ desktop_folders: f });
+  }, [host, saveShellPrefs]);
 
   const saveSnap = useCallback((v: boolean) => {
-    host.saveSnap?.(v);
-  }, [host]);
+    if (host.saveSnap) host.saveSnap(v);
+    else saveShellPrefs({ desktop_snap: v });
+  }, [host, saveShellPrefs]);
 
   // Positions stored as { right, top } — distance from right/top edges
   // This keeps icons anchored to the top-right regardless of window size
