@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.1.30] — 2026-04-29
+
+### Changed
+- Preview 3D panel rebuilt with a richer UI modeled on 3dviewer.net: dark sidebars, a top toolbar (Fit, ISO/TOP/FRONT/SIDE camera presets, Snapshot PNG, Download), a left **Meshes** tree with expand/collapse and per-node visibility toggles (drives `mesh.visible` directly on the THREE scene), and a right **Model Display** panel for background color, show-edges toggle, edge color, and edge threshold slider with a Reset to Default. Both side panels are collapsible from the toolbar.
+
 ## [0.1.29] — 2026-04-29
 
 ### Added

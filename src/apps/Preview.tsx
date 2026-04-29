@@ -667,6 +667,41 @@ interface StepPanelProps {
 // `window.__REACT_OS_SHELL_O3DV_LIBS__` to self-host (e.g. air-gapped).
 const DEFAULT_O3DV_LIBS = 'https://cdn.jsdelivr.net/npm/online-3d-viewer@0.18.0/libs/';
 
+interface TreeNode {
+  id: number;
+  name: string;
+  isMeshNode: boolean;
+  meshIndices: number[];
+  children: TreeNode[];
+}
+
+function buildTree(node: any, depth = 0): TreeNode {
+  return {
+    id: node.GetId?.() ?? 0,
+    name: node.GetName?.() || (depth === 0 ? 'Root' : 'Node'),
+    isMeshNode: !!node.IsMeshNode?.(),
+    meshIndices: node.GetMeshIndices?.() ?? [],
+    children: (node.GetChildNodes?.() ?? []).map((c: any) => buildTree(c, depth + 1)),
+  };
+}
+
+// Collect every nodeId in the subtree rooted at `node` (inclusive).
+function collectNodeIds(node: TreeNode, out: Set<number>) {
+  out.add(node.id);
+  for (const c of node.children) collectNodeIds(c, out);
+}
+
+// Hex string ("#rrggbb") → RGBColor instance.
+function hexToRgb(OV: any, hex: string) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  const n = m ? parseInt(m[1], 16) : 0;
+  return new OV.RGBColor((n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff);
+}
+function rgbToHex(c: { r?: number; g?: number; b?: number }) {
+  const r = (c.r ?? 0) | 0, g = (c.g ?? 0) | 0, b = (c.b ?? 0) | 0;
+  return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
+}
+
 function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<any>(null);
@@ -675,11 +710,30 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
   const [error, setError] = useState<string | null>(null);
   const [showHint, setShowHint] = useState(true);
 
+  // Mesh tree + per-node visibility (true = visible).
+  const [tree, setTree] = useState<TreeNode | null>(null);
+  const [expanded, setExpanded] = useState<Record<number, boolean>>({});
+  const [hidden, setHidden] = useState<Set<number>>(new Set());
+
+  // Right-panel display settings.
+  const [bgColor, setBgColor] = useState('#f5f6f8');
+  const [showEdges, setShowEdges] = useState(true);
+  const [edgeColor, setEdgeColor] = useState('#000000');
+  const [edgeThreshold, setEdgeThreshold] = useState(1);
+
+  // Sidebar visibility.
+  const [showMeshes, setShowMeshes] = useState(true);
+  const [showSettings, setShowSettings] = useState(true);
+
+  // Load model.
   useEffect(() => {
     let cancelled = false;
     let viewer: any = null;
     setLoading(true);
     setError(null);
+    setTree(null);
+    setExpanded({});
+    setHidden(new Set());
 
     (async () => {
       let OV: any;
@@ -715,23 +769,37 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
         viewer = new OV.EmbeddedViewer(containerRef.current, {
           backgroundColor: new OV.RGBAColor(245, 246, 248, 255),
           defaultColor: new OV.RGBColor(180, 188, 200),
-          edgeSettings: new OV.EdgeSettings(false, new OV.RGBColor(0, 0, 0), 1),
+          edgeSettings: new OV.EdgeSettings(true, new OV.RGBColor(0, 0, 0), 1),
           onModelLoaded: () => {
-            if (!cancelled) setLoading(false);
+            if (cancelled) return;
+            try {
+              const model = viewer.GetModel?.();
+              const root = model?.GetRootNode?.();
+              if (root) {
+                const t = buildTree(root);
+                setTree(t);
+                // Expand top two levels by default.
+                const expandIds: Record<number, boolean> = { [t.id]: true };
+                for (const c of t.children) expandIds[c.id] = true;
+                setExpanded(expandIds);
+              }
+            } catch (err) {
+              // eslint-disable-next-line no-console
+              console.warn('[Preview] mesh tree extraction failed', err);
+            }
+            setLoading(false);
+          },
+          onModelLoadFailed: () => {
+            if (!cancelled) {
+              setError('Failed to load 3D model.');
+              setLoading(false);
+            }
           },
         });
         viewerRef.current = viewer;
 
-        // Use InputFile so the blob: URL is paired with a real filename — the
-        // loader picks the right importer (.stp/.step/.stl/etc.) from that
-        // name, not the URL pathname.
         const inputFile = new OV.InputFile(filename, OV.FileSource.Url, url);
         viewer.LoadModelFromInputFiles([inputFile]);
-
-        // Defensive fallback: if onModelLoaded never fires (e.g. version
-        // mismatch), drop the spinner after a short delay so the canvas is
-        // visible. Errors still flow through `setError`.
-        setTimeout(() => { if (!cancelled) setLoading(false); }, 4000);
       } catch (e: any) {
         if (!cancelled) {
           setError(e?.message || 'Failed to load 3D model.');
@@ -747,11 +815,147 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
     };
   }, [url, filename]);
 
+  // Apply per-node visibility by walking the THREE scene's mesh userData. The
+  // engine's public `SetMeshesVisibility` is global-only, so we go one level
+  // deeper to flip individual `mesh.visible` flags.
+  useEffect(() => {
+    const v = viewerRef.current;
+    if (!v?.viewer) return;
+    try {
+      const visit = (mesh: any) => {
+        const ud = mesh.userData?.originalMeshInstance ?? mesh.userData;
+        const nodeId: number | undefined = ud?.id?.nodeId ?? ud?.nodeId;
+        if (typeof nodeId === 'number') {
+          mesh.visible = !hidden.has(nodeId);
+        }
+      };
+      v.viewer.mainModel?.EnumerateMeshesAndLines?.(visit);
+      v.viewer.mainModel?.EnumerateEdges?.(visit);
+      v.viewer.Render?.();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[Preview] visibility update failed', err);
+    }
+  }, [hidden, tree]);
+
+  // Apply edge settings.
+  useEffect(() => {
+    const OV = ovRef.current;
+    const v = viewerRef.current;
+    if (!OV || !v?.viewer) return;
+    try {
+      v.viewer.SetEdgeSettings(new OV.EdgeSettings(showEdges, hexToRgb(OV, edgeColor), edgeThreshold));
+      v.viewer.Render?.();
+    } catch {}
+  }, [showEdges, edgeColor, edgeThreshold]);
+
+  // Apply background color.
+  useEffect(() => {
+    const OV = ovRef.current;
+    const v = viewerRef.current;
+    if (!OV || !v?.viewer) return;
+    try {
+      const c = hexToRgb(OV, bgColor);
+      v.viewer.SetBackgroundColor(new OV.RGBAColor(c.r, c.g, c.b, 255));
+      v.viewer.Render?.();
+    } catch {}
+  }, [bgColor]);
+
+  // Hint timer.
   useEffect(() => {
     if (!showHint || loading) return;
     const t = setTimeout(() => setShowHint(false), 5000);
     return () => clearTimeout(t);
   }, [showHint, loading]);
+
+  const toggleNodeVisible = (node: TreeNode) => {
+    const ids = new Set<number>();
+    collectNodeIds(node, ids);
+    setHidden(prev => {
+      const next = new Set(prev);
+      // If any descendant is currently visible, hide them all; else reveal.
+      const anyVisible = [...ids].some(id => !next.has(id));
+      for (const id of ids) {
+        if (anyVisible) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleExpanded = (id: number) => {
+    setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const fitNode = (node: TreeNode) => {
+    // Fit the whole model — fitting to a specific subtree would need its
+    // bounds via a custom enumerator; defer that for now.
+    handleFit();
+    // Future: filter visibility-by-subtree to focus.
+    void node;
+  };
+
+  const handleFit = () => {
+    try {
+      const v = viewerRef.current;
+      const sphere = v?.GetBoundingSphere?.(() => true);
+      if (sphere) v.viewer.FitSphereToWindow(sphere, true);
+      v?.viewer?.Render?.();
+    } catch {}
+  };
+
+  // Camera presets — eye/center/up around the model's bounding sphere.
+  const setCameraPreset = (preset: 'top' | 'front' | 'side' | 'iso') => {
+    const OV = ovRef.current;
+    const v = viewerRef.current;
+    if (!OV || !v?.viewer) return;
+    try {
+      const sphere = v.GetBoundingSphere?.(() => true);
+      if (!sphere) return;
+      const c = sphere.center;
+      const r = sphere.radius || 1;
+      const dist = r * 3;
+      const cx = c.x ?? 0, cy = c.y ?? 0, cz = c.z ?? 0;
+      let eye: any, up: any;
+      switch (preset) {
+        case 'top':   eye = new OV.Coord3D(cx, cy, cz + dist); up = new OV.Coord3D(0, 1, 0); break;
+        case 'front': eye = new OV.Coord3D(cx, cy - dist, cz); up = new OV.Coord3D(0, 0, 1); break;
+        case 'side':  eye = new OV.Coord3D(cx + dist, cy, cz); up = new OV.Coord3D(0, 0, 1); break;
+        case 'iso':
+        default: {
+          const k = dist / Math.sqrt(3);
+          eye = new OV.Coord3D(cx + k, cy - k, cz + k);
+          up = new OV.Coord3D(0, 0, 1);
+          break;
+        }
+      }
+      const center = new OV.Coord3D(cx, cy, cz);
+      const cam = new OV.Camera(eye, center, up, 45);
+      v.viewer.SetCamera(cam);
+      v.viewer.AdjustClippingPlanesToSphere?.(sphere);
+      v.viewer.Render?.();
+    } catch {}
+  };
+
+  const handleSnapshot = () => {
+    try {
+      const v = viewerRef.current;
+      const size = v?.viewer?.GetCanvasSize?.() ?? { width: 1280, height: 720 };
+      const dataUrl = v?.viewer?.GetImageAsDataUrl?.(size.width, size.height, false);
+      if (!dataUrl) return;
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `${filename.replace(/\.[^.]+$/, '')}-snapshot.png`;
+      a.click();
+    } catch {}
+  };
+
+  const handleResetDisplay = () => {
+    setBgColor('#f5f6f8');
+    setShowEdges(true);
+    setEdgeColor('#000000');
+    setEdgeThreshold(1);
+  };
 
   const handleDefaultDownload = () => {
     const a = document.createElement('a');
@@ -760,67 +964,232 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
     a.click();
   };
 
-  const handleResetView = () => {
-    try {
-      const v = viewerRef.current;
-      // EmbeddedViewer's underlying viewer exposes FitSphereToWindow / FitToWindow.
-      v?.viewer?.FitSphereToWindow?.(v?.GetBoundingSphere?.((m: any) => true), false);
-      v?.Render?.();
-    } catch {}
+  const ext = (filename.split('.').pop() || '').toUpperCase();
+
+  // ── render helpers ───────────────────────────────────────────────────────
+  const renderTreeNode = (node: TreeNode, depth = 0): React.ReactNode => {
+    const hasChildren = node.children.length > 0;
+    const isExpanded = expanded[node.id] !== false; // default expanded for first two levels
+    const isVisible = !hidden.has(node.id);
+    return (
+      <div key={node.id}>
+        <div
+          className="group flex items-center gap-1 px-1.5 py-1 hover:bg-slate-700/50 cursor-default text-[12px] text-slate-200"
+          style={{ paddingLeft: `${depth * 12 + 6}px` }}
+        >
+          {hasChildren ? (
+            <button
+              onClick={() => toggleExpanded(node.id)}
+              className="h-4 w-4 shrink-0 flex items-center justify-center text-slate-400 hover:text-slate-100"
+              title={isExpanded ? 'Collapse' : 'Expand'}
+            >
+              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d={isExpanded ? 'M19.5 8.25l-7.5 7.5-7.5-7.5' : 'M8.25 4.5l7.5 7.5-7.5 7.5'} />
+              </svg>
+            </button>
+          ) : (
+            <span className="h-4 w-4 shrink-0 flex items-center justify-center">
+              <span className="h-1 w-1 rounded-full bg-slate-500" />
+            </span>
+          )}
+          <span className={`flex-1 truncate ${isVisible ? '' : 'opacity-40'}`} title={node.name}>{node.name}</span>
+          <button
+            onClick={() => fitNode(node)}
+            className="h-4 w-4 shrink-0 text-slate-500 hover:text-slate-100 opacity-0 group-hover:opacity-100 transition-opacity"
+            title="Fit to view"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+            </svg>
+          </button>
+          <button
+            onClick={() => toggleNodeVisible(node)}
+            className="h-4 w-4 shrink-0 text-slate-400 hover:text-slate-100"
+            title={isVisible ? 'Hide' : 'Show'}
+          >
+            {isVisible ? (
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            ) : (
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+              </svg>
+            )}
+          </button>
+        </div>
+        {isExpanded && hasChildren && (
+          <div>{node.children.map(c => renderTreeNode(c, depth + 1))}</div>
+        )}
+      </div>
+    );
   };
 
-  const ext = (filename.split('.').pop() || '').toUpperCase();
-  const btn = 'px-2 py-1 rounded hover:bg-gray-200 transition-colors text-gray-600 flex items-center gap-1';
+  const tBtn = 'h-8 w-8 shrink-0 flex items-center justify-center rounded text-slate-300 hover:bg-slate-700 hover:text-white transition-colors';
+  const tBtnActive = 'h-8 w-8 shrink-0 flex items-center justify-center rounded bg-slate-700 text-white';
+  const tBtnSep = 'h-5 w-px bg-slate-700 mx-1';
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-200 bg-gray-50 shrink-0 text-xs">
-        <div className="flex items-center gap-1">
-          <span className="font-medium text-gray-600">{ext || '3D'}</span>
-          <span className="text-gray-400 truncate max-w-xs">{filename}</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <button onClick={() => setShowHint(s => !s)} className={btn} title="How to navigate">
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" /></svg>
+    <div className="flex flex-col h-full bg-slate-900">
+      {/* Top toolbar */}
+      <div className="flex items-center gap-1 px-2 py-1.5 bg-slate-800 border-b border-slate-700 shrink-0">
+        <span className="text-[11px] font-semibold tracking-wide text-slate-300 px-2 truncate max-w-xs" title={filename}>{filename}</span>
+        <div className={tBtnSep} />
+        <button onClick={handleFit} className={tBtn} title="Fit to view">
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+          </svg>
+        </button>
+        <div className={tBtnSep} />
+        <button onClick={() => setCameraPreset('iso')} className={tBtn} title="Isometric view">
+          <span className="text-[10px] font-semibold">ISO</span>
+        </button>
+        <button onClick={() => setCameraPreset('top')} className={tBtn} title="Top view">
+          <span className="text-[10px] font-semibold">TOP</span>
+        </button>
+        <button onClick={() => setCameraPreset('front')} className={tBtn} title="Front view">
+          <span className="text-[10px] font-semibold">FRT</span>
+        </button>
+        <button onClick={() => setCameraPreset('side')} className={tBtn} title="Side view">
+          <span className="text-[10px] font-semibold">SDE</span>
+        </button>
+        <div className={tBtnSep} />
+        <button onClick={handleSnapshot} className={tBtn} title="Save snapshot as PNG">
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z" />
+          </svg>
+        </button>
+        <button onClick={() => setShowHint(s => !s)} className={tBtn} title="How to navigate">
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" />
+          </svg>
+        </button>
+        <div className="flex-1" />
+        <button onClick={() => setShowMeshes(s => !s)} className={showMeshes ? tBtnActive : tBtn} title="Toggle meshes panel">
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+          </svg>
+        </button>
+        <button onClick={() => setShowSettings(s => !s)} className={showSettings ? tBtnActive : tBtn} title="Toggle display panel">
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </button>
+        <button onClick={onDownload ?? handleDefaultDownload} className={tBtn} title="Download original file">
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+          </svg>
+        </button>
+        {onEmail && (
+          <button onClick={onEmail} className={tBtn} title="Email">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+            </svg>
           </button>
-          <button onClick={handleResetView} className={btn} title="Fit model to view">Fit</button>
-          <button onClick={onDownload ?? handleDefaultDownload} className={btn}>
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
-            Download
-          </button>
-          {onEmail && (
-            <button onClick={onEmail} className={btn}>
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" /></svg>
-              Email
-            </button>
+        )}
+      </div>
+
+      {/* Body: meshes | viewport | settings */}
+      <div className="flex-1 flex min-h-0">
+        {showMeshes && (
+          <div className="w-60 shrink-0 bg-slate-800 border-r border-slate-700 flex flex-col">
+            <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400 border-b border-slate-700">Meshes</div>
+            <div className="flex-1 overflow-y-auto py-1">
+              {tree ? renderTreeNode(tree) : (
+                <div className="px-3 py-3 text-[11px] text-slate-500 italic">{loading ? 'Reading model…' : 'No structure available'}</div>
+              )}
+            </div>
+            {tree && (
+              <div className="px-3 py-1.5 text-[10px] text-slate-500 border-t border-slate-700">
+                {hidden.size === 0 ? 'All visible' : `${hidden.size} hidden`}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="relative flex-1 min-w-0" style={{ background: bgColor }}>
+          <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+
+          {showHint && !loading && !error && (
+            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-gray-900/85 text-white text-[11px] px-3 py-1.5 rounded-full shadow-lg flex items-center gap-3 z-10 pointer-events-none">
+              <span>Drag to rotate</span>
+              <span className="text-white/40">•</span>
+              <span>Right-click drag to pan</span>
+              <span className="text-white/40">•</span>
+              <span>Scroll to zoom</span>
+            </div>
+          )}
+
+          {loading && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/85 text-sm text-gray-600 gap-2">
+              <svg className="h-6 w-6 text-blue-500 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <circle cx="12" cy="12" r="10" strokeOpacity="0.2" />
+                <path d="M22 12a10 10 0 0 1-10 10" strokeLinecap="round" />
+              </svg>
+              <span>Loading 3D model…</span>
+              {ext === 'STP' || ext === 'STEP' ? <span className="text-[10px] text-gray-400">STEP files load OpenCascade WASM (~5 MB) on first use.</span> : null}
+            </div>
+          )}
+          {error && (
+            <div className="absolute inset-0 flex items-center justify-center text-sm text-red-600 px-6 text-center bg-white/85">{error}</div>
           )}
         </div>
-      </div>
-      <div className="relative flex-1 bg-[#f5f6f8] min-h-0">
-        <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
 
-        {showHint && !loading && !error && (
-          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-gray-900/85 text-white text-[11px] px-3 py-1.5 rounded-full shadow-lg flex items-center gap-3 z-10 pointer-events-none">
-            <span>Drag to rotate</span>
-            <span className="text-white/40">•</span>
-            <span>Right-click drag to pan</span>
-            <span className="text-white/40">•</span>
-            <span>Scroll to zoom</span>
+        {showSettings && (
+          <div className="w-60 shrink-0 bg-slate-800 border-l border-slate-700 flex flex-col">
+            <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400 border-b border-slate-700">Model Display</div>
+            <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 text-[12px] text-slate-200">
+              <label className="flex items-center justify-between gap-2">
+                <span>Background Color</span>
+                <input type="color" value={bgColor} onChange={(e) => setBgColor(e.target.value)} className="h-6 w-10 rounded border border-slate-600 bg-transparent" />
+              </label>
+              <label className="flex items-center justify-between gap-2">
+                <span>Show Edges</span>
+                <button
+                  onClick={() => setShowEdges(s => !s)}
+                  className={`relative h-5 w-9 rounded-full transition-colors ${showEdges ? 'bg-blue-500' : 'bg-slate-600'}`}
+                >
+                  <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${showEdges ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                </button>
+              </label>
+              <label className="flex items-center justify-between gap-2">
+                <span className={showEdges ? '' : 'opacity-40'}>Edge Color</span>
+                <input
+                  type="color"
+                  value={edgeColor}
+                  onChange={(e) => setEdgeColor(e.target.value)}
+                  disabled={!showEdges}
+                  className="h-6 w-10 rounded border border-slate-600 bg-transparent disabled:opacity-40"
+                />
+              </label>
+              <div className={showEdges ? '' : 'opacity-40 pointer-events-none'}>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <span>Edge Threshold</span>
+                  <span className="text-slate-400 tabular-nums">{edgeThreshold}°</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={45}
+                  step={1}
+                  value={edgeThreshold}
+                  onChange={(e) => setEdgeThreshold(Number(e.target.value))}
+                  className="w-full accent-blue-500"
+                />
+              </div>
+            </div>
+            <div className="px-3 py-2 border-t border-slate-700">
+              <button
+                onClick={handleResetDisplay}
+                className="w-full text-[11px] text-slate-300 bg-slate-700 hover:bg-slate-600 rounded py-1.5 transition-colors"
+              >
+                Reset to Default
+              </button>
+            </div>
           </div>
-        )}
-
-        {loading && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 text-sm text-gray-500 gap-2">
-            <svg className="h-6 w-6 text-blue-500 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-              <circle cx="12" cy="12" r="10" strokeOpacity="0.2" />
-              <path d="M22 12a10 10 0 0 1-10 10" strokeLinecap="round" />
-            </svg>
-            <span>Loading 3D model…</span>
-            {ext === 'STP' || ext === 'STEP' ? <span className="text-[10px] text-gray-400">STEP files load OpenCascade WASM (~5 MB) on first use.</span> : null}
-          </div>
-        )}
-        {error && (
-          <div className="absolute inset-0 flex items-center justify-center text-sm text-red-600 px-6 text-center">{error}</div>
         )}
       </div>
     </div>
