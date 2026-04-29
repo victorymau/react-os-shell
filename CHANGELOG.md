@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.1.50] — 2026-04-30
+
+### Added
+- Built-in **Trash** icon in the bottom-right corner of the desktop. Not stored in `favDocs`, so it can't be deleted, dragged, renamed, or moved into a folder. Double-click opens the Files app in trash view.
+- New `openFilesInTrashMode()` export from `react-os-shell/apps`. Sets a `window.__REACT_OS_SHELL_FILES_VIEW__` flag (read on first mount) and dispatches a `react-os-shell:files-show-trash` event (handled by an already-open Files instance), so callers don't need to know whether Files is currently open.
+
 ## [0.1.49] — 2026-04-30
 
 ### Added

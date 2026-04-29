@@ -21,6 +21,18 @@ const DEFAULT_SERVER =
   (typeof window !== 'undefined' && (window as any).__REACT_OS_SHELL_FILE_SERVER__) ||
   'http://localhost:4000';
 
+// Side-channel for "open Files in trash mode". Two cases handled:
+//  1) Files isn't open yet — caller sets `window.__REACT_OS_SHELL_FILES_VIEW__`
+//     then calls `openPage('/files')`. Files reads the flag on first mount.
+//  2) Files is already open — caller dispatches the event below; the live
+//     instance flips to trash view via its event listener.
+const FILES_VIEW_EVENT = 'react-os-shell:files-show-trash';
+export function openFilesInTrashMode() {
+  if (typeof window === 'undefined') return;
+  (window as any).__REACT_OS_SHELL_FILES_VIEW__ = 'trash';
+  window.dispatchEvent(new CustomEvent(FILES_VIEW_EVENT));
+}
+
 const PREVIEW_EXTS: Record<string, 'pdf' | 'image' | 'dxf' | '3d'> = {
   pdf: 'pdf',
   dxf: 'dxf',
@@ -82,8 +94,24 @@ export default function Files() {
   const [unreachable, setUnreachable] = useState(false);
   const [quota, setQuota] = useState<{ used: number; limit: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [view, setView] = useState<'files' | 'trash'>('files');
+  const [view, setView] = useState<'files' | 'trash'>(() => {
+    if (typeof window === 'undefined') return 'files';
+    const w = window as any;
+    if (w.__REACT_OS_SHELL_FILES_VIEW__ === 'trash') {
+      w.__REACT_OS_SHELL_FILES_VIEW__ = null;
+      return 'trash';
+    }
+    return 'files';
+  });
   const [trash, setTrash] = useState<TrashEntry[]>([]);
+
+  // External trigger: when the Trash desktop icon is double-clicked while
+  // a Files window is already open, flip this instance to trash view.
+  useEffect(() => {
+    const handler = () => setView('trash');
+    window.addEventListener(FILES_VIEW_EVENT, handler);
+    return () => window.removeEventListener(FILES_VIEW_EVENT, handler);
+  }, []);
   const dragDepthRef = useRef(0);
   const fileRef = useRef<HTMLInputElement>(null);
 

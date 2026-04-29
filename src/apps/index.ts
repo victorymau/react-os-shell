@@ -114,4 +114,5 @@ export {
 };
 
 export { setPdfPreview } from './Preview';
+export { openFilesInTrashMode } from './Files';
 export type { PdfPreviewData } from './Preview';
