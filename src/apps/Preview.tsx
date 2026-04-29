@@ -411,6 +411,19 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
         viewerRef.current = viewer;
         await viewer.Load({ url, fonts: [], workerFactory: null });
         if (cancelled) return;
+        // The drawing loaded but the camera is at its default position;
+        // without an explicit fit the geometry usually sits off-screen
+        // and the canvas reads as fully white. FitView frames it.
+        try { viewer.FitView?.(); } catch {}
+        // dxf-viewer with autoResize:true subscribes to size changes via
+        // ResizeObserver, but the canvas can be measured before the
+        // window's flex layout has settled (initial size 0). Force a
+        // resize once we know the container has a real size.
+        try {
+          const rect = containerRef.current.getBoundingClientRect();
+          viewer.SetSize?.(Math.round(rect.width), Math.round(rect.height));
+        } catch {}
+        try { viewer.FitView?.(); } catch {}
         setLoading(false);
       } catch (e: any) {
         if (!cancelled) {
