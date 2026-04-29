@@ -1082,7 +1082,28 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
     // documented usage pattern.
     renderer.localClippingEnabled = true;
 
-    const plane: any = { normal: { x: 0, y: 0, z: -1 }, constant: 0 };
+    // Duck-typed plane. three.js's WebGLClipping calls `_plane.copy(this)`
+    // — that just reads `.normal.x/y/z` and `.constant`, so a plain object
+    // works. BUT `Material.copy()` deep-clones a source material's
+    // clippingPlanes via `srcPlanes[i].clone()`, so our plane needs a
+    // `.clone()` method or material cloning crashes with
+    // `t[s].clone is not a function`. The clone returned here is a fresh
+    // object with the same shape (so a clone-of-the-clone also works);
+    // we always overwrite the cloned material's clippingPlanes back to
+    // the shared plane reference afterwards, so this isn't load-bearing
+    // for the actual rendering — it just has to not throw.
+    const plane: any = {
+      normal: { x: 0, y: 0, z: -1 },
+      constant: 0,
+    };
+    plane.clone = function planeClone(this: any) {
+      const c: any = {
+        normal: { x: this.normal.x, y: this.normal.y, z: this.normal.z },
+        constant: this.constant,
+      };
+      c.clone = planeClone;
+      return c;
+    };
     const helpers: any[] = [];
     const materialState = new Map<any, { clippingPlanes: any; clipShadows: any }>();
 

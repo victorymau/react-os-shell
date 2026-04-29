@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.1.41] — 2026-04-30
+
+### Fixed
+- Preview 3D capped section: `TypeError: t[s].clone is not a function` thrown by `Material.copy` (which `Material.clone` delegates to) — three.js deep-clones each `clippingPlanes[i]` by calling `.clone()` on it, but our duck-typed plane object had no such method, so cloning the source material for stencil helpers and the cap blew up. Plane now ships a `clone()` that returns a structurally-identical object (and the clone-of-the-clone has its own `clone()` for safety).
+
 ## [0.1.40] — 2026-04-30
 
 ### Fixed
