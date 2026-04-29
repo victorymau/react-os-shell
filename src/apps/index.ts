@@ -44,6 +44,7 @@ const Calendar = lazy(() => import('./Calendar'));
 // ── Document apps ──
 const Preview = lazy(() => import('./Preview'));
 const Documents = lazy(() => import('./Documents'));
+const Files = lazy(() => import('./Files'));
 
 export const utilityApps: WindowRegistry = {
   '/calculator': { component: Calculator, label: 'Calculator', size: 'sm', allowPinOnTop: true, utility: true, widget: true, autoHeight: true, dimensions: [280, 420] },
@@ -72,6 +73,7 @@ export const googleApps: WindowRegistry = {
 export const documentApps: WindowRegistry = {
   '/preview': { component: Preview, label: 'Preview', size: '2xl', multiInstance: true },
   '/documents': { component: Documents, label: 'Documents', size: 'xl', multiInstance: true },
+  '/files': { component: Files, label: 'Files', size: 'xl' },
 };
 
 export const bundledApps: WindowRegistry = {
@@ -99,6 +101,7 @@ export {
   Calendar,
   Preview,
   Documents,
+  Files,
 };
 
 export { setPdfPreview } from './Preview';

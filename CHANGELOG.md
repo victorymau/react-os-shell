@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.1.43] — 2026-04-30
+
+### Added
+- New **Files** app (`/files`). Browses the per-user folder on the file-server in `examples/file-server`. Lists files/folders with size + modified time, navigates via breadcrumbs and double-click, uploads via button or drag-from-OS, creates folders, renames, deletes. Supported types (PDF, DXF, images, STEP and other 3D) open straight into Preview; other types download. Server URL + bearer token are configurable in-app and persisted to localStorage. Demo wires it into the start menu.
+
 ## [0.1.42] — 2026-04-30
 
 ### Changed
