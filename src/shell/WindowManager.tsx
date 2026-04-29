@@ -304,7 +304,13 @@ function RestoredRegistryModal({ item, onClose, onMinimize }: { item: MinimizedI
 }
 
 
-/** Find a modal panel whose title text contains `label`. */
+/** Find a modal panel by its window key (the openWindows item id). */
+function findPanelByWindowKey(key: string): HTMLElement | null {
+  return document.querySelector(`[data-modal-panel][data-window-key="${key}"]`) as HTMLElement | null;
+}
+
+/** Find a modal panel whose title text contains `label`. Used as a fallback
+ *  when no window key is available (legacy code paths). */
 function findPanelByLabel(label: string): HTMLElement | null {
   const panels = document.querySelectorAll('[data-modal-panel]');
   for (const p of Array.from(panels)) {
@@ -314,41 +320,51 @@ function findPanelByLabel(label: string): HTMLElement | null {
   return null;
 }
 
-/** Render a single window snapshot (scaled clone of the matching panel). */
-function ThumbCard({ label, width, height, onClick, onClose }: {
-  label: string; width: number; height: number; onClick?: () => void; onClose?: () => void;
+/** Render a single window snapshot. The card sizes itself to the source
+ *  panel's aspect ratio (clamped to maxW × maxH) so the snapshot fills
+ *  the card with no empty letterboxing. */
+function ThumbCard({ id, label, maxW, maxH, onClick, onClose }: {
+  id: string; label: string; maxW: number; maxH: number; onClick?: () => void; onClose?: () => void;
 }) {
   const previewRef = useRef<HTMLDivElement>(null);
+  // Source dimensions, defaulting to maxW x maxH until we measure.
+  const [size, setSize] = useState<{ w: number; h: number }>({ w: maxW, h: maxH });
+
   useEffect(() => {
     const inner = previewRef.current;
     if (!inner) return;
-    const target = findPanelByLabel(label);
+    const target = findPanelByWindowKey(id) ?? findPanelByLabel(label);
     if (!target) return;
     const rect = target.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return;
-    const scale = Math.min(width / rect.width, height / rect.height);
+    // Fit the source into a maxW x maxH bounding box, preserving aspect.
+    const ratio = Math.min(maxW / rect.width, maxH / rect.height);
+    const cardW = Math.max(80, Math.round(rect.width * ratio));
+    const cardH = Math.max(60, Math.round(rect.height * ratio));
+    setSize({ w: cardW, h: cardH });
     const clone = target.cloneNode(true) as HTMLElement;
     clone.style.position = 'absolute';
     clone.style.top = '0'; clone.style.left = '0';
     clone.style.right = 'auto'; clone.style.bottom = 'auto';
     clone.style.width = rect.width + 'px';
     clone.style.height = rect.height + 'px';
-    clone.style.transform = `scale(${scale})`;
+    clone.style.transform = `scale(${ratio})`;
     clone.style.transformOrigin = 'top left';
     clone.style.pointerEvents = 'none';
     clone.style.animation = 'none';
     clone.removeAttribute('data-modal-panel');
     clone.removeAttribute('data-modal-id');
+    clone.removeAttribute('data-window-key');
     clone.querySelectorAll<HTMLElement>('[role="dialog"], [data-portal]').forEach(el => { el.style.display = 'none'; });
     inner.innerHTML = '';
     inner.appendChild(clone);
     return () => { inner.innerHTML = ''; };
-  }, [label, width, height]);
+  }, [id, label, maxW, maxH]);
 
   return (
     <div
-      style={{ width, height }}
-      className="relative rounded-md overflow-hidden bg-white/95 border border-gray-300 shadow-md cursor-pointer hover:ring-2 hover:ring-blue-400 transition"
+      style={{ width: size.w, height: size.h }}
+      className="relative rounded-md overflow-hidden bg-white/95 border border-gray-300 shadow-md cursor-pointer hover:ring-2 hover:ring-blue-400 transition shrink-0"
       onClick={onClick}
     >
       <div ref={previewRef} className="absolute inset-0 overflow-hidden" />
@@ -370,41 +386,43 @@ function ThumbCard({ label, width, height, onClick, onClose }: {
 
 /** Hover popover — single thumbnail for a single window, or a row of
  *  thumbnails for a grouped set so the user can pick which instance to
- *  activate. */
+ *  activate. Each thumb sizes to its window's aspect ratio (clamped). */
 function TaskbarTabPreview({ items, anchorEl, onActivate, onClose, onMouseEnter, onMouseLeave }: {
-  items: MinimizedItem[]; anchorEl: HTMLElement; onActivate: (label: string) => void; onClose: (id: string) => void;
+  items: MinimizedItem[]; anchorEl: HTMLElement; onActivate: (id: string) => void; onClose: (id: string) => void;
   onMouseEnter: () => void; onMouseLeave: () => void;
 }) {
-  const PREVIEW_W = 240;
-  const PREVIEW_H = 150;
+  const MAX_W = 240;
+  const MAX_H = 160;
   const isGroup = items.length > 1;
-  const totalWidth = isGroup ? Math.min(items.length * (PREVIEW_W + 8) + 8, window.innerWidth - 16) : PREVIEW_W;
-  const totalHeight = isGroup ? PREVIEW_H + 16 : PREVIEW_H;
 
   const rect = anchorEl.getBoundingClientRect();
   const taskbarPos = getComputedStyle(document.documentElement).getPropertyValue('--taskbar-position')?.trim() || 'bottom';
-  const left = Math.max(8, Math.min(rect.left + rect.width / 2 - totalWidth / 2, window.innerWidth - totalWidth - 8));
+  // Position above (or beside) the tab. We anchor on tab center; the popup
+  // is allowed to grow and is clamped to viewport via max-width.
   const top = taskbarPos === 'top'
     ? rect.bottom + 8
     : taskbarPos === 'bottom'
-      ? rect.top - totalHeight - 8
-      : rect.top + rect.height / 2 - totalHeight / 2;
-  const adjustedLeft = (taskbarPos === 'left') ? rect.right + 8 : (taskbarPos === 'right') ? rect.left - totalWidth - 8 : left;
+      ? Math.max(8, rect.top - MAX_H - 24)
+      : rect.top + rect.height / 2 - MAX_H / 2;
+  const left = (taskbarPos === 'left' || taskbarPos === 'right')
+    ? (taskbarPos === 'left' ? rect.right + 8 : rect.left - MAX_W - 8)
+    : Math.max(8, rect.left + rect.width / 2 - (isGroup ? MAX_W : MAX_W / 2));
 
   return createPortal(
     <div
-      style={{ position: 'fixed', left: adjustedLeft, top, zIndex: 9999 }}
-      className={isGroup ? 'flex gap-2 p-2 rounded-lg bg-white/40 backdrop-blur-sm border border-white/30 shadow-2xl' : ''}
+      style={{ position: 'fixed', left, top, zIndex: 9999, maxWidth: 'calc(100vw - 16px)' }}
+      className={isGroup ? 'flex gap-2 p-2 rounded-lg bg-white/40 backdrop-blur-sm border border-white/30 shadow-2xl flex-wrap' : ''}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
       {items.map(it => (
         <ThumbCard
           key={it.id}
+          id={it.id}
           label={it.label}
-          width={PREVIEW_W}
-          height={PREVIEW_H}
-          onClick={() => onActivate(it.label)}
+          maxW={MAX_W}
+          maxH={MAX_H}
+          onClick={() => onActivate(it.id)}
           onClose={() => onClose(it.id)}
         />
       ))}
@@ -413,9 +431,10 @@ function TaskbarTabPreview({ items, anchorEl, onActivate, onClose, onMouseEnter,
   );
 }
 
-function TaskbarWindows({ openWindows, onRemove, onCloseAll, onSplitView, onActivate }: {
+function TaskbarWindows({ openWindows, onRemove, onCloseAll, onSplitView, onActivate, onActivateById }: {
   openWindows: MinimizedItem[]; onRemove: (id: string) => void; onCloseAll: () => void; onSplitView: () => void;
   onActivate: (label: string) => void;
+  onActivateById: (id: string) => void;
 }) {
   const [target, setTarget] = useState<HTMLElement | null>(null);
   useEffect(() => {
@@ -494,7 +513,7 @@ function TaskbarWindows({ openWindows, onRemove, onCloseAll, onSplitView, onActi
         const isGrouped = group.items.length > 1;
 
         return (
-          <button key={group.key} onClick={() => onActivate(primary.label)}
+          <button key={group.key} onClick={() => onActivateById(primary.id)}
             onMouseEnter={(e) => handleEnter(group.items, e.currentTarget)}
             onMouseLeave={handleLeave}
             onDoubleClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('modal-center', { detail: { label: primary.label } })); }}
@@ -532,7 +551,7 @@ function TaskbarWindows({ openWindows, onRemove, onCloseAll, onSplitView, onActi
         <TaskbarTabPreview
           items={hoveredItems}
           anchorEl={hoveredAnchor}
-          onActivate={(label) => { onActivate(label); setHoveredItems(null); setHoveredAnchor(null); }}
+          onActivate={(id) => { onActivateById(id); setHoveredItems(null); setHoveredAnchor(null); }}
           onClose={(id) => { onRemove(id); setHoveredItems(null); setHoveredAnchor(null); }}
           onMouseEnter={cancelLeave}
           onMouseLeave={handleLeave}
@@ -679,6 +698,11 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
               if (mid) activateModal(mid);
             }
           });
+        }}
+        onActivateById={(id) => {
+          const panel = document.querySelector(`[data-modal-panel][data-window-key="${id}"]`);
+          const mid = panel?.getAttribute('data-modal-id');
+          if (mid) activateModal(mid);
         }}
       />
 

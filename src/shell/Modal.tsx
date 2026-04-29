@@ -777,7 +777,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   const content = (
     <div>
       {/* Window */}
-      <div ref={panelRef} data-modal-panel data-modal-id={modalId} {...(allowPinOnTop ? { 'data-utility': '' } : {})}
+      <div ref={panelRef} data-modal-panel data-modal-id={modalId} data-window-key={windowKey || undefined} {...(allowPinOnTop ? { 'data-utility': '' } : {})}
         className={`fixed rounded-lg flex flex-col overflow-hidden group ${widget ? (isActive ? 'shadow-2xl' : 'shadow-lg') : `border ${isActive ? 'shadow-2xl border-gray-200' : 'shadow-lg border-gray-300'}`}`}
         onMouseDown={(e) => {
           setWindowMenu(null);
