@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.1.31] — 2026-04-29
+
+### Added
+- Preview 3D panel: capped section view. Toggle in the Model Display panel to slice the model along X / Y / Z, with a position slider, flip-direction button, and cap color picker. Uses the standard three.js stencil-cap technique — each mesh gets two stencil-only helper passes that count interior intersections, and a cap quad fills the cut surface where the stencil count is non-zero, so the section reads as a solid rather than a hollow opening.
+
 ## [0.1.30] — 2026-04-29
 
 ### Changed

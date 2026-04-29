@@ -725,6 +725,24 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
   const [showMeshes, setShowMeshes] = useState(true);
   const [showSettings, setShowSettings] = useState(true);
 
+  // Section view (capped clipping plane).
+  const [sectionEnabled, setSectionEnabled] = useState(false);
+  const [sectionAxis, setSectionAxis] = useState<'x' | 'y' | 'z'>('z');
+  const [sectionFlip, setSectionFlip] = useState(false);
+  const [sectionPosition, setSectionPosition] = useState(0.5); // 0–1 within bbox
+  const [sectionCapColor, setSectionCapColor] = useState('#9aa6b3');
+
+  // Persistent section state — stencil helpers, cap mesh, original material
+  // settings — held in a ref so we can mutate the plane in place on slider
+  // tick instead of rebuilding every helper mesh.
+  const sectionRef = useRef<{
+    plane: any;
+    capMesh: any;
+    helpers: any[];
+    materialState: Map<any, { clippingPlanes: any; clipShadows: any }>;
+    bbox: any;
+  } | null>(null);
+
   // Load model.
   useEffect(() => {
     let cancelled = false;
@@ -861,6 +879,186 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
     } catch {}
   }, [bgColor]);
 
+  // Section view — set up / tear down on enable.
+  // Uses the standard three.js stencil-cap technique: every mesh gets a
+  // clippingPlane + two stencil-only "helper" children that count interior
+  // intersections with the plane, and a single cap quad in the scene draws
+  // the cut surface where the stencil count is non-zero.
+  useEffect(() => {
+    const v = viewerRef.current;
+    if (!v?.viewer || loading) return;
+
+    let cancelled = false;
+    let teardown: (() => void) | null = null;
+
+    (async () => {
+      const THREE: any = await import('three' as any);
+      if (cancelled) return;
+      const renderer = v.viewer.renderer;
+      const scene = v.viewer.scene;
+      if (!renderer || !scene) return;
+
+      // Tear down any previous section state.
+      if (sectionRef.current) {
+        const s = sectionRef.current;
+        for (const [mat, prev] of s.materialState.entries()) {
+          mat.clippingPlanes = prev.clippingPlanes;
+          mat.clipShadows = prev.clipShadows;
+          mat.needsUpdate = true;
+        }
+        for (const helper of s.helpers) {
+          helper.parent?.remove(helper);
+          helper.geometry?.dispose?.();
+          helper.material?.dispose?.();
+        }
+        if (s.capMesh) {
+          scene.remove(s.capMesh);
+          s.capMesh.geometry?.dispose?.();
+          s.capMesh.material?.dispose?.();
+        }
+        sectionRef.current = null;
+      }
+
+      if (!sectionEnabled) {
+        renderer.localClippingEnabled = false;
+        v.viewer.Render?.();
+        return;
+      }
+
+      const bbox = v.viewer.GetBoundingBox?.(() => true);
+      if (!bbox) return;
+
+      const plane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0);
+      const helpers: any[] = [];
+      const materialState = new Map<any, { clippingPlanes: any; clipShadows: any }>();
+
+      const applyToMaterial = (mat: any) => {
+        if (!mat || materialState.has(mat)) return;
+        materialState.set(mat, {
+          clippingPlanes: mat.clippingPlanes,
+          clipShadows: mat.clipShadows,
+        });
+        mat.clippingPlanes = [plane];
+        mat.clipShadows = true;
+        mat.needsUpdate = true;
+      };
+
+      v.viewer.mainModel?.EnumerateMeshes?.((mesh: any) => {
+        const mat = mesh.material;
+        if (Array.isArray(mat)) for (const m of mat) applyToMaterial(m);
+        else applyToMaterial(mat);
+
+        // Two stencil-only helpers: back faces increment, front faces decrement.
+        // Where the result is non-zero on the cap plane, we are inside the solid.
+        const makeStencil = (side: number, op: number) => {
+          const m = new THREE.MeshBasicMaterial({
+            depthWrite: false,
+            depthTest: false,
+            colorWrite: false,
+            stencilWrite: true,
+            stencilFunc: THREE.AlwaysStencilFunc,
+            stencilFail: op,
+            stencilZFail: op,
+            stencilZPass: op,
+            side,
+            clippingPlanes: [plane],
+          });
+          const helper = new THREE.Mesh(mesh.geometry, m);
+          helper.matrixAutoUpdate = false;
+          helper.renderOrder = 1;
+          helper.userData.__sectionHelper = true;
+          mesh.add(helper);
+          helpers.push(helper);
+        };
+        makeStencil(THREE.BackSide, THREE.IncrementWrapStencilOp);
+        makeStencil(THREE.FrontSide, THREE.DecrementWrapStencilOp);
+      });
+
+      // Cap quad — sized to the bounding box diagonal so it always covers the cut.
+      const dx = bbox.max.x - bbox.min.x;
+      const dy = bbox.max.y - bbox.min.y;
+      const dz = bbox.max.z - bbox.min.z;
+      const capSize = Math.max(dx, dy, dz) * 2 || 1;
+      const capGeom = new THREE.PlaneGeometry(capSize, capSize);
+      const capMat = new THREE.MeshPhongMaterial({
+        color: 0x9aa6b3,
+        side: THREE.DoubleSide,
+        stencilWrite: true,
+        stencilRef: 0,
+        stencilFunc: THREE.NotEqualStencilFunc,
+        stencilFail: THREE.ReplaceStencilOp,
+        stencilZFail: THREE.ReplaceStencilOp,
+        stencilZPass: THREE.ReplaceStencilOp,
+      });
+      const capMesh = new THREE.Mesh(capGeom, capMat);
+      capMesh.renderOrder = 2;
+      scene.add(capMesh);
+
+      renderer.localClippingEnabled = true;
+      sectionRef.current = { plane, capMesh, helpers, materialState, bbox };
+      v.viewer.Render?.();
+
+      teardown = () => {
+        // No-op here — handled at the start of the effect on next run.
+      };
+    })();
+
+    return () => {
+      cancelled = true;
+      if (teardown) teardown();
+    };
+  }, [sectionEnabled, loading, tree]);
+
+  // Section view — update plane orientation/position on axis/flip/slider change.
+  useEffect(() => {
+    const v = viewerRef.current;
+    const s = sectionRef.current;
+    if (!v?.viewer || !s || !sectionEnabled) return;
+    try {
+      const bbox = s.bbox;
+      const axisIdx = sectionAxis === 'x' ? 0 : sectionAxis === 'y' ? 1 : 2;
+      const min = [bbox.min.x, bbox.min.y, bbox.min.z][axisIdx];
+      const max = [bbox.max.x, bbox.max.y, bbox.max.z][axisIdx];
+      const value = min + (max - min) * sectionPosition;
+
+      // Three.js clips fragments where (normal · p) + constant < 0.
+      // Default direction (not flipped): keep "axis < value", clip "axis > value".
+      const dir = sectionFlip ? 1 : -1;
+      const nx = sectionAxis === 'x' ? dir : 0;
+      const ny = sectionAxis === 'y' ? dir : 0;
+      const nz = sectionAxis === 'z' ? dir : 0;
+      s.plane.normal.set(nx, ny, nz);
+      s.plane.constant = -dir * value;
+
+      // Cap mesh: position at the plane, oriented so its visible face points
+      // toward the kept side (i.e. opposite the plane normal direction we
+      // clip against — same as plane.normal for our convention).
+      const cx = (bbox.min.x + bbox.max.x) / 2;
+      const cy = (bbox.min.y + bbox.max.y) / 2;
+      const cz = (bbox.min.z + bbox.max.z) / 2;
+      const center: any = { x: cx, y: cy, z: cz };
+      // Plane equation: n.p + c = 0 → distance from center = n·c + c_const.
+      const dist = nx * center.x + ny * center.y + nz * center.z + s.plane.constant;
+      const px = center.x - nx * dist;
+      const py = center.y - ny * dist;
+      const pz = center.z - nz * dist;
+      s.capMesh.position.set(px, py, pz);
+      s.capMesh.lookAt(px + nx, py + ny, pz + nz);
+
+      // Cap color
+      try {
+        const m = /^#?([0-9a-f]{6})$/i.exec(sectionCapColor);
+        const n = m ? parseInt(m[1], 16) : 0x9aa6b3;
+        s.capMesh.material.color.setHex(n);
+      } catch {}
+
+      v.viewer.Render?.();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[Preview] section update failed', err);
+    }
+  }, [sectionEnabled, sectionAxis, sectionFlip, sectionPosition, sectionCapColor]);
+
   // Hint timer.
   useEffect(() => {
     if (!showHint || loading) return;
@@ -955,6 +1153,11 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
     setShowEdges(true);
     setEdgeColor('#000000');
     setEdgeThreshold(1);
+    setSectionEnabled(false);
+    setSectionAxis('z');
+    setSectionFlip(false);
+    setSectionPosition(0.5);
+    setSectionCapColor('#9aa6b3');
   };
 
   const handleDefaultDownload = () => {
@@ -1179,6 +1382,70 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
                   onChange={(e) => setEdgeThreshold(Number(e.target.value))}
                   className="w-full accent-blue-500"
                 />
+              </div>
+
+              <div className="border-t border-slate-700 -mx-3 px-3 pt-3 mt-1">
+                <label className="flex items-center justify-between gap-2">
+                  <span className="font-medium">Section View</span>
+                  <button
+                    onClick={() => setSectionEnabled(s => !s)}
+                    className={`relative h-5 w-9 rounded-full transition-colors ${sectionEnabled ? 'bg-blue-500' : 'bg-slate-600'}`}
+                  >
+                    <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${sectionEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                  </button>
+                </label>
+
+                <div className={sectionEnabled ? 'mt-2 space-y-2' : 'mt-2 space-y-2 opacity-40 pointer-events-none'}>
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span>Axis</span>
+                      <button
+                        onClick={() => setSectionFlip(f => !f)}
+                        className="text-[10px] text-slate-300 hover:text-white px-1.5 py-0.5 rounded bg-slate-700 hover:bg-slate-600"
+                        title="Flip section direction"
+                      >
+                        {sectionFlip ? '← flipped' : 'flip →'}
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1">
+                      {(['x', 'y', 'z'] as const).map(ax => (
+                        <button
+                          key={ax}
+                          onClick={() => setSectionAxis(ax)}
+                          className={`py-1 rounded text-[11px] font-semibold ${sectionAxis === ax ? 'bg-blue-500 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
+                        >
+                          {ax.toUpperCase()}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span>Position</span>
+                      <span className="text-slate-400 tabular-nums">{Math.round(sectionPosition * 100)}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      value={sectionPosition}
+                      onChange={(e) => setSectionPosition(Number(e.target.value))}
+                      className="w-full accent-blue-500"
+                    />
+                  </div>
+
+                  <label className="flex items-center justify-between gap-2">
+                    <span>Cap Color</span>
+                    <input
+                      type="color"
+                      value={sectionCapColor}
+                      onChange={(e) => setSectionCapColor(e.target.value)}
+                      className="h-6 w-10 rounded border border-slate-600 bg-transparent"
+                    />
+                  </label>
+                </div>
               </div>
             </div>
             <div className="px-3 py-2 border-t border-slate-700">
