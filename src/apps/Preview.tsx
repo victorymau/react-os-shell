@@ -396,11 +396,18 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
       }
       if (cancelled || !containerRef.current) return;
       try {
-        viewer = new DxfViewer(containerRef.current, {
-          clearColor: { r: 1, g: 1, b: 1, alpha: 1 },
+        // dxf-viewer expects clearColor to be a THREE.Color instance (it
+        // calls .getHex() on it). dxf-viewer re-exports three internally,
+        // so reuse whichever copy ships with the consumer's bundle.
+        let three: any = null;
+        try { three = await import(/* @vite-ignore */ 'three' as any); } catch {}
+        const ClearColor = three?.Color ?? null;
+        const viewerOpts: any = {
           autoResize: true,
           colorCorrection: true,
-        });
+        };
+        if (ClearColor) viewerOpts.clearColor = new ClearColor(0xffffff);
+        viewer = new DxfViewer(containerRef.current, viewerOpts);
         viewerRef.current = viewer;
         await viewer.Load({ url, fonts: [], workerFactory: null });
         if (cancelled) return;

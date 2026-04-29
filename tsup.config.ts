@@ -30,5 +30,6 @@ export default defineConfig({
     'pdfjs-dist',
     'dxf-viewer',
     'mammoth',
+    'three',
   ],
 });
