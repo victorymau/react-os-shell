@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.1.37] — 2026-04-30
+
+### Fixed
+- Preview 3D capped section: the cap was failing to render so the cut still read as a hollow shell. Two changes:
+  - Stencil-only helpers and the cap mesh now `sourceMaterial.clone()` from an existing scene mesh instead of constructing fresh `new Material()` instances. Cloning preserves the renderer's shader-compile state and uniform setup so the helpers actually write to the stencil buffer (and the cap's lighting matches the rest of the scene).
+  - Detect the WebGL stencil buffer up front via `renderer.getContext().getContextAttributes()`. If unavailable we skip the cap path entirely instead of producing an invisible-cap result. A diagnostic `[Preview] section: stencil buffer = …` log is emitted to the console when the section view is enabled, making it easy to confirm.
+
 ## [0.1.36] — 2026-04-30
 
 ### Changed

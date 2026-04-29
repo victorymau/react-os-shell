@@ -1025,6 +1025,19 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
     const IncrementWrapStencilOp = 7682, DecrementWrapStencilOp = 7683;
     const ReplaceStencilOp = 7681;
 
+    // Verify the WebGL context actually has a stencil buffer — without one
+    // every stencil op is a no-op, the cap stays at ref 0 forever, and the
+    // cut reads as a hollow shell. If we can't get one, log and skip the
+    // cap (clipping still works, just without fill).
+    let hasStencil = true;
+    try {
+      const gl = renderer.getContext?.();
+      const attrs = gl?.getContextAttributes?.();
+      hasStencil = attrs?.stencil !== false;
+      // eslint-disable-next-line no-console
+      console.info('[Preview] section: stencil buffer =', hasStencil, 'autoClearStencil =', renderer.autoClearStencil);
+    } catch {}
+
     const plane: any = { normal: { x: 0, y: 0, z: -1 }, constant: 0 };
     const helpers: any[] = [];
     const materialState = new Map<any, { clippingPlanes: any; clipShadows: any }>();
@@ -1045,9 +1058,14 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
       // Stencil-only helpers per mesh: back-faces increment the stencil,
       // front-faces decrement. Where the running count is non-zero on the
       // cap plane, we're inside the solid → cap renders.
-      if (Mesh && Material) {
+      //
+      // We clone the source material rather than `new Material()` so the
+      // shader compiles with the same uniform/attribute setup as the
+      // existing scene (avoids subtle "shader fails silently" cases).
+      const sourceMat = Array.isArray(mat) ? mat[0] : mat;
+      if (Mesh && hasStencil && sourceMat?.clone) {
         const makeStencil = (side: number, op: number) => {
-          const m: any = new Material();
+          const m: any = sourceMat.clone();
           m.depthWrite = false;
           m.depthTest = false;
           m.colorWrite = false;
@@ -1057,8 +1075,10 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
           m.stencilZFail = op;
           m.stencilZPass = op;
           m.side = side;
+          m.transparent = false;
           m.clippingPlanes = [plane];
           m.clipShadows = true;
+          m.needsUpdate = true;
           const helper = new Mesh(mesh.geometry, m);
           helper.matrixAutoUpdate = false;
           helper.renderOrder = 1;
@@ -1079,9 +1099,13 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
     });
 
     // Cap quad — sized to the bbox diagonal × 2 so it always covers the cut,
-    // built as a manual BufferGeometry quad (4 verts, 2 tris).
+    // built as a manual BufferGeometry quad (4 verts, 2 tris). We clone
+    // the source material (same shader as the rest of the scene) instead
+    // of `new Material()` so the cap actually receives lighting consistent
+    // with the model.
     let capMesh: any = null;
-    if (Mesh && Material && Geometry && BufferAttr) {
+    const sourceMat = (targets[0]?.material && (Array.isArray(targets[0].material) ? targets[0].material[0] : targets[0].material)) as any;
+    if (hasStencil && Mesh && Geometry && BufferAttr && sourceMat?.clone) {
       const dx = bbox.max.x - bbox.min.x;
       const dy = bbox.max.y - bbox.min.y;
       const dz = bbox.max.z - bbox.min.z;
@@ -1102,11 +1126,13 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
       capGeom.setAttribute('normal', new BufferAttr(normals, 3));
       capGeom.setIndex([0, 1, 2, 0, 2, 3]);
 
-      const capMat: any = new Material();
-      const m = /^#?([0-9a-f]{6})$/i.exec(sectionCapColor);
-      const colorHex = m ? parseInt(m[1], 16) : 0xc8ccd1;
+      const capMat: any = sourceMat.clone();
+      const mhex = /^#?([0-9a-f]{6})$/i.exec(sectionCapColor);
+      const colorHex = mhex ? parseInt(mhex[1], 16) : 0xc8ccd1;
       capMat.color?.setHex?.(colorHex);
       capMat.side = DoubleSide;
+      capMat.transparent = false;
+      capMat.opacity = 1;
       capMat.stencilWrite = true;
       capMat.stencilRef = 0;
       capMat.stencilFunc = NotEqualStencilFunc;
@@ -1115,6 +1141,7 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
       capMat.stencilZPass = ReplaceStencilOp;
       // Don't clip the cap itself by the same plane.
       capMat.clippingPlanes = [];
+      capMat.needsUpdate = true;
 
       capMesh = new Mesh(capGeom, capMat);
       capMesh.renderOrder = 2;
