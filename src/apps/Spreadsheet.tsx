@@ -80,24 +80,45 @@ export default function Spreadsheet() {
   const columns = active.columns;
   const cellStyles = active.cellStyles ?? {};
   const [focusedCell, setFocusedCell] = useState<{ row: number; col: number } | null>(null);
+  const [selection, setSelection] = useState<{ anchor: { row: number; col: number }; end: { row: number; col: number } } | null>(null);
+
+  // Cells affected by toolbar actions: full selection rectangle if non-empty,
+  // otherwise the single focused cell.
+  const targetCells = useCallback((): { row: number; col: number }[] => {
+    if (selection) {
+      const r1 = Math.min(selection.anchor.row, selection.end.row);
+      const r2 = Math.max(selection.anchor.row, selection.end.row);
+      const c1 = Math.min(selection.anchor.col, selection.end.col);
+      const c2 = Math.max(selection.anchor.col, selection.end.col);
+      const cells: { row: number; col: number }[] = [];
+      for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) cells.push({ row: r, col: c });
+      return cells;
+    }
+    return focusedCell ? [focusedCell] : [];
+  }, [selection, focusedCell]);
 
   const toggleCellStyle = useCallback((key: keyof CellStyle, value?: any) => {
-    if (!focusedCell) return;
-    const k = `${focusedCell.row}:${focusedCell.col}`;
+    const cells = targetCells();
+    if (cells.length === 0) return;
     setSheets(prev => prev.map((s, i) => {
       if (i !== activeIdx) return s;
       const styles = { ...(s.cellStyles ?? {}) };
-      const current = { ...(styles[k] ?? {}) };
-      if (value !== undefined) {
-        current[key] = value;
-      } else {
-        (current as any)[key] = !current[key];
+      // For toggles, derive the new state from the FIRST cell so the whole
+      // selection ends up consistent (rather than each cell flipping
+      // independently).
+      const firstKey = `${cells[0].row}:${cells[0].col}`;
+      const desired = value !== undefined ? value : !((styles[firstKey] ?? {})[key] as any);
+      for (const { row, col } of cells) {
+        const k = `${row}:${col}`;
+        styles[k] = { ...(styles[k] ?? {}), [key]: desired };
       }
-      styles[k] = current;
       return { ...s, cellStyles: styles };
     }));
-  }, [focusedCell, activeIdx]);
-  const focusedStyle: CellStyle = focusedCell ? (cellStyles[`${focusedCell.row}:${focusedCell.col}`] ?? {}) : {};
+  }, [targetCells, activeIdx]);
+
+  const headCell = selection ? { row: selection.anchor.row, col: selection.anchor.col } : focusedCell;
+  const focusedStyle: CellStyle = headCell ? (cellStyles[`${headCell.row}:${headCell.col}`] ?? {}) : {};
+  const hasTarget = !!headCell;
 
   const updateActiveSheet = useCallback((update: Partial<Sheet>) => {
     setSheets(prev => prev.map((s, i) => i === activeIdx ? { ...s, ...update } : s));
@@ -276,23 +297,23 @@ export default function Spreadsheet() {
         <div className="h-4 w-px bg-gray-300" />
 
         {/* Font style panel — applies to the focused cell. */}
-        <div className="flex items-center gap-0.5" title={focusedCell ? '' : 'Click a cell first'}>
-          <button onClick={() => toggleCellStyle('bold')} disabled={!focusedCell}
+        <div className="flex items-center gap-0.5" title={hasTarget ? '' : 'Click a cell first'}>
+          <button onClick={() => toggleCellStyle('bold')} disabled={!hasTarget}
             className={`px-2 py-1 text-xs rounded transition-colors font-bold ${focusedStyle.bold ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-200'} disabled:opacity-40 disabled:cursor-not-allowed`}>
             B
           </button>
-          <button onClick={() => toggleCellStyle('italic')} disabled={!focusedCell}
+          <button onClick={() => toggleCellStyle('italic')} disabled={!hasTarget}
             className={`px-2 py-1 text-xs rounded transition-colors italic ${focusedStyle.italic ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-200'} disabled:opacity-40 disabled:cursor-not-allowed`}>
             I
           </button>
-          <button onClick={() => toggleCellStyle('underline')} disabled={!focusedCell}
+          <button onClick={() => toggleCellStyle('underline')} disabled={!hasTarget}
             className={`px-2 py-1 text-xs rounded transition-colors underline ${focusedStyle.underline ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-200'} disabled:opacity-40 disabled:cursor-not-allowed`}>
             U
           </button>
           <select
             value={focusedStyle.fontSize ?? 'base'}
             onChange={e => toggleCellStyle('fontSize', e.target.value)}
-            disabled={!focusedCell}
+            disabled={!hasTarget}
             className="ml-1 text-xs border border-gray-300 rounded px-1 py-0.5 bg-white disabled:opacity-40 disabled:cursor-not-allowed">
             <option value="sm">XS</option>
             <option value="base">S</option>
@@ -311,6 +332,7 @@ export default function Spreadsheet() {
           onColumnsChange={(newCols) => updateActiveSheet({ columns: newCols })}
           cellStyles={cellStyles}
           onFocusChange={setFocusedCell}
+          onSelectionChange={setSelection}
           minRows={DEFAULT_ROWS}
           maxHeight="100%"
         />
@@ -324,9 +346,9 @@ export default function Spreadsheet() {
               onClick={() => setActiveIdx(idx)}
               onDoubleClick={() => { setEditingTab(idx); setTabName(sheet.name); }}
               onContextMenu={e => { e.preventDefault(); if (sheets.length > 1) removeSheet(idx); }}
-              className={`px-3 py-1 text-xs font-medium rounded-t whitespace-nowrap transition-colors ${
+              className={`px-3 py-1 text-xs font-medium rounded-b whitespace-nowrap transition-colors ${
                 idx === activeIdx
-                  ? 'bg-white text-blue-700 border border-b-0 border-gray-300 -mb-px relative z-10'
+                  ? 'bg-white text-blue-700 border border-t-0 border-gray-300 -mt-px relative z-10'
                   : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
               }`}>
               {editingTab === idx ? (

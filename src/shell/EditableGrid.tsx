@@ -29,6 +29,8 @@ export interface EditableGridProps {
   cellStyles?: Record<string, CellStyle>;
   /** Notifies the parent when the focused/edited cell changes. */
   onFocusChange?: (pos: { row: number; col: number } | null) => void;
+  /** Notifies the parent when the selection rectangle changes. */
+  onSelectionChange?: (sel: { anchor: { row: number; col: number }; end: { row: number; col: number } } | null) => void;
 }
 
 interface CellPos { row: number; col: number }
@@ -46,7 +48,7 @@ function rangeContains(anchor: CellPos, end: CellPos, row: number, col: number):
  * - Multi-cell paste from spreadsheets (Ctrl+V)
  * - Tab/Enter/Arrow keyboard navigation
  */
-export default function EditableGrid({ columns, data, onChange, onColumnsChange, fixedRows = false, minRows = 15, maxHeight = '260px', cellStyles, onFocusChange }: EditableGridProps) {
+export default function EditableGrid({ columns, data, onChange, onColumnsChange, fixedRows = false, minRows = 15, maxHeight = '260px', cellStyles, onFocusChange, onSelectionChange }: EditableGridProps) {
   const tableRef = useRef<HTMLTableElement>(null);
   const [focus, setFocus] = useState<CellPos | null>(null);
   useEffect(() => { onFocusChange?.(focus); }, [focus, onFocusChange]);
@@ -69,6 +71,9 @@ export default function EditableGrid({ columns, data, onChange, onColumnsChange,
   // Range selection state
   const [selAnchor, setSelAnchor] = useState<CellPos | null>(null);
   const [selEnd, setSelEnd] = useState<CellPos | null>(null);
+  useEffect(() => {
+    onSelectionChange?.(selAnchor && selEnd ? { anchor: selAnchor, end: selEnd } : null);
+  }, [selAnchor, selEnd, onSelectionChange]);
   const dragging = useRef(false);
 
   const hasRange = selAnchor && selEnd && (selAnchor.row !== selEnd.row || selAnchor.col !== selEnd.col);
