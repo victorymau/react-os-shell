@@ -67,6 +67,7 @@ export type {
   StickyEntityRef,
   StickyResolver,
 } from './shell/Desktop';
+export type { ChangelogEntry } from './changelog';
 
 // ── Layout entry point ──
 export { default as Layout } from './shell/Layout';

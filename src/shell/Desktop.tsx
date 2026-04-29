@@ -5,7 +5,7 @@ import { navIcons } from '../shell-config/nav';
 import { useShellPrefs } from './ShellPrefs';
 import Modal from './Modal';
 import { APP_VERSION } from '../version';
-import changelog from '../changelog';
+import changelog, { type ChangelogEntry } from '../changelog';
 import toast from './toast';
 import { PopupMenu, PopupMenuItem, PopupMenuDivider } from './PopupMenu';
 import { reportBug } from '../utils/reportBug';
@@ -87,6 +87,8 @@ export interface DesktopHostConfig {
   /** Version string shown on the desktop watermark and About dialog. Falls
    *  back to the react-os-shell package version if omitted. */
   productVersion?: string;
+  /** Changelog rendered in the "What's New" dialog. Hidden when omitted. */
+  productChangelog?: ChangelogEntry[];
   /** Copyright line in the About dialog footer. Hidden when omitted. */
   productCopyright?: string;
   /** Website URL in the About dialog footer. Hidden when omitted. */
@@ -424,6 +426,9 @@ export default function Desktop({ profile }: { profile: any }) {
   const [editingStickyId, setEditingStickyId] = useState<string | null>(null);
   const [stickyDrag, setStickyDrag] = useState<{ id: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
   const [stickyResize, setStickyResize] = useState<{ id: string; startX: number; startY: number; origW: number; origH: number } | null>(null);
+  // Index of the folder the user is currently hovering while dragging an
+  // icon — drives the lift / glow animation and the on-drop fold-in.
+  const [hoverFolderIdx, setHoverFolderIdx] = useState<number | null>(null);
 
   // Save helpers — delegate persistence to the consumer-supplied callbacks
   // when wired, otherwise write through the prefs adapter so backend-less
@@ -511,6 +516,11 @@ export default function Desktop({ profile }: { profile: any }) {
   useEffect(() => {
     if (!dragging) return;
     const entries = dragEntriesRef.current;
+    // Single-icon drags can fold into a folder; track which folder the
+    // cursor is currently hovering over so the folder element can react
+    // (scale + glow) and so we can short-circuit the right-overlap test
+    // on drop.
+    const isSingleItemDrag = entries.length === 1 && entries[0].type === 'item';
     const move = (e: PointerEvent) => {
       const dx = e.clientX - dragging.startX;
       const dy = e.clientY - dragging.startY;
@@ -524,6 +534,21 @@ export default function Desktop({ profile }: { profile: any }) {
         entry.el.style.zIndex = '100';
         entry.el.style.opacity = '0.7';
       }
+      // Detect hover-over-folder for drop-into-folder UX.
+      if (isSingleItemDrag) {
+        const elsBelow = document.elementsFromPoint(e.clientX, e.clientY);
+        let nextHover: number | null = null;
+        for (const el of elsBelow) {
+          const fk = (el as HTMLElement).closest?.('[data-desktop-icon^="folder-"]');
+          if (fk) {
+            const key = (fk as HTMLElement).getAttribute('data-desktop-icon');
+            if (key) nextHover = parseInt(key.slice(7), 10);
+            break;
+          }
+        }
+        hoverFolderIdxRef.current = nextHover;
+        setHoverFolderIdx(prev => (prev === nextHover ? prev : nextHover));
+      }
     };
     const up = (e: PointerEvent) => {
       const dx = e.clientX - dragging.startX;
@@ -534,6 +559,8 @@ export default function Desktop({ profile }: { profile: any }) {
         entry.el.style.zIndex = '';
         entry.el.style.opacity = '';
       }
+      const hoveredFolder = hoverFolderIdx != null ? folders[hoverFolderIdx] : null;
+      setHoverFolderIdx(null);
 
       // Compute final positions for each dragged entry.
       const computedPositions = entries.map(entry => {
@@ -551,11 +578,13 @@ export default function Desktop({ profile }: { profile: any }) {
         const positionsPatch: Record<string, { right: number; top: number }> = {};
         // Single-item drag onto a folder still folds in (multi-drag never folds).
         const singleItem = itemMoves.length === 1 && entries.length === 1 ? itemMoves[0] : null;
+        // Prefer the actively-hovered folder (live cursor hit-test) and fall
+        // back to a position-overlap check for snap-to-grid edge cases.
         const droppedOnFolder = singleItem
-          ? folders.find((f, fi) => {
+          ? (hoveredFolder ?? folders.find((f, fi) => {
               const fp = getFolderPos(f, fi);
               return Math.abs(singleItem.finalRight - fp.right) < 40 && Math.abs(singleItem.finalTop - fp.top) < 40;
-            })
+            }))
           : undefined;
         // Visual feedback: shrink the dragged icon into the folder before the
         // saved state actually removes it from the desktop.
@@ -710,8 +739,14 @@ export default function Desktop({ profile }: { profile: any }) {
 
   const createFolder = () => {
     const rect = containerRef.current?.getBoundingClientRect();
-    const x = contextMenu ? contextMenu.x - (rect?.left || 0) : 100;
-    const y = contextMenu ? contextMenu.y - (rect?.top || 0) : 100;
+    // Icons render right-anchored (style.right = pos.right). Convert the
+    // cursor's left-from-container into a right-from-container so the new
+    // folder lands under the click instead of mirroring across the desktop.
+    const containerW = rect?.width ?? 0;
+    const cursorLeft = contextMenu ? contextMenu.x - (rect?.left ?? 0) : containerW - 100;
+    const cursorTop = contextMenu ? contextMenu.y - (rect?.top ?? 0) : 100;
+    const x = Math.max(0, containerW - cursorLeft - 40);
+    const y = Math.max(0, cursorTop - 20);
     const id = `folder-${Date.now()}`;
     saveFolders([...folders, { id, name: 'New Folder', x, y }]);
     setContextMenu(null);
@@ -1269,10 +1304,14 @@ export default function Desktop({ profile }: { profile: any }) {
       )}
 
       {/* What's New dialog */}
-      {whatsNewOpen && (
+      {whatsNewOpen && (() => {
+        const entries = host.productChangelog ?? changelog;
+        return (
         <Modal open={true} onClose={() => setWhatsNewOpen(false)} title="What's New" size="md" bodyScroll={false}>
           <div className="space-y-5 max-h-[60vh] overflow-y-auto px-1">
-            {changelog.map((entry, i) => (
+            {entries.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-6">No changelog available.</p>
+            ) : entries.map((entry, i) => (
               <div key={entry.version}>
                 <div className="flex items-center gap-3 mb-2">
                   <span className="text-sm font-bold text-gray-900 font-mono">{entry.version}</span>
@@ -1286,12 +1325,13 @@ export default function Desktop({ profile }: { profile: any }) {
                     </li>
                   ))}
                 </ul>
-                {i < changelog.length - 1 && <div className="border-b border-gray-200 mt-4" />}
+                {i < entries.length - 1 && <div className="border-b border-gray-200 mt-4" />}
               </div>
             ))}
           </div>
         </Modal>
-      )}
+        );
+      })()}
     </div>
   );
 }
