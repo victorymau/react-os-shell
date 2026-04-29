@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.1.32] — 2026-04-29
+
+### Fixed
+- Preview 3D section view: enabling the section toggle crashed with `RangeError: Maximum call stack size exceeded` in `Object3D.traverse`. `EnumerateMeshes` is a live scene traversal — adding stencil-helper meshes inside the callback meant the traversal kept visiting the helpers we just added, recursively expanding forever. Snapshot the mesh list first, then add helpers; also skip `__sectionHelper` meshes in the visibility-update enumerator so stale helpers can't ever trip the same path.
+
 ## [0.1.31] — 2026-04-29
 
 ### Added

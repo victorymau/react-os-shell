@@ -841,6 +841,7 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
     if (!v?.viewer) return;
     try {
       const visit = (mesh: any) => {
+        if (mesh.userData?.__sectionHelper) return;
         const ud = mesh.userData?.originalMeshInstance ?? mesh.userData;
         const nodeId: number | undefined = ud?.id?.nodeId ?? ud?.nodeId;
         if (typeof nodeId === 'number') {
@@ -943,7 +944,18 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
         mat.needsUpdate = true;
       };
 
+      // Snapshot the mesh list FIRST. EnumerateMeshes is a live scene
+      // traversal — if we add helper meshes to each visited mesh inside the
+      // callback, the traversal then visits those helpers (which are also
+      // THREE.Mesh instances) and recursively adds more helpers to them,
+      // exploding into a stack overflow.
+      const targets: any[] = [];
       v.viewer.mainModel?.EnumerateMeshes?.((mesh: any) => {
+        if (mesh.userData?.__sectionHelper) return;
+        targets.push(mesh);
+      });
+
+      for (const mesh of targets) {
         const mat = mesh.material;
         if (Array.isArray(mat)) for (const m of mat) applyToMaterial(m);
         else applyToMaterial(mat);
@@ -972,7 +984,7 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
         };
         makeStencil(THREE.BackSide, THREE.IncrementWrapStencilOp);
         makeStencil(THREE.FrontSide, THREE.DecrementWrapStencilOp);
-      });
+      }
 
       // Cap quad — sized to the bounding box diagonal so it always covers the cut.
       const dx = bbox.max.x - bbox.min.x;
@@ -992,6 +1004,7 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
       });
       const capMesh = new THREE.Mesh(capGeom, capMat);
       capMesh.renderOrder = 2;
+      capMesh.userData.__sectionHelper = true;
       scene.add(capMesh);
 
       renderer.localClippingEnabled = true;
