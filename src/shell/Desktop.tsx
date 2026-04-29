@@ -83,6 +83,10 @@ export interface DesktopHostConfig {
   productTagline?: string;
   /** Icon URL shown in the About dialog. Defaults to `/favicon.svg`. */
   productIcon?: string;
+  /** Copyright line in the About dialog footer. Hidden when omitted. */
+  productCopyright?: string;
+  /** Website URL in the About dialog footer. Hidden when omitted. */
+  productWebsite?: string;
   /** Wallpaper picker options for the Customization settings page. */
   wallpapers?: { src: string; label: string }[];
   /** Resolves sticky-note refs (e.g. "SO#27150") to window-registry coords. */
@@ -914,11 +918,17 @@ export default function Desktop({ profile }: { profile: any }) {
               </div>
             </div>
 
-            {/* Copyright — bottom */}
-            <div className="pt-3 pb-2 border-t border-gray-200 w-full text-center">
-              <p className="text-[10px] text-gray-400">&copy; 2008–{new Date().getFullYear()} Efficient-ERP Corp. Ltd. All rights reserved.</p>
-              <a href="https://www.efficient-erp.com" target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-500 hover:underline">www.efficient-erp.com</a>
-            </div>
+            {/* Copyright — bottom (consumer-configurable; hidden when neither field is supplied) */}
+            {(host.productCopyright || host.productWebsite) && (
+              <div className="pt-3 pb-2 border-t border-gray-200 w-full text-center">
+                {host.productCopyright && <p className="text-[10px] text-gray-400">{host.productCopyright}</p>}
+                {host.productWebsite && (
+                  <a href={host.productWebsite} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-500 hover:underline">
+                    {host.productWebsite.replace(/^https?:\/\//, '')}
+                  </a>
+                )}
+              </div>
+            )}
           </div>
         </Modal>
         );

@@ -91,7 +91,7 @@ export default function GoogleConnectModal({ open, onClose }: { open: boolean; o
               <p className="font-medium text-gray-600">Setup instructions:</p>
               <p>1. Go to <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">console.cloud.google.com &gt; APIs &amp; Services &gt; Credentials</a></p>
               <p>2. Click <b>"+ Create Credentials"</b>, then select <b>OAuth client ID</b></p>
-              <p>3. Choose <b>"Web application"</b>, name it <b>"Efficient ERP"</b>, add <b>http://erp.regis.design</b> as Authorized JavaScript origins, then click Create</p>
+              <p>3. Choose <b>"Web application"</b>, give it any name, add the URL where this app runs (e.g. <b>http://localhost:5173</b>) as an Authorized JavaScript origin, then click Create</p>
               <p>4. Copy your Client ID and paste it above</p>
             </div>
           </div>

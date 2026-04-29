@@ -641,7 +641,7 @@ export default function Layout({
 
   return (
     <div className="flex flex-col h-screen">
-      {showStartup && <StartupAnimation onComplete={() => setShowStartup(false)} ready={!!profile} />}
+      {showStartup && <StartupAnimation onComplete={() => setShowStartup(false)} ready={!!profile} productName={productName} />}
       {showLogout && <LogoutAnimation onComplete={() => { sessionStorage.removeItem('erp_startup_shown'); logout(); }} />}
       {/* Start Menu */}
       {(

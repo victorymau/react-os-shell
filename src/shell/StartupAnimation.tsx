@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
  * Startup splash animation — shown once when the app first loads after login.
  * Fades out after the animation completes, then unmounts.
  */
-export default function StartupAnimation({ onComplete, ready = false, subtitle }: { onComplete: () => void; ready?: boolean; subtitle?: string }) {
+export default function StartupAnimation({ onComplete, ready = false, productName = 'react-os-shell', subtitle }: { onComplete: () => void; ready?: boolean; productName?: string; subtitle?: string }) {
   const [phase, setPhase] = useState<'logo' | 'text' | 'fade'>('logo');
   const [minTimePassed, setMinTimePassed] = useState(false);
   const onCompleteRef = useRef(onComplete);
@@ -49,7 +49,7 @@ export default function StartupAnimation({ onComplete, ready = false, subtitle }
 
       {/* Title */}
       <div className={`mt-6 text-center transition-all duration-500 ${phase !== 'logo' ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
-        <h1 className="text-2xl font-bold tracking-[0.3em] text-white/90 uppercase">Efficient ERP</h1>
+        <h1 className="text-2xl font-bold tracking-[0.3em] text-white/90 uppercase">{productName}</h1>
         <div className="mt-2 flex items-center justify-center gap-1.5">
           {[0, 1, 2].map(i => (
             <div key={i} className="w-1.5 h-1.5 rounded-full bg-purple-400"

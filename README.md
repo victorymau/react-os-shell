@@ -8,7 +8,9 @@ A desktop-style React UI shell — windows, taskbar, start menu, sticky notes, f
 
 A backend-less playground hosted on GitHub Pages. Wallpapers, themes, sticky notes, the spreadsheet, the calendar, all wired to `localStorage` so the page survives a refresh. Source is in [`examples/demo/`](examples/demo/).
 
-<!-- Add a hero screenshot once one is captured: docs/hero.png -->
+[![react-os-shell demo](docs/hero.png)](https://victorymau.github.io/react-os-shell/)
+
+<sub>The screenshot is auto-captured against the deployed demo by [`.github/workflows/screenshot.yml`](.github/workflows/screenshot.yml). Run it manually: `gh workflow run "Capture hero screenshot"` (or use the Actions tab).</sub>
 
 ## What's in the box
 

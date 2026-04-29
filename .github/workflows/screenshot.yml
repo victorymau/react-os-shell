@@ -1,0 +1,42 @@
+name: Capture hero screenshot
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install deps (root)
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Capture screenshot
+        run: npm run screenshot
+        env:
+          SCREENSHOT_URL: https://victorymau.github.io/react-os-shell/
+          SCREENSHOT_OUT: docs/hero.png
+
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/hero.png
+          if git diff --cached --quiet; then
+            echo "No screenshot change."
+          else
+            git commit -m "chore: refresh hero screenshot"
+            git push
+          fi
