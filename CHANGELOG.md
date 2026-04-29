@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.1.34] — 2026-04-30
+
+### Fixed
+- Preview app: "Drop to open" overlay no longer gets stuck on after dragging a file out and dropping it elsewhere (e.g. the desktop trash). Drag-enter / drag-leave now use a counter (so child-element transitions don't flicker the overlay), and a window-level `dragend` / `drop` listener clears the overlay even when the drag terminates outside our component. Pressing Escape also clears it.
+
+### Changed
+- Preview drag-and-drop now only applies to the active (frontmost) Preview window. With multiple Previews open the inactive ones no longer flash the drop overlay; click a window to activate it before dragging a file in.
+
 ## [0.1.33] — 2026-04-30
 
 ### Fixed

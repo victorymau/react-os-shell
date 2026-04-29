@@ -8,7 +8,7 @@
 import { useState, useEffect, useRef } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import toast from '../shell/toast';
-import { WindowTitle } from '../shell/Modal';
+import { WindowTitle, getActiveModalId } from '../shell/Modal';
 
 const TITLE_DISPLAY_MAX = 24;
 function truncateForTitle(s: string) {
@@ -91,8 +91,44 @@ export default function Preview() {
   const titleName = data?.filename ? truncateForTitle(data.filename) : 'Untitled';
 
   const fileRef = useRef<HTMLInputElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  // Drag-enter/leave fire on every child the cursor crosses, so a single
+  // boolean flickers. Track depth with a counter — overlay shows on first
+  // enter, clears only when the counter unwinds back to zero.
+  const dragDepthRef = useRef(0);
   const handlePick = () => fileRef.current?.click();
+  const resetDrag = () => {
+    dragDepthRef.current = 0;
+    setIsDragging(false);
+  };
+  // Only the frontmost (active) Preview window should accept drags. With
+  // multiple Previews open this prevents the overlay flashing on every
+  // window the cursor crosses, and matches the user's expectation that
+  // they activate a window first by clicking it.
+  const isActiveWindow = (el: HTMLElement) => {
+    const myModal = el.closest('[data-modal-id]') as HTMLElement | null;
+    if (!myModal) return true; // outside any modal — be permissive
+    return getActiveModalId() === myModal.dataset.modalId;
+  };
+  // If the drag ends outside our component (e.g. dropped onto desktop trash),
+  // we never receive `drop` or our outer `dragleave`. Listen on window so
+  // any end of any drag clears the overlay. Also wire ESC as an escape hatch.
+  useEffect(() => {
+    const onWindowDragEnd = () => resetDrag();
+    const onWindowDrop = () => resetDrag();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') resetDrag();
+    };
+    window.addEventListener('dragend', onWindowDragEnd);
+    window.addEventListener('drop', onWindowDrop);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('dragend', onWindowDragEnd);
+      window.removeEventListener('drop', onWindowDrop);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, []);
   const ingestFile = (file: File) => {
     const ext = (file.name.split('.').pop() || '').toLowerCase();
     const kind: 'pdf' | 'image' | 'dxf' | '3d' | undefined =
@@ -125,7 +161,7 @@ export default function Preview() {
   };
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    setIsDragging(false);
+    resetDrag();
     const file = e.dataTransfer.files?.[0];
     if (file) ingestFile(file);
   };
@@ -193,12 +229,33 @@ export default function Preview() {
   return (
     <div
       className="relative flex flex-col h-full"
-      onDragOver={(e) => { e.preventDefault(); if (!isDragging) setIsDragging(true); }}
-      onDragLeave={(e) => {
-        // Only clear when leaving the outer container, not transitioning between children.
-        if (e.currentTarget === e.target) setIsDragging(false);
+      ref={rootRef}
+      onDragEnter={(e) => {
+        // Only count drags that actually carry files — ignore stray drags
+        // (e.g. text selections) so we don't flash the overlay.
+        if (!e.dataTransfer?.types?.includes?.('Files')) return;
+        // And only the active (frontmost) Preview window responds.
+        if (!isActiveWindow(e.currentTarget as HTMLElement)) return;
+        e.preventDefault();
+        dragDepthRef.current++;
+        if (!isDragging) setIsDragging(true);
       }}
-      onDrop={handleDrop}
+      onDragOver={(e) => {
+        if (!e.dataTransfer?.types?.includes?.('Files')) return;
+        if (!isActiveWindow(e.currentTarget as HTMLElement)) return;
+        e.preventDefault();
+      }}
+      onDragLeave={() => {
+        if (dragDepthRef.current > 0) dragDepthRef.current--;
+        if (dragDepthRef.current === 0) setIsDragging(false);
+      }}
+      onDrop={(e) => {
+        if (!isActiveWindow(e.currentTarget as HTMLElement)) {
+          resetDrag();
+          return;
+        }
+        handleDrop(e);
+      }}
     >
       <WindowTitle title={`${titleName} - Preview`} />
       {Toolbar}
