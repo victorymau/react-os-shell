@@ -1152,13 +1152,13 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
     return (
       <div key={node.id}>
         <div
-          className="group flex items-center gap-1 px-1.5 py-1 hover:bg-slate-700/50 cursor-default text-[12px] text-slate-200"
+          className="group flex items-center gap-1 px-1.5 py-1 hover:bg-gray-100 cursor-default text-[12px] text-gray-700"
           style={{ paddingLeft: `${depth * 12 + 6}px` }}
         >
           {hasChildren ? (
             <button
               onClick={() => toggleExpanded(node.id)}
-              className="h-4 w-4 shrink-0 flex items-center justify-center text-slate-400 hover:text-slate-100"
+              className="h-4 w-4 shrink-0 flex items-center justify-center text-gray-500 hover:text-gray-900"
               title={isExpanded ? 'Collapse' : 'Expand'}
             >
               <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -1167,13 +1167,13 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
             </button>
           ) : (
             <span className="h-4 w-4 shrink-0 flex items-center justify-center">
-              <span className="h-1 w-1 rounded-full bg-slate-500" />
+              <span className="h-1 w-1 rounded-full bg-gray-400" />
             </span>
           )}
           <span className={`flex-1 truncate ${isVisible ? '' : 'opacity-40'}`} title={node.name}>{node.name}</span>
           <button
             onClick={() => fitNode(node)}
-            className="h-4 w-4 shrink-0 text-slate-500 hover:text-slate-100 opacity-0 group-hover:opacity-100 transition-opacity"
+            className="h-4 w-4 shrink-0 text-gray-400 hover:text-gray-900 opacity-0 group-hover:opacity-100 transition-opacity"
             title="Fit to view"
           >
             <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -1182,7 +1182,7 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
           </button>
           <button
             onClick={() => toggleNodeVisible(node)}
-            className="h-4 w-4 shrink-0 text-slate-400 hover:text-slate-100"
+            className="h-4 w-4 shrink-0 text-gray-500 hover:text-gray-900"
             title={isVisible ? 'Hide' : 'Show'}
           >
             {isVisible ? (
@@ -1204,15 +1204,15 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
     );
   };
 
-  const tBtn = 'h-8 w-8 shrink-0 flex items-center justify-center rounded text-slate-300 hover:bg-slate-700 hover:text-white transition-colors';
-  const tBtnActive = 'h-8 w-8 shrink-0 flex items-center justify-center rounded bg-slate-700 text-white';
-  const tBtnSep = 'h-5 w-px bg-slate-700 mx-1';
+  const tBtn = 'h-8 w-8 shrink-0 flex items-center justify-center rounded text-gray-600 hover:bg-gray-200 hover:text-gray-900 transition-colors';
+  const tBtnActive = 'h-8 w-8 shrink-0 flex items-center justify-center rounded bg-gray-200 text-gray-900';
+  const tBtnSep = 'h-5 w-px bg-gray-300 mx-1';
 
   return (
-    <div className="flex flex-col h-full bg-slate-900">
+    <div className="flex flex-col h-full bg-white">
       {/* Top toolbar */}
-      <div className="flex items-center gap-1 px-2 py-1.5 bg-slate-800 border-b border-slate-700 shrink-0">
-        <span className="text-[11px] font-semibold tracking-wide text-slate-300 px-2 truncate max-w-xs" title={filename}>{filename}</span>
+      <div className="flex items-center gap-1 px-2 py-1.5 bg-gray-50 border-b border-gray-200 shrink-0">
+        <span className="text-[11px] font-semibold tracking-wide text-gray-700 px-2 truncate max-w-xs" title={filename}>{filename}</span>
         <div className={tBtnSep} />
         <button onClick={handleFit} className={tBtn} title="Fit to view">
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -1273,15 +1273,15 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
       {/* Body: meshes | viewport | settings */}
       <div className="flex-1 flex min-h-0">
         {showMeshes && (
-          <div className="w-60 shrink-0 bg-slate-800 border-r border-slate-700 flex flex-col">
-            <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400 border-b border-slate-700">Meshes</div>
+          <div className="w-60 shrink-0 bg-gray-50 border-r border-gray-200 flex flex-col">
+            <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500 border-b border-gray-200">Meshes</div>
             <div className="flex-1 overflow-y-auto py-1">
               {tree ? renderTreeNode(tree) : (
-                <div className="px-3 py-3 text-[11px] text-slate-500 italic">{loading ? 'Reading model…' : 'No structure available'}</div>
+                <div className="px-3 py-3 text-[11px] text-gray-500 italic">{loading ? 'Reading model…' : 'No structure available'}</div>
               )}
             </div>
             {tree && (
-              <div className="px-3 py-1.5 text-[10px] text-slate-500 border-t border-slate-700">
+              <div className="px-3 py-1.5 text-[10px] text-gray-500 border-t border-gray-200">
                 {hidden.size === 0 ? 'All visible' : `${hidden.size} hidden`}
               </div>
             )}
@@ -1317,18 +1317,18 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
         </div>
 
         {showSettings && (
-          <div className="w-60 shrink-0 bg-slate-800 border-l border-slate-700 flex flex-col">
-            <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400 border-b border-slate-700">Model Display</div>
-            <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 text-[12px] text-slate-200">
+          <div className="w-60 shrink-0 bg-gray-50 border-l border-gray-200 flex flex-col">
+            <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500 border-b border-gray-200">Model Display</div>
+            <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 text-[12px] text-gray-700">
               <label className="flex items-center justify-between gap-2">
                 <span>Background Color</span>
-                <input type="color" value={bgColor} onChange={(e) => setBgColor(e.target.value)} className="h-6 w-10 rounded border border-slate-600 bg-transparent" />
+                <input type="color" value={bgColor} onChange={(e) => setBgColor(e.target.value)} className="h-6 w-10 rounded border border-gray-300 bg-white" />
               </label>
               <label className="flex items-center justify-between gap-2">
                 <span>Show Edges</span>
                 <button
                   onClick={() => setShowEdges(s => !s)}
-                  className={`relative h-5 w-9 rounded-full transition-colors ${showEdges ? 'bg-blue-500' : 'bg-slate-600'}`}
+                  className={`relative h-5 w-9 rounded-full transition-colors ${showEdges ? 'bg-blue-500' : 'bg-gray-300'}`}
                 >
                   <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${showEdges ? 'translate-x-4' : 'translate-x-0.5'}`} />
                 </button>
@@ -1340,13 +1340,13 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
                   value={edgeColor}
                   onChange={(e) => setEdgeColor(e.target.value)}
                   disabled={!showEdges}
-                  className="h-6 w-10 rounded border border-slate-600 bg-transparent disabled:opacity-40"
+                  className="h-6 w-10 rounded border border-gray-300 bg-white disabled:opacity-40"
                 />
               </label>
               <div className={showEdges ? '' : 'opacity-40 pointer-events-none'}>
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <span>Edge Threshold</span>
-                  <span className="text-slate-400 tabular-nums">{edgeThreshold}°</span>
+                  <span className="text-gray-500 tabular-nums">{edgeThreshold}°</span>
                 </div>
                 <input
                   type="range"
@@ -1359,12 +1359,12 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
                 />
               </div>
 
-              <div className="border-t border-slate-700 -mx-3 px-3 pt-3 mt-1">
+              <div className="border-t border-gray-200 -mx-3 px-3 pt-3 mt-1">
                 <label className="flex items-center justify-between gap-2">
                   <span className="font-medium">Section View</span>
                   <button
                     onClick={() => setSectionEnabled(s => !s)}
-                    className={`relative h-5 w-9 rounded-full transition-colors ${sectionEnabled ? 'bg-blue-500' : 'bg-slate-600'}`}
+                    className={`relative h-5 w-9 rounded-full transition-colors ${sectionEnabled ? 'bg-blue-500' : 'bg-gray-300'}`}
                   >
                     <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${sectionEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
                   </button>
@@ -1376,7 +1376,7 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
                       <span>Axis</span>
                       <button
                         onClick={() => setSectionFlip(f => !f)}
-                        className="text-[10px] text-slate-300 hover:text-white px-1.5 py-0.5 rounded bg-slate-700 hover:bg-slate-600"
+                        className="text-[10px] text-gray-600 hover:text-gray-900 px-1.5 py-0.5 rounded bg-gray-100 hover:bg-gray-200"
                         title="Flip section direction"
                       >
                         {sectionFlip ? '← flipped' : 'flip →'}
@@ -1387,7 +1387,7 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
                         <button
                           key={ax}
                           onClick={() => setSectionAxis(ax)}
-                          className={`py-1 rounded text-[11px] font-semibold ${sectionAxis === ax ? 'bg-blue-500 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
+                          className={`py-1 rounded text-[11px] font-semibold ${sectionAxis === ax ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
                         >
                           {ax.toUpperCase()}
                         </button>
@@ -1398,7 +1398,7 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
                   <div>
                     <div className="flex items-center justify-between gap-2 mb-1">
                       <span>Position</span>
-                      <span className="text-slate-400 tabular-nums">{Math.round(sectionPosition * 100)}%</span>
+                      <span className="text-gray-500 tabular-nums">{Math.round(sectionPosition * 100)}%</span>
                     </div>
                     <input
                       type="range"
@@ -1414,10 +1414,10 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
                 </div>
               </div>
             </div>
-            <div className="px-3 py-2 border-t border-slate-700">
+            <div className="px-3 py-2 border-t border-gray-200">
               <button
                 onClick={handleResetDisplay}
-                className="w-full text-[11px] text-slate-300 bg-slate-700 hover:bg-slate-600 rounded py-1.5 transition-colors"
+                className="w-full text-[11px] text-gray-700 bg-gray-100 hover:bg-gray-200 rounded py-1.5 transition-colors"
               >
                 Reset to Default
               </button>

@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.1.35] — 2026-04-30
+
+### Changed
+- Preview 3D panel: switched from the dark slate theme (3dviewer.net-style) to the same light gray-on-white palette the rest of the apps use. Toolbar, Meshes sidebar, Model Display sidebar, mesh tree rows, axis buttons, Reset to Default button — all repainted. The accent blue toggles and camera-preset highlights are unchanged.
+
 ## [0.1.34] — 2026-04-30
 
 ### Fixed
