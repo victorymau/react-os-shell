@@ -29,10 +29,20 @@ export function ShellPrefsProvider({
 }
 
 /** Default localStorage-backed adapter — useful when the consumer doesn't
- *  ship a backend. Pass the result into <ShellPrefsProvider value={…}>. */
-export function useLocalStoragePrefs(storageKey = 'react-os-shell:prefs'): ShellPrefsAdapter {
+ *  ship a backend. Pass the result into <ShellPrefsProvider value={…}>.
+ *
+ *  `defaults` are merged behind whatever's already stored, so they only
+ *  apply for keys the user hasn't set yet. Useful for opting out of bundled
+ *  features (e.g. `{ show_desktop_version: false }`). */
+export function useLocalStoragePrefs(
+  storageKey = 'react-os-shell:prefs',
+  defaults?: Record<string, any>,
+): ShellPrefsAdapter {
   const [prefs, setPrefs] = useState<Record<string, any>>(() => {
-    try { return JSON.parse(localStorage.getItem(storageKey) || '{}'); } catch { return {}; }
+    try {
+      const stored = JSON.parse(localStorage.getItem(storageKey) || '{}');
+      return { ...(defaults ?? {}), ...stored };
+    } catch { return { ...(defaults ?? {}) }; }
   });
   const save = useCallback((patch: Record<string, any>) => {
     setPrefs(prev => {

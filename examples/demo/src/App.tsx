@@ -245,7 +245,9 @@ function LoginSplash({ onSignIn }: { onSignIn: () => void }) {
 }
 
 export default function App() {
-  const prefs = useLocalStoragePrefs('react-os-shell-demo');
+  // Hide the bundled desktop version watermark — the demo renders its own
+  // VersionBadge that opens the in-app changelog modal.
+  const prefs = useLocalStoragePrefs('react-os-shell-demo', { show_desktop_version: false });
   const [signedIn, setSignedIn] = useState(false);
 
   useEffect(() => {

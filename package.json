@@ -1,6 +1,6 @@
 {
   "name": "react-os-shell",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "Desktop-style React UI shell — windows, taskbar, start menu, sticky notes, frosted glass theming, plus 16 bundled apps (utilities, games, Google integrations).",
   "license": "MIT",
   "author": "Victor Y. Mau",

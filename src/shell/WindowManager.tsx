@@ -322,26 +322,29 @@ function findPanelByLabel(label: string): HTMLElement | null {
 
 /** Render a single window snapshot. The card sizes itself to the source
  *  panel's aspect ratio (clamped to maxW × maxH) so the snapshot fills
- *  the card with no empty letterboxing. */
+ *  the card with no empty letterboxing. When the source window is
+ *  hidden (zero rect — e.g. show-desktop just minimised it) we fall
+ *  back to a frosted card with the icon + label so the preview is
+ *  never empty. */
 function ThumbCard({ id, label, maxW, maxH, onClick, onClose }: {
   id: string; label: string; maxW: number; maxH: number; onClick?: () => void; onClose?: () => void;
 }) {
   const previewRef = useRef<HTMLDivElement>(null);
-  // Source dimensions, defaulting to maxW x maxH until we measure.
-  const [size, setSize] = useState<{ w: number; h: number }>({ w: maxW, h: maxH });
+  const [size, setSize] = useState<{ w: number; h: number }>({ w: maxW, h: Math.round(maxH * 0.75) });
+  const [hasSnapshot, setHasSnapshot] = useState(false);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const inner = previewRef.current;
     if (!inner) return;
     const target = findPanelByWindowKey(id) ?? findPanelByLabel(label);
-    if (!target) return;
+    if (!target) { setHasSnapshot(false); return; }
     const rect = target.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return;
-    // Fit the source into a maxW x maxH bounding box, preserving aspect.
+    if (rect.width === 0 || rect.height === 0) { setHasSnapshot(false); return; }
     const ratio = Math.min(maxW / rect.width, maxH / rect.height);
     const cardW = Math.max(80, Math.round(rect.width * ratio));
     const cardH = Math.max(60, Math.round(rect.height * ratio));
     setSize({ w: cardW, h: cardH });
+    setHasSnapshot(true);
     const clone = target.cloneNode(true) as HTMLElement;
     clone.style.position = 'absolute';
     clone.style.top = '0'; clone.style.left = '0';
@@ -368,6 +371,14 @@ function ThumbCard({ id, label, maxW, maxH, onClick, onClose }: {
       onClick={onClick}
     >
       <div ref={previewRef} className="absolute inset-0 overflow-hidden" />
+      {!hasSnapshot && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400 bg-gray-50">
+          <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75A2.25 2.25 0 016 4.5h12a2.25 2.25 0 012.25 2.25v10.5A2.25 2.25 0 0118 19.5H6a2.25 2.25 0 01-2.25-2.25V6.75z M3.75 9h16.5" />
+          </svg>
+          <span className="mt-1 text-[10px] uppercase tracking-wide">Hidden</span>
+        </div>
+      )}
       <div className="absolute bottom-0 left-0 right-0 px-2 py-1 text-[10px] font-medium text-white bg-gradient-to-t from-black/80 to-transparent truncate pointer-events-none">
         {label}
       </div>
@@ -406,27 +417,35 @@ function TaskbarTabPreview({ items, anchorEl, onActivate, onClose, onMouseEnter,
   useLayoutEffect(() => {
     const el = popoverRef.current;
     if (!el) return;
-    const tabRect = anchorEl.getBoundingClientRect();
-    const popRect = el.getBoundingClientRect();
-    const taskbarPos = getComputedStyle(document.documentElement).getPropertyValue('--taskbar-position')?.trim() || 'bottom';
-    let left = tabRect.left + tabRect.width / 2 - popRect.width / 2;
-    let top: number;
-    if (taskbarPos === 'top') {
-      top = tabRect.bottom + 8;
-    } else if (taskbarPos === 'left') {
-      left = tabRect.right + 8;
-      top = tabRect.top + tabRect.height / 2 - popRect.height / 2;
-    } else if (taskbarPos === 'right') {
-      left = tabRect.left - popRect.width - 8;
-      top = tabRect.top + tabRect.height / 2 - popRect.height / 2;
-    } else {
-      // bottom
-      top = tabRect.top - popRect.height - 8;
-    }
-    // Clamp to viewport.
-    left = Math.max(8, Math.min(left, window.innerWidth - popRect.width - 8));
-    top = Math.max(8, Math.min(top, window.innerHeight - popRect.height - 8));
-    setPos({ left, top, ready: true });
+    const measure = () => {
+      const tabRect = anchorEl.getBoundingClientRect();
+      const popRect = el.getBoundingClientRect();
+      const taskbarPos = getComputedStyle(document.documentElement).getPropertyValue('--taskbar-position')?.trim() || 'bottom';
+      let left = tabRect.left + tabRect.width / 2 - popRect.width / 2;
+      let top: number;
+      if (taskbarPos === 'top') {
+        top = tabRect.bottom + 8;
+      } else if (taskbarPos === 'left') {
+        left = tabRect.right + 8;
+        top = tabRect.top + tabRect.height / 2 - popRect.height / 2;
+      } else if (taskbarPos === 'right') {
+        left = tabRect.left - popRect.width - 8;
+        top = tabRect.top + tabRect.height / 2 - popRect.height / 2;
+      } else {
+        // bottom
+        top = tabRect.top - popRect.height - 8;
+      }
+      // Clamp to viewport.
+      left = Math.max(8, Math.min(left, window.innerWidth - popRect.width - 8));
+      top = Math.max(8, Math.min(top, window.innerHeight - popRect.height - 8));
+      setPos({ left, top, ready: true });
+    };
+    measure();
+    // Re-measure when child cards finalise their size (they pick their
+    // dimensions in a useLayoutEffect after the first paint).
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
   }, [anchorEl, items.length]);
 
   return createPortal(

@@ -360,6 +360,26 @@ export default function Desktop({ profile }: { profile: any }) {
               return Math.abs(singleItem.finalRight - fp.right) < 40 && Math.abs(singleItem.finalTop - fp.top) < 40;
             })
           : undefined;
+        // Visual feedback: shrink the dragged icon into the folder before the
+        // saved state actually removes it from the desktop.
+        if (droppedOnFolder && singleItem?.entry.el) {
+          const itemEl = singleItem.entry.el;
+          const folderIdx = folders.indexOf(droppedOnFolder);
+          const folderEl = document.querySelector(`[data-desktop-icon="folder-${folderIdx}"]`) as HTMLElement | null;
+          if (folderEl) {
+            const ir = itemEl.getBoundingClientRect();
+            const fr = folderEl.getBoundingClientRect();
+            const dx = (fr.left + fr.width / 2) - (ir.left + ir.width / 2);
+            const dy = (fr.top + fr.height / 2) - (ir.top + ir.height / 2);
+            itemEl.style.transition = 'transform 220ms ease-out, opacity 220ms ease-out';
+            itemEl.style.transform = `translate(${dx}px, ${dy}px) scale(0.2)`;
+            itemEl.style.opacity = '0';
+          }
+          folderEl?.animate(
+            [{ transform: 'scale(1)' }, { transform: 'scale(1.15)' }, { transform: 'scale(1)' }],
+            { duration: 280, easing: 'ease-out' },
+          );
+        }
         for (const move of itemMoves) {
           const desktopIdx = favDocs.indexOf(desktopItems[move.entry.idx]);
           if (desktopIdx === -1) continue;
@@ -370,10 +390,15 @@ export default function Desktop({ profile }: { profile: any }) {
             positionsPatch[`item-${desktopIdx}`] = { right: move.finalRight, top: move.finalTop };
           }
         }
-        saveDocs(updated);
-        if (Object.keys(positionsPatch).length > 0) {
-          setLocalPositions(prev => ({ ...prev, ...positionsPatch }));
-        }
+        // Defer the state update so the fold-in animation has time to play.
+        const commit = () => {
+          saveDocs(updated);
+          if (Object.keys(positionsPatch).length > 0) {
+            setLocalPositions(prev => ({ ...prev, ...positionsPatch }));
+          }
+        };
+        if (droppedOnFolder) setTimeout(commit, 220);
+        else commit();
       }
 
       // Persist folders.
@@ -797,19 +822,22 @@ export default function Desktop({ profile }: { profile: any }) {
                 setStickyDrag({ id: note.id, startX: e.clientX, startY: e.clientY, origX: actualLeft, origY: y });
               }}>
               <div className="flex items-center gap-1">
-                <button onClick={e => { e.stopPropagation(); cycleStickyColor(note.id); }} title="Change color"
+                <button
+                  onPointerDown={e => e.stopPropagation()}
+                  onClick={e => { e.stopPropagation(); cycleStickyColor(note.id); }}
+                  title="Change color"
                   className="w-3 h-3 rounded-full bg-black/10 hover:bg-black/20 transition-colors" />
               </div>
               <div className="flex items-center gap-0.5">
-                <button onClick={e => { e.stopPropagation(); toggleStickyOnTop(note.id); }} title={note.sticky_on_top ? 'Remove from top' : 'Always on top'}
+                <button onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); toggleStickyOnTop(note.id); }} title={note.sticky_on_top ? 'Remove from top' : 'Always on top'}
                   className={`p-0.5 rounded transition-colors ${note.sticky_on_top ? 'text-blue-500' : 'text-black/20 hover:text-black/50'}`}>
                   <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 4.5h14.25M3 9h9.75M3 13.5h5.25m5.914 5.046a5.25 5.25 0 01-1.414 0M15.75 9v6" /><path strokeLinecap="round" strokeLinejoin="round" d="M12.75 12l3 3 3-3" /></svg>
                 </button>
-                <button onClick={e => { e.stopPropagation(); removeStickyFromDesktop(note.id); }} title="Unpin from desktop"
+                <button onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); removeStickyFromDesktop(note.id); }} title="Unpin from desktop"
                   className="p-0.5 rounded text-black/20 hover:text-black/50 transition-colors">
                   <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 12h-15" /></svg>
                 </button>
-                <button onClick={e => { e.stopPropagation(); deleteStickyNote(note.id); }} title="Delete note"
+                <button onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); deleteStickyNote(note.id); }} title="Delete note"
                   className="p-0.5 rounded text-black/20 hover:text-red-500 transition-colors">
                   <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                 </button>
