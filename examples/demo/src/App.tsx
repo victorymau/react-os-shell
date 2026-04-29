@@ -11,7 +11,7 @@
  * the Utilities / Games trays to see the windowing system in action. Cmd-K
  * opens the global search. Logout returns you to the demo's login splash.
  */
-import { lazy, useEffect, useState } from 'react';
+import { lazy, useEffect, useState, useSyncExternalStore } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
@@ -39,6 +39,9 @@ import { bundledApps, utilityApps, gameApps, googleApps, documentApps } from 're
 const Customization = lazy(() => import('react-os-shell').then(m => ({ default: m.Customization })));
 // Demo profile page wired to the shell's start-menu profile row.
 const ProfilePage = lazy(() => import('./ProfilePage'));
+// Floating panel toggled with Alt+Shift+T to test toast / notification /
+// confirm / confirmDestructive / prompt visually.
+const DevToolbox = lazy(() => import('./DevToolbox'));
 
 setShellWindowRegistry(createWindowRegistry(bundledApps, {
   '/settings/customization': {
@@ -141,12 +144,51 @@ const WALLPAPER_OPTIONS = [
 ];
 const WALLPAPER_URLS = WALLPAPER_OPTIONS.map(w => w.src);
 
-// Demo notification config — purely in-memory.
+// Demo notification store — purely in-memory. Stateful so the DevToolbox
+// can fire test notifications and have the bell badge update live.
+interface DemoNotification {
+  id: string;
+  title: string;
+  message?: string;
+  is_read: boolean;
+  created_at: string;
+}
+let demoNotifications: DemoNotification[] = [];
+const demoNotifListeners = new Set<() => void>();
+function notifyDemoListeners() { demoNotifListeners.forEach(fn => fn()); }
+function subscribeDemoNotifications(fn: () => void) {
+  demoNotifListeners.add(fn);
+  return () => { demoNotifListeners.delete(fn); };
+}
+function getDemoUnreadCount() {
+  return demoNotifications.reduce((n, x) => n + (x.is_read ? 0 : 1), 0);
+}
+function pushDemoNotification(title: string, message?: string) {
+  demoNotifications = [
+    {
+      id: crypto.randomUUID(),
+      title,
+      message,
+      is_read: false,
+      created_at: new Date().toISOString(),
+    },
+    ...demoNotifications,
+  ].slice(0, 50); // cap so the in-memory list doesn't grow forever
+  notifyDemoListeners();
+}
+
 const DEMO_NOTIFICATIONS: NotificationsConfig = {
-  useUnreadCount: () => 0,
-  list: async () => ({ results: [] }),
-  markRead: async () => {},
-  markAllRead: async () => {},
+  useUnreadCount: () =>
+    useSyncExternalStore(subscribeDemoNotifications, getDemoUnreadCount, getDemoUnreadCount),
+  list: async () => ({ results: demoNotifications as any }),
+  markRead: async (id) => {
+    demoNotifications = demoNotifications.map(n => n.id === id ? { ...n, is_read: true } : n);
+    notifyDemoListeners();
+  },
+  markAllRead: async () => {
+    demoNotifications = demoNotifications.map(n => ({ ...n, is_read: true }));
+    notifyDemoListeners();
+  },
   onItemClick: () => {},
 };
 
@@ -288,6 +330,7 @@ export default function App() {
                     <WindowManagerProvider>
                       <DefaultWindows />
                       <VersionBadge />
+                      <DevToolbox pushNotification={pushDemoNotification} />
                       <Routes>
                         <Route
                           path="*"

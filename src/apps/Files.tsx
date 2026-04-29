@@ -14,6 +14,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { WindowTitle } from '../shell/Modal';
 import { useWindowManager } from '../shell/WindowManager';
 import toast from '../shell/toast';
+import { confirm, prompt } from '../shell/ConfirmDialog';
 import { setPdfPreview } from './Preview';
 
 const DEFAULT_SERVER =
@@ -195,7 +196,11 @@ export default function Files() {
   };
 
   const handleNewFolder = async () => {
-    const name = window.prompt('Folder name');
+    const name = await prompt({
+      title: 'New folder',
+      placeholder: 'Folder name',
+      confirmLabel: 'Create',
+    });
     if (!name) return;
     if (/[\\/]/.test(name)) { toast.error('Folder names cannot contain slashes'); return; }
     const target = joinPath(path, name);
@@ -213,7 +218,11 @@ export default function Files() {
   };
 
   const handleRename = async (entry: FileEntry) => {
-    const next = window.prompt('New name', entry.name);
+    const next = await prompt({
+      title: `Rename ${entry.kind}`,
+      defaultValue: entry.name,
+      confirmLabel: 'Rename',
+    });
     if (!next || next === entry.name) return;
     if (/[\\/]/.test(next)) { toast.error('Names cannot contain slashes'); return; }
     const from = joinPath(path, entry.name);
@@ -232,7 +241,13 @@ export default function Files() {
   };
 
   const handleDelete = async (entry: FileEntry) => {
-    if (!window.confirm(`Delete "${entry.name}"${entry.kind === 'folder' ? ' and everything inside' : ''}?`)) return;
+    const ok = await confirm({
+      title: `Delete ${entry.kind}`,
+      message: `"${entry.name}"${entry.kind === 'folder' ? ' and everything inside' : ''} will be permanently removed.`,
+      confirmLabel: 'Delete',
+      variant: 'danger',
+    });
+    if (!ok) return;
     const target = joinPath(path, entry.name);
     const res = await authedFetch(
       `${server}/api/files?path=${encodeURIComponent(target)}`,

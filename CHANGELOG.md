@@ -4,7 +4,18 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
-## [0.1.47] — 2026-04-30
+## [0.1.48] — 2026-04-30
+
+### Added
+- New `prompt()` export from `react-os-shell` (alongside the existing `confirm` / `confirmDestructive`). Same Promise-returning shape — `await prompt({ title, message, defaultValue, placeholder, confirmLabel, cancelLabel, allowEmpty })` resolves to the trimmed string or `null` on cancel. Auto-focuses + selects, Enter saves, Escape cancels, click-outside dismisses.
+- Demo: floating **Dev Toolbox** panel toggled with `Alt+Shift+T`. Buttons fire test instances of `toast.success`, `toast.error`, push notification, `confirm`, `confirmDestructive`, and `prompt` so each can be visually QA'd.
+- Demo notification store is now stateful (in-memory, capped at 50 entries) so the bell badge updates live when a notification is pushed.
+
+### Changed
+- Files app: replaced the last `window.prompt` (New Folder, Rename) and `window.confirm` (Delete) calls with the in-app `prompt` and `confirm` dialogs. Delete now runs through the destructive variant of `confirm` (`variant: 'danger'`).
+- Browser app: replaced the right-click "Remove bookmark?" `window.confirm` with the in-app `confirm` dialog.
+
+
 
 ### Changed
 - Browser: clicking the star to add a bookmark now opens a small inline popover (URL preview + name field + Save / Cancel) anchored under the toolbar instead of hijacking the page with a native `window.prompt`. Enter saves, Escape or click-outside dismisses, the input auto-focuses with the hostname pre-selected.

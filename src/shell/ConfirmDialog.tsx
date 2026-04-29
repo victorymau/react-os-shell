@@ -31,6 +31,22 @@ type DestructiveConfirmFn = (options: DestructiveConfirmOptions) => Promise<bool
 let globalDestructiveConfirmFn: DestructiveConfirmFn = () => Promise.resolve(false);
 export const confirmDestructive = (opts: DestructiveConfirmOptions) => globalDestructiveConfirmFn(opts);
 
+// Prompt — windowed replacement for native window.prompt(). Resolves to the
+// trimmed string, or null if the user cancelled. Empty input counts as
+// cancel by default; pass `allowEmpty: true` to opt in.
+interface PromptOptions {
+  title?: string;
+  message?: string;
+  defaultValue?: string;
+  placeholder?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  allowEmpty?: boolean;
+}
+type PromptFn = (options: PromptOptions | string) => Promise<string | null>;
+let globalPromptFn: PromptFn = () => Promise.resolve(null);
+export const prompt = (opts: PromptOptions | string) => globalPromptFn(opts);
+
 export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [options, setOptions] = useState<ConfirmOptions>({ message: '' });
@@ -60,7 +76,27 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  useEffect(() => { globalConfirmFn = confirmFn; globalDestructiveConfirmFn = destructiveConfirmFn; }, [confirmFn, destructiveConfirmFn]);
+  // Prompt state
+  const [pOpen, setPOpen] = useState(false);
+  const [pOptions, setPOptions] = useState<PromptOptions>({});
+  const [pInput, setPInput] = useState('');
+  const pResolveRef = useRef<(value: string | null) => void>();
+
+  const promptFn: PromptFn = useCallback((opts) => {
+    const normalized = typeof opts === 'string' ? { message: opts } : opts;
+    setPOptions(normalized);
+    setPInput(normalized.defaultValue ?? '');
+    setPOpen(true);
+    return new Promise<string | null>((resolve) => {
+      pResolveRef.current = resolve;
+    });
+  }, []);
+
+  useEffect(() => {
+    globalConfirmFn = confirmFn;
+    globalDestructiveConfirmFn = destructiveConfirmFn;
+    globalPromptFn = promptFn;
+  }, [confirmFn, destructiveConfirmFn, promptFn]);
 
   const handleClose = (result: boolean) => {
     setOpen(false);
@@ -71,6 +107,23 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
     setDOpen(false);
     setDInput('');
     dResolveRef.current?.(result);
+  };
+
+  const handlePClose = (commit: boolean) => {
+    if (commit) {
+      const trimmed = pInput.trim();
+      if (!trimmed && !pOptions.allowEmpty) {
+        // Empty + not opted-in to allow empty: treat Save as Cancel.
+        setPOpen(false);
+        pResolveRef.current?.(null);
+        return;
+      }
+      setPOpen(false);
+      pResolveRef.current?.(trimmed);
+    } else {
+      setPOpen(false);
+      pResolveRef.current?.(null);
+    }
   };
 
   const variant = options.variant || (options.confirmLabel?.toLowerCase().includes('delete') || options.message.toLowerCase().includes('delete') ? 'danger' : 'info');
@@ -159,6 +212,50 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
                 disabled={dInput !== dOptions.confirmWord}
                 className={`px-4 py-2 text-sm font-medium rounded-lg disabled:opacity-40 ${dOptions.variant === 'warning' ? 'bg-yellow-600 hover:bg-yellow-700 text-white' : 'bg-red-600 hover:bg-red-700 text-white'}`}>
                 {dOptions.confirmWord}
+              </button>
+            </div>
+          </DialogPanel>
+        </div>
+      </Dialog>
+      {/* Prompt Dialog — windowed replacement for window.prompt() */}
+      <Dialog open={pOpen} onClose={() => handlePClose(false)} className="relative z-[9999]">
+        <DialogBackdrop className="fixed inset-0 bg-black/30 transition-opacity" />
+        <div className="fixed inset-0 flex items-center justify-center p-4">
+          <DialogPanel className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <DialogTitle className="text-base font-semibold text-gray-900">
+              {pOptions.title || 'Enter a value'}
+            </DialogTitle>
+            {pOptions.message && (
+              <p className="mt-2 text-sm text-gray-600">{pOptions.message}</p>
+            )}
+            <input
+              autoFocus
+              type="text"
+              value={pInput}
+              onChange={(e) => setPInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handlePClose(true);
+                else if (e.key === 'Escape') handlePClose(false);
+              }}
+              onFocus={(e) => e.target.select()}
+              placeholder={pOptions.placeholder}
+              className="mt-3 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+            />
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => handlePClose(false)}
+                className="bg-white text-gray-700 border border-gray-300 px-4 py-2 text-sm font-medium rounded-lg hover:bg-gray-50"
+              >
+                {pOptions.cancelLabel || 'Cancel'}
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePClose(true)}
+                disabled={!pOptions.allowEmpty && !pInput.trim()}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-sm font-medium rounded-lg disabled:opacity-40"
+              >
+                {pOptions.confirmLabel || 'OK'}
               </button>
             </div>
           </DialogPanel>

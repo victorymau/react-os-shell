@@ -8,6 +8,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { WindowTitle } from '../shell/Modal';
+import { confirm } from '../shell/ConfirmDialog';
 
 interface Bookmark {
   label: string;
@@ -294,9 +295,15 @@ export default function Browser() {
           <button
             key={i}
             onClick={() => navigate(b.url)}
-            onContextMenu={(e) => {
+            onContextMenu={async (e) => {
               e.preventDefault();
-              if (window.confirm(`Remove bookmark "${b.label}"?`)) removeBookmark(i);
+              const ok = await confirm({
+                title: 'Remove bookmark',
+                message: `"${b.label}" will be removed from your bookmarks.`,
+                confirmLabel: 'Remove',
+                variant: 'danger',
+              });
+              if (ok) removeBookmark(i);
             }}
             className="flex items-center gap-1.5 px-2 py-0.5 rounded text-[12px] text-gray-700 hover:bg-gray-100 whitespace-nowrap"
             title={`${b.url}\n(right-click to remove)`}
