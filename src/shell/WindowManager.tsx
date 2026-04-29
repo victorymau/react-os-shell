@@ -304,6 +304,80 @@ function RestoredRegistryModal({ item, onClose, onMinimize }: { item: MinimizedI
 }
 
 
+/** Find a modal panel whose title text contains `label`. */
+function findPanelByLabel(label: string): HTMLElement | null {
+  const panels = document.querySelectorAll('[data-modal-panel]');
+  for (const p of Array.from(panels)) {
+    const t = p.querySelector('.text-lg, .text-sm.font-medium');
+    if (t?.textContent?.includes(label)) return p as HTMLElement;
+  }
+  return null;
+}
+
+/** Hover-thumbnail showing a scaled-down clone of a window's content. */
+function TaskbarTabPreview({ label, anchorEl, onMouseEnter, onMouseLeave }: {
+  label: string; anchorEl: HTMLElement; onMouseEnter: () => void; onMouseLeave: () => void;
+}) {
+  const previewRef = useRef<HTMLDivElement>(null);
+  const PREVIEW_W = 240;
+  const PREVIEW_H = 150;
+
+  useEffect(() => {
+    const inner = previewRef.current;
+    if (!inner) return;
+    const target = findPanelByLabel(label);
+    if (!target) return;
+    const rect = target.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+    const scale = Math.min(PREVIEW_W / rect.width, PREVIEW_H / rect.height);
+    const clone = target.cloneNode(true) as HTMLElement;
+    clone.style.position = 'absolute';
+    clone.style.top = '0';
+    clone.style.left = '0';
+    clone.style.right = 'auto';
+    clone.style.bottom = 'auto';
+    clone.style.width = rect.width + 'px';
+    clone.style.height = rect.height + 'px';
+    clone.style.transform = `scale(${scale})`;
+    clone.style.transformOrigin = 'top left';
+    clone.style.pointerEvents = 'none';
+    clone.style.animation = 'none';
+    clone.removeAttribute('data-modal-panel');
+    clone.removeAttribute('data-modal-id');
+    // Strip nested fixed-position elements (window menus, tooltips) by
+    // hiding any descendants with position:fixed at clone time.
+    clone.querySelectorAll<HTMLElement>('[role="dialog"], [data-portal]').forEach(el => { el.style.display = 'none'; });
+    inner.innerHTML = '';
+    inner.appendChild(clone);
+    return () => { inner.innerHTML = ''; };
+  }, [label]);
+
+  const rect = anchorEl.getBoundingClientRect();
+  const taskbarPos = getComputedStyle(document.documentElement).getPropertyValue('--taskbar-position')?.trim() || 'bottom';
+  const left = Math.max(8, Math.min(rect.left + rect.width / 2 - PREVIEW_W / 2, window.innerWidth - PREVIEW_W - 8));
+  const top = taskbarPos === 'top'
+    ? rect.bottom + 8
+    : taskbarPos === 'bottom'
+      ? rect.top - PREVIEW_H - 8
+      : rect.top + rect.height / 2 - PREVIEW_H / 2;
+  const adjustedLeft = (taskbarPos === 'left') ? rect.right + 8 : (taskbarPos === 'right') ? rect.left - PREVIEW_W - 8 : left;
+
+  return createPortal(
+    <div
+      style={{ position: 'fixed', left: adjustedLeft, top, width: PREVIEW_W, height: PREVIEW_H, zIndex: 9999 }}
+      className="rounded-lg overflow-hidden bg-white/95 backdrop-blur-sm border border-gray-300 shadow-2xl"
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
+      <div ref={previewRef} className="absolute inset-0 overflow-hidden" />
+      <div className="absolute bottom-0 left-0 right-0 px-2 py-1 text-[11px] font-medium text-white bg-gradient-to-t from-black/80 to-transparent truncate pointer-events-none">
+        {label}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 function TaskbarWindows({ openWindows, onRemove, onCloseAll, onSplitView, onActivate }: {
   openWindows: MinimizedItem[]; onRemove: (id: string) => void; onCloseAll: () => void; onSplitView: () => void;
   onActivate: (label: string) => void;
@@ -316,6 +390,20 @@ function TaskbarWindows({ openWindows, onRemove, onCloseAll, onSplitView, onActi
   }, []);
 
   const activeModalId = useSyncExternalStore(subscribeActive, getActiveModalId);
+  const [hoveredLabel, setHoveredLabel] = useState<string | null>(null);
+  const [hoveredAnchor, setHoveredAnchor] = useState<HTMLElement | null>(null);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleEnter = (label: string, el: HTMLElement) => {
+    if (hoverTimerRef.current) { clearTimeout(hoverTimerRef.current); hoverTimerRef.current = null; }
+    hoverTimerRef.current = setTimeout(() => { setHoveredLabel(label); setHoveredAnchor(el); }, 350);
+  };
+  const handleLeave = () => {
+    if (hoverTimerRef.current) { clearTimeout(hoverTimerRef.current); hoverTimerRef.current = null; }
+    hoverTimerRef.current = setTimeout(() => { setHoveredLabel(null); setHoveredAnchor(null); }, 150);
+  };
+  const cancelLeave = () => {
+    if (hoverTimerRef.current) { clearTimeout(hoverTimerRef.current); hoverTimerRef.current = null; }
+  };
   // Filter out utility apps (e.g. calculator) from taskbar tabs
   const tabWindows = openWindows.filter(item => !item.route || !(WINDOW_REGISTRY[item.route] as PageRegistryEntry)?.utility);
   if (!target || tabWindows.length === 0) return null;
@@ -336,6 +424,8 @@ function TaskbarWindows({ openWindows, onRemove, onCloseAll, onSplitView, onActi
 
         return (
           <button key={item.id} onClick={() => onActivate(item.label)}
+            onMouseEnter={(e) => handleEnter(item.label, e.currentTarget)}
+            onMouseLeave={handleLeave}
             onDoubleClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('modal-center', { detail: { label: item.label } })); }}
             onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); window.dispatchEvent(new CustomEvent('modal-context-menu', { detail: { label: item.label, x: e.clientX, y: e.clientY } })); }}
             style={{ width: 'var(--window-tab-width, 200px)', fontSize: 'var(--window-tab-font-size, 12px)' }}
@@ -360,6 +450,14 @@ function TaskbarWindows({ openWindows, onRemove, onCloseAll, onSplitView, onActi
           <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 4H5a1 1 0 00-1 1v14a1 1 0 001 1h4m6-16h4a1 1 0 011 1v14a1 1 0 01-1 1h-4m-6 0V4" /></svg>
           Split
         </button>
+      )}
+      {hoveredLabel && hoveredAnchor && (
+        <TaskbarTabPreview
+          label={hoveredLabel}
+          anchorEl={hoveredAnchor}
+          onMouseEnter={cancelLeave}
+          onMouseLeave={handleLeave}
+        />
       )}
     </>,
     target
