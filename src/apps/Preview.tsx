@@ -10,6 +10,31 @@ import * as pdfjsLib from 'pdfjs-dist';
 import toast from '../shell/toast';
 import { WindowTitle, getActiveModalId } from '../shell/Modal';
 
+// online-3d-viewer pulls three@0.176, where WebGLRenderer's stencil context
+// attribute defaults to FALSE. Without a stencil buffer the capped section
+// view's mask test always reads zero and the cap never renders. Patch the
+// canvas getContext call once so the WebGL context is created with stencil
+// enabled. Idempotent — safe to call from anywhere; only the FIRST call
+// installs the wrapper, and the wrapper is a no-op for non-WebGL contexts.
+let _stencilContextPatched = false;
+function ensureStencilContextAttribute() {
+  if (_stencilContextPatched) return;
+  if (typeof HTMLCanvasElement === 'undefined') return;
+  _stencilContextPatched = true;
+  const orig = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = function patchedGetContext(
+    this: HTMLCanvasElement,
+    type: string,
+    attrs?: any,
+  ) {
+    if ((type === 'webgl' || type === 'webgl2' || type === 'experimental-webgl')
+        && (!attrs || attrs.stencil === undefined)) {
+      attrs = { ...(attrs || {}), stencil: true };
+    }
+    return (orig as any).call(this, type, attrs);
+  } as any;
+}
+
 const TITLE_DISPLAY_MAX = 24;
 function truncateForTitle(s: string) {
   return s.length > TITLE_DISPLAY_MAX ? `${s.slice(0, TITLE_DISPLAY_MAX - 1)}…` : s;
@@ -848,6 +873,11 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
         const libsBase = (typeof window !== 'undefined' && (window as any).__REACT_OS_SHELL_O3DV_LIBS__)
           || DEFAULT_O3DV_LIBS;
         OV.SetExternalLibLocation?.(libsBase);
+
+        // Must run before EmbeddedViewer creates its canvas so the WebGL
+        // context is granted a stencil buffer (needed by the section
+        // view's capping technique).
+        ensureStencilContextAttribute();
 
         viewer = new OV.EmbeddedViewer(containerRef.current, {
           backgroundColor: new OV.RGBAColor(245, 246, 248, 255),

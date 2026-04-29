@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.1.39] — 2026-04-30
+
+### Fixed
+- Preview 3D capped section: cap was failing to render because the WebGL context didn't have a stencil buffer. three.js 0.176 (the version online-3d-viewer bundles) defaults `WebGLRenderer({ stencil })` to `false`, so the canvas's WebGL context was created without stencil and every stencil op was a no-op — the cap mask `NotEqualStencilFunc(stencil, 0)` always failed and the cap never drew. Now we monkey-patch `HTMLCanvasElement.prototype.getContext` once before the EmbeddedViewer creates its canvas to inject `stencil: true` into webgl/webgl2 context attributes.
+
 ## [0.1.38] — 2026-04-30
 
 ### Fixed
