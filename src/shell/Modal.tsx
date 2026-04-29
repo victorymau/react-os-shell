@@ -629,38 +629,62 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     e.preventDefault(); e.stopPropagation();
     const sx = e.clientX, sy = e.clientY;
     const panel = panelRef.current;
+    // Always use the live rendered rect as the origin so we don't drift
+    // when the panel was previously maximised or pinned.
     const rect = panel?.getBoundingClientRect();
     const ox = rect ? rect.left : boxRef.current.x;
     const oy = rect ? rect.top : boxRef.current.y;
     const ow = rect ? rect.width : boxRef.current.w;
     const oh = rect ? rect.height : boxRef.current.h;
+    const MIN_W = 384;
+    const MIN_H = 400;
+    const isWest = corner === 'sw' || corner === 'nw' || corner === 'w';
+    const isNorth = corner === 'ne' || corner === 'nw' || corner === 'n';
+    const isEast = corner === 'se' || corner === 'ne' || corner === 'e';
+    const isSouth = corner === 'se' || corner === 'sw' || corner === 's';
     setMaximized(false);
-    // Use direct DOM updates during resize for performance (avoids React re-renders fighting the mouse)
-    const move = (ev: PointerEvent) => {
-      const minH = 400;
-      const dx = ev.clientX - sx;
-      const dy = ev.clientY - sy;
-      const newBox = { x: ox, y: oy, w: ow, h: oh };
-      if (corner === 'se') { newBox.w = Math.max(384, ow + dx); newBox.h = Math.max(minH, oh + dy); }
-      else if (corner === 'sw') { newBox.w = Math.max(384, ow - dx); newBox.x = ox + dx; newBox.h = Math.max(minH, oh + dy); if (newBox.w <= 384) newBox.x = ox + ow - 384; }
-      else if (corner === 'ne') { newBox.w = Math.max(384, ow + dx); newBox.h = Math.max(minH, oh - dy); newBox.y = oy + dy; if (newBox.h <= minH) newBox.y = oy + oh - minH; }
-      else if (corner === 'nw') { newBox.w = Math.max(384, ow - dx); newBox.x = ox + dx; newBox.h = Math.max(minH, oh - dy); newBox.y = oy + dy; if (newBox.w <= 384) newBox.x = ox + ow - 384; if (newBox.h <= minH) newBox.y = oy + oh - minH; }
-      else if (corner === 'e') { newBox.w = Math.max(384, ow + dx); }
-      else if (corner === 'w') { newBox.w = Math.max(384, ow - dx); newBox.x = ox + dx; if (newBox.w <= 384) newBox.x = ox + ow - 384; }
-      else if (corner === 's') { newBox.h = Math.max(minH, oh + dy); }
-      else if (corner === 'n') { newBox.h = Math.max(minH, oh - dy); newBox.y = oy + dy; if (newBox.h <= minH) newBox.y = oy + oh - minH; }
-      if (panel) {
-        panel.style.left = `${newBox.x}px`;
-        panel.style.top = `${newBox.y}px`;
-        panel.style.width = `${newBox.w}px`;
-        panel.style.height = `${newBox.h}px`;
+    // Pin the box to the actual rendered coordinates immediately so the
+    // panel does not jump if it was previously maximised.
+    setBox({ x: ox, y: oy, w: ow, h: oh });
+    boxRef.current = { x: ox, y: oy, w: ow, h: oh };
+
+    const compute = (dx: number, dy: number) => {
+      let nx = ox, ny = oy, nw = ow, nh = oh;
+      if (isEast)  nw = Math.max(MIN_W, ow + dx);
+      if (isSouth) nh = Math.max(MIN_H, oh + dy);
+      if (isWest) {
+        const targetW = Math.max(MIN_W, ow - dx);
+        // Anchor the east edge: as W grows/shrinks, x moves opposite so the
+        // east edge (ox + ow) stays fixed.
+        nx = ox + ow - targetW;
+        nw = targetW;
       }
-      boxRef.current = newBox;
+      if (isNorth) {
+        const targetH = Math.max(MIN_H, oh - dy);
+        ny = oy + oh - targetH;
+        nh = targetH;
+      }
+      return { x: nx, y: ny, w: nw, h: nh };
+    };
+
+    let raf = 0;
+    let pending: { x: number; y: number; w: number; h: number } | null = null;
+    const flush = () => {
+      raf = 0;
+      if (!pending) return;
+      const next = pending; pending = null;
+      boxRef.current = next;
+      setBox(next);
+    };
+    const move = (ev: PointerEvent) => {
+      pending = compute(ev.clientX - sx, ev.clientY - sy);
+      if (!raf) raf = requestAnimationFrame(flush);
     };
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
-      setBox({ ...boxRef.current });
+      if (raf) cancelAnimationFrame(raf);
+      flush();
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
