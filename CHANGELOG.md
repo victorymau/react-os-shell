@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.1.21] — 2026-04-29
+
+### Added
+- `PdfPreviewData.kind: 'image'` — Preview app now renders raster screenshots / photos in a dedicated panel with zoom (− / 100% / + / 1:1), Download, and optional Email actions. Same windowed UX as PDF and DXF mode.
+- `BugReportDetail` opens its captured screenshot in the Preview window (was opening in a new tab).
+
 ## [0.1.20] — 2026-04-29
 
 ### Added

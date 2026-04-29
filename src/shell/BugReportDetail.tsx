@@ -3,6 +3,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useBugReport, type BugReport } from './BugReportDialog';
 import { formatDate } from '../utils/date';
 import Modal from './Modal';
+import { useWindowManager } from './WindowManager';
+import { setPdfPreview } from '../apps/Preview';
 
 function StatePill({ resolved }: { resolved: boolean }) {
   return (
@@ -20,8 +22,16 @@ interface Props {
 export default function BugReportDetail({ report }: Props) {
   const qc = useQueryClient();
   const config = useBugReport();
+  const { openPage } = useWindowManager();
   const [resolveOpen, setResolveOpen] = useState(false);
   const [note, setNote] = useState('');
+
+  const openScreenshot = () => {
+    if (!report.screenshot_url) return;
+    const filename = `bug-report-${report.id}-screenshot.png`;
+    setPdfPreview({ url: report.screenshot_url, filename, kind: 'image' });
+    openPage('/preview');
+  };
 
   const resolve = useMutation({
     mutationFn: ({ is_resolved, resolution_note }: { is_resolved: boolean; resolution_note?: string }) => {
@@ -84,10 +94,10 @@ export default function BugReportDetail({ report }: Props) {
       </dl>
 
       {report.screenshot_url ? (
-        <a href={report.screenshot_url} target="_blank" rel="noopener noreferrer" className="block">
+        <button type="button" onClick={openScreenshot} className="block w-full text-left p-0 bg-transparent border-0 cursor-pointer">
           <img src={report.screenshot_url} alt="Screenshot at time of report"
             className="w-full rounded-lg border border-gray-200 hover:border-blue-400 transition-colors" />
-        </a>
+        </button>
       ) : (
         <div className="rounded-lg border border-dashed border-gray-300 p-6 text-center text-sm text-gray-400">
           No screenshot was captured for this report.

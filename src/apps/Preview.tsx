@@ -26,8 +26,9 @@ export interface PdfPreviewData {
   /** Display name (and download filename). */
   filename: string;
   /** Renderer to use. Defaults to `'pdf'`. `'dxf'` requires the consumer to
-   *  have `dxf-viewer` installed (it's an optional peer dep). */
-  kind?: 'pdf' | 'dxf';
+   *  have `dxf-viewer` installed (it's an optional peer dep). `'image'`
+   *  renders an `<img>` for raster screenshots / photos. */
+  kind?: 'pdf' | 'dxf' | 'image';
   /** Optional download handler — replaces the built-in "save URL as filename" if supplied. */
   onDownload?: () => void;
   /** Optional email handler — only shown when supplied. */
@@ -93,6 +94,10 @@ export default function Preview() {
 
   if (data.kind === 'dxf') {
     return <DxfPanel key={data.url} url={data.url} filename={data.filename} onDownload={data.onDownload} onEmail={data.onEmail} />;
+  }
+
+  if (data.kind === 'image') {
+    return <ImagePanel key={data.url} url={data.url} filename={data.filename} onDownload={data.onDownload} onEmail={data.onEmail} />;
   }
 
   return <PdfPanel key={data.url} url={data.url} filename={data.filename} onDownload={data.onDownload} onEmail={data.onEmail} />;
@@ -359,6 +364,69 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
         )}
         {error && (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-red-600 px-6 text-center">{error}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface ImagePanelProps {
+  url: string;
+  filename: string;
+  onDownload?: () => void;
+  onEmail?: () => void;
+}
+
+function ImagePanel({ url, filename, onDownload, onEmail }: ImagePanelProps) {
+  const [zoom, setZoom] = useState(1);
+  const [error, setError] = useState(false);
+
+  const handleDefaultDownload = () => {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+  };
+
+  const btn = 'px-2 py-1 rounded hover:bg-gray-200 transition-colors text-gray-600 flex items-center gap-1';
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-200 bg-gray-50 shrink-0 text-xs">
+        <div className="flex items-center gap-1">
+          <span className="font-medium text-gray-600">Image</span>
+          <span className="text-gray-400 truncate max-w-xs">{filename}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <button onClick={() => setZoom(z => Math.max(0.1, Math.round((z - 0.25) * 100) / 100))} className={btn}>−</button>
+          <span className="text-gray-500 w-12 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
+          <button onClick={() => setZoom(z => Math.min(8, Math.round((z + 0.25) * 100) / 100))} className={btn}>+</button>
+          <button onClick={() => setZoom(1)} className={btn}>1:1</button>
+        </div>
+        <div className="flex items-center gap-1">
+          <button onClick={onDownload ?? handleDefaultDownload} className={btn}>
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+            Download
+          </button>
+          {onEmail && (
+            <button onClick={onEmail} className={btn}>
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" /></svg>
+              Email
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="flex-1 overflow-auto bg-gray-100 flex items-center justify-center p-4">
+        {error ? (
+          <div className="text-sm text-red-600">Failed to load image.</div>
+        ) : (
+          <img
+            src={url}
+            alt={filename}
+            onError={() => setError(true)}
+            style={{ transform: `scale(${zoom})`, transformOrigin: 'center center', transition: 'transform 120ms ease' }}
+            className="max-w-full max-h-full shadow-lg rounded bg-white"
+          />
         )}
       </div>
     </div>
