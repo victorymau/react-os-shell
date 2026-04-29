@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.1.45] — 2026-04-30
+
+### Changed
+- Browser app: replaced the browser-default "refused to connect" blank page with a friendly inline panel for sites known to refuse iframe embedding (Google, YouTube, Facebook, Twitter/X, GitHub, LinkedIn, Reddit, Amazon, Apple, Microsoft, Outlook, Netflix, Spotify, PayPal, OpenAI/ChatGPT, Claude, etc.). The panel shows a brief explanation of why X-Frame-Options / CSP makes embedding impossible and a prominent "Open in a new tab" button. A small "Try loading it here anyway" link lets the user override and attempt the iframe load if they want.
+
 ## [0.1.44] — 2026-04-30
 
 ### Added

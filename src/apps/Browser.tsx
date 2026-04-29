@@ -32,6 +32,32 @@ function normalizeUrl(input: string): string {
   return 'https://duckduckgo.com/?q=' + encodeURIComponent(s);
 }
 
+// Sites known to refuse iframe embedding via X-Frame-Options or CSP. There's
+// no workaround inside an iframe — the browser blocks the load. We keep a
+// list so we can short-circuit to a friendly "open in new tab" panel
+// instead of letting the browser's blank "refused to connect" error
+// through. Subdomain match: `mail.google.com` matches `google.com`.
+const BLOCKED_HOSTS = [
+  'google.com', 'gmail.com', 'youtube.com',
+  'facebook.com', 'instagram.com', 'whatsapp.com',
+  'twitter.com', 'x.com',
+  'github.com', 'gitlab.com',
+  'linkedin.com', 'reddit.com', 'pinterest.com',
+  'amazon.com', 'amazon.ca', 'amazon.co.uk',
+  'apple.com', 'icloud.com',
+  'microsoft.com', 'outlook.com', 'live.com', 'office.com',
+  'netflix.com', 'spotify.com',
+  'paypal.com', 'stripe.com',
+  'chat.openai.com', 'chatgpt.com', 'claude.ai',
+];
+
+function hostIsBlocked(href: string): boolean {
+  try {
+    const host = new URL(href).hostname.toLowerCase();
+    return BLOCKED_HOSTS.some(b => host === b || host.endsWith('.' + b));
+  } catch { return false; }
+}
+
 function loadBookmarks(): Bookmark[] {
   if (typeof window === 'undefined') return DEFAULT_BOOKMARKS;
   try {
@@ -226,39 +252,14 @@ export default function Browser() {
 
       {/* Iframe area */}
       <div className="flex-1 relative min-h-0 bg-gray-50">
-        <iframe
-          key={iframeKey + url}
-          ref={iframeRef}
-          src={url}
-          className="absolute inset-0 w-full h-full bg-white"
-          // Sandboxing keeps embedded pages from messing with the parent
-          // window state. allow-same-origin lets sites that *do* allow
-          // embedding actually behave normally; allow-scripts is needed
-          // for any modern site.
-          sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-modals"
-          referrerPolicy="no-referrer-when-downgrade"
+        <BrowserBody
+          url={url}
+          iframeKey={iframeKey}
+          iframeRef={iframeRef}
+          openExternal={openExternal}
+          showHelp={showHelp}
+          dismissHelp={() => setShowHelp(false)}
         />
-
-        {showHelp && (
-          <div className="absolute top-2 right-2 max-w-sm bg-white border border-gray-200 rounded-md shadow-lg p-3 text-xs text-gray-700 z-10">
-            <div className="font-medium text-gray-900 mb-1">Why is this page blank?</div>
-            <p className="mb-2">
-              Most major sites (Google, GitHub, banks, news) refuse to be embedded in
-              an iframe via <span className="font-mono">X-Frame-Options</span> or
-              Content Security Policy. There's no workaround — the browser blocks the
-              load before our app can do anything.
-            </p>
-            <p>
-              Hit the <span className="font-medium">↗</span> button to open the page in
-              a real new tab. Sites that <em>do</em> allow embedding (Wikipedia, MDN,
-              docs sites, your own apps) work fine in here.
-            </p>
-            <button
-              onClick={() => setShowHelp(false)}
-              className="mt-2 text-[11px] text-blue-600 hover:underline"
-            >Got it</button>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -271,4 +272,103 @@ function titleFromUrl(u: string): string {
   } catch {
     return u;
   }
+}
+
+function BrowserBody({
+  url,
+  iframeKey,
+  iframeRef,
+  openExternal,
+  showHelp,
+  dismissHelp,
+}: {
+  url: string;
+  iframeKey: number;
+  iframeRef: React.RefObject<HTMLIFrameElement | null>;
+  openExternal: () => void;
+  showHelp: boolean;
+  dismissHelp: () => void;
+}) {
+  // If the user dismisses the blocked-site panel, allow them to attempt
+  // the iframe load anyway. Reset the override whenever URL changes.
+  const [forceTry, setForceTry] = useState(false);
+  useEffect(() => { setForceTry(false); }, [url]);
+
+  const blocked = hostIsBlocked(url) && !forceTry;
+
+  if (blocked) {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center bg-white p-8">
+        <div className="max-w-md text-center">
+          <svg className="h-14 w-14 mx-auto text-gray-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636m12.728 12.728L21 21M5.636 5.636L3 3m9 9a9 9 0 110-18 9 9 0 010 18z" />
+          </svg>
+          <h3 className="text-base font-semibold text-gray-800 mb-1">
+            {titleFromUrl(url)} can't be embedded
+          </h3>
+          <p className="text-sm text-gray-500 mb-4">
+            This site sends an <span className="font-mono text-xs">X-Frame-Options</span>{' '}
+            or <span className="font-mono text-xs">Content-Security-Policy</span> header
+            that refuses iframe embedding. The browser blocks the load before our app
+            can do anything about it.
+          </p>
+          <div className="flex flex-col items-center gap-2">
+            <button
+              onClick={openExternal}
+              className="px-4 py-2 bg-blue-500 text-white text-sm rounded hover:bg-blue-600 inline-flex items-center gap-2"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-7.5-9L21 3m0 0v6m0-6L9.75 14.25" />
+              </svg>
+              Open in a new tab
+            </button>
+            <button
+              onClick={() => setForceTry(true)}
+              className="text-xs text-gray-500 hover:text-gray-800 underline"
+            >
+              Try loading it here anyway
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <iframe
+        key={iframeKey + url}
+        ref={iframeRef as React.RefObject<HTMLIFrameElement>}
+        src={url}
+        className="absolute inset-0 w-full h-full bg-white"
+        // Sandboxing keeps embedded pages from messing with the parent
+        // window state. allow-same-origin lets sites that *do* allow
+        // embedding actually behave normally; allow-scripts is needed
+        // for any modern site.
+        sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-modals"
+        referrerPolicy="no-referrer-when-downgrade"
+      />
+
+      {showHelp && (
+        <div className="absolute top-2 right-2 max-w-sm bg-white border border-gray-200 rounded-md shadow-lg p-3 text-xs text-gray-700 z-10">
+          <div className="font-medium text-gray-900 mb-1">Why is this page blank?</div>
+          <p className="mb-2">
+            Most major sites (Google, GitHub, banks, news) refuse to be embedded in
+            an iframe via <span className="font-mono">X-Frame-Options</span> or
+            Content Security Policy. There's no workaround — the browser blocks the
+            load before our app can do anything.
+          </p>
+          <p>
+            Hit the <span className="font-medium">↗</span> button to open the page in
+            a real new tab. Sites that <em>do</em> allow embedding (Wikipedia, MDN,
+            docs sites, your own apps) work fine in here.
+          </p>
+          <button
+            onClick={dismissHelp}
+            className="mt-2 text-[11px] text-blue-600 hover:underline"
+          >Got it</button>
+        </div>
+      )}
+    </>
+  );
 }
