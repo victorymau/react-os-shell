@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.1.11] — 2026-04-29
+
+### Added
+- Multi-select drag on the desktop. After rubber-banding (or shift-/cmd-clicking) a set of icons or folders, dragging any one of them moves the whole group by the same delta. Each icon's final position is persisted independently on drop. Folder fold-in still only fires on a single-icon drag, matching the existing UX.
+- Shift/Cmd/Ctrl-click an icon to add it to the current selection without clearing the rubber-band set.
+
 ## [0.1.10] — 2026-04-29
 
 ### Added

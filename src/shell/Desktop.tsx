@@ -271,67 +271,126 @@ export default function Desktop({ profile }: { profile: any }) {
   // ── Drag logic ──
   // Local position overrides — applied immediately on drop, before API responds
   const [localPositions, setLocalPositions] = useState<Record<string, { right: number; top: number }>>({});
-  const dragElRef = useRef<HTMLElement | null>(null);
+  // When the drag starts on a selected icon, all selected icons move together.
+  // dragEntriesRef holds one entry per moving icon: its element, type, index,
+  // and origin position (relative to the desktop).
+  type DragEntry = { key: string; type: 'item' | 'folder'; idx: number; origX: number; origY: number; el: HTMLElement | null };
+  const dragEntriesRef = useRef<DragEntry[]>([]);
 
   const startDrag = (type: 'item' | 'folder', idx: number, e: React.PointerEvent) => {
     if (e.button !== 0) return;
-    const items = type === 'item' ? desktopItems : folders;
-    const item = items[idx];
-    const pos = type === 'item' ? getItemPos(item as DesktopItem, idx) : getFolderPos(item as DesktopFolder, idx);
-    // origX = right offset, origY = top offset
-    setDragging({ type, idx, startX: e.clientX, startY: e.clientY, origX: pos.right, origY: pos.top });
-    dragElRef.current = (e.target as HTMLElement).closest('[data-desktop-icon]') as HTMLElement;
+    const primaryKey = `${type}-${idx}`;
+    // If the icon being grabbed is in the current selection, every selected
+    // icon comes along. Otherwise it's a single-icon drag and we replace
+    // the selection with just this one.
+    const draggingMulti = selected.has(primaryKey) && selected.size > 1;
+    const keys = draggingMulti ? Array.from(selected) : [primaryKey];
+
+    const entries: DragEntry[] = [];
+    for (const key of keys) {
+      if (key.startsWith('item-')) {
+        const i = parseInt(key.slice(5), 10);
+        const itm = desktopItems[i];
+        if (!itm) continue;
+        const pos = getItemPos(itm, i);
+        const el = document.querySelector(`[data-desktop-icon="${key}"]`) as HTMLElement | null;
+        entries.push({ key, type: 'item', idx: i, origX: pos.right, origY: pos.top, el });
+      } else if (key.startsWith('folder-')) {
+        const i = parseInt(key.slice(7), 10);
+        const f = folders[i];
+        if (!f) continue;
+        const pos = getFolderPos(f, i);
+        const el = document.querySelector(`[data-desktop-icon="${key}"]`) as HTMLElement | null;
+        entries.push({ key, type: 'folder', idx: i, origX: pos.right, origY: pos.top, el });
+      }
+    }
+    dragEntriesRef.current = entries;
+    const primaryEntry = entries.find(e => e.key === primaryKey) ?? entries[0];
+    if (!primaryEntry) return;
+    setDragging({ type, idx, startX: e.clientX, startY: e.clientY, origX: primaryEntry.origX, origY: primaryEntry.origY });
     e.preventDefault();
   };
 
   useEffect(() => {
     if (!dragging) return;
-    const el = dragElRef.current;
+    const entries = dragEntriesRef.current;
     const move = (e: PointerEvent) => {
-      // Moving right → decrease right offset; moving down → increase top offset
-      const nr = dragging.origX - (e.clientX - dragging.startX);
-      const nt = dragging.origY + e.clientY - dragging.startY;
-      if (el) {
-        el.style.right = `${nr}px`;
-        el.style.top = `${nt}px`;
-        el.style.left = 'auto';
-        el.style.zIndex = '100';
-        el.style.opacity = '0.7';
+      const dx = e.clientX - dragging.startX;
+      const dy = e.clientY - dragging.startY;
+      // Apply delta to every dragged icon.
+      for (const entry of entries) {
+        if (!entry.el) continue;
+        // Moving right → decrease right offset; moving down → increase top offset
+        entry.el.style.right = `${entry.origX - dx}px`;
+        entry.el.style.top = `${entry.origY + dy}px`;
+        entry.el.style.left = 'auto';
+        entry.el.style.zIndex = '100';
+        entry.el.style.opacity = '0.7';
       }
     };
     const up = (e: PointerEvent) => {
-      let finalRight = dragging.origX - (e.clientX - dragging.startX);
-      let finalTop = Math.max(0, dragging.origY + e.clientY - dragging.startY);
-      if (snapEnabled) { const s = snapToGrid(finalRight, finalTop); finalRight = s.x; finalTop = s.y; }
-      finalRight = Math.max(0, finalRight);
-
-      if (el) {
-        el.style.zIndex = '';
-        el.style.opacity = '';
+      const dx = e.clientX - dragging.startX;
+      const dy = e.clientY - dragging.startY;
+      // Reset visual transform overrides on every dragged icon.
+      for (const entry of entries) {
+        if (!entry.el) continue;
+        entry.el.style.zIndex = '';
+        entry.el.style.opacity = '';
       }
 
-      if (dragging.type === 'item') {
-        const droppedOnFolder = folders.find((f, fi) => {
-          const fp = getFolderPos(f, fi);
-          return Math.abs(finalRight - fp.right) < 40 && Math.abs(finalTop - fp.top) < 40;
-        });
+      // Compute final positions for each dragged entry.
+      const computedPositions = entries.map(entry => {
+        let finalRight = entry.origX - dx;
+        let finalTop = Math.max(0, entry.origY + dy);
+        if (snapEnabled) { const s = snapToGrid(finalRight, finalTop); finalRight = s.x; finalTop = s.y; }
+        finalRight = Math.max(0, finalRight);
+        return { entry, finalRight, finalTop };
+      });
+
+      // Persist items.
+      const itemMoves = computedPositions.filter(p => p.entry.type === 'item');
+      if (itemMoves.length > 0) {
         const updated = [...favDocs];
-        const desktopIdx = favDocs.indexOf(desktopItems[dragging.idx]);
-        if (droppedOnFolder) {
-          updated[desktopIdx] = { ...updated[desktopIdx], folderId: droppedOnFolder.id, x: undefined, y: undefined };
-        } else {
-          updated[desktopIdx] = { ...updated[desktopIdx], x: finalRight, y: finalTop, folderId: undefined };
-          setLocalPositions(prev => ({ ...prev, [`item-${desktopIdx}`]: { right: finalRight, top: finalTop } }));
+        const positionsPatch: Record<string, { right: number; top: number }> = {};
+        // Single-item drag onto a folder still folds in (multi-drag never folds).
+        const singleItem = itemMoves.length === 1 && entries.length === 1 ? itemMoves[0] : null;
+        const droppedOnFolder = singleItem
+          ? folders.find((f, fi) => {
+              const fp = getFolderPos(f, fi);
+              return Math.abs(singleItem.finalRight - fp.right) < 40 && Math.abs(singleItem.finalTop - fp.top) < 40;
+            })
+          : undefined;
+        for (const move of itemMoves) {
+          const desktopIdx = favDocs.indexOf(desktopItems[move.entry.idx]);
+          if (desktopIdx === -1) continue;
+          if (droppedOnFolder) {
+            updated[desktopIdx] = { ...updated[desktopIdx], folderId: droppedOnFolder.id, x: undefined, y: undefined };
+          } else {
+            updated[desktopIdx] = { ...updated[desktopIdx], x: move.finalRight, y: move.finalTop, folderId: undefined };
+            positionsPatch[`item-${desktopIdx}`] = { right: move.finalRight, top: move.finalTop };
+          }
         }
         saveDocs(updated);
-      } else {
-        const updated = [...folders];
-        updated[dragging.idx] = { ...updated[dragging.idx], x: finalRight, y: finalTop };
-        setLocalPositions(prev => ({ ...prev, [`folder-${dragging.idx}`]: { right: finalRight, top: finalTop } }));
-        saveFolders(updated);
+        if (Object.keys(positionsPatch).length > 0) {
+          setLocalPositions(prev => ({ ...prev, ...positionsPatch }));
+        }
       }
+
+      // Persist folders.
+      const folderMoves = computedPositions.filter(p => p.entry.type === 'folder');
+      if (folderMoves.length > 0) {
+        const updated = [...folders];
+        const positionsPatch: Record<string, { right: number; top: number }> = {};
+        for (const move of folderMoves) {
+          updated[move.entry.idx] = { ...updated[move.entry.idx], x: move.finalRight, y: move.finalTop };
+          positionsPatch[`folder-${move.entry.idx}`] = { right: move.finalRight, top: move.finalTop };
+        }
+        saveFolders(updated);
+        setLocalPositions(prev => ({ ...prev, ...positionsPatch }));
+      }
+
       setDragging(null);
-      dragElRef.current = null;
+      dragEntriesRef.current = [];
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
@@ -647,10 +706,17 @@ export default function Desktop({ profile }: { profile: any }) {
         const pos = localPositions[`item-${docIdx}`] || getItemPos(doc, i);
         const isSelected = selected.has(`item-${i}`);
         return (
-          <div key={`item-${doc.entityType}-${doc.entityId}-${i}`} data-desktop-icon
+          <div key={`item-${doc.entityType}-${doc.entityId}-${i}`} data-desktop-icon={`item-${i}`}
             style={{ position: 'absolute', right: pos.right, top: pos.top, zIndex: 1 }}
             onPointerDown={e => { e.stopPropagation(); startDrag('item', i, e); }}
-            onClick={e => { e.stopPropagation(); setSelected(new Set([`item-${i}`])); }}
+            onClick={e => {
+              e.stopPropagation();
+              if (e.shiftKey || e.metaKey || e.ctrlKey) {
+                setSelected(prev => { const next = new Set(prev); next.has(`item-${i}`) ? next.delete(`item-${i}`) : next.add(`item-${i}`); return next; });
+              } else if (!selected.has(`item-${i}`)) {
+                setSelected(new Set([`item-${i}`]));
+              }
+            }}
             onContextMenu={e => handleItemContextMenu(e, i)}
             onDoubleClick={e => { e.stopPropagation(); doc.entityType === 'page' ? openPage(doc.entityId) : openEntity(doc.entityType, doc.entityId, null, doc.label); }}
             className="cursor-default select-none"
@@ -666,10 +732,17 @@ export default function Desktop({ profile }: { profile: any }) {
         const isSelected = selected.has(`folder-${i}`);
         const itemCount = folderItems(folder.id).length;
         return (
-          <div key={`folder-${folder.id}`} data-desktop-icon
+          <div key={`folder-${folder.id}`} data-desktop-icon={`folder-${i}`}
             style={{ position: 'absolute', right: pos.right, top: pos.top, zIndex: 1 }}
             onPointerDown={e => { e.stopPropagation(); startDrag('folder', i, e); }}
-            onClick={e => { e.stopPropagation(); setSelected(new Set([`folder-${i}`])); }}
+            onClick={e => {
+              e.stopPropagation();
+              if (e.shiftKey || e.metaKey || e.ctrlKey) {
+                setSelected(prev => { const next = new Set(prev); next.has(`folder-${i}`) ? next.delete(`folder-${i}`) : next.add(`folder-${i}`); return next; });
+              } else if (!selected.has(`folder-${i}`)) {
+                setSelected(new Set([`folder-${i}`]));
+              }
+            }}
             onContextMenu={e => handleFolderContextMenu(e, i)}
             onDoubleClick={e => { e.stopPropagation(); setOpenFolder(folder.id); }}
             className="cursor-default select-none"
