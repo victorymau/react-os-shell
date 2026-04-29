@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.1.28] — 2026-04-29
+
+### Added
+- Preview DXF panel now loads default fonts (Roboto, Noto Sans Display, HanaMin) so TEXT/MTEXT entities render as readable glyphs instead of empty boxes. Override via `window.__REACT_OS_SHELL_DXF_FONTS__`.
+- Layer toggle panel — opens from the toolbar, lists every layer with a color swatch + visibility checkbox, plus All/None bulk toggles.
+- Floating navigation hint (Drag to pan • Scroll to zoom • Fit to reset) auto-shows on load and auto-hides after 5s; toggleable via the `?` button in the toolbar.
+
 ## [0.1.21] — 2026-04-29
 
 ### Added

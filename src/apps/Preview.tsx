@@ -370,17 +370,38 @@ interface DxfPanelProps {
   onEmail?: () => void;
 }
 
+// Default font set covering Latin + CJK glyphs, served from jsdelivr's mirror
+// of the dxf-viewer example assets. Without these, any TEXT/MTEXT entities in
+// the drawing render as empty boxes. Consumers can override by setting
+// `window.__REACT_OS_SHELL_DXF_FONTS__` to a different array of TTF/OTF URLs.
+const DEFAULT_DXF_FONTS: string[] = [
+  'https://cdn.jsdelivr.net/gh/vagran/dxf-viewer-example-src@master/src/fonts/Roboto-LightItalic.ttf',
+  'https://cdn.jsdelivr.net/gh/vagran/dxf-viewer-example-src@master/src/fonts/NotoSansDisplay-SemiCondensed.ttf',
+  'https://cdn.jsdelivr.net/gh/vagran/dxf-viewer-example-src@master/src/fonts/HanaMinA.ttf',
+];
+
+interface DxfLayer {
+  name: string;
+  displayName?: string;
+  color?: number;
+  visible: boolean;
+}
+
 function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [layers, setLayers] = useState<DxfLayer[]>([]);
+  const [showLayers, setShowLayers] = useState(false);
+  const [showHint, setShowHint] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     let viewer: any = null;
     setLoading(true);
     setError(null);
+    setLayers([]);
 
     (async () => {
       let DxfViewer: any;
@@ -419,8 +440,25 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
         if (ClearColor) viewerOpts.clearColor = new ClearColor(0xffffff);
         viewer = new DxfViewer(containerRef.current, viewerOpts);
         viewerRef.current = viewer;
-        await viewer.Load({ url, fonts: null, workerFactory: null });
+
+        const fontUrls = (typeof window !== 'undefined' && (window as any).__REACT_OS_SHELL_DXF_FONTS__)
+          || DEFAULT_DXF_FONTS;
+        await viewer.Load({ url, fonts: fontUrls, workerFactory: null });
         if (cancelled) return;
+
+        // Snapshot layer list — used to render the toggle panel.
+        try {
+          const list: any[] = viewer.GetLayers?.() ?? [];
+          if (Array.isArray(list)) {
+            setLayers(list.map(l => ({
+              name: l.name,
+              displayName: l.displayName ?? l.name,
+              color: typeof l.color === 'number' ? l.color : undefined,
+              visible: true,
+            })));
+          }
+        } catch {}
+
         // Force-fit using the actual loaded bounds and refresh canvas size.
         const refit = () => {
           try {
@@ -460,6 +498,30 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
     };
   }, [url]);
 
+  // Auto-hide the usage hint after a few seconds.
+  useEffect(() => {
+    if (!showHint || loading) return;
+    const t = setTimeout(() => setShowHint(false), 5000);
+    return () => clearTimeout(t);
+  }, [showHint, loading]);
+
+  const toggleLayer = (name: string) => {
+    setLayers(prev => prev.map(l => {
+      if (l.name !== name) return l;
+      const next = !l.visible;
+      try { viewerRef.current?.ShowLayer?.(name, next); } catch {}
+      return { ...l, visible: next };
+    }));
+  };
+
+  const setAllLayers = (visible: boolean) => {
+    setLayers(prev => prev.map(l => {
+      if (l.visible === visible) return l;
+      try { viewerRef.current?.ShowLayer?.(l.name, visible); } catch {}
+      return { ...l, visible };
+    }));
+  };
+
   const handleDefaultDownload = () => {
     const a = document.createElement('a');
     a.href = url;
@@ -468,10 +530,27 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
   };
 
   const handleResetView = () => {
-    try { viewerRef.current?.FitView?.(); } catch {}
+    try {
+      const v = viewerRef.current;
+      const bounds = v?.GetBounds?.();
+      const origin = v?.GetOrigin?.();
+      if (bounds && origin) {
+        v.FitView(
+          bounds.minX - origin.x, bounds.maxX - origin.x,
+          bounds.minY - origin.y, bounds.maxY - origin.y,
+        );
+      } else {
+        v?.FitView?.();
+      }
+      v?.Render?.();
+    } catch {}
   };
 
   const btn = 'px-2 py-1 rounded hover:bg-gray-200 transition-colors text-gray-600 flex items-center gap-1';
+  const colorHex = (n?: number) => {
+    if (typeof n !== 'number') return '#999';
+    return '#' + n.toString(16).padStart(6, '0');
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -480,7 +559,19 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
           <span className="font-medium text-gray-600">DXF</span>
           <span className="text-gray-400 truncate max-w-xs">{filename}</span>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 relative">
+          <button
+            onClick={() => setShowLayers(s => !s)}
+            className={btn + (showLayers ? ' bg-gray-200' : '')}
+            title="Toggle layer visibility"
+            disabled={layers.length === 0}
+          >
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6.429 9.75L2.25 12l4.179 2.25m0-4.5l5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0l4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0l-5.571 3-5.571-3" /></svg>
+            Layers {layers.length > 0 && <span className="text-gray-400">({layers.filter(l => l.visible).length}/{layers.length})</span>}
+          </button>
+          <button onClick={() => setShowHint(s => !s)} className={btn} title="How to navigate">
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" /></svg>
+          </button>
           <button onClick={handleResetView} className={btn} title="Fit drawing to view">Fit</button>
           <button onClick={onDownload ?? handleDefaultDownload} className={btn}>
             <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
@@ -499,6 +590,53 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
          *  constructor, which kills any `inset: 0` sizing. Use explicit
          *  width/height: 100% so the container always fills its flex parent. */}
         <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+
+        {showLayers && layers.length > 0 && (
+          <div className="absolute top-2 right-2 w-64 max-h-[70%] flex flex-col bg-white/95 backdrop-blur border border-gray-200 rounded-md shadow-xl z-10 text-xs">
+            <div className="flex items-center justify-between px-2 py-1.5 border-b border-gray-200 bg-gray-50">
+              <span className="font-medium text-gray-700">Layers</span>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setAllLayers(true)} className="px-1.5 py-0.5 rounded hover:bg-gray-200 text-gray-600">All</button>
+                <button onClick={() => setAllLayers(false)} className="px-1.5 py-0.5 rounded hover:bg-gray-200 text-gray-600">None</button>
+                <button onClick={() => setShowLayers(false)} className="px-1.5 py-0.5 rounded hover:bg-gray-200 text-gray-600" title="Close">×</button>
+              </div>
+            </div>
+            <div className="overflow-y-auto py-1">
+              {layers.map(l => (
+                <label key={l.name} className="flex items-center gap-2 px-2 py-1 hover:bg-gray-100 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={l.visible}
+                    onChange={() => toggleLayer(l.name)}
+                    className="h-3.5 w-3.5"
+                  />
+                  <span
+                    className="inline-block h-3 w-3 rounded-sm border border-gray-300 shrink-0"
+                    style={{ background: colorHex(l.color) }}
+                  />
+                  <span className="truncate text-gray-700" title={l.displayName}>{l.displayName || l.name}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {showHint && !loading && !error && (
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-gray-900/85 text-white text-[11px] px-3 py-1.5 rounded-full shadow-lg flex items-center gap-3 z-10 pointer-events-none">
+            <span className="flex items-center gap-1">
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" /></svg>
+              Drag to pan
+            </span>
+            <span className="text-white/40">•</span>
+            <span className="flex items-center gap-1">
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607zM10.5 7.5v6m3-3h-6" /></svg>
+              Scroll to zoom
+            </span>
+            <span className="text-white/40">•</span>
+            <span>Fit to reset</span>
+          </div>
+        )}
+
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-white/80 text-sm text-gray-500">Loading drawing…</div>
         )}
