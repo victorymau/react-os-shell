@@ -314,14 +314,11 @@ function findPanelByLabel(label: string): HTMLElement | null {
   return null;
 }
 
-/** Hover-thumbnail showing a scaled-down clone of a window's content. */
-function TaskbarTabPreview({ label, anchorEl, onMouseEnter, onMouseLeave }: {
-  label: string; anchorEl: HTMLElement; onMouseEnter: () => void; onMouseLeave: () => void;
+/** Render a single window snapshot (scaled clone of the matching panel). */
+function ThumbCard({ label, width, height, onClick, onClose }: {
+  label: string; width: number; height: number; onClick?: () => void; onClose?: () => void;
 }) {
   const previewRef = useRef<HTMLDivElement>(null);
-  const PREVIEW_W = 240;
-  const PREVIEW_H = 150;
-
   useEffect(() => {
     const inner = previewRef.current;
     if (!inner) return;
@@ -329,13 +326,11 @@ function TaskbarTabPreview({ label, anchorEl, onMouseEnter, onMouseLeave }: {
     if (!target) return;
     const rect = target.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return;
-    const scale = Math.min(PREVIEW_W / rect.width, PREVIEW_H / rect.height);
+    const scale = Math.min(width / rect.width, height / rect.height);
     const clone = target.cloneNode(true) as HTMLElement;
     clone.style.position = 'absolute';
-    clone.style.top = '0';
-    clone.style.left = '0';
-    clone.style.right = 'auto';
-    clone.style.bottom = 'auto';
+    clone.style.top = '0'; clone.style.left = '0';
+    clone.style.right = 'auto'; clone.style.bottom = 'auto';
     clone.style.width = rect.width + 'px';
     clone.style.height = rect.height + 'px';
     clone.style.transform = `scale(${scale})`;
@@ -344,35 +339,75 @@ function TaskbarTabPreview({ label, anchorEl, onMouseEnter, onMouseLeave }: {
     clone.style.animation = 'none';
     clone.removeAttribute('data-modal-panel');
     clone.removeAttribute('data-modal-id');
-    // Strip nested fixed-position elements (window menus, tooltips) by
-    // hiding any descendants with position:fixed at clone time.
     clone.querySelectorAll<HTMLElement>('[role="dialog"], [data-portal]').forEach(el => { el.style.display = 'none'; });
     inner.innerHTML = '';
     inner.appendChild(clone);
     return () => { inner.innerHTML = ''; };
-  }, [label]);
+  }, [label, width, height]);
+
+  return (
+    <div
+      style={{ width, height }}
+      className="relative rounded-md overflow-hidden bg-white/95 border border-gray-300 shadow-md cursor-pointer hover:ring-2 hover:ring-blue-400 transition"
+      onClick={onClick}
+    >
+      <div ref={previewRef} className="absolute inset-0 overflow-hidden" />
+      <div className="absolute bottom-0 left-0 right-0 px-2 py-1 text-[10px] font-medium text-white bg-gradient-to-t from-black/80 to-transparent truncate pointer-events-none">
+        {label}
+      </div>
+      {onClose && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onClose(); }}
+          className="absolute top-1 right-1 h-4 w-4 rounded-full bg-black/40 hover:bg-red-500/90 text-white flex items-center justify-center"
+          title="Close window"
+        >
+          <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Hover popover — single thumbnail for a single window, or a row of
+ *  thumbnails for a grouped set so the user can pick which instance to
+ *  activate. */
+function TaskbarTabPreview({ items, anchorEl, onActivate, onClose, onMouseEnter, onMouseLeave }: {
+  items: MinimizedItem[]; anchorEl: HTMLElement; onActivate: (label: string) => void; onClose: (id: string) => void;
+  onMouseEnter: () => void; onMouseLeave: () => void;
+}) {
+  const PREVIEW_W = 240;
+  const PREVIEW_H = 150;
+  const isGroup = items.length > 1;
+  const totalWidth = isGroup ? Math.min(items.length * (PREVIEW_W + 8) + 8, window.innerWidth - 16) : PREVIEW_W;
+  const totalHeight = isGroup ? PREVIEW_H + 16 : PREVIEW_H;
 
   const rect = anchorEl.getBoundingClientRect();
   const taskbarPos = getComputedStyle(document.documentElement).getPropertyValue('--taskbar-position')?.trim() || 'bottom';
-  const left = Math.max(8, Math.min(rect.left + rect.width / 2 - PREVIEW_W / 2, window.innerWidth - PREVIEW_W - 8));
+  const left = Math.max(8, Math.min(rect.left + rect.width / 2 - totalWidth / 2, window.innerWidth - totalWidth - 8));
   const top = taskbarPos === 'top'
     ? rect.bottom + 8
     : taskbarPos === 'bottom'
-      ? rect.top - PREVIEW_H - 8
-      : rect.top + rect.height / 2 - PREVIEW_H / 2;
-  const adjustedLeft = (taskbarPos === 'left') ? rect.right + 8 : (taskbarPos === 'right') ? rect.left - PREVIEW_W - 8 : left;
+      ? rect.top - totalHeight - 8
+      : rect.top + rect.height / 2 - totalHeight / 2;
+  const adjustedLeft = (taskbarPos === 'left') ? rect.right + 8 : (taskbarPos === 'right') ? rect.left - totalWidth - 8 : left;
 
   return createPortal(
     <div
-      style={{ position: 'fixed', left: adjustedLeft, top, width: PREVIEW_W, height: PREVIEW_H, zIndex: 9999 }}
-      className="rounded-lg overflow-hidden bg-white/95 backdrop-blur-sm border border-gray-300 shadow-2xl"
+      style={{ position: 'fixed', left: adjustedLeft, top, zIndex: 9999 }}
+      className={isGroup ? 'flex gap-2 p-2 rounded-lg bg-white/40 backdrop-blur-sm border border-white/30 shadow-2xl' : ''}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
-      <div ref={previewRef} className="absolute inset-0 overflow-hidden" />
-      <div className="absolute bottom-0 left-0 right-0 px-2 py-1 text-[11px] font-medium text-white bg-gradient-to-t from-black/80 to-transparent truncate pointer-events-none">
-        {label}
-      </div>
+      {items.map(it => (
+        <ThumbCard
+          key={it.id}
+          label={it.label}
+          width={PREVIEW_W}
+          height={PREVIEW_H}
+          onClick={() => onActivate(it.label)}
+          onClose={() => onClose(it.id)}
+        />
+      ))}
     </div>,
     document.body,
   );
@@ -390,16 +425,31 @@ function TaskbarWindows({ openWindows, onRemove, onCloseAll, onSplitView, onActi
   }, []);
 
   const activeModalId = useSyncExternalStore(subscribeActive, getActiveModalId);
-  const [hoveredLabel, setHoveredLabel] = useState<string | null>(null);
+
+  // Re-render the taskbar when any window's title changes so the dynamic
+  // title (e.g. "Untitled - Spreadsheets") shows up on the tab.
+  const [, forceTick] = useState(0);
+  useEffect(() => {
+    const onTitle = () => forceTick(t => t + 1);
+    window.addEventListener('window-title-update', onTitle);
+    return () => window.removeEventListener('window-title-update', onTitle);
+  }, []);
+  const liveTitle = (label: string): string => {
+    const panel = findPanelByLabel(label);
+    const titleEl = panel?.querySelector('.text-lg, .text-sm.font-medium');
+    return titleEl?.textContent?.trim() || label;
+  };
+
+  const [hoveredItems, setHoveredItems] = useState<MinimizedItem[] | null>(null);
   const [hoveredAnchor, setHoveredAnchor] = useState<HTMLElement | null>(null);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const handleEnter = (label: string, el: HTMLElement) => {
+  const handleEnter = (items: MinimizedItem[], el: HTMLElement) => {
     if (hoverTimerRef.current) { clearTimeout(hoverTimerRef.current); hoverTimerRef.current = null; }
-    hoverTimerRef.current = setTimeout(() => { setHoveredLabel(label); setHoveredAnchor(el); }, 350);
+    hoverTimerRef.current = setTimeout(() => { setHoveredItems(items); setHoveredAnchor(el); }, 350);
   };
   const handleLeave = () => {
     if (hoverTimerRef.current) { clearTimeout(hoverTimerRef.current); hoverTimerRef.current = null; }
-    hoverTimerRef.current = setTimeout(() => { setHoveredLabel(null); setHoveredAnchor(null); }, 150);
+    hoverTimerRef.current = setTimeout(() => { setHoveredItems(null); setHoveredAnchor(null); }, 150);
   };
   const cancelLeave = () => {
     if (hoverTimerRef.current) { clearTimeout(hoverTimerRef.current); hoverTimerRef.current = null; }
@@ -408,38 +458,65 @@ function TaskbarWindows({ openWindows, onRemove, onCloseAll, onSplitView, onActi
   const tabWindows = openWindows.filter(item => !item.route || !(WINDOW_REGISTRY[item.route] as PageRegistryEntry)?.utility);
   if (!target || tabWindows.length === 0) return null;
 
+  // Group multi-instance windows by route so the taskbar shows one icon
+  // per app type with a count badge instead of N identical tabs.
+  type Group = { key: string; route?: string; label: string; items: MinimizedItem[] };
+  const groups: Group[] = [];
+  const idx = new Map<string, number>();
+  for (const item of tabWindows) {
+    const key = item.route ?? `entity:${item.id}`;
+    const i = idx.get(key);
+    if (i !== undefined) {
+      groups[i].items.push(item);
+    } else {
+      idx.set(key, groups.length);
+      const registryLabel = item.route ? (WINDOW_REGISTRY[item.route] as PageRegistryEntry)?.label : undefined;
+      groups.push({ key, route: item.route, label: registryLabel ?? item.label, items: [item] });
+    }
+  }
+
   return createPortal(
     <>
-      {tabWindows.map(item => {
-        const icon = item.route ? navIcons[item.route] : null;
-        // Check if this window is the active (frontmost) one
+      {groups.map(group => {
+        const icon = group.route ? navIcons[group.route] : null;
+        // The "primary" item for activation/preview: the most recently opened.
+        const primary = group.items[group.items.length - 1];
+        // Group is active if any of its instances is the active modal.
         let isActive = false;
         if (activeModalId) {
           const panel = document.querySelector(`[data-modal-id="${activeModalId}"]`);
           if (panel) {
             const titleEl = panel.querySelector('.text-lg, .text-sm.font-medium');
-            if (titleEl?.textContent?.includes(item.label)) isActive = true;
+            const titleText = titleEl?.textContent ?? '';
+            isActive = group.items.some(it => titleText.includes(it.label));
           }
         }
+        const isGrouped = group.items.length > 1;
 
         return (
-          <button key={item.id} onClick={() => onActivate(item.label)}
-            onMouseEnter={(e) => handleEnter(item.label, e.currentTarget)}
+          <button key={group.key} onClick={() => onActivate(primary.label)}
+            onMouseEnter={(e) => handleEnter(group.items, e.currentTarget)}
             onMouseLeave={handleLeave}
-            onDoubleClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('modal-center', { detail: { label: item.label } })); }}
-            onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); window.dispatchEvent(new CustomEvent('modal-context-menu', { detail: { label: item.label, x: e.clientX, y: e.clientY } })); }}
+            onDoubleClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('modal-center', { detail: { label: primary.label } })); }}
+            onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); window.dispatchEvent(new CustomEvent('modal-context-menu', { detail: { label: primary.label, x: e.clientX, y: e.clientY } })); }}
             style={{ width: 'var(--window-tab-width, 200px)', fontSize: 'var(--window-tab-font-size, 12px)' }}
-            className={`group flex items-center gap-1.5 rounded-lg px-3 py-2 font-medium transition-all min-w-0 shrink ${
+            data-tab-group={group.key}
+            className={`group relative flex items-center gap-1.5 rounded-lg px-3 py-2 font-medium transition-all min-w-0 shrink ${
               isActive ? 'bg-blue-100/60 border border-blue-400/60 text-blue-700' : 'bg-gray-50/40 border border-gray-200/40 text-gray-700 hover:bg-gray-200/40'
             }`}>
             {icon && isValidElement(icon)
               ? cloneElement(icon as ReactElement, { className: `h-3.5 w-3.5 shrink-0 ${isActive ? 'text-blue-600' : 'text-gray-400'}` })
               : <svg className={`h-3.5 w-3.5 shrink-0 ${isActive ? 'text-blue-600' : 'text-gray-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
             }
-            <span className="truncate flex-1">{item.label}</span>
-            <span role="button" onClick={(e) => { e.stopPropagation(); onRemove(item.id); }} className="ml-auto text-gray-400 hover:text-red-500 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-            </span>
+            <span className="truncate flex-1">{isGrouped ? group.label : liveTitle(primary.label)}</span>
+            {isGrouped && (
+              <span className="shrink-0 px-1.5 py-0.5 rounded-full bg-blue-500/80 text-white text-[10px] font-bold leading-none">{group.items.length}</span>
+            )}
+            {!isGrouped && (
+              <span role="button" onClick={(e) => { e.stopPropagation(); onRemove(primary.id); }} className="ml-auto text-gray-400 hover:text-red-500 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+              </span>
+            )}
           </button>
         );
       })}
@@ -451,10 +528,12 @@ function TaskbarWindows({ openWindows, onRemove, onCloseAll, onSplitView, onActi
           Split
         </button>
       )}
-      {hoveredLabel && hoveredAnchor && (
+      {hoveredItems && hoveredAnchor && (
         <TaskbarTabPreview
-          label={hoveredLabel}
+          items={hoveredItems}
           anchorEl={hoveredAnchor}
+          onActivate={(label) => { onActivate(label); setHoveredItems(null); setHoveredAnchor(null); }}
+          onClose={(id) => { onRemove(id); setHoveredItems(null); setHoveredAnchor(null); }}
           onMouseEnter={cancelLeave}
           onMouseLeave={handleLeave}
         />
@@ -517,7 +596,7 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
         setTimeout(() => {
           const panels = document.querySelectorAll('[data-modal-panel]');
           panels.forEach(p => {
-            const titleEl = p.querySelector('.text-lg');
+            const titleEl = p.querySelector('.text-lg, .text-sm.font-medium');
             if (titleEl?.textContent?.includes(existing.label)) {
               const mid = p.getAttribute('data-modal-id');
               if (mid) activateModal(mid);
@@ -539,6 +618,17 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
     if (!WINDOW_REGISTRY[path] || !isPageEntry(WINDOW_REGISTRY[path])) return;
     const entry = WINDOW_REGISTRY[path] as PageRegistryEntry;
     setOpenWindows(prev => {
+      // Multi-instance pages always spawn a new window with a unique id.
+      if (entry.multiInstance) {
+        const instanceCount = prev.filter(m => m.type === 'page' && m.route === path).length;
+        const nextNum = instanceCount + 1;
+        const id = `page:${path}:${Math.random().toString(36).slice(2, 8)}`;
+        return [...prev, {
+          id, type: 'page' as const,
+          label: instanceCount === 0 ? entry.label : `${entry.label} ${nextNum}`,
+          route: path,
+        }];
+      }
       const existing = prev.find(m => m.type === 'page' && m.route === path);
       if (existing) {
         // Widgets toggle on/off; non-widgets activate (bring to front)
@@ -548,7 +638,7 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
         setTimeout(() => {
           const panels = document.querySelectorAll('[data-modal-panel]');
           panels.forEach(p => {
-            const titleEl = p.querySelector('.text-lg');
+            const titleEl = p.querySelector('.text-lg, .text-sm.font-medium');
             if (titleEl?.textContent?.includes(existing.label)) {
               const mid = p.getAttribute('data-modal-id');
               if (mid) activateModal(mid);
@@ -583,7 +673,7 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
         onActivate={(label) => {
           const panels = document.querySelectorAll('[data-modal-panel]');
           panels.forEach(p => {
-            const titleEl = p.querySelector('.text-lg');
+            const titleEl = p.querySelector('.text-lg, .text-sm.font-medium');
             if (titleEl?.textContent?.includes(label)) {
               const mid = p.getAttribute('data-modal-id');
               if (mid) activateModal(mid);

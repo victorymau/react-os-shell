@@ -144,13 +144,18 @@ const DEMO_NOTIFICATIONS: NotificationsConfig = {
 const LOGIN_WALLPAPER = WALLPAPER_URLS[Math.floor(Math.random() * WALLPAPER_URLS.length)];
 
 function VersionBadge() {
+  const version = import.meta.env.VITE_APP_VERSION || '0.1.5';
   return (
-    <div
-      className="fixed right-3 text-[11px] font-mono text-white/60 pointer-events-none select-none drop-shadow z-10"
+    <a
+      href="https://github.com/victorymau/react-os-shell/releases"
+      target="_blank"
+      rel="noopener noreferrer"
+      title="View changelog on GitHub"
+      className="fixed right-3 text-[11px] font-mono text-white/60 hover:text-white select-none drop-shadow z-10 transition-colors cursor-pointer"
       style={{ bottom: 'calc(var(--taskbar-height, 56px) * 1px + 8px)' }}
     >
-      v{import.meta.env.VITE_APP_VERSION || '0.1.0'}
-    </div>
+      v{version}
+    </a>
   );
 }
 

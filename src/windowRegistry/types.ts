@@ -31,6 +31,10 @@ export interface PageRegistryEntry {
   dimensions?: [number, number];
   /** Auto-size height based on content (widget only). */
   autoHeight?: boolean;
+  /** When true, openPage(path) opens a new instance each time instead of
+   *  activating an existing one. Each instance gets a unique window id and
+   *  the taskbar groups them under a single icon. */
+  multiInstance?: boolean;
   /** navIcon route key for window title icon (e.g. '/orders'). */
   icon?: string;
 }
