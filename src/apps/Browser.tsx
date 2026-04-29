@@ -83,6 +83,10 @@ export default function Browser() {
   const [iframeKey, setIframeKey] = useState(0);
   const [bookmarks, setBookmarks] = useState<Bookmark[]>(loadBookmarks);
   const [showHelp, setShowHelp] = useState(false);
+  // Inline "name this bookmark" popover state. Populated when the user
+  // clicks the star icon to add — replaces the native window.prompt().
+  const [bookmarkDraft, setBookmarkDraft] = useState<string | null>(null);
+  const bookmarkInputRef = useRef<HTMLInputElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // Persist bookmarks.
@@ -133,11 +137,35 @@ export default function Browser() {
     if (typeof window !== 'undefined') window.open(url, '_blank', 'noopener,noreferrer');
   };
 
-  const addBookmark = () => {
-    const label = window.prompt('Bookmark name', titleFromUrl(url));
-    if (!label) return;
-    setBookmarks(b => [...b, { label, url }]);
+  const openBookmarkPopover = () => {
+    setBookmarkDraft(titleFromUrl(url));
+    // Focus + select happens in a useEffect once the input is mounted.
   };
+
+  const commitBookmark = () => {
+    const label = bookmarkDraft?.trim();
+    if (!label) { setBookmarkDraft(null); return; }
+    setBookmarks(b => [...b, { label, url }]);
+    setBookmarkDraft(null);
+  };
+
+  // Auto-focus + select the popover input when it opens, and dismiss on
+  // outside click.
+  useEffect(() => {
+    if (bookmarkDraft === null) return;
+    bookmarkInputRef.current?.focus();
+    bookmarkInputRef.current?.select();
+    const onDocClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target?.closest('[data-bookmark-popover]')) setBookmarkDraft(null);
+    };
+    // Defer one tick so the click that opened the popover doesn't close it.
+    const t = setTimeout(() => document.addEventListener('mousedown', onDocClick), 0);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener('mousedown', onDocClick);
+    };
+  }, [bookmarkDraft !== null]);
 
   const removeBookmark = (i: number) => {
     setBookmarks(b => b.filter((_, idx) => idx !== i));
@@ -159,7 +187,7 @@ export default function Browser() {
   const btn = 'p-1.5 rounded hover:bg-gray-200 transition-colors text-gray-600 disabled:opacity-30';
 
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="relative flex flex-col h-full bg-white">
       <WindowTitle title={`Browser - ${titleFromUrl(url)}`} />
 
       {/* Top toolbar */}
@@ -201,7 +229,10 @@ export default function Browser() {
         </form>
 
         <button
-          onClick={() => isBookmarked ? removeBookmark(bookmarks.findIndex(b => b.url === url)) : addBookmark()}
+          data-bookmark-popover
+          onClick={() => isBookmarked
+            ? removeBookmark(bookmarks.findIndex(b => b.url === url))
+            : openBookmarkPopover()}
           className={btn + ' ' + (isBookmarked ? 'text-yellow-500' : '')}
           title={isBookmarked ? 'Remove bookmark' : 'Add bookmark'}
         >
@@ -216,6 +247,43 @@ export default function Browser() {
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" /></svg>
         </button>
       </div>
+
+      {/* Inline "name this bookmark" popover. Anchored to the right of the
+          toolbar (where the star icon lives) so the visual flow matches
+          how the user just clicked. Renders inside the panel so it
+          inherits the window's z-stacking. */}
+      {bookmarkDraft !== null && (
+        <div
+          data-bookmark-popover
+          className="absolute right-3 top-12 z-30 w-72 bg-white border border-gray-200 rounded-md shadow-lg p-3"
+        >
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Bookmark this page</div>
+          <div className="text-[11px] text-gray-400 truncate mb-2 font-mono" title={url}>{url}</div>
+          <input
+            ref={bookmarkInputRef}
+            type="text"
+            value={bookmarkDraft}
+            onChange={(e) => setBookmarkDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitBookmark();
+              else if (e.key === 'Escape') setBookmarkDraft(null);
+            }}
+            placeholder="Name"
+            className="w-full text-sm px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200"
+          />
+          <div className="flex justify-end gap-1 mt-2">
+            <button
+              onClick={() => setBookmarkDraft(null)}
+              className="px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded"
+            >Cancel</button>
+            <button
+              onClick={commitBookmark}
+              disabled={!bookmarkDraft.trim()}
+              className="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-40"
+            >Save</button>
+          </div>
+        </div>
+      )}
 
       {/* Bookmarks bar */}
       <div className="flex items-center gap-0.5 px-2 py-1 border-b border-gray-200 bg-white shrink-0 overflow-x-auto">
