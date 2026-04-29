@@ -27,5 +27,6 @@ export default defineConfig({
     '@heroicons/react/24/solid',
     '@heroicons/react/20/solid',
     'tailwindcss',
+    'pdfjs-dist',
   ],
 });

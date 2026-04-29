@@ -41,6 +41,9 @@ const Email = lazy(() => import('./Email'));
 const GeminiChat = lazy(() => import('./GeminiChat'));
 const Calendar = lazy(() => import('./Calendar'));
 
+// ── Document apps ──
+const Preview = lazy(() => import('./Preview'));
+
 export const utilityApps: WindowRegistry = {
   '/calculator': { component: Calculator, label: 'Calculator', size: 'sm', allowPinOnTop: true, utility: true, widget: true, autoHeight: true, dimensions: [280, 420] },
   '/spreadsheet': { component: Spreadsheet, label: 'Spreadsheets', size: '2xl', compact: true, multiInstance: true },
@@ -65,10 +68,15 @@ export const googleApps: WindowRegistry = {
   '/calendar': { component: Calendar, label: 'Calendar', size: 'xl' },
 };
 
+export const documentApps: WindowRegistry = {
+  '/preview': { component: Preview, label: 'Preview', size: '2xl', multiInstance: true },
+};
+
 export const bundledApps: WindowRegistry = {
   ...utilityApps,
   ...gameApps,
   ...googleApps,
+  ...documentApps,
 };
 
 export {
@@ -87,4 +95,8 @@ export {
   Email,
   GeminiChat,
   Calendar,
+  Preview,
 };
+
+export { setPdfPreview } from './Preview';
+export type { PdfPreviewData } from './Preview';

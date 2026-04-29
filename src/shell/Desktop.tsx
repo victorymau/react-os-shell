@@ -84,6 +84,9 @@ export interface DesktopHostConfig {
   productTagline?: string;
   /** Icon URL shown in the About dialog. Defaults to `/favicon.svg`. */
   productIcon?: string;
+  /** Version string shown on the desktop watermark and About dialog. Falls
+   *  back to the react-os-shell package version if omitted. */
+  productVersion?: string;
   /** Copyright line in the About dialog footer. Hidden when omitted. */
   productCopyright?: string;
   /** Website URL in the About dialog footer. Hidden when omitted. */
@@ -110,6 +113,200 @@ export function DesktopHostProvider({ value, children }: { value: DesktopHostCon
 
 export function useDesktopHost(): DesktopHostConfig {
   return useContext(DesktopHostContext);
+}
+
+interface FolderItemRef { entityType: string; entityId: string; label: string; folderId?: string; }
+
+/** Folder content window — visually distinct from regular windows
+ *  (manilla-paper background, folder glyph in title) and supports
+ *  rubber-band selection, shift / cmd / ctrl multi-select, and
+ *  drag-reorder inside the folder. */
+function FolderWindow({ folder, items, onClose, onOpen, onMoveOut, onReorder }: {
+  folder: { id: string; name: string };
+  items: FolderItemRef[];
+  onClose: () => void;
+  onOpen: (item: FolderItemRef) => void;
+  onMoveOut: (items: FolderItemRef[]) => void;
+  onReorder: (nextItems: FolderItemRef[]) => void;
+}) {
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [rubber, setRubber] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  const didDragRubber = useRef(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  // Drag-reorder state
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [dropIdx, setDropIdx] = useState<number | null>(null);
+
+  const toggleSelect = (i: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (e.shiftKey || e.metaKey || e.ctrlKey) {
+      setSelected(prev => { const next = new Set(prev); next.has(i) ? next.delete(i) : next.add(i); return next; });
+    } else {
+      setSelected(new Set([i]));
+    }
+  };
+
+  // Rubber band on body
+  const startRubber = (e: React.PointerEvent) => {
+    if (e.button !== 0 || e.target !== bodyRef.current) return;
+    const r = bodyRef.current!.getBoundingClientRect();
+    const x = e.clientX - r.left;
+    const y = e.clientY - r.top;
+    setRubber({ x1: x, y1: y, x2: x, y2: y });
+    didDragRubber.current = false;
+    setSelected(new Set());
+  };
+
+  useEffect(() => {
+    if (!rubber) return;
+    const move = (e: PointerEvent) => {
+      const r = bodyRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const x = e.clientX - r.left;
+      const y = e.clientY - r.top;
+      const dx = x - rubber.x1, dy = y - rubber.y1;
+      if (dx * dx + dy * dy > 16) didDragRubber.current = true;
+      setRubber(prev => prev ? { ...prev, x2: x, y2: y } : null);
+    };
+    const up = () => {
+      const next = new Set<number>();
+      const r = bodyRef.current;
+      if (r && rubber) {
+        const minX = Math.min(rubber.x1, rubber.x2);
+        const maxX = Math.max(rubber.x1, rubber.x2);
+        const minY = Math.min(rubber.y1, rubber.y2);
+        const maxY = Math.max(rubber.y1, rubber.y2);
+        const tiles = r.querySelectorAll<HTMLElement>('[data-folder-item]');
+        const containerRect = r.getBoundingClientRect();
+        tiles.forEach(t => {
+          const tr = t.getBoundingClientRect();
+          const tx = tr.left - containerRect.left;
+          const ty = tr.top - containerRect.top;
+          if (tx + tr.width > minX && tx < maxX && ty + tr.height > minY && ty < maxY) {
+            const i = parseInt(t.getAttribute('data-folder-item') || '-1', 10);
+            if (i >= 0) next.add(i);
+          }
+        });
+      }
+      if (didDragRubber.current) setSelected(next);
+      setRubber(null);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+  }, [rubber]);
+
+  // Drag reorder
+  const onItemDragStart = (i: number) => (e: React.DragEvent) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(i));
+    setDragIdx(i);
+  };
+  const onItemDragOver = (i: number) => (e: React.DragEvent) => {
+    e.preventDefault();
+    if (dragIdx !== null && dragIdx !== i) setDropIdx(i);
+  };
+  const onItemDrop = (i: number) => (e: React.DragEvent) => {
+    e.preventDefault();
+    if (dragIdx === null || dragIdx === i) { setDragIdx(null); setDropIdx(null); return; }
+    const next = [...items];
+    const [moved] = next.splice(dragIdx, 1);
+    next.splice(i, 0, moved);
+    onReorder(next);
+    setDragIdx(null);
+    setDropIdx(null);
+  };
+
+  const moveSelectedOut = () => {
+    if (selected.size === 0) return;
+    onMoveOut(Array.from(selected).map(i => items[i]).filter(Boolean));
+    setSelected(new Set());
+  };
+
+  // Header icon = folder glyph
+  const folderIcon = (
+    <svg className="h-5 w-5 text-amber-500" fill="currentColor" viewBox="0 0 24 24">
+      <path d="M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
+    </svg>
+  );
+
+  return (
+    <Modal open onClose={onClose} title={folder.name} icon={folderIcon} size="lg">
+      <div
+        ref={bodyRef}
+        onPointerDown={startRubber}
+        onClick={() => {
+          if (didDragRubber.current) { didDragRubber.current = false; return; }
+          setSelected(new Set());
+        }}
+        className="relative h-full min-h-[300px] p-3 overflow-auto"
+        style={{
+          background: 'linear-gradient(135deg, rgba(254, 243, 199, 0.55) 0%, rgba(253, 230, 138, 0.4) 50%, rgba(252, 211, 77, 0.3) 100%)',
+        }}
+      >
+        {selected.size > 0 && (
+          <div className="sticky top-0 z-10 mb-2 flex items-center gap-2 px-2 py-1 rounded-md bg-white/80 backdrop-blur-sm shadow border border-gray-200 text-xs text-gray-700 w-fit">
+            <span>{selected.size} selected</span>
+            <button onClick={moveSelectedOut} className="px-2 py-0.5 rounded text-blue-600 hover:bg-blue-50">Move to desktop</button>
+            <button onClick={() => setSelected(new Set())} className="px-2 py-0.5 rounded text-gray-500 hover:bg-gray-100">Clear</button>
+          </div>
+        )}
+
+        {items.length === 0 ? (
+          <p className="text-sm text-gray-500 text-center py-8 italic">Folder is empty. Drag documents here.</p>
+        ) : (
+          <div className="flex flex-wrap gap-3">
+            {items.map((item, i) => {
+              const isSelected = selected.has(i);
+              const isDropTarget = dropIdx === i && dragIdx !== i;
+              return (
+                <div
+                  key={`${item.entityType}-${item.entityId}-${i}`}
+                  data-folder-item={i}
+                  draggable
+                  onDragStart={onItemDragStart(i)}
+                  onDragOver={onItemDragOver(i)}
+                  onDrop={onItemDrop(i)}
+                  onDragEnd={() => { setDragIdx(null); setDropIdx(null); }}
+                  onClick={(e) => toggleSelect(i, e)}
+                  onDoubleClick={() => onOpen(item)}
+                  className={`group relative flex flex-col items-center gap-1 w-20 p-2 rounded-lg cursor-default transition-colors ${
+                    isSelected ? 'bg-blue-200/60 ring-2 ring-blue-400' : 'hover:bg-white/60'
+                  } ${isDropTarget ? 'ring-2 ring-blue-500 ring-dashed' : ''} ${dragIdx === i ? 'opacity-40' : ''}`}
+                >
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onMoveOut([item]); }}
+                    title="Move to desktop"
+                    className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-[10px] opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100 hover:text-red-600 shadow-sm z-10"
+                  >
+                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" /></svg>
+                  </button>
+                  <div className={`w-12 h-12 rounded-lg bg-white shadow flex items-center justify-center text-xs font-bold ${ENTITY_ICON_COLORS[item.entityType] || 'text-gray-600'}`}>
+                    {ENTITY_ICONS[item.entityType] || item.entityType.slice(0, 3).toUpperCase()}
+                  </div>
+                  <span className={`text-[10px] font-medium text-center leading-tight truncate w-full ${isSelected ? 'text-blue-900' : 'text-gray-700'}`}>
+                    {item.label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {rubber && (
+          <div
+            className="absolute border border-blue-500 bg-blue-500/10 pointer-events-none"
+            style={{
+              left: Math.min(rubber.x1, rubber.x2),
+              top: Math.min(rubber.y1, rubber.y2),
+              width: Math.abs(rubber.x2 - rubber.x1),
+              height: Math.abs(rubber.y2 - rubber.y1),
+            }}
+          />
+        )}
+      </div>
+    </Modal>
+  );
 }
 
 export default function Desktop({ profile }: { profile: any }) {
@@ -960,43 +1157,34 @@ export default function Desktop({ profile }: { profile: any }) {
       {openFolder && (() => {
         const folder = folders.find(f => f.id === openFolder);
         if (!folder) return null;
-        const items = folderItems(openFolder);
         return (
-          <Modal open={true} onClose={() => setOpenFolder(null)} title={folder.name} size="lg">
-            {items.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-8">Folder is empty. Drag documents here.</p>
-            ) : (
-              <div className="flex flex-wrap gap-3 p-2">
-                {items.map((item, i) => (
-                  <div key={i} className="group relative flex flex-col items-center gap-1 w-20 p-2 rounded-lg hover:bg-gray-100 cursor-default"
-                    onDoubleClick={() => openEntity(item.entityType, item.entityId, null, item.label)}
-                  >
-                    <button
-                      onClick={e => {
-                        e.stopPropagation();
-                        const updated = favDocs.map(d => d.entityType === item.entityType && d.entityId === item.entityId && d.folderId === openFolder ? { ...d, folderId: undefined } : d);
-                        saveDocs(updated);
-                      }}
-                      title="Move to Desktop"
-                      className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-[10px] opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100 hover:text-red-600 shadow-sm z-10"
-                    >
-                      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" /></svg>
-                    </button>
-                    <div className={`w-12 h-12 rounded-lg bg-gray-50 shadow flex items-center justify-center text-xs font-bold ${ENTITY_ICON_COLORS[item.entityType] || 'text-gray-600'}`}>
-                      {ENTITY_ICONS[item.entityType] || item.entityType.slice(0, 3).toUpperCase()}
-                    </div>
-                    <span className="text-[10px] text-gray-700 font-medium text-center leading-tight truncate w-full">{item.label}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Modal>
+          <FolderWindow
+            folder={folder}
+            items={folderItems(openFolder)}
+            onClose={() => setOpenFolder(null)}
+            onOpen={(item) => openEntity(item.entityType, item.entityId, null, item.label)}
+            onMoveOut={(toMove) => {
+              const ids = new Set(toMove.map(t => `${t.entityType}|${t.entityId}`));
+              const updated = favDocs.map(d =>
+                d.folderId === openFolder && ids.has(`${d.entityType}|${d.entityId}`)
+                  ? { ...d, folderId: undefined }
+                  : d,
+              );
+              saveDocs(updated);
+            }}
+            onReorder={(nextItems) => {
+              // Replace the slice of favDocs that lives in this folder with the
+              // re-ordered nextItems, keeping out-of-folder items in place.
+              const others = favDocs.filter(d => d.folderId !== openFolder);
+              saveDocs([...others, ...nextItems]);
+            }}
+          />
         );
       })()}
 
       {/* About dialog */}
       {aboutOpen && (() => {
-        const version = APP_VERSION;
+        const version = host.productVersion ?? APP_VERSION;
         const showVersion: boolean = prefs.show_desktop_version ?? true;
         return (
         <Modal open={true} onClose={() => setAboutOpen(false)} title={`About ${host.productName ?? 'this app'}`} size="sm" bodyScroll={false} compact dimensions={[340, 420]}>
@@ -1066,7 +1254,7 @@ export default function Desktop({ profile }: { profile: any }) {
       })()}
 
       {/* Version watermark on desktop — clickable to open What's New */}
-      {(prefs.show_desktop_version ?? true) && (
+      {(prefs.show_desktop_version ?? true) && (host.productVersion ?? APP_VERSION) && (
         <button
           onClick={(e) => { e.stopPropagation(); setWhatsNewOpen(true); }}
           className={`absolute bottom-3 text-[10px] text-white/50 font-mono select-none drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)] hover:text-white/80 transition-colors cursor-pointer ${
@@ -1076,7 +1264,7 @@ export default function Desktop({ profile }: { profile: any }) {
             'right-3 !bottom-16'
           }`}
         >
-          {APP_VERSION}
+          {host.productVersion ?? APP_VERSION}
         </button>
       )}
 
