@@ -33,8 +33,10 @@ export interface PdfPreviewData {
   filename: string;
   /** Renderer to use. Defaults to `'pdf'`. `'dxf'` requires the consumer to
    *  have `dxf-viewer` installed (it's an optional peer dep). `'image'`
-   *  renders an `<img>` for raster screenshots / photos. */
-  kind?: 'pdf' | 'dxf' | 'image';
+   *  renders an `<img>` for raster screenshots / photos. `'3d'` covers
+   *  STEP / STL / OBJ / GLTF / 3MF / IGES via the optional
+   *  `online-3d-viewer` peer dep. */
+  kind?: 'pdf' | 'dxf' | 'image' | '3d';
   /** Optional download handler — replaces the built-in "save URL as filename" if supplied. */
   onDownload?: () => void;
   /** Optional email handler — only shown when supplied. */
@@ -94,10 +96,11 @@ export default function Preview() {
   const ingestFile = (file: File) => {
     const url = URL.createObjectURL(file);
     const ext = (file.name.split('.').pop() || '').toLowerCase();
-    const kind: 'pdf' | 'image' | 'dxf' | undefined =
+    const kind: 'pdf' | 'image' | 'dxf' | '3d' | undefined =
       ext === 'pdf' ? 'pdf'
       : ext === 'dxf' ? 'dxf'
       : ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'avif', 'bmp'].includes(ext) ? 'image'
+      : ['stp', 'step', 'stl', 'obj', 'gltf', 'glb', '3mf', 'iges', 'igs', 'ply', 'fbx'].includes(ext) ? '3d'
       : undefined;
     if (!kind) {
       URL.revokeObjectURL(url);
@@ -124,7 +127,7 @@ export default function Preview() {
       <input
         ref={fileRef}
         type="file"
-        accept=".pdf,.dxf,.jpg,.jpeg,.png,.gif,.webp,.svg,.avif,.bmp"
+        accept=".pdf,.dxf,.jpg,.jpeg,.png,.gif,.webp,.svg,.avif,.bmp,.stp,.step,.stl,.obj,.gltf,.glb,.3mf,.iges,.igs,.ply,.fbx"
         onChange={handleFile}
         className="hidden"
       />
@@ -137,7 +140,7 @@ export default function Preview() {
         </svg>
         Open
       </button>
-      <span className="text-[10px] text-gray-400 ml-1">PDF · DXF · Images</span>
+      <span className="text-[10px] text-gray-400 ml-1">PDF · DXF · 3D · Images</span>
       {data?.filename && (
         <>
           <div className="h-4 w-px bg-gray-300 mx-1" />
@@ -159,7 +162,8 @@ export default function Preview() {
           <p className="font-semibold uppercase tracking-wide text-[10px] text-gray-400 mb-1">Supported formats</p>
           <ul className="space-y-0.5">
             <li><span className="font-mono text-gray-700">.pdf</span> — multi-page document viewer</li>
-            <li><span className="font-mono text-gray-700">.dxf</span> — vector CAD drawings (requires the optional <span className="font-mono">dxf-viewer</span> peer dep)</li>
+            <li><span className="font-mono text-gray-700">.dxf</span> — vector CAD drawings (optional <span className="font-mono">dxf-viewer</span> peer dep)</li>
+            <li><span className="font-mono text-gray-700">.stp .step .stl .obj .gltf .glb .3mf .iges</span> — 3D models (optional <span className="font-mono">online-3d-viewer</span> peer dep)</li>
             <li><span className="font-mono text-gray-700">.jpg .jpeg .png .gif .webp .svg .avif .bmp</span> — raster images</li>
           </ul>
           <p className="mt-2 text-[11px] text-gray-400 italic">DWG files need to be converted to PDF or DXF first (server-side).</p>
@@ -170,6 +174,8 @@ export default function Preview() {
     body = <ConvertingPanel filename={data.filename} message={data.convertingMessage} />;
   } else if (data.kind === 'dxf') {
     body = <DxfPanel key={data.url} url={data.url} filename={data.filename} onDownload={data.onDownload} onEmail={data.onEmail} />;
+  } else if (data.kind === '3d') {
+    body = <StepPanel key={data.url} url={data.url} filename={data.filename} onDownload={data.onDownload} onEmail={data.onEmail} />;
   } else if (data.kind === 'image') {
     body = <ImagePanel key={data.url} url={data.url} filename={data.filename} onDownload={data.onDownload} onEmail={data.onEmail} />;
   } else {
@@ -375,9 +381,9 @@ interface DxfPanelProps {
 // the drawing render as empty boxes. Consumers can override by setting
 // `window.__REACT_OS_SHELL_DXF_FONTS__` to a different array of TTF/OTF URLs.
 const DEFAULT_DXF_FONTS: string[] = [
-  'https://cdn.jsdelivr.net/gh/vagran/dxf-viewer-example-src@master/src/fonts/Roboto-LightItalic.ttf',
-  'https://cdn.jsdelivr.net/gh/vagran/dxf-viewer-example-src@master/src/fonts/NotoSansDisplay-SemiCondensed.ttf',
-  'https://cdn.jsdelivr.net/gh/vagran/dxf-viewer-example-src@master/src/fonts/HanaMinA.ttf',
+  'https://cdn.jsdelivr.net/gh/vagran/dxf-viewer-example-src@master/src/assets/fonts/Roboto-LightItalic.ttf',
+  'https://cdn.jsdelivr.net/gh/vagran/dxf-viewer-example-src@master/src/assets/fonts/NotoSansDisplay-SemiCondensedLightItalic.ttf',
+  'https://cdn.jsdelivr.net/gh/vagran/dxf-viewer-example-src@master/src/assets/fonts/NanumGothic-Regular.ttf',
 ];
 
 interface DxfLayer {
@@ -639,6 +645,179 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
 
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-white/80 text-sm text-gray-500">Loading drawing…</div>
+        )}
+        {error && (
+          <div className="absolute inset-0 flex items-center justify-center text-sm text-red-600 px-6 text-center">{error}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface StepPanelProps {
+  url: string;
+  filename: string;
+  onDownload?: () => void;
+  onEmail?: () => void;
+}
+
+// online-3d-viewer expects an "external libs" base URL where it can find the
+// occt-import-js WASM (for STEP/IGES) plus draco/rhino3dm/web-ifc decoders.
+// jsdelivr mirrors the npm package at this path; consumers can override via
+// `window.__REACT_OS_SHELL_O3DV_LIBS__` to self-host (e.g. air-gapped).
+const DEFAULT_O3DV_LIBS = 'https://cdn.jsdelivr.net/npm/online-3d-viewer@0.18.0/libs/';
+
+function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const viewerRef = useRef<any>(null);
+  const ovRef = useRef<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showHint, setShowHint] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    let viewer: any = null;
+    setLoading(true);
+    setError(null);
+
+    (async () => {
+      let OV: any;
+      try {
+        OV = await import('online-3d-viewer');
+      } catch {
+        if (!cancelled) {
+          setError('online-3d-viewer is not installed in this app. Add it to enable 3D file viewing.');
+          setLoading(false);
+        }
+        return;
+      }
+      ovRef.current = OV;
+      if (cancelled || !containerRef.current) return;
+
+      // Wait for container to have a real layout before constructing the
+      // viewer — same dance as the DXF panel.
+      await new Promise<void>(resolve => {
+        const tryStart = () => {
+          const r = containerRef.current?.getBoundingClientRect();
+          if (r && r.width > 4 && r.height > 4) resolve();
+          else requestAnimationFrame(tryStart);
+        };
+        tryStart();
+      });
+      if (cancelled || !containerRef.current) return;
+
+      try {
+        const libsBase = (typeof window !== 'undefined' && (window as any).__REACT_OS_SHELL_O3DV_LIBS__)
+          || DEFAULT_O3DV_LIBS;
+        OV.SetExternalLibLocation?.(libsBase);
+
+        viewer = new OV.EmbeddedViewer(containerRef.current, {
+          backgroundColor: new OV.RGBAColor(245, 246, 248, 255),
+          defaultColor: new OV.RGBColor(180, 188, 200),
+          edgeSettings: new OV.EdgeSettings(false, new OV.RGBColor(0, 0, 0), 1),
+          onModelLoaded: () => {
+            if (!cancelled) setLoading(false);
+          },
+        });
+        viewerRef.current = viewer;
+
+        // Use InputFile so the blob: URL is paired with a real filename — the
+        // loader picks the right importer (.stp/.step/.stl/etc.) from that
+        // name, not the URL pathname.
+        const inputFile = new OV.InputFile(filename, OV.FileSource.Url, url);
+        viewer.LoadModelFromInputFiles([inputFile]);
+
+        // Defensive fallback: if onModelLoaded never fires (e.g. version
+        // mismatch), drop the spinner after a short delay so the canvas is
+        // visible. Errors still flow through `setError`.
+        setTimeout(() => { if (!cancelled) setLoading(false); }, 4000);
+      } catch (e: any) {
+        if (!cancelled) {
+          setError(e?.message || 'Failed to load 3D model.');
+          setLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      try { viewer?.Destroy?.(); } catch {}
+      viewerRef.current = null;
+    };
+  }, [url, filename]);
+
+  useEffect(() => {
+    if (!showHint || loading) return;
+    const t = setTimeout(() => setShowHint(false), 5000);
+    return () => clearTimeout(t);
+  }, [showHint, loading]);
+
+  const handleDefaultDownload = () => {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+  };
+
+  const handleResetView = () => {
+    try {
+      const v = viewerRef.current;
+      // EmbeddedViewer's underlying viewer exposes FitSphereToWindow / FitToWindow.
+      v?.viewer?.FitSphereToWindow?.(v?.GetBoundingSphere?.((m: any) => true), false);
+      v?.Render?.();
+    } catch {}
+  };
+
+  const ext = (filename.split('.').pop() || '').toUpperCase();
+  const btn = 'px-2 py-1 rounded hover:bg-gray-200 transition-colors text-gray-600 flex items-center gap-1';
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-200 bg-gray-50 shrink-0 text-xs">
+        <div className="flex items-center gap-1">
+          <span className="font-medium text-gray-600">{ext || '3D'}</span>
+          <span className="text-gray-400 truncate max-w-xs">{filename}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <button onClick={() => setShowHint(s => !s)} className={btn} title="How to navigate">
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" /></svg>
+          </button>
+          <button onClick={handleResetView} className={btn} title="Fit model to view">Fit</button>
+          <button onClick={onDownload ?? handleDefaultDownload} className={btn}>
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+            Download
+          </button>
+          {onEmail && (
+            <button onClick={onEmail} className={btn}>
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" /></svg>
+              Email
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="relative flex-1 bg-[#f5f6f8] min-h-0">
+        <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+
+        {showHint && !loading && !error && (
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-gray-900/85 text-white text-[11px] px-3 py-1.5 rounded-full shadow-lg flex items-center gap-3 z-10 pointer-events-none">
+            <span>Drag to rotate</span>
+            <span className="text-white/40">•</span>
+            <span>Right-click drag to pan</span>
+            <span className="text-white/40">•</span>
+            <span>Scroll to zoom</span>
+          </div>
+        )}
+
+        {loading && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 text-sm text-gray-500 gap-2">
+            <svg className="h-6 w-6 text-blue-500 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <circle cx="12" cy="12" r="10" strokeOpacity="0.2" />
+              <path d="M22 12a10 10 0 0 1-10 10" strokeLinecap="round" />
+            </svg>
+            <span>Loading 3D model…</span>
+            {ext === 'STP' || ext === 'STEP' ? <span className="text-[10px] text-gray-400">STEP files load OpenCascade WASM (~5 MB) on first use.</span> : null}
+          </div>
         )}
         {error && (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-red-600 px-6 text-center">{error}</div>

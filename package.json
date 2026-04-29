@@ -1,6 +1,6 @@
 {
   "name": "react-os-shell",
-  "version": "0.1.28",
+  "version": "0.1.29",
   "description": "Desktop-style React UI shell — windows, taskbar, start menu, sticky notes, frosted glass theming, and 17 bundled apps including a PDF Preview viewer.",
   "license": "MIT",
   "author": "Victor Y. Mau",
@@ -39,6 +39,7 @@
     "@tanstack/react-query": ">=5",
     "dxf-viewer": "*",
     "mammoth": "*",
+    "online-3d-viewer": "*",
     "pdfjs-dist": "*",
     "react": ">=18",
     "react-dom": ">=18",
@@ -55,6 +56,7 @@
     "@types/react-dom": "^18.2.0",
     "dxf-viewer": "^1.0.47",
     "mammoth": "^1.8.0",
+    "online-3d-viewer": "^0.18.0",
     "pdfjs-dist": "^5.6.205",
     "playwright": "^1.48.0",
     "react": "^18.2.0",
@@ -93,6 +95,9 @@
       "optional": true
     },
     "mammoth": {
+      "optional": true
+    },
+    "online-3d-viewer": {
       "optional": true
     }
   }

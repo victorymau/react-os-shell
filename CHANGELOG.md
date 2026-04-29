@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.1.29] — 2026-04-29
+
+### Added
+- Preview app: STEP / IGES / STL / OBJ / GLTF / GLB / 3MF / PLY / FBX support via the new optional `online-3d-viewer` peer dep. New `kind: '3d'` on `PdfPreviewData`. Open button + drag-drop ingest these formats automatically. STEP/IGES files load OpenCascade WASM (occt-import-js) on first use — assets served from jsdelivr by default; override the libs base URL via `window.__REACT_OS_SHELL_O3DV_LIBS__` to self-host.
+- 3D panel ships toolbar (Fit / Download / optional Email) plus the same auto-hiding navigation hint pattern as DXF (Drag to rotate • Right-click drag to pan • Scroll to zoom).
+
+### Fixed
+- DXF default font URLs (Roboto / Noto Sans Display / Nanum Gothic) now point at the correct path inside `vagran/dxf-viewer-example-src` (was `src/fonts/…`, fixed to `src/assets/fonts/…`). The previous URLs 404'd, surfacing as `Unsupported OpenType signature` when dxf-viewer tried to parse jsdelivr's HTML 404 page.
+
 ## [0.1.28] — 2026-04-29
 
 ### Added
