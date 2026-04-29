@@ -100,15 +100,10 @@ export default function NotificationBell({
   });
   const notifications: ShellNotification[] = notifData?.results ?? [];
 
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: PointerEvent | MouseEvent) => {
-      if ((e.target as HTMLElement).closest('[data-menu-toggle]')) return;
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    window.addEventListener('pointerdown', handler);
-    return () => window.removeEventListener('pointerdown', handler);
-  }, [open]);
+  // Outside-click is handled by PopupMenu's own onClose listener. Since the
+  // popup is portaled into document.body it doesn't sit inside dropdownRef,
+  // so any handler scoped to dropdownRef would fire pointerdown on items
+  // inside the popup and close it before their onClick runs — see #issue.
 
   const handleClick = (notif: ShellNotification) => {
     if (!notif.is_read) {
