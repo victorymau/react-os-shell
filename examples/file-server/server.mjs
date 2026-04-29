@@ -83,6 +83,60 @@ function dirUsageBytes(dir) {
   return total;
 }
 
+// ── trash ────────────────────────────────────────────────────────────────
+// Layout: data/{userId}/.trash/{trash-id}/data is the actual file or folder,
+// and data/{userId}/.trash/{trash-id}/meta.json carries the original path
+// + deletion timestamp. Trash items count toward the user's quota — empty
+// it to free space.
+
+function trashRoot(userDir) { return path.join(userDir, '.trash'); }
+
+function ensureTrash(userDir) {
+  const root = trashRoot(userDir);
+  if (!fs.existsSync(root)) fs.mkdirSync(root, { recursive: true });
+  return root;
+}
+
+function newTrashId() {
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  return `${ts}_${crypto.randomBytes(3).toString('hex')}`;
+}
+
+function entrySize(absPath) {
+  try {
+    const stat = fs.statSync(absPath);
+    if (stat.isFile()) return stat.size;
+    if (stat.isDirectory()) return dirUsageBytes(absPath);
+  } catch {}
+  return 0;
+}
+
+function listTrash(userDir) {
+  const root = trashRoot(userDir);
+  if (!fs.existsSync(root)) return [];
+  return fs.readdirSync(root, { withFileTypes: true })
+    .filter(e => e.isDirectory())
+    .map(e => {
+      const id = e.name;
+      const dir = path.join(root, id);
+      const metaPath = path.join(dir, 'meta.json');
+      const dataPath = path.join(dir, 'data');
+      let meta = {};
+      try { meta = JSON.parse(fs.readFileSync(metaPath, 'utf8')); } catch {}
+      const exists = fs.existsSync(dataPath);
+      const stat = exists ? fs.statSync(dataPath) : null;
+      return {
+        id,
+        name: meta.name || id,
+        originalPath: meta.originalPath || '',
+        deletedAt: meta.deletedAt || null,
+        kind: stat?.isDirectory() ? 'folder' : 'file',
+        size: entrySize(dataPath),
+      };
+    })
+    .sort((a, b) => (b.deletedAt || '').localeCompare(a.deletedAt || ''));
+}
+
 // ── app ──────────────────────────────────────────────────────────────────
 const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -236,13 +290,89 @@ app.post('/api/rename', (req, res) => {
   res.json({ ok: true, path: relPath(req.userDir, to) });
 });
 
-// DELETE /api/files?path=/foo — remove file or folder (recursive).
+// DELETE /api/files?path=/foo — soft-delete: move into the user's .trash/.
 app.delete('/api/files', (req, res) => {
   const target = safePath(req.userDir, req.query.path);
   if (!target) return res.status(400).json({ error: 'Invalid path' });
   if (target === req.userDir) return res.status(400).json({ error: 'Cannot delete root' });
+  // Refuse to delete anything inside .trash/ via this endpoint — clients
+  // use /api/trash for that.
+  const trashedRoot = trashRoot(req.userDir);
+  if (target === trashedRoot || target.startsWith(trashedRoot + path.sep)) {
+    return res.status(400).json({ error: 'Use /api/trash for trash items' });
+  }
   if (!fs.existsSync(target)) return res.status(404).json({ error: 'Not found' });
-  fs.rmSync(target, { recursive: true, force: true });
+
+  ensureTrash(req.userDir);
+  const id = newTrashId();
+  const dir = path.join(trashRoot(req.userDir), id);
+  fs.mkdirSync(dir, { recursive: true });
+  const data = path.join(dir, 'data');
+  fs.renameSync(target, data);
+  const meta = {
+    name: path.basename(target),
+    originalPath: relPath(req.userDir, target),
+    deletedAt: new Date().toISOString(),
+  };
+  fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
+  res.json({ ok: true, trashId: id });
+});
+
+// GET /api/trash — list items in the user's .trash/.
+app.get('/api/trash', (req, res) => {
+  res.json({ entries: listTrash(req.userDir) });
+});
+
+// POST /api/trash/restore { id } — move an item back to its originalPath.
+// Renames on collision (` (restored)` suffix before the extension).
+app.post('/api/trash/restore', (req, res) => {
+  const id = String(req.body?.id || '');
+  if (!/^[A-Za-z0-9._-]+$/.test(id)) return res.status(400).json({ error: 'Invalid id' });
+  const dir = path.join(trashRoot(req.userDir), id);
+  if (!fs.existsSync(dir)) return res.status(404).json({ error: 'Not found' });
+  let meta = {};
+  try { meta = JSON.parse(fs.readFileSync(path.join(dir, 'meta.json'), 'utf8')); } catch {}
+  const data = path.join(dir, 'data');
+  if (!fs.existsSync(data)) return res.status(500).json({ error: 'Trash entry corrupt' });
+
+  let target = safePath(req.userDir, meta.originalPath || '/' + (meta.name || id));
+  if (!target) target = path.join(req.userDir, meta.name || id);
+
+  // Rename on collision so we never clobber an existing file.
+  if (fs.existsSync(target)) {
+    const dirname = path.dirname(target);
+    const base = path.basename(target);
+    const ext = path.extname(base);
+    const stem = ext ? base.slice(0, -ext.length) : base;
+    let i = 1;
+    let candidate;
+    do {
+      candidate = path.join(dirname, `${stem} (restored${i > 1 ? ` ${i}` : ''})${ext}`);
+      i++;
+    } while (fs.existsSync(candidate) && i < 1000);
+    target = candidate;
+  }
+
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.renameSync(data, target);
+  fs.rmSync(dir, { recursive: true, force: true });
+  res.json({ ok: true, path: relPath(req.userDir, target) });
+});
+
+// DELETE /api/trash/:id — permanent delete one trash item.
+app.delete('/api/trash/:id', (req, res) => {
+  const id = req.params.id;
+  if (!/^[A-Za-z0-9._-]+$/.test(id)) return res.status(400).json({ error: 'Invalid id' });
+  const dir = path.join(trashRoot(req.userDir), id);
+  if (!fs.existsSync(dir)) return res.status(404).json({ error: 'Not found' });
+  fs.rmSync(dir, { recursive: true, force: true });
+  res.json({ ok: true });
+});
+
+// DELETE /api/trash — empty the entire trash.
+app.delete('/api/trash', (req, res) => {
+  const root = trashRoot(req.userDir);
+  if (fs.existsSync(root)) fs.rmSync(root, { recursive: true, force: true });
   res.json({ ok: true });
 });
 

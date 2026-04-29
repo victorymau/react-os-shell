@@ -37,6 +37,15 @@ interface FileEntry {
   modifiedAt: string;
 }
 
+interface TrashEntry {
+  id: string;
+  name: string;
+  originalPath: string;
+  deletedAt: string | null;
+  kind: 'file' | 'folder';
+  size: number;
+}
+
 function joinPath(parent: string, name: string) {
   if (parent === '/' || parent === '') return '/' + name;
   return parent.replace(/\/$/, '') + '/' + name;
@@ -73,6 +82,8 @@ export default function Files() {
   const [unreachable, setUnreachable] = useState(false);
   const [quota, setQuota] = useState<{ used: number; limit: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [view, setView] = useState<'files' | 'trash'>('files');
+  const [trash, setTrash] = useState<TrashEntry[]>([]);
   const dragDepthRef = useRef(0);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -121,7 +132,84 @@ export default function Files() {
     refreshQuota();
   }, [authedFetch, server, refreshQuota]);
 
-  useEffect(() => { loadDir(path); /* eslint-disable-next-line */ }, [path]);
+  const loadTrash = useCallback(async () => {
+    setLoading(true);
+    setSelected(null);
+    try {
+      const res = await authedFetch(`${server}/api/trash`);
+      if (!res.ok) {
+        const msg = await res.json().catch(() => ({} as any));
+        toast.error(msg.error || `Failed to list trash (${res.status})`);
+        return;
+      }
+      const data = await res.json();
+      setTrash(data.entries || []);
+      setUnreachable(false);
+    } catch {
+      setUnreachable(true);
+    } finally {
+      setLoading(false);
+    }
+    refreshQuota();
+  }, [authedFetch, server, refreshQuota]);
+
+  useEffect(() => {
+    if (view === 'files') loadDir(path);
+    else loadTrash();
+    /* eslint-disable-next-line */
+  }, [path, view]);
+
+  const handleRestore = async (entry: TrashEntry) => {
+    const res = await authedFetch(`${server}/api/trash/restore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: entry.id }),
+    });
+    if (!res.ok) {
+      const msg = await res.json().catch(() => ({} as any));
+      toast.error(msg.error || `Restore failed (${res.status})`);
+      return;
+    }
+    toast.success(`Restored "${entry.name}"`);
+    loadTrash();
+  };
+
+  const handleTrashPermanentDelete = async (entry: TrashEntry) => {
+    const ok = await confirm({
+      title: 'Permanently delete',
+      message: `"${entry.name}" will be permanently removed. This can't be undone.`,
+      confirmLabel: 'Delete forever',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    const res = await authedFetch(`${server}/api/trash/${encodeURIComponent(entry.id)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) {
+      const msg = await res.json().catch(() => ({} as any));
+      toast.error(msg.error || `Delete failed (${res.status})`);
+      return;
+    }
+    loadTrash();
+  };
+
+  const handleEmptyTrash = async () => {
+    if (trash.length === 0) return;
+    const ok = await confirm({
+      title: 'Empty trash',
+      message: `${trash.length} item${trash.length === 1 ? '' : 's'} will be permanently removed. This can't be undone.`,
+      confirmLabel: 'Empty trash',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    const res = await authedFetch(`${server}/api/trash`, { method: 'DELETE' });
+    if (!res.ok) {
+      const msg = await res.json().catch(() => ({} as any));
+      toast.error(msg.error || `Empty trash failed (${res.status})`);
+      return;
+    }
+    loadTrash();
+  };
 
   // Open a file: fetch as Blob, route to Preview if extension is supported.
   const openFile = async (entry: FileEntry) => {
@@ -340,49 +428,84 @@ export default function Files() {
 
       {/* Toolbar */}
       <div className="flex items-center gap-1 px-2 py-1.5 border-b border-gray-200 bg-gray-50 shrink-0 text-xs">
-        <button
-          onClick={() => setPath(parentOf(path))}
-          disabled={path === '/'}
-          className="px-2 py-1 rounded hover:bg-gray-200 disabled:opacity-30 text-gray-600"
-          title="Parent folder"
-        >
-          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
-          </svg>
-        </button>
+        {view === 'files' ? (
+          <>
+            <button
+              onClick={() => setPath(parentOf(path))}
+              disabled={path === '/'}
+              className="px-2 py-1 rounded hover:bg-gray-200 disabled:opacity-30 text-gray-600"
+              title="Parent folder"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+              </svg>
+            </button>
 
-        <div className="flex-1 flex items-center gap-0.5 text-gray-700 truncate min-w-0">
-          <button onClick={() => setPath('/')} className="px-1.5 py-0.5 rounded hover:bg-gray-200 font-medium">My files</button>
-          {segments.map((seg, i) => (
-            <span key={i} className="flex items-center gap-0.5">
-              <span className="text-gray-400">/</span>
-              <button
-                onClick={() => setPath('/' + segments.slice(0, i + 1).join('/'))}
-                className="px-1.5 py-0.5 rounded hover:bg-gray-200"
-              >
-                {seg}
-              </button>
-            </span>
-          ))}
-        </div>
+            <div className="flex-1 flex items-center gap-0.5 text-gray-700 truncate min-w-0">
+              <button onClick={() => setPath('/')} className="px-1.5 py-0.5 rounded hover:bg-gray-200 font-medium">My files</button>
+              {segments.map((seg, i) => (
+                <span key={i} className="flex items-center gap-0.5">
+                  <span className="text-gray-400">/</span>
+                  <button
+                    onClick={() => setPath('/' + segments.slice(0, i + 1).join('/'))}
+                    className="px-1.5 py-0.5 rounded hover:bg-gray-200"
+                  >
+                    {seg}
+                  </button>
+                </span>
+              ))}
+            </div>
 
-        <button onClick={() => loadDir(path)} className="px-2 py-1 rounded hover:bg-gray-200 text-gray-600" title="Refresh">
-          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992V4.356M2.985 19.644v-4.992h4.992M3.05 9.348a9 9 0 0114.85-3.36L21.015 9.348m0 5.304a9 9 0 01-14.85 3.36l-3.115-3.36" />
-          </svg>
-        </button>
-        <button onClick={handleNewFolder} className="px-2 py-1 rounded hover:bg-gray-200 text-gray-600 flex items-center gap-1">
-          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 10.5v6m3-3H9m4.06-7.19l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
-          </svg>
-          New Folder
-        </button>
-        <button onClick={handlePick} className="px-2 py-1 rounded bg-blue-500 text-white hover:bg-blue-600 flex items-center gap-1">
-          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M7.5 7.5L12 3m0 0l4.5 4.5M12 3v13.5" />
-          </svg>
-          Upload
-        </button>
+            <button onClick={() => loadDir(path)} className="px-2 py-1 rounded hover:bg-gray-200 text-gray-600" title="Refresh">
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992V4.356M2.985 19.644v-4.992h4.992M3.05 9.348a9 9 0 0114.85-3.36L21.015 9.348m0 5.304a9 9 0 01-14.85 3.36l-3.115-3.36" />
+              </svg>
+            </button>
+            <button onClick={() => setView('trash')} className="px-2 py-1 rounded hover:bg-gray-200 text-gray-600 flex items-center gap-1" title="Open trash">
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+              </svg>
+              Trash
+            </button>
+            <button onClick={handleNewFolder} className="px-2 py-1 rounded hover:bg-gray-200 text-gray-600 flex items-center gap-1">
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 10.5v6m3-3H9m4.06-7.19l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
+              </svg>
+              New Folder
+            </button>
+            <button onClick={handlePick} className="px-2 py-1 rounded bg-blue-500 text-white hover:bg-blue-600 flex items-center gap-1">
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M7.5 7.5L12 3m0 0l4.5 4.5M12 3v13.5" />
+              </svg>
+              Upload
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={() => setView('files')}
+              className="px-2 py-1 rounded hover:bg-gray-200 text-gray-600"
+              title="Back to files"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+              </svg>
+            </button>
+            <span className="flex-1 text-gray-700 font-medium px-2">Trash</span>
+            <button onClick={loadTrash} className="px-2 py-1 rounded hover:bg-gray-200 text-gray-600" title="Refresh">
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992V4.356M2.985 19.644v-4.992h4.992M3.05 9.348a9 9 0 0114.85-3.36L21.015 9.348m0 5.304a9 9 0 01-14.85 3.36l-3.115-3.36" />
+              </svg>
+            </button>
+            <button
+              onClick={handleEmptyTrash}
+              disabled={trash.length === 0}
+              className="px-2 py-1 rounded text-red-600 hover:bg-red-50 disabled:opacity-30 flex items-center gap-1"
+            >
+              Empty trash
+            </button>
+          </>
+        )}
 
         {/* Quota indicator */}
         {quota && (
@@ -403,9 +526,60 @@ export default function Files() {
         )}
       </div>
 
-      {/* List */}
+      {/* List — file or trash view */}
       <div className="flex-1 overflow-auto">
-        {loading && entries.length === 0 ? (
+        {view === 'trash' ? (
+          loading && trash.length === 0 ? (
+            <div className="p-6 text-center text-sm text-gray-400">Loading…</div>
+          ) : trash.length === 0 ? (
+            <div className="p-10 text-center text-sm text-gray-400">
+              Trash is empty.
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">
+                <tr>
+                  <th className="text-left font-medium px-3 py-1.5">Name</th>
+                  <th className="text-left font-medium px-3 py-1.5">Original location</th>
+                  <th className="text-right font-medium px-3 py-1.5 w-24">Size</th>
+                  <th className="text-right font-medium px-3 py-1.5 w-40">Deleted</th>
+                  <th className="w-44" />
+                </tr>
+              </thead>
+              <tbody>
+                {trash.map((e) => (
+                  <tr key={e.id} className="border-b border-gray-100 hover:bg-gray-50">
+                    <td className="px-3 py-1.5 flex items-center gap-2">
+                      {e.kind === 'folder' ? (
+                        <svg className="h-4 w-4 text-amber-500 shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M2.25 7.125A2.25 2.25 0 014.5 4.875h4.504c.61 0 1.193.243 1.624.673l1.494 1.494a.75.75 0 00.53.22h7.098A2.25 2.25 0 0122 9.51v8.366A2.25 2.25 0 0119.75 20.125H4.25A2.25 2.25 0 012 17.875V7.125z" /></svg>
+                      ) : (
+                        <svg className="h-4 w-4 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
+                      )}
+                      <span className="truncate" title={e.name}>{e.name}</span>
+                    </td>
+                    <td className="px-3 py-1.5 text-gray-500 text-xs font-mono truncate" title={e.originalPath}>
+                      {e.originalPath || '—'}
+                    </td>
+                    <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{formatSize(e.size)}</td>
+                    <td className="px-3 py-1.5 text-right text-gray-500 tabular-nums">
+                      {e.deletedAt ? formatTime(e.deletedAt) : '—'}
+                    </td>
+                    <td className="px-3 py-1.5 text-right whitespace-nowrap">
+                      <button
+                        onClick={() => handleRestore(e)}
+                        className="px-1.5 py-0.5 rounded hover:bg-gray-200 text-blue-600 text-[11px]"
+                      >Restore</button>
+                      <button
+                        onClick={() => handleTrashPermanentDelete(e)}
+                        className="px-1.5 py-0.5 rounded hover:bg-red-100 text-red-600 text-[11px] ml-1"
+                      >Delete forever</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )
+        ) : loading && entries.length === 0 ? (
           <div className="p-6 text-center text-sm text-gray-400">Loading…</div>
         ) : entries.length === 0 ? (
           <div className="p-10 text-center text-sm text-gray-400">

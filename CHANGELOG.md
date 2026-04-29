@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.1.49] — 2026-04-30
+
+### Added
+- **Window snapping** in `Modal`: drag a window to a screen edge to tile it.
+  - Top edge → maximized
+  - Left / right edges → vertical halves
+  - Top-left / top-right / bottom-left / bottom-right corners → quarters
+  Translucent blue preview overlay appears at the snap target during drag (single shared DOM node, lazily created). Dragging a snapped window restores it to its previous "natural" size, repositioned around the cursor, so a snapped window can be picked up and moved to a different snap zone or back to free-position. Widgets opt out of snapping. Edge threshold 8 px, corner threshold 32 px.
+- **Trash for Files**: deletes are now soft. Items move to `data/{userId}/.trash/{trash-id}/` with a `meta.json` sidecar capturing the original path + deletion timestamp. Trash entries still count toward the user's quota — empty the trash to free space. New endpoints:
+  - `GET /api/trash` — list `[{ id, name, originalPath, deletedAt, kind, size }]`.
+  - `POST /api/trash/restore` `{ id }` — move the item back to its original path. On collision the restored item gets a `(restored)` / `(restored 2)` etc. suffix; intermediate folders are recreated as needed.
+  - `DELETE /api/trash/:id` — permanent delete one entry.
+  - `DELETE /api/trash` — empty the entire trash.
+- Files app gains a Trash toolbar button. Trash view lists name + original location + deleted-at + size, with per-row Restore / Delete forever, and an Empty trash button at the top. Both delete prompts route through the in-app `confirm()` dialog with the danger variant.
+
 ## [0.1.48] — 2026-04-30
 
 ### Added

@@ -239,6 +239,102 @@ export function deactivateAllModals() {
   activeListeners.forEach(fn => fn());
   window.dispatchEvent(new CustomEvent('modal-reorder'));
 }
+// ── Window snapping ──────────────────────────────────────────────────────
+// Aero/Magnet-style edge snapping. The drag handler watches the cursor
+// position and calls into these helpers. A single translucent preview
+// element is reused across drags (lazily created, kept around in body).
+
+type SnapZone = 'top' | 'left' | 'right' | 'tl' | 'tr' | 'bl' | 'br';
+const EDGE_THRESHOLD = 8;     // px from edge to trigger half-screen snap
+const CORNER_THRESHOLD = 32;  // px square at each corner for quarter-screen snap
+
+interface Box { x: number; y: number; w: number; h: number; }
+
+function workArea(): Box {
+  const taskbarH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--taskbar-height')) || 0;
+  const taskbarW = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--taskbar-width')) || 0;
+  const tbPos = getComputedStyle(document.documentElement).getPropertyValue('--taskbar-position')?.trim() || 'bottom';
+  const x = tbPos === 'left' ? taskbarW : 0;
+  const y = tbPos === 'top' ? taskbarH : 0;
+  const w = window.innerWidth - (tbPos === 'left' || tbPos === 'right' ? taskbarW : 0);
+  const h = window.innerHeight - (tbPos === 'top' || tbPos === 'bottom' ? taskbarH : 0);
+  return { x, y, w, h };
+}
+
+function calcSnapBox(zone: SnapZone): Box {
+  const a = workArea();
+  const halfW = Math.floor(a.w / 2);
+  const halfH = Math.floor(a.h / 2);
+  switch (zone) {
+    case 'top':   return { x: a.x, y: a.y, w: a.w, h: a.h };
+    case 'left':  return { x: a.x, y: a.y, w: halfW, h: a.h };
+    case 'right': return { x: a.x + halfW, y: a.y, w: a.w - halfW, h: a.h };
+    case 'tl':    return { x: a.x, y: a.y, w: halfW, h: halfH };
+    case 'tr':    return { x: a.x + halfW, y: a.y, w: a.w - halfW, h: halfH };
+    case 'bl':    return { x: a.x, y: a.y + halfH, w: halfW, h: a.h - halfH };
+    case 'br':    return { x: a.x + halfW, y: a.y + halfH, w: a.w - halfW, h: a.h - halfH };
+  }
+}
+
+function detectSnapZone(clientX: number, clientY: number): SnapZone | null {
+  const a = workArea();
+  const nearLeft   = clientX <= a.x + EDGE_THRESHOLD;
+  const nearRight  = clientX >= a.x + a.w - EDGE_THRESHOLD;
+  const nearTop    = clientY <= a.y + EDGE_THRESHOLD;
+  const nearBottom = clientY >= a.y + a.h - EDGE_THRESHOLD;
+  // Corners take priority over edges (larger detection square).
+  const cornerLeft = clientX <= a.x + CORNER_THRESHOLD;
+  const cornerRight = clientX >= a.x + a.w - CORNER_THRESHOLD;
+  const cornerTop = clientY <= a.y + CORNER_THRESHOLD;
+  const cornerBottom = clientY >= a.y + a.h - CORNER_THRESHOLD;
+  if (nearTop && cornerLeft)    return 'tl';
+  if (nearTop && cornerRight)   return 'tr';
+  if (nearBottom && cornerLeft) return 'bl';
+  if (nearBottom && cornerRight)return 'br';
+  if (cornerTop && nearLeft)    return 'tl';
+  if (cornerTop && nearRight)   return 'tr';
+  if (cornerBottom && nearLeft) return 'bl';
+  if (cornerBottom && nearRight)return 'br';
+  if (nearTop)   return 'top';
+  if (nearLeft)  return 'left';
+  if (nearRight) return 'right';
+  return null;
+}
+
+let snapPreviewEl: HTMLDivElement | null = null;
+function getSnapPreviewEl(): HTMLDivElement {
+  if (!snapPreviewEl) {
+    snapPreviewEl = document.createElement('div');
+    snapPreviewEl.style.cssText = [
+      'position: fixed',
+      'pointer-events: none',
+      'z-index: 40',
+      'border-radius: 8px',
+      'background: rgba(59, 130, 246, 0.18)',
+      'border: 2px solid rgb(59, 130, 246)',
+      'transition: left 120ms ease, top 120ms ease, width 120ms ease, height 120ms ease, opacity 120ms ease',
+      'opacity: 0',
+      'display: none',
+    ].join(';');
+    document.body.appendChild(snapPreviewEl);
+  }
+  return snapPreviewEl;
+}
+function showSnapPreview(box: Box) {
+  const el = getSnapPreviewEl();
+  el.style.display = 'block';
+  el.style.left = `${box.x}px`;
+  el.style.top = `${box.y}px`;
+  el.style.width = `${box.w}px`;
+  el.style.height = `${box.h}px`;
+  el.style.opacity = '1';
+}
+function hideSnapPreview() {
+  if (!snapPreviewEl) return;
+  snapPreviewEl.style.opacity = '0';
+  snapPreviewEl.style.display = 'none';
+}
+
 // Listen for deactivate-all event from taskbar
 window.addEventListener('deactivate-all-modals', deactivateAllModals);
 function getZForModal(id: string): number {
@@ -579,6 +675,11 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     onClose();
   }, [isDirty, onClose]);
 
+  // Pre-snap box: if the user drags a window that's currently snapped to an
+  // edge, restore it to its previous "natural" size so dragging it across
+  // the screen feels right. Set on snap-drop, consumed on next drag start.
+  const preSnapBoxRef = useRef<Box | null>(null);
+
   // ── Drag ──
   const startDrag = useCallback((e: React.PointerEvent) => {
     if (e.button !== 0) return;
@@ -588,15 +689,39 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     e.preventDefault();
     const sx = e.clientX, sy = e.clientY;
     const panel = panelRef.current;
-    // Get actual rendered position (accounts for transform: translateY(-50%) when maximized)
     const rect = panel?.getBoundingClientRect();
-    const ox = rect ? rect.left : boxRef.current.x;
-    const oy = rect ? rect.top : boxRef.current.y;
-    const actualH = rect ? rect.height : boxRef.current.h;
+
+    // If this window is currently snapped, restore its pre-snap dimensions
+    // and reposition so the cursor lands roughly in the title bar.
+    let ox: number, oy: number, actualH: number, actualW: number;
+    if (preSnapBoxRef.current) {
+      const restore = preSnapBoxRef.current;
+      preSnapBoxRef.current = null;
+      actualW = restore.w;
+      actualH = restore.h;
+      // Center the restored window horizontally on the cursor; keep title
+      // bar at cursor Y.
+      const offsetX = rect ? Math.min(Math.max(20, e.clientX - rect.left), restore.w - 20) : restore.w / 2;
+      ox = e.clientX - offsetX;
+      oy = e.clientY - 12;
+      if (panel) {
+        panel.style.width = `${actualW}px`;
+        panel.style.height = `${actualH}px`;
+        panel.style.left = `${ox}px`;
+        panel.style.top = `${oy}px`;
+      }
+    } else {
+      ox = rect ? rect.left : boxRef.current.x;
+      oy = rect ? rect.top : boxRef.current.y;
+      actualH = rect ? rect.height : boxRef.current.h;
+      actualW = rect ? rect.width : boxRef.current.w;
+    }
     setMaximized(false);
-    // Snapshot the actual height so the window doesn't jump when leaving maximized mode
-    setBox(b => ({ ...b, x: ox, y: oy, h: actualH }));
-    // Use direct DOM updates during drag for performance (avoids React re-renders)
+    setBox(b => ({ ...b, x: ox, y: oy, w: actualW, h: actualH }));
+
+    // Snap zone tracking — only re-render preview when zone CHANGES.
+    let currentZone: SnapZone | null = null;
+
     const move = (ev: PointerEvent) => {
       const nx = ox + ev.clientX - sx;
       const ny = Math.max(0, oy + ev.clientY - sy);
@@ -605,11 +730,30 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
         panel.style.top = `${ny}px`;
       }
       boxRef.current = { ...boxRef.current, x: nx, y: ny };
+
+      // Snap detection: ignore for widgets so they keep free-positioning.
+      if (!widget) {
+        const zone = detectSnapZone(ev.clientX, ev.clientY);
+        if (zone !== currentZone) {
+          currentZone = zone;
+          if (zone) showSnapPreview(calcSnapBox(zone));
+          else hideSnapPreview();
+        }
+      }
     };
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
+      hideSnapPreview();
       const finalBox = { ...boxRef.current };
+
+      // Snap drop: lock to the snap target, save the pre-snap size for next drag.
+      if (!widget && currentZone) {
+        preSnapBoxRef.current = { x: ox, y: oy, w: actualW, h: actualH };
+        setBox(calcSnapBox(currentZone));
+        return;
+      }
+
       // For widgets, determine anchor side based on center position vs viewport midpoint
       if (widget) {
         const centerX = finalBox.x + finalBox.w / 2;
