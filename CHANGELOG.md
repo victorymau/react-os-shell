@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.1.46] — 2026-04-30
+
+### Changed
+- **file-server**: dropped bearer-token auth in favor of a server-assigned `HttpOnly` cookie (16 bytes random base64url, 10-year lifetime, `SameSite=None; Secure`). First request without a cookie gets one and a fresh `data/{userId}/` folder. CORS now reflects the request `Origin` and sets `Access-Control-Allow-Credentials: true` so cross-origin fetches with `credentials: 'include'` work. **Clearing site cookies = losing access** — by design for the simple-demo case.
+- **file-server**: per-user quota cap, default 100 MB (override via `QUOTA_BYTES` env). Uploads that would push the user over the cap are rejected with `413 { error, used, limit, attempted }`. New `/api/quota` endpoint returns `{ used, limit }`; `/api/me` now also includes those fields.
+- **Files app**: removed the sign-in screen and server-URL / token fields. Identity is implicit via the cookie; every fetch sends `credentials: 'include'`. Toolbar gains a live "X.X MB / 100 MB" usage bar (turns amber at 75%, red at 90%). Server unreachable now shows a clear retry screen instead of failing silently. Quota-exceeded uploads surface a "X.X MB free, file is Y.Y MB" toast.
+- Server URL still configurable per-deployment via `window.__REACT_OS_SHELL_FILE_SERVER__`.
+
 ## [0.1.45] — 2026-04-30
 
 ### Changed

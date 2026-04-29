@@ -1,11 +1,14 @@
 /**
- * Files — browser for the per-user file-server
- * (see examples/file-server). Lists the user's folder, navigates,
- * uploads (button + drag-from-OS), creates folders, renames, deletes,
- * and opens supported files via the Preview window.
+ * Files — browser for the per-user file-server (see examples/file-server).
  *
- * Server URL is configurable per-instance through an in-app field, then
- * persisted to localStorage. Bearer token same — paste it once, stays.
+ * Identity is a cookie the server sets on first visit; no login screen.
+ * Every fetch carries `credentials: 'include'` so the cookie travels with
+ * cross-origin requests. Toolbar shows a live "X.X / Y MB used" indicator
+ * driven by `/api/quota`. Supported file types open straight into Preview;
+ * everything else downloads.
+ *
+ * Server URL defaults to `http://localhost:4000`. Override at runtime via
+ * `window.__REACT_OS_SHELL_FILE_SERVER__ = 'https://files.example.com'`.
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { WindowTitle } from '../shell/Modal';
@@ -16,8 +19,6 @@ import { setPdfPreview } from './Preview';
 const DEFAULT_SERVER =
   (typeof window !== 'undefined' && (window as any).__REACT_OS_SHELL_FILE_SERVER__) ||
   'http://localhost:4000';
-const URL_KEY = 'react-os-shell:file-server-url';
-const TOKEN_KEY = 'react-os-shell:file-server-token';
 
 const PREVIEW_EXTS: Record<string, 'pdf' | 'image' | 'dxf' | '3d'> = {
   pdf: 'pdf',
@@ -63,20 +64,13 @@ function formatTime(iso: string) {
 }
 
 export default function Files() {
-  const [server, setServer] = useState<string>(() => {
-    if (typeof window === 'undefined') return DEFAULT_SERVER;
-    return localStorage.getItem(URL_KEY) || DEFAULT_SERVER;
-  });
-  const [token, setToken] = useState<string>(() => {
-    if (typeof window === 'undefined') return '';
-    return localStorage.getItem(TOKEN_KEY) || '';
-  });
-  const [user, setUser] = useState<string | null>(null);
+  const server = DEFAULT_SERVER.replace(/\/$/, '');
   const [path, setPath] = useState('/');
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [unreachable, setUnreachable] = useState(false);
+  const [quota, setQuota] = useState<{ used: number; limit: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const dragDepthRef = useRef(0);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -84,52 +78,32 @@ export default function Files() {
   const { openPage } = useWindowManager();
 
   const authedFetch = useCallback(
-    (url: string, init: RequestInit = {}) => {
-      const headers: Record<string, string> = {
-        Authorization: `Bearer ${token}`,
-        ...((init.headers as Record<string, string>) || {}),
-      };
-      return fetch(url, { ...init, headers });
-    },
-    [token],
+    (url: string, init: RequestInit = {}) =>
+      // `credentials: 'include'` makes the browser send the identity
+      // cookie with every cross-origin request, and accept any
+      // Set-Cookie response (e.g. the first-visit assignment).
+      fetch(url, { ...init, credentials: 'include' }),
+    [],
   );
 
-  const signIn = async () => {
-    setAuthError(null);
+  const refreshQuota = useCallback(async () => {
     try {
-      const res = await fetch(`${server.replace(/\/$/, '')}/api/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        setAuthError(res.status === 401 ? 'Invalid token' : `Server error ${res.status}`);
-        return;
+      const res = await authedFetch(`${server}/api/quota`);
+      if (res.ok) {
+        const q = await res.json();
+        setQuota({ used: q.used, limit: q.limit });
       }
-      const data = await res.json();
-      setUser(data.user);
-      localStorage.setItem(URL_KEY, server);
-      localStorage.setItem(TOKEN_KEY, token);
-    } catch (e: any) {
-      setAuthError(e?.message || 'Could not reach server');
-    }
-  };
-
-  const signOut = () => {
-    setUser(null);
-    setEntries([]);
-    setPath('/');
-    setSelected(null);
-    localStorage.removeItem(TOKEN_KEY);
-  };
+    } catch {}
+  }, [authedFetch, server]);
 
   const loadDir = useCallback(async (dir: string) => {
     setLoading(true);
     setSelected(null);
     try {
       const res = await authedFetch(
-        `${server.replace(/\/$/, '')}/api/files?path=${encodeURIComponent(dir)}`,
+        `${server}/api/files?path=${encodeURIComponent(dir)}`,
       );
       if (!res.ok) {
-        if (res.status === 401) { setUser(null); return; }
         const msg = await res.json().catch(() => ({} as any));
         toast.error(msg.error || `Failed to list (${res.status})`);
         return;
@@ -137,24 +111,16 @@ export default function Files() {
       const data = await res.json();
       setEntries(data.entries || []);
       setPath(data.path || dir);
+      setUnreachable(false);
     } catch (e: any) {
-      toast.error(e?.message || 'Could not reach server');
+      setUnreachable(true);
     } finally {
       setLoading(false);
     }
-  }, [authedFetch, server]);
+    refreshQuota();
+  }, [authedFetch, server, refreshQuota]);
 
-  // Auto-sign-in if token already in localStorage (validate by hitting /api/me).
-  useEffect(() => {
-    if (token && !user && !authError) signIn();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // (Re)load on path change once authenticated.
-  useEffect(() => {
-    if (user) loadDir(path);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, path]);
+  useEffect(() => { loadDir(path); /* eslint-disable-next-line */ }, [path]);
 
   // Open a file: fetch as Blob, route to Preview if extension is supported.
   const openFile = async (entry: FileEntry) => {
@@ -162,18 +128,14 @@ export default function Files() {
     const ext = (entry.name.split('.').pop() || '').toLowerCase();
     const kind = PREVIEW_EXTS[ext];
     if (!kind) {
-      // Just download.
       downloadFile(entry);
       return;
     }
     try {
       const res = await authedFetch(
-        `${server.replace(/\/$/, '')}/api/file?path=${encodeURIComponent(fullPath)}`,
+        `${server}/api/file?path=${encodeURIComponent(fullPath)}`,
       );
-      if (!res.ok) {
-        toast.error(`Download failed (${res.status})`);
-        return;
-      }
+      if (!res.ok) { toast.error(`Download failed (${res.status})`); return; }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       setPdfPreview({ url, filename: entry.name, kind });
@@ -187,7 +149,7 @@ export default function Files() {
     const fullPath = joinPath(path, entry.name);
     try {
       const res = await authedFetch(
-        `${server.replace(/\/$/, '')}/api/file?path=${encodeURIComponent(fullPath)}`,
+        `${server}/api/file?path=${encodeURIComponent(fullPath)}`,
       );
       if (!res.ok) { toast.error(`Download failed (${res.status})`); return; }
       const blob = await res.blob();
@@ -211,12 +173,19 @@ export default function Files() {
       form.append('file', file);
       try {
         const res = await authedFetch(
-          `${server.replace(/\/$/, '')}/api/upload?path=${encodeURIComponent(path)}`,
+          `${server}/api/upload?path=${encodeURIComponent(path)}`,
           { method: 'POST', body: form },
         );
         if (!res.ok) {
           const msg = await res.json().catch(() => ({} as any));
-          toast.error(`Upload ${file.name}: ${msg.error || res.status}`);
+          if (res.status === 413) {
+            const remaining = Math.max(0, (msg.limit || 0) - (msg.used || 0));
+            toast.error(
+              `Quota exceeded — ${formatSize(remaining)} free, ${file.name} is ${formatSize(msg.attempted || file.size)}`,
+            );
+          } else {
+            toast.error(`Upload ${file.name}: ${msg.error || res.status}`);
+          }
         }
       } catch (e: any) {
         toast.error(`Upload ${file.name}: ${e?.message || 'failed'}`);
@@ -230,7 +199,7 @@ export default function Files() {
     if (!name) return;
     if (/[\\/]/.test(name)) { toast.error('Folder names cannot contain slashes'); return; }
     const target = joinPath(path, name);
-    const res = await authedFetch(`${server.replace(/\/$/, '')}/api/folder`, {
+    const res = await authedFetch(`${server}/api/folder`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: target }),
@@ -249,7 +218,7 @@ export default function Files() {
     if (/[\\/]/.test(next)) { toast.error('Names cannot contain slashes'); return; }
     const from = joinPath(path, entry.name);
     const to = joinPath(path, next);
-    const res = await authedFetch(`${server.replace(/\/$/, '')}/api/rename`, {
+    const res = await authedFetch(`${server}/api/rename`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ from, to }),
@@ -266,7 +235,7 @@ export default function Files() {
     if (!window.confirm(`Delete "${entry.name}"${entry.kind === 'folder' ? ' and everything inside' : ''}?`)) return;
     const target = joinPath(path, entry.name);
     const res = await authedFetch(
-      `${server.replace(/\/$/, '')}/api/files?path=${encodeURIComponent(target)}`,
+      `${server}/api/files?path=${encodeURIComponent(target)}`,
       { method: 'DELETE' },
     );
     if (!res.ok) {
@@ -277,7 +246,6 @@ export default function Files() {
     loadDir(path);
   };
 
-  // Drag overlay reset helpers (mirror Preview).
   const resetDrag = () => { dragDepthRef.current = 0; setIsDragging(false); };
   useEffect(() => {
     const reset = () => resetDrag();
@@ -290,44 +258,23 @@ export default function Files() {
   }, []);
 
   // ── render ─────────────────────────────────────────────────────────────
-  if (!user) {
+  if (unreachable) {
     return (
       <div className="flex flex-col h-full bg-white">
-        <WindowTitle title="Files - Sign in" />
-        <div className="flex flex-1 items-center justify-center p-6">
-          <div className="w-full max-w-sm space-y-3">
-            <h2 className="text-base font-semibold text-gray-800">Connect to file server</h2>
-            <p className="text-xs text-gray-500">
-              Paste your bearer token from <span className="font-mono">users.json</span>.
-              See <span className="font-mono">examples/file-server</span> for setup.
+        <WindowTitle title="Files - offline" />
+        <div className="flex-1 flex items-center justify-center p-8 text-center">
+          <div className="max-w-md">
+            <svg className="h-12 w-12 mx-auto text-gray-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.4}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 5.636l-12.728 12.728M5.636 5.636l12.728 12.728" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9 9 0 100-18 9 9 0 000 18z" />
+            </svg>
+            <h3 className="text-base font-semibold text-gray-800 mb-1">Can't reach the file server</h3>
+            <p className="text-sm text-gray-500 mb-3">
+              No response from <span className="font-mono">{server}</span>. Make sure the
+              server is running — see <span className="font-mono">examples/file-server/README.md</span>.
             </p>
-            <label className="block">
-              <span className="block text-[11px] uppercase tracking-wide text-gray-500 mb-1">Server URL</span>
-              <input
-                type="text"
-                value={server}
-                onChange={(e) => setServer(e.target.value)}
-                className="w-full text-sm px-2 py-1.5 border border-gray-300 rounded font-mono"
-              />
-            </label>
-            <label className="block">
-              <span className="block text-[11px] uppercase tracking-wide text-gray-500 mb-1">Bearer token</span>
-              <input
-                type="password"
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') signIn(); }}
-                className="w-full text-sm px-2 py-1.5 border border-gray-300 rounded font-mono"
-                placeholder="paste token…"
-              />
-            </label>
-            {authError && <div className="text-xs text-red-600">{authError}</div>}
-            <button
-              onClick={signIn}
-              disabled={!token}
-              className="w-full px-3 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-40"
-            >
-              Connect
+            <button onClick={() => loadDir(path)} className="px-3 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600">
+              Retry
             </button>
           </div>
         </div>
@@ -335,8 +282,11 @@ export default function Files() {
     );
   }
 
-  // Breadcrumb segments
   const segments = path === '/' ? [] : path.split('/').filter(Boolean);
+  const usagePct = quota && quota.limit > 0
+    ? Math.min(100, Math.round((quota.used / quota.limit) * 100))
+    : 0;
+  const usageColor = usagePct > 90 ? 'bg-red-500' : usagePct > 75 ? 'bg-amber-500' : 'bg-blue-500';
 
   return (
     <div
@@ -361,7 +311,7 @@ export default function Files() {
         if (e.dataTransfer.files?.length) uploadFiles(e.dataTransfer.files);
       }}
     >
-      <WindowTitle title={`Files - ${user}${path}`} />
+      <WindowTitle title={`Files${path === '/' ? '' : ' - ' + path}`} />
       <input
         ref={fileRef}
         type="file"
@@ -386,9 +336,8 @@ export default function Files() {
           </svg>
         </button>
 
-        {/* Breadcrumbs */}
         <div className="flex-1 flex items-center gap-0.5 text-gray-700 truncate min-w-0">
-          <button onClick={() => setPath('/')} className="px-1.5 py-0.5 rounded hover:bg-gray-200 font-medium">{user}</button>
+          <button onClick={() => setPath('/')} className="px-1.5 py-0.5 rounded hover:bg-gray-200 font-medium">My files</button>
           {segments.map((seg, i) => (
             <span key={i} className="flex items-center gap-0.5">
               <span className="text-gray-400">/</span>
@@ -420,14 +369,28 @@ export default function Files() {
           Upload
         </button>
 
-        <div className="h-4 w-px bg-gray-300 mx-1" />
-        <span className="text-[10px] text-gray-400">{user}</span>
-        <button onClick={signOut} className="px-1.5 py-0.5 rounded hover:bg-gray-200 text-gray-500 text-[10px]">sign out</button>
+        {/* Quota indicator */}
+        {quota && (
+          <>
+            <div className="h-4 w-px bg-gray-300 mx-1" />
+            <div className="flex items-center gap-1.5" title={`${formatSize(quota.used)} of ${formatSize(quota.limit)} used`}>
+              <div className="w-20 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                <div
+                  className={`h-full ${usageColor} transition-all`}
+                  style={{ width: `${usagePct}%` }}
+                />
+              </div>
+              <span className="text-[10px] text-gray-500 tabular-nums whitespace-nowrap">
+                {formatSize(quota.used)} / {formatSize(quota.limit)}
+              </span>
+            </div>
+          </>
+        )}
       </div>
 
       {/* List */}
       <div className="flex-1 overflow-auto">
-        {loading ? (
+        {loading && entries.length === 0 ? (
           <div className="p-6 text-center text-sm text-gray-400">Loading…</div>
         ) : entries.length === 0 ? (
           <div className="p-10 text-center text-sm text-gray-400">
