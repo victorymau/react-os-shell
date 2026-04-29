@@ -122,7 +122,7 @@ export default function Desktop({ profile }: { profile: any }) {
   // in sync with what apps like Notepad write. Some legacy code paths
   // also expect them under profile.preferences — fall back to that for
   // consumers who haven't migrated.
-  const { prefs: shellPrefs } = useShellPrefs();
+  const { prefs: shellPrefs, save: saveShellPrefs } = useShellPrefs();
   const prefs = { ...(profile?.preferences || {}), ...shellPrefs };
   const favDocs: DesktopItem[] = prefs.favorite_documents || [];
   const folders: DesktopFolder[] = prefs.desktop_folders || [];
@@ -479,9 +479,14 @@ export default function Desktop({ profile }: { profile: any }) {
   };
 
   // ── Sticky notes ──
+  // Persist through the consumer-supplied callback when one is wired,
+  // otherwise fall back to the prefs adapter under `notepad_notes` so
+  // Desktop drags survive a refresh and stay in sync with what Notepad
+  // wrote.
   const saveNotes = useCallback((updated: StickyNote[]) => {
-    host.saveNotes?.(updated);
-  }, [host]);
+    if (host.saveNotes) host.saveNotes(updated);
+    else saveShellPrefs({ notepad_notes: updated });
+  }, [host, saveShellPrefs]);
 
   const createStickyNote = () => {
     const rect = containerRef.current?.getBoundingClientRect();

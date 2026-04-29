@@ -23,12 +23,14 @@ import {
   ShellEntityFetcherProvider,
   StatusBadgeProvider,
   DesktopHostProvider,
+  Modal,
   setShellAuthBridge,
   setShellWindowRegistry,
   setShellNavIcons,
   createWindowRegistry,
   useLocalStoragePrefs,
   useWindowManager,
+  VERSION,
   type NotificationsConfig,
 } from 'react-os-shell';
 import { bundledApps, utilityApps, gameApps, googleApps } from 'react-os-shell/apps';
@@ -143,19 +145,49 @@ const DEMO_NOTIFICATIONS: NotificationsConfig = {
 // Pick a wallpaper once per page load; reused across renders.
 const LOGIN_WALLPAPER = WALLPAPER_URLS[Math.floor(Math.random() * WALLPAPER_URLS.length)];
 
+const CHANGELOG_URL = 'https://raw.githubusercontent.com/victorymau/react-os-shell/main/CHANGELOG.md';
+
 function VersionBadge() {
-  const version = import.meta.env.VITE_APP_VERSION || '0.1.5';
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open || text) return;
+    setError(null);
+    fetch(CHANGELOG_URL)
+      .then(r => r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`)))
+      .then(setText)
+      .catch(err => setError(err.message || 'Failed to load changelog'));
+  }, [open, text]);
+
   return (
-    <a
-      href="https://github.com/victorymau/react-os-shell/releases"
-      target="_blank"
-      rel="noopener noreferrer"
-      title="View changelog on GitHub"
-      className="fixed right-3 text-[11px] font-mono text-white/60 hover:text-white select-none drop-shadow z-10 transition-colors cursor-pointer"
-      style={{ bottom: 'calc(var(--taskbar-height, 56px) * 1px + 8px)' }}
-    >
-      v{version}
-    </a>
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        title="View changelog"
+        className="fixed right-3 text-[11px] font-mono text-white/60 hover:text-white select-none drop-shadow z-10 transition-colors cursor-pointer"
+        style={{ bottom: 'calc(var(--taskbar-height, 56px) * 1px + 8px)' }}
+      >
+        v{VERSION || '0.0.0'}
+      </button>
+      {open && (
+        <Modal open onClose={() => setOpen(false)} title={`Changelog · v${VERSION}`} size="lg" bodyScroll>
+          {error ? (
+            <div className="p-6 text-sm text-red-600">
+              Could not load changelog: {error}.{' '}
+              <a className="text-blue-600 hover:underline" href="https://github.com/victorymau/react-os-shell/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">
+                Open on GitHub
+              </a>
+            </div>
+          ) : !text ? (
+            <div className="p-6 text-sm text-gray-500">Loading…</div>
+          ) : (
+            <pre className="p-6 text-xs font-mono text-gray-800 whitespace-pre-wrap leading-relaxed">{text}</pre>
+          )}
+        </Modal>
+      )}
+    </>
   );
 }
 

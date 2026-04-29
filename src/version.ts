@@ -1,3 +1,8 @@
-/** Version string shown in the About modal. Consumers can override at build
- *  time; defaults to empty so the line collapses cleanly. */
-export const APP_VERSION = '';
+declare const __PKG_VERSION__: string | undefined;
+
+/** Package version, injected by tsup at build time. Stays as an empty
+ *  string when the source is consumed without a build (e.g. tests). */
+export const VERSION: string = typeof __PKG_VERSION__ === 'string' ? __PKG_VERSION__ : '';
+
+/** Legacy alias kept so existing consumers do not break. */
+export const APP_VERSION = VERSION;

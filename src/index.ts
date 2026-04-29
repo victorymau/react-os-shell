@@ -77,6 +77,9 @@ export { default as Desktop } from './shell/Desktop';
 // ── Built-in settings pages (consumer registers via window registry) ──
 export { default as Customization } from './settings/Customization';
 
+// ── Package version (tsup-injected at build time) ──
+export { VERSION } from './version';
+
 // ── Bridge surfaces (consumer wires these once at App startup) ──
 export { ShellAuthProvider, useShellAuth } from './shell/ShellAuth';
 export type { ShellAuth } from './shell/ShellAuth';
