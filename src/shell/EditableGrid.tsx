@@ -9,6 +9,13 @@ export interface GridColumn {
   align?: 'left' | 'right' | 'center';
 }
 
+export type CellStyle = {
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  fontSize?: 'sm' | 'base' | 'lg' | 'xl';
+};
+
 export interface EditableGridProps {
   columns: GridColumn[];
   data: string[][];
@@ -18,6 +25,10 @@ export interface EditableGridProps {
   fixedRows?: boolean;
   minRows?: number;
   maxHeight?: string;
+  /** Per-cell text styling, keyed by `${row}:${col}`. */
+  cellStyles?: Record<string, CellStyle>;
+  /** Notifies the parent when the focused/edited cell changes. */
+  onFocusChange?: (pos: { row: number; col: number } | null) => void;
 }
 
 interface CellPos { row: number; col: number }
@@ -35,13 +46,18 @@ function rangeContains(anchor: CellPos, end: CellPos, row: number, col: number):
  * - Multi-cell paste from spreadsheets (Ctrl+V)
  * - Tab/Enter/Arrow keyboard navigation
  */
-export default function EditableGrid({ columns, data, onChange, onColumnsChange, fixedRows = false, minRows = 15, maxHeight = '260px' }: EditableGridProps) {
+export default function EditableGrid({ columns, data, onChange, onColumnsChange, fixedRows = false, minRows = 15, maxHeight = '260px', cellStyles, onFocusChange }: EditableGridProps) {
   const tableRef = useRef<HTMLTableElement>(null);
   const [focus, setFocus] = useState<CellPos | null>(null);
+  useEffect(() => { onFocusChange?.(focus); }, [focus, onFocusChange]);
 
   // Column resize state
   const [colWidths, setColWidths] = useState<Record<number, number>>({});
   const resizing = useRef<{ col: number; startX: number; startW: number } | null>(null);
+
+  // Row resize state
+  const [rowHeights, setRowHeights] = useState<Record<number, number>>({});
+  const rowResizing = useRef<{ row: number; startY: number; startH: number } | null>(null);
 
   // Drag reorder state
   const [dragRow, setDragRow] = useState<number | null>(null);
@@ -350,6 +366,27 @@ export default function EditableGrid({ columns, data, onChange, onColumnsChange,
     document.body.style.cursor = 'col-resize';
   };
 
+  // Row resize
+  const getRowHeight = (ri: number) => rowHeights[ri] ?? 28;
+  useEffect(() => {
+    const handleMove = (e: MouseEvent) => {
+      if (!rowResizing.current) return;
+      const diff = e.clientY - rowResizing.current.startY;
+      const newH = Math.max(20, rowResizing.current.startH + diff);
+      setRowHeights(prev => ({ ...prev, [rowResizing.current!.row]: newH }));
+    };
+    const handleUp = () => { rowResizing.current = null; document.body.style.cursor = ''; };
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+    return () => { window.removeEventListener('mousemove', handleMove); window.removeEventListener('mouseup', handleUp); };
+  }, []);
+  const startRowResize = (e: React.MouseEvent, ri: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    rowResizing.current = { row: ri, startY: e.clientY, startH: getRowHeight(ri) };
+    document.body.style.cursor = 'row-resize';
+  };
+
   // Row drag reorder
   const handleRowDragStart = (ri: number) => setDragRow(ri);
   const handleRowDragOver = (e: React.DragEvent, ri: number) => { e.preventDefault(); setDragOverRow(ri); };
@@ -465,8 +502,8 @@ export default function EditableGrid({ columns, data, onChange, onColumnsChange,
               const rowSelected = selAnchor && selEnd && Math.min(selAnchor.row, selEnd.row) <= ri && ri <= Math.max(selAnchor.row, selEnd.row)
                 && Math.min(selAnchor.col, selEnd.col) === 0 && Math.max(selAnchor.col, selEnd.col) === columns.length - 1;
               return (
-              <tr key={ri}>
-                <td className={`px-1 py-1 text-center text-[10px] text-gray-400 border-b border-r border-gray-200 bg-gray-50 select-none cursor-pointer hover:bg-gray-200${rowSelected ? ' !bg-blue-200 !text-gray-700' : ''}${dragOverRow === ri ? ' !bg-blue-100' : ''}`}
+              <tr key={ri} style={{ height: getRowHeight(ri) }}>
+                <td className={`relative px-1 py-1 text-center text-[10px] text-gray-400 border-b border-r border-gray-200 bg-gray-50 select-none cursor-pointer hover:bg-gray-200${rowSelected ? ' !bg-blue-200 !text-gray-700' : ''}${dragOverRow === ri ? ' !bg-blue-100' : ''}`}
                   draggable
                   onDragStart={() => handleRowDragStart(ri)}
                   onDragOver={(e) => handleRowDragOver(e, ri)}
@@ -481,13 +518,43 @@ export default function EditableGrid({ columns, data, onChange, onColumnsChange,
                   }}
                   onContextMenu={(e) => handleRowCtx(e, ri)}>
                   {ri + 1}
+                  {/* Row resize handle — slim bar at the bottom of the row header */}
+                  <div className="absolute -bottom-1 left-0 right-0 h-2 cursor-row-resize z-20 group"
+                    onMouseDown={(e) => startRowResize(e, ri)}>
+                    <div className="absolute bottom-[3px] left-0 right-0 h-[2px] group-hover:bg-blue-400" />
+                  </div>
                 </td>
                 {columns.map((col, ci) => {
                   const inRange = selAnchor && selEnd && rangeContains(selAnchor, selEnd, ri, ci);
                   const isEditing = editingCell?.row === ri && editingCell?.col === ci && !col.readOnly;
                   const isFocused = focus?.row === ri && focus?.col === ci;
+                  const cellStyle = cellStyles?.[`${ri}:${ci}`];
+                  const fontSizeCls = cellStyle?.fontSize === 'sm' ? 'text-[11px]'
+                    : cellStyle?.fontSize === 'lg' ? 'text-sm'
+                    : cellStyle?.fontSize === 'xl' ? 'text-base'
+                    : 'text-xs';
+                  const styleCls = `${cellStyle?.bold ? ' font-bold' : ''}${cellStyle?.italic ? ' italic' : ''}${cellStyle?.underline ? ' underline' : ''}`;
                   return (
-                    <td key={ci} className={`${tdCls}${col.readOnly ? ' bg-gray-50 text-gray-500' : ''}${inRange ? ' !bg-blue-100' : ''}${isFocused && !inRange ? ' ring-2 ring-inset ring-blue-400' : ''}`}>
+                    <td key={ci}
+                      className={`${tdCls}${col.readOnly ? ' bg-gray-50 text-gray-500 cursor-default' : ' cursor-cell'}${inRange ? ' !bg-blue-100' : ''}${isFocused && !inRange ? ' ring-2 ring-inset ring-blue-400' : ''}`}
+                      onMouseDown={(e) => {
+                        // td-level handler so clicks anywhere in the cell (incl. borders) select.
+                        if (e.target === e.currentTarget) {
+                          handleMouseDown(e, ri, ci);
+                          const inner = e.currentTarget.querySelector<HTMLElement>('[data-row][data-col]');
+                          inner?.focus();
+                        }
+                      }}
+                      onMouseEnter={() => handleMouseEnter(ri, ci)}
+                      onClick={(e) => {
+                        if (e.target === e.currentTarget) {
+                          const inner = e.currentTarget.querySelector<HTMLElement>('[data-row][data-col]');
+                          inner?.focus();
+                        }
+                      }}
+                      onDoubleClick={(e) => {
+                        if (e.target === e.currentTarget && !col.readOnly) setEditingCell({ row: ri, col: ci });
+                      }}>
                       <div
                         contentEditable={isEditing}
                         suppressContentEditableWarning
@@ -496,7 +563,7 @@ export default function EditableGrid({ columns, data, onChange, onColumnsChange,
                         data-col={ci}
                         className={`w-full h-full px-2 py-1 outline-none ${
                           col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : ''
-                        } ${col.readOnly ? 'cursor-default' : 'cursor-cell'} font-mono text-xs`}
+                        } ${col.readOnly ? 'cursor-default' : 'cursor-cell'} font-mono ${fontSizeCls}${styleCls}`}
                         onMouseDown={(e) => handleMouseDown(e, ri, ci)}
                         onMouseEnter={() => handleMouseEnter(ri, ci)}
                         onDoubleClick={() => { if (!col.readOnly) setEditingCell({ row: ri, col: ci }); }}

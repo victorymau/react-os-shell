@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import EditableGrid from '../shell/EditableGrid';
-import type { GridColumn } from '../shell/EditableGrid';
+import type { GridColumn, CellStyle } from '../shell/EditableGrid';
 import { WindowTitle } from '../shell/Modal';
 
 const TITLE_DISPLAY_MAX = 24;
@@ -34,6 +34,8 @@ interface Sheet {
   name: string;
   columns: GridColumn[];
   data: string[][];
+  /** Per-cell text styling. Key: `${row}:${col}`. */
+  cellStyles?: Record<string, CellStyle>;
 }
 
 function newSheet(name: string): Sheet {
@@ -42,6 +44,7 @@ function newSheet(name: string): Sheet {
     name,
     columns: makeColumns(DEFAULT_COLS),
     data: makeEmptyData(DEFAULT_ROWS, DEFAULT_COLS),
+    cellStyles: {},
   };
 }
 
@@ -75,6 +78,26 @@ export default function Spreadsheet() {
   const active = sheets[activeIdx] || sheets[0];
   const data = active.data;
   const columns = active.columns;
+  const cellStyles = active.cellStyles ?? {};
+  const [focusedCell, setFocusedCell] = useState<{ row: number; col: number } | null>(null);
+
+  const toggleCellStyle = useCallback((key: keyof CellStyle, value?: any) => {
+    if (!focusedCell) return;
+    const k = `${focusedCell.row}:${focusedCell.col}`;
+    setSheets(prev => prev.map((s, i) => {
+      if (i !== activeIdx) return s;
+      const styles = { ...(s.cellStyles ?? {}) };
+      const current = { ...(styles[k] ?? {}) };
+      if (value !== undefined) {
+        current[key] = value;
+      } else {
+        (current as any)[key] = !current[key];
+      }
+      styles[k] = current;
+      return { ...s, cellStyles: styles };
+    }));
+  }, [focusedCell, activeIdx]);
+  const focusedStyle: CellStyle = focusedCell ? (cellStyles[`${focusedCell.row}:${focusedCell.col}`] ?? {}) : {};
 
   const updateActiveSheet = useCallback((update: Partial<Sheet>) => {
     setSheets(prev => prev.map((s, i) => i === activeIdx ? { ...s, ...update } : s));
@@ -249,6 +272,34 @@ export default function Spreadsheet() {
           className="text-xs text-gray-600 hover:text-gray-900 px-2 py-1 rounded hover:bg-gray-200 transition-colors">
           Clear
         </button>
+
+        <div className="h-4 w-px bg-gray-300" />
+
+        {/* Font style panel — applies to the focused cell. */}
+        <div className="flex items-center gap-0.5" title={focusedCell ? '' : 'Click a cell first'}>
+          <button onClick={() => toggleCellStyle('bold')} disabled={!focusedCell}
+            className={`px-2 py-1 text-xs rounded transition-colors font-bold ${focusedStyle.bold ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-200'} disabled:opacity-40 disabled:cursor-not-allowed`}>
+            B
+          </button>
+          <button onClick={() => toggleCellStyle('italic')} disabled={!focusedCell}
+            className={`px-2 py-1 text-xs rounded transition-colors italic ${focusedStyle.italic ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-200'} disabled:opacity-40 disabled:cursor-not-allowed`}>
+            I
+          </button>
+          <button onClick={() => toggleCellStyle('underline')} disabled={!focusedCell}
+            className={`px-2 py-1 text-xs rounded transition-colors underline ${focusedStyle.underline ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-200'} disabled:opacity-40 disabled:cursor-not-allowed`}>
+            U
+          </button>
+          <select
+            value={focusedStyle.fontSize ?? 'base'}
+            onChange={e => toggleCellStyle('fontSize', e.target.value)}
+            disabled={!focusedCell}
+            className="ml-1 text-xs border border-gray-300 rounded px-1 py-0.5 bg-white disabled:opacity-40 disabled:cursor-not-allowed">
+            <option value="sm">XS</option>
+            <option value="base">S</option>
+            <option value="lg">M</option>
+            <option value="xl">L</option>
+          </select>
+        </div>
       </div>
 
       {/* Grid */}
@@ -258,6 +309,8 @@ export default function Spreadsheet() {
           data={data}
           onChange={handleChange}
           onColumnsChange={(newCols) => updateActiveSheet({ columns: newCols })}
+          cellStyles={cellStyles}
+          onFocusChange={setFocusedCell}
           minRows={DEFAULT_ROWS}
           maxHeight="100%"
         />
