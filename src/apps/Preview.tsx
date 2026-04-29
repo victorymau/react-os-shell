@@ -9,12 +9,13 @@ import { useState, useEffect, useRef } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import toast from '../shell/toast';
 
-// Default the worker to the matching CDN build. Consumers can override by
-// setting pdfjsLib.GlobalWorkerOptions.workerSrc themselves before opening
-// the Preview window.
+// Default the worker to the matching unpkg build (mirrors the consumer's
+// installed npm version exactly). Consumers can override by setting
+// pdfjsLib.GlobalWorkerOptions.workerSrc themselves before opening the
+// Preview window.
 if (typeof window !== 'undefined' && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
   pdfjsLib.GlobalWorkerOptions.workerSrc =
-    `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+    `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 }
 
 export interface PdfPreviewData {

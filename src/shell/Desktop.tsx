@@ -429,6 +429,7 @@ export default function Desktop({ profile }: { profile: any }) {
   // Index of the folder the user is currently hovering while dragging an
   // icon — drives the lift / glow animation and the on-drop fold-in.
   const [hoverFolderIdx, setHoverFolderIdx] = useState<number | null>(null);
+  const hoverFolderIdxRef = useRef<number | null>(null);
 
   // Save helpers — delegate persistence to the consumer-supplied callbacks
   // when wired, otherwise write through the prefs adapter so backend-less
@@ -559,7 +560,9 @@ export default function Desktop({ profile }: { profile: any }) {
         entry.el.style.zIndex = '';
         entry.el.style.opacity = '';
       }
-      const hoveredFolder = hoverFolderIdx != null ? folders[hoverFolderIdx] : null;
+      const liveHoverIdx = hoverFolderIdxRef.current;
+      const hoveredFolder = liveHoverIdx != null ? folders[liveHoverIdx] : null;
+      hoverFolderIdxRef.current = null;
       setHoverFolderIdx(null);
 
       // Compute final positions for each dragged entry.
@@ -990,10 +993,15 @@ export default function Desktop({ profile }: { profile: any }) {
       {folders.map((folder, i) => {
         const pos = localPositions[`folder-${i}`] || getFolderPos(folder, i);
         const isSelected = selected.has(`folder-${i}`);
+        const isHovered = hoverFolderIdx === i;
         const itemCount = folderItems(folder.id).length;
         return (
           <div key={`folder-${folder.id}`} data-desktop-icon={`folder-${i}`}
-            style={{ position: 'absolute', right: pos.right, top: pos.top, zIndex: 1 }}
+            style={{
+              position: 'absolute', right: pos.right, top: pos.top, zIndex: 1,
+              transform: isHovered ? 'scale(1.15)' : 'scale(1)',
+              transition: 'transform 180ms ease-out',
+            }}
             onPointerDown={e => { e.stopPropagation(); startDrag('folder', i, e); }}
             onClick={e => {
               e.stopPropagation();
@@ -1008,7 +1016,7 @@ export default function Desktop({ profile }: { profile: any }) {
             className="cursor-default select-none"
           >
             <div className="flex flex-col items-center gap-1 w-20 p-2">
-              <div className={`w-12 h-12 flex items-center justify-center ${isSelected ? 'rounded-lg bg-blue-400/30 ring-2 ring-blue-500' : ''}`}>
+              <div className={`w-12 h-12 flex items-center justify-center ${isSelected ? 'rounded-lg bg-blue-400/30 ring-2 ring-blue-500' : ''} ${isHovered ? 'rounded-lg ring-4 ring-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.6)]' : ''}`}>
                 <svg className="h-12 w-12 drop-shadow-[0_2px_3px_rgba(0,0,0,0.3)]" viewBox="0 0 48 48">
             <path d="M6 12a4 4 0 014-4h10l4 4h14a4 4 0 014 4v20a4 4 0 01-4 4H10a4 4 0 01-4-4V12z" fill="white" stroke="#eab308" strokeWidth="2" strokeLinejoin="round" />
             <path d="M6 18h36" stroke="#eab308" strokeWidth="1.5" />
@@ -1288,8 +1296,11 @@ export default function Desktop({ profile }: { profile: any }) {
         );
       })()}
 
-      {/* Version watermark on desktop — clickable to open What's New */}
-      {(prefs.show_desktop_version ?? true) && (host.productVersion ?? APP_VERSION) && (
+      {/* Version watermark on desktop — opt-in only. Hidden by default so
+          consumer apps don't end up with two version labels (the bundled
+          one and their own). Set prefs.show_desktop_version = true and
+          provide host.productVersion to surface it. */}
+      {prefs.show_desktop_version === true && (host.productVersion ?? APP_VERSION) && (
         <button
           onClick={(e) => { e.stopPropagation(); setWhatsNewOpen(true); }}
           className={`absolute bottom-3 text-[10px] text-white/50 font-mono select-none drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)] hover:text-white/80 transition-colors cursor-pointer ${
