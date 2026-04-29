@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.1.33] — 2026-04-30
+
+### Fixed
+- Preview app: opening a file via the Open button or drag-drop in one Preview window no longer also replaces the file in any other open Preview window. The local ingest path now updates the current instance's state directly instead of routing through the global `setPdfPreview` event (which all open Previews listen to). External callers of `setPdfPreview` still broadcast as before.
+- Preview 3D camera presets (ISO / TOP / FRT / SDE) and Fit: `GetBoundingSphere` is on the underlying `Viewer`, not `EmbeddedViewer`, so the previous calls to `v.GetBoundingSphere(...)` silently returned `undefined` and the presets did nothing. Now uses `v.viewer.GetBoundingSphere(...)`.
+
+### Changed
+- Preview 3D section view: switched from capped (stencil) sectioning to plain clipping. The user-visible result: the cut-off half disappears cleanly, with no cap quad or fill color. The underlying problem was that our `import('three')` resolved to a different three.js instance than the one online-3d-viewer bundles, so our `THREE.Plane` / stencil constants weren't recognized by the renderer; the new path uses a duck-typed plane object (`{ normal: {x,y,z}, constant }`) that three.js's `WebGLClipping.copy()` can read directly without any THREE imports. The "Cap Color" picker is gone.
+
 ## [0.1.32] — 2026-04-29
 
 ### Fixed

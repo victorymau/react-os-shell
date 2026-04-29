@@ -94,7 +94,6 @@ export default function Preview() {
   const [isDragging, setIsDragging] = useState(false);
   const handlePick = () => fileRef.current?.click();
   const ingestFile = (file: File) => {
-    const url = URL.createObjectURL(file);
     const ext = (file.name.split('.').pop() || '').toLowerCase();
     const kind: 'pdf' | 'image' | 'dxf' | '3d' | undefined =
       ext === 'pdf' ? 'pdf'
@@ -103,12 +102,21 @@ export default function Preview() {
       : ['stp', 'step', 'stl', 'obj', 'gltf', 'glb', '3mf', 'iges', 'igs', 'ply', 'fbx'].includes(ext) ? '3d'
       : undefined;
     if (!kind) {
-      URL.revokeObjectURL(url);
       if (ext === 'dwg') toast.error('DWG files need server-side conversion. Convert to PDF or DXF first.');
       else toast.error(`Unsupported file type: .${ext || 'unknown'}`);
       return;
     }
-    setPdfPreview({ url, filename: file.name, kind });
+    const url = URL.createObjectURL(file);
+    // Local-only update: do NOT route through setPdfPreview, which dispatches
+    // a global event that every other open Preview window also listens to —
+    // that would replace whatever those other windows are showing. Update
+    // only this instance's state.
+    setData(prev => {
+      if (prev?.url?.startsWith('blob:') && prev.url !== url) {
+        URL.revokeObjectURL(prev.url);
+      }
+      return { url, filename: file.name, kind };
+    });
   };
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -730,7 +738,6 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
   const [sectionAxis, setSectionAxis] = useState<'x' | 'y' | 'z'>('z');
   const [sectionFlip, setSectionFlip] = useState(false);
   const [sectionPosition, setSectionPosition] = useState(0.5); // 0–1 within bbox
-  const [sectionCapColor, setSectionCapColor] = useState('#9aa6b3');
 
   // Persistent section state — stencil helpers, cap mesh, original material
   // settings — held in a ref so we can mutate the plane in place on slider
@@ -880,146 +887,68 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
     } catch {}
   }, [bgColor]);
 
-  // Section view — set up / tear down on enable.
-  // Uses the standard three.js stencil-cap technique: every mesh gets a
-  // clippingPlane + two stencil-only "helper" children that count interior
-  // intersections with the plane, and a single cap quad in the scene draws
-  // the cut surface where the stencil count is non-zero.
+  // Section view — set / tear down on enable.
+  //
+  // We use plain clipping (no cap), per the user's preference. The plane is
+  // a duck-typed object: { normal: {x,y,z}, constant: number }. three.js's
+  // WebGLClipping only calls `.copy()` on it (which reads .normal.x/y/z and
+  // .constant), so we DON'T need to import three. That matters here because
+  // online-3d-viewer bundles its own three transitively, and a separate
+  // `import('three')` would resolve to a different three instance — breaking
+  // instanceof checks and sharing nothing.
   useEffect(() => {
     const v = viewerRef.current;
     if (!v?.viewer || loading) return;
 
-    let cancelled = false;
-    let teardown: (() => void) | null = null;
+    const renderer = v.viewer.renderer;
+    if (!renderer) return;
 
-    (async () => {
-      const THREE: any = await import('three' as any);
-      if (cancelled) return;
-      const renderer = v.viewer.renderer;
-      const scene = v.viewer.scene;
-      if (!renderer || !scene) return;
-
-      // Tear down any previous section state.
-      if (sectionRef.current) {
-        const s = sectionRef.current;
-        for (const [mat, prev] of s.materialState.entries()) {
-          mat.clippingPlanes = prev.clippingPlanes;
-          mat.clipShadows = prev.clipShadows;
-          mat.needsUpdate = true;
-        }
-        for (const helper of s.helpers) {
-          helper.parent?.remove(helper);
-          helper.geometry?.dispose?.();
-          helper.material?.dispose?.();
-        }
-        if (s.capMesh) {
-          scene.remove(s.capMesh);
-          s.capMesh.geometry?.dispose?.();
-          s.capMesh.material?.dispose?.();
-        }
-        sectionRef.current = null;
-      }
-
-      if (!sectionEnabled) {
-        renderer.localClippingEnabled = false;
-        v.viewer.Render?.();
-        return;
-      }
-
-      const bbox = v.viewer.GetBoundingBox?.(() => true);
-      if (!bbox) return;
-
-      const plane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0);
-      const helpers: any[] = [];
-      const materialState = new Map<any, { clippingPlanes: any; clipShadows: any }>();
-
-      const applyToMaterial = (mat: any) => {
-        if (!mat || materialState.has(mat)) return;
-        materialState.set(mat, {
-          clippingPlanes: mat.clippingPlanes,
-          clipShadows: mat.clipShadows,
-        });
-        mat.clippingPlanes = [plane];
-        mat.clipShadows = true;
+    // Tear down any previous state.
+    if (sectionRef.current) {
+      const s = sectionRef.current;
+      for (const [mat, prev] of s.materialState.entries()) {
+        mat.clippingPlanes = prev.clippingPlanes;
+        mat.clipShadows = prev.clipShadows;
         mat.needsUpdate = true;
-      };
-
-      // Snapshot the mesh list FIRST. EnumerateMeshes is a live scene
-      // traversal — if we add helper meshes to each visited mesh inside the
-      // callback, the traversal then visits those helpers (which are also
-      // THREE.Mesh instances) and recursively adds more helpers to them,
-      // exploding into a stack overflow.
-      const targets: any[] = [];
-      v.viewer.mainModel?.EnumerateMeshes?.((mesh: any) => {
-        if (mesh.userData?.__sectionHelper) return;
-        targets.push(mesh);
-      });
-
-      for (const mesh of targets) {
-        const mat = mesh.material;
-        if (Array.isArray(mat)) for (const m of mat) applyToMaterial(m);
-        else applyToMaterial(mat);
-
-        // Two stencil-only helpers: back faces increment, front faces decrement.
-        // Where the result is non-zero on the cap plane, we are inside the solid.
-        const makeStencil = (side: number, op: number) => {
-          const m = new THREE.MeshBasicMaterial({
-            depthWrite: false,
-            depthTest: false,
-            colorWrite: false,
-            stencilWrite: true,
-            stencilFunc: THREE.AlwaysStencilFunc,
-            stencilFail: op,
-            stencilZFail: op,
-            stencilZPass: op,
-            side,
-            clippingPlanes: [plane],
-          });
-          const helper = new THREE.Mesh(mesh.geometry, m);
-          helper.matrixAutoUpdate = false;
-          helper.renderOrder = 1;
-          helper.userData.__sectionHelper = true;
-          mesh.add(helper);
-          helpers.push(helper);
-        };
-        makeStencil(THREE.BackSide, THREE.IncrementWrapStencilOp);
-        makeStencil(THREE.FrontSide, THREE.DecrementWrapStencilOp);
       }
+      sectionRef.current = null;
+    }
 
-      // Cap quad — sized to the bounding box diagonal so it always covers the cut.
-      const dx = bbox.max.x - bbox.min.x;
-      const dy = bbox.max.y - bbox.min.y;
-      const dz = bbox.max.z - bbox.min.z;
-      const capSize = Math.max(dx, dy, dz) * 2 || 1;
-      const capGeom = new THREE.PlaneGeometry(capSize, capSize);
-      const capMat = new THREE.MeshPhongMaterial({
-        color: 0x9aa6b3,
-        side: THREE.DoubleSide,
-        stencilWrite: true,
-        stencilRef: 0,
-        stencilFunc: THREE.NotEqualStencilFunc,
-        stencilFail: THREE.ReplaceStencilOp,
-        stencilZFail: THREE.ReplaceStencilOp,
-        stencilZPass: THREE.ReplaceStencilOp,
-      });
-      const capMesh = new THREE.Mesh(capGeom, capMat);
-      capMesh.renderOrder = 2;
-      capMesh.userData.__sectionHelper = true;
-      scene.add(capMesh);
-
-      renderer.localClippingEnabled = true;
-      sectionRef.current = { plane, capMesh, helpers, materialState, bbox };
+    if (!sectionEnabled) {
+      renderer.localClippingEnabled = false;
       v.viewer.Render?.();
+      return;
+    }
 
-      teardown = () => {
-        // No-op here — handled at the start of the effect on next run.
-      };
-    })();
+    const bbox = v.viewer.GetBoundingBox?.(() => true);
+    if (!bbox) return;
 
-    return () => {
-      cancelled = true;
-      if (teardown) teardown();
+    const plane: any = { normal: { x: 0, y: 0, z: -1 }, constant: 0 };
+    const materialState = new Map<any, { clippingPlanes: any; clipShadows: any }>();
+
+    const applyToMaterial = (mat: any) => {
+      if (!mat || materialState.has(mat)) return;
+      materialState.set(mat, { clippingPlanes: mat.clippingPlanes, clipShadows: mat.clipShadows });
+      mat.clippingPlanes = [plane];
+      mat.clipShadows = true;
+      mat.needsUpdate = true;
     };
+
+    v.viewer.mainModel?.EnumerateMeshes?.((mesh: any) => {
+      if (mesh.userData?.__sectionHelper) return;
+      const mat = mesh.material;
+      if (Array.isArray(mat)) for (const m of mat) applyToMaterial(m);
+      else applyToMaterial(mat);
+    });
+    v.viewer.mainModel?.EnumerateEdges?.((edge: any) => {
+      const mat = edge.material;
+      if (Array.isArray(mat)) for (const m of mat) applyToMaterial(m);
+      else applyToMaterial(mat);
+    });
+
+    renderer.localClippingEnabled = true;
+    sectionRef.current = { plane, capMesh: null, helpers: [], materialState, bbox };
+    v.viewer.Render?.();
   }, [sectionEnabled, loading, tree]);
 
   // Section view — update plane orientation/position on axis/flip/slider change.
@@ -1034,43 +963,20 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
       const max = [bbox.max.x, bbox.max.y, bbox.max.z][axisIdx];
       const value = min + (max - min) * sectionPosition;
 
-      // Three.js clips fragments where (normal · p) + constant < 0.
+      // three.js clips fragments where (normal · p) + constant < 0.
       // Default direction (not flipped): keep "axis < value", clip "axis > value".
       const dir = sectionFlip ? 1 : -1;
-      const nx = sectionAxis === 'x' ? dir : 0;
-      const ny = sectionAxis === 'y' ? dir : 0;
-      const nz = sectionAxis === 'z' ? dir : 0;
-      s.plane.normal.set(nx, ny, nz);
+      s.plane.normal.x = sectionAxis === 'x' ? dir : 0;
+      s.plane.normal.y = sectionAxis === 'y' ? dir : 0;
+      s.plane.normal.z = sectionAxis === 'z' ? dir : 0;
       s.plane.constant = -dir * value;
-
-      // Cap mesh: position at the plane, oriented so its visible face points
-      // toward the kept side (i.e. opposite the plane normal direction we
-      // clip against — same as plane.normal for our convention).
-      const cx = (bbox.min.x + bbox.max.x) / 2;
-      const cy = (bbox.min.y + bbox.max.y) / 2;
-      const cz = (bbox.min.z + bbox.max.z) / 2;
-      const center: any = { x: cx, y: cy, z: cz };
-      // Plane equation: n.p + c = 0 → distance from center = n·c + c_const.
-      const dist = nx * center.x + ny * center.y + nz * center.z + s.plane.constant;
-      const px = center.x - nx * dist;
-      const py = center.y - ny * dist;
-      const pz = center.z - nz * dist;
-      s.capMesh.position.set(px, py, pz);
-      s.capMesh.lookAt(px + nx, py + ny, pz + nz);
-
-      // Cap color
-      try {
-        const m = /^#?([0-9a-f]{6})$/i.exec(sectionCapColor);
-        const n = m ? parseInt(m[1], 16) : 0x9aa6b3;
-        s.capMesh.material.color.setHex(n);
-      } catch {}
 
       v.viewer.Render?.();
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn('[Preview] section update failed', err);
     }
-  }, [sectionEnabled, sectionAxis, sectionFlip, sectionPosition, sectionCapColor]);
+  }, [sectionEnabled, sectionAxis, sectionFlip, sectionPosition]);
 
   // Hint timer.
   useEffect(() => {
@@ -1109,7 +1015,7 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
   const handleFit = () => {
     try {
       const v = viewerRef.current;
-      const sphere = v?.GetBoundingSphere?.(() => true);
+      const sphere = v?.viewer?.GetBoundingSphere?.(() => true);
       if (sphere) v.viewer.FitSphereToWindow(sphere, true);
       v?.viewer?.Render?.();
     } catch {}
@@ -1121,7 +1027,7 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
     const v = viewerRef.current;
     if (!OV || !v?.viewer) return;
     try {
-      const sphere = v.GetBoundingSphere?.(() => true);
+      const sphere = v.viewer.GetBoundingSphere?.(() => true);
       if (!sphere) return;
       const c = sphere.center;
       const r = sphere.radius || 1;
@@ -1170,7 +1076,6 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
     setSectionAxis('z');
     setSectionFlip(false);
     setSectionPosition(0.5);
-    setSectionCapColor('#9aa6b3');
   };
 
   const handleDefaultDownload = () => {
@@ -1449,15 +1354,6 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
                     />
                   </div>
 
-                  <label className="flex items-center justify-between gap-2">
-                    <span>Cap Color</span>
-                    <input
-                      type="color"
-                      value={sectionCapColor}
-                      onChange={(e) => setSectionCapColor(e.target.value)}
-                      className="h-6 w-10 rounded border border-slate-600 bg-transparent"
-                    />
-                  </label>
                 </div>
               </div>
             </div>
