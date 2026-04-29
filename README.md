@@ -4,7 +4,11 @@ A desktop-style React UI shell — windows, taskbar, start menu, sticky notes, f
 
 > **Status:** v0.1.0 — extracted from a production ERP where it's been running for a small team. Public API is stabilising; expect minor shape changes before 1.0.
 
-<!-- TODO: animated GIF of the desktop opening Calculator + Tetris + a Sales Order window -->
+### → [Live demo](https://victorymau.github.io/react-os-shell/)
+
+A backend-less playground hosted on GitHub Pages. Wallpapers, themes, sticky notes, the spreadsheet, the calendar, all wired to `localStorage` so the page survives a refresh. Source is in [`examples/demo/`](examples/demo/).
+
+<!-- Add a hero screenshot once one is captured: docs/hero.png -->
 
 ## What's in the box
 
@@ -15,7 +19,7 @@ A desktop-style React UI shell — windows, taskbar, start menu, sticky notes, f
 - **Games (6):** Chess, Checkers, Minesweeper, Sudoku, Tetris, 2048
 - **Google (3):** Calendar, Email (Gmail), GeminiChat
 
-12 of the 16 ship in the `bundledApps` registry today; 4 (Calendar, Notepad, WorldClock, Minesweeper) are exported individually but require consumer-supplied prefs/leaderboard wiring before they slot into `bundledApps`.
+15 of the 16 ship in the `bundledApps` registry today; the remaining one (WorldClock) is exported individually but needs consumer-supplied prefs wiring before slotting into `bundledApps`. The bundled `Customization` settings page is also exported separately for consumers to register at `/settings/customization`.
 
 **Hooks:** `useWindowManager`, `useTheme`, full hotkey/nav system (`useNewHotkey`, `useEditHotkey`, `useModalNav`, `useModalSave`, `useModalDuplicate`, `useTableNav`, `useMultiModal`), `useGoogleAuth`, `useEmailUnread`.
 
@@ -225,7 +229,7 @@ Most "desktop UI" demos on the web are toys with hardcoded windows and no escape
 
 ## Examples
 
-- `examples/demo` — small Vite app showcasing the shell + bundled apps with mock data. Deployed to GitHub Pages.
+- [`examples/demo`](examples/demo/) — small Vite app showcasing the shell + bundled apps with mock data. Live at [victorymau.github.io/react-os-shell](https://victorymau.github.io/react-os-shell/), deployed automatically by [`.github/workflows/pages.yml`](.github/workflows/pages.yml) on every push to `main`.
 
 ## Contributing
 
