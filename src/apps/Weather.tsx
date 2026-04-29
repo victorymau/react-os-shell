@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useWidgetSettings } from '../shell/Modal';
 import WidgetSettingsModal, { loadAppearance, type WidgetAppearance } from '../shell/WidgetSettingsModal';
+import { useShellPrefs } from '../shell/ShellPrefs';
 
 // [condition, day emoji, night emoji, day gradient, night gradient]
 const WMO: Record<number, [string, string, string, string, string]> = {
@@ -58,18 +59,13 @@ const SETTINGS_KEY = 'weather_appearance';
 const CACHE_KEY = 'weather_multi_cache';
 const CACHE_TTL = 30 * 60 * 1000;
 
-const PREFS_KEY = 'weather_prefs';
 interface CityWeather { city: string; temp: number; code: number; high: number; low: number; isDay: boolean; timezone: string }
 interface WeatherPrefs { useFahrenheit: boolean; showLocalTime: boolean; use24Hour: boolean }
+const DEFAULT_PREFS: WeatherPrefs = { useFahrenheit: false, showLocalTime: false, use24Hour: false };
 
 function loadCities(): string[] {
   try { const s = JSON.parse(localStorage.getItem(STORAGE_KEY) || ''); if (Array.isArray(s) && s.length) return s; } catch {}
   return DEFAULT_CITIES;
-}
-
-function loadPrefs(): WeatherPrefs {
-  try { const s = JSON.parse(localStorage.getItem(PREFS_KEY) || ''); if (s) return { useFahrenheit: false, showLocalTime: false, use24Hour: false, ...s }; } catch {}
-  return { useFahrenheit: false, showLocalTime: false, use24Hour: false };
 }
 
 const toF = (c: number) => Math.round(c * 9 / 5 + 32);
@@ -125,7 +121,10 @@ export default function Weather() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [configCities, setConfigCities] = useState<string[]>([]);
   const [configAppearance, setConfigAppearance] = useState<WidgetAppearance>(appearance);
-  const [prefs, setPrefs] = useState(loadPrefs);
+  // Prefs live in the consumer-supplied prefs adapter so they persist
+  // reliably across re-mounts without the local useState/localStorage dance.
+  const { prefs: shellPrefs, save: saveShellPrefs } = useShellPrefs();
+  const prefs: WeatherPrefs = { ...DEFAULT_PREFS, ...(shellPrefs.weather_prefs as WeatherPrefs | undefined ?? {}) };
   const [configPrefs, setConfigPrefs] = useState<WeatherPrefs>(prefs);
 
   useWidgetSettings(useCallback(() => {
@@ -164,10 +163,11 @@ export default function Weather() {
 
   const saveSettings = () => {
     if (configCities.length === 0) return;
-    setCities(configCities); setAppearance(configAppearance); setPrefs(configPrefs);
+    setCities(configCities);
+    setAppearance(configAppearance);
+    saveShellPrefs({ weather_prefs: configPrefs });
     localStorage.setItem(STORAGE_KEY, JSON.stringify(configCities));
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(configAppearance));
-    localStorage.setItem(PREFS_KEY, JSON.stringify(configPrefs));
     setSettingsOpen(false);
   };
 
