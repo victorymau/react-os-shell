@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.1.38] — 2026-04-30
+
+### Fixed
+- Preview 3D toggle switches: the "Show Edges" / "Section View" pills had collapsed into flat rectangles with no visible thumb. Switched from `relative + absolute` positioning to `inline-flex items-center` with explicit `translate-x-[18px]` for the on state, plus `shrink-0` so flex containers can't squash them, and added `role="switch"` / `aria-checked` for a11y.
+- Preview 3D capped section view, harder push to make the cap actually visible:
+  - Cap material's `emissive` color now matches the cap color with `emissiveIntensity = 0.6`, so it self-illuminates and never blends into the model under arbitrary scene lighting.
+  - Cap gets `polygonOffset` toward the camera to win z-fights against any model geometry that lands exactly on the plane.
+  - `renderer.localClippingEnabled = true` is set before any `material.clippingPlanes` writes (matches three.js's documented order, avoids one wasted shader recompile).
+  - `renderer.autoClearStencil` is forced `true` so stencil starts at 0 every frame (without this the cap mask drifts).
+  - Diagnostic `[Preview] section: ...` log now reports stencil buffer state, target mesh count, helper count, and cap presence so the cause is verifiable from the browser console.
+
 ## [0.1.37] — 2026-04-30
 
 ### Fixed

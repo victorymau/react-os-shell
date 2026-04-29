@@ -1034,9 +1034,20 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
       const gl = renderer.getContext?.();
       const attrs = gl?.getContextAttributes?.();
       hasStencil = attrs?.stencil !== false;
+      // Force the renderer to clear stencil between frames; without this
+      // the helper writes accumulate (or never start at 0) and the cap
+      // mask drifts.
+      renderer.autoClearStencil = true;
       // eslint-disable-next-line no-console
-      console.info('[Preview] section: stencil buffer =', hasStencil, 'autoClearStencil =', renderer.autoClearStencil);
+      console.info('[Preview] section: stencil buffer =', hasStencil, 'targets =', targets.length);
     } catch {}
+
+    // Enable local clipping BEFORE we modify material clippingPlanes so the
+    // shaders pick up the clipping path on first compile. Setting this
+    // afterwards still works (with material.needsUpdate), but doing it
+    // early avoids one wasted recompile and is closer to three.js's
+    // documented usage pattern.
+    renderer.localClippingEnabled = true;
 
     const plane: any = { normal: { x: 0, y: 0, z: -1 }, constant: 0 };
     const helpers: any[] = [];
@@ -1130,6 +1141,11 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
       const mhex = /^#?([0-9a-f]{6})$/i.exec(sectionCapColor);
       const colorHex = mhex ? parseInt(mhex[1], 16) : 0xc8ccd1;
       capMat.color?.setHex?.(colorHex);
+      // Self-illuminate the cap so it doesn't depend on scene lights /
+      // surface normals — important when cloning from a Phong material
+      // whose lit color may end up indistinguishable from the model.
+      capMat.emissive?.setHex?.(colorHex);
+      if ('emissiveIntensity' in capMat) capMat.emissiveIntensity = 0.6;
       capMat.side = DoubleSide;
       capMat.transparent = false;
       capMat.opacity = 1;
@@ -1141,6 +1157,11 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
       capMat.stencilZPass = ReplaceStencilOp;
       // Don't clip the cap itself by the same plane.
       capMat.clippingPlanes = [];
+      // Push the cap a hair toward the camera so it wins z-fights with
+      // any model fragments that happen to sit exactly at the plane.
+      capMat.polygonOffset = true;
+      capMat.polygonOffsetFactor = -1;
+      capMat.polygonOffsetUnits = -1;
       capMat.needsUpdate = true;
 
       capMesh = new Mesh(capGeom, capMat);
@@ -1149,8 +1170,9 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
       scene.add(capMesh);
     }
 
-    renderer.localClippingEnabled = true;
     sectionRef.current = { plane, capMesh, helpers, materialState, bbox };
+    // eslint-disable-next-line no-console
+    console.info('[Preview] section: helpers =', helpers.length, 'cap =', !!capMesh);
     v.viewer.Render?.();
   }, [sectionEnabled, loading, tree, sectionCapColor]);
 
@@ -1493,9 +1515,11 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
                 <span>Show Edges</span>
                 <button
                   onClick={() => setShowEdges(s => !s)}
-                  className={`relative h-5 w-9 rounded-full transition-colors ${showEdges ? 'bg-blue-500' : 'bg-gray-300'}`}
+                  role="switch"
+                  aria-checked={showEdges}
+                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${showEdges ? 'bg-blue-500' : 'bg-gray-300'}`}
                 >
-                  <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${showEdges ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                  <span className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${showEdges ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
                 </button>
               </label>
               <label className="flex items-center justify-between gap-2">
@@ -1529,9 +1553,11 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
                   <span className="font-medium">Section View</span>
                   <button
                     onClick={() => setSectionEnabled(s => !s)}
-                    className={`relative h-5 w-9 rounded-full transition-colors ${sectionEnabled ? 'bg-blue-500' : 'bg-gray-300'}`}
+                    role="switch"
+                    aria-checked={sectionEnabled}
+                    className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${sectionEnabled ? 'bg-blue-500' : 'bg-gray-300'}`}
                   >
-                    <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${sectionEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                    <span className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${sectionEnabled ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
                   </button>
                 </label>
 
