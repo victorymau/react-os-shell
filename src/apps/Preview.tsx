@@ -325,6 +325,8 @@ interface PdfPanelProps {
   onEmail?: () => void;
 }
 
+const ZOOM_PRESETS = [50, 75, 100, 125, 150, 200, 300, 400];
+
 function PdfPanel({ url, filename, onDownload, onEmail }: PdfPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -428,7 +430,20 @@ function PdfPanel({ url, filename, onDownload, onEmail }: PdfPanelProps) {
 
         <div className="flex items-center gap-1">
           <button onClick={() => setScale(s => Math.max(0.3, Math.round((s - 0.25) * 100) / 100))} className={btn}>−</button>
-          <span className="text-gray-500 w-12 text-center tabular-nums">{Math.round(scale * 100)}%</span>
+          <select
+            value={ZOOM_PRESETS.includes(Math.round(scale * 100)) ? Math.round(scale * 100) : 'custom'}
+            onChange={e => {
+              const v = e.target.value;
+              if (v !== 'custom') setScale(Number(v) / 100);
+            }}
+            className="bg-transparent hover:bg-gray-200 rounded px-1 py-1 text-gray-600 tabular-nums cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-400"
+            title="Zoom"
+          >
+            {!ZOOM_PRESETS.includes(Math.round(scale * 100)) && (
+              <option value="custom">{Math.round(scale * 100)}%</option>
+            )}
+            {ZOOM_PRESETS.map(p => <option key={p} value={p}>{p}%</option>)}
+          </select>
           <button onClick={() => setScale(s => Math.min(4, Math.round((s + 0.25) * 100) / 100))} className={btn}>+</button>
           <button onClick={fitWidth} className={btn}>Fit</button>
         </div>
