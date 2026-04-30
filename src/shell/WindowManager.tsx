@@ -330,7 +330,9 @@ function findPanelByLabel(label: string): HTMLElement | null {
  *  back to a frosted card with the icon + label so the preview is
  *  never empty. When `titleAbove` is true the bottom overlay label
  *  is dropped — the parent renders the title in a row above instead. */
-function ThumbCard({ id, label, maxW, maxH, titleAbove = false, onClick, onClose }: {
+/** Snapshot card for an open window. Exported for the mobile switcher.
+ *  See JSDoc above for sizing/snapshot semantics. */
+export function ThumbCard({ id, label, maxW, maxH, titleAbove = false, onClick, onClose }: {
   id: string; label: string; maxW: number; maxH: number; titleAbove?: boolean; onClick?: () => void; onClose?: () => void;
 }) {
   const previewRef = useRef<HTMLDivElement>(null);

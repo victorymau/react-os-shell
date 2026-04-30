@@ -22,6 +22,8 @@ import { useBugReport } from './BugReportDialog';
 import StartupAnimation from './StartupAnimation';
 import LogoutAnimation from './LogoutAnimation';
 import StartMenu from './StartMenu';
+import MobileShell from './MobileShell';
+import { useIsMobile } from './useIsMobile';
 import { PopupMenu, PopupMenuItem, PopupMenuDivider } from './PopupMenu';
 import {
   navIcons as defaultNavIcons,
@@ -476,6 +478,7 @@ export default function Layout({
   const { openPage, openEntity, openWindows } = useWindowManager();
   const [menuOpen, setMenuOpen] = useState(false);
   const emailUnreadCount = useEmailUnreadCount();
+  const isMobile = useIsMobile();
 
   // Profile is reserved for consumer integration; the shell only consumes prefs.
   const profile: any = user || {};
@@ -530,6 +533,13 @@ export default function Layout({
     root.style.setProperty('--window-tab-width', sv.tabW);
     root.style.setProperty('--window-tab-font-size', sv.tabFont);
   }, [inactiveHeaderOpacity, inactiveContentOpacity, activeHeaderOpacity, activeContentOpacity, taskbarH, taskbarPosition, prefs.default_window_size, prefs.window_position, prefs.menu_density, prefs.start_menu_size]);
+
+  // Mobile-only CSS var: bottom-nav reservation height. Modal reads this to
+  // shrink fullscreen apps so they don't render under the nav. Zero on desktop
+  // so the variable can be used unconditionally in Modal styles.
+  useEffect(() => {
+    document.documentElement.style.setProperty('--mobile-bottom-nav', isMobile ? '56px' : '0px');
+  }, [isMobile]);
   const [balloonDismissed, setBalloonDismissed] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
   const [taskbarMenu, setTaskbarMenu] = useState<{ x: number; y: number } | null>(null);
@@ -665,6 +675,17 @@ export default function Layout({
         />
       )}
 
+      {isMobile ? (
+        <MobileShell
+          productName={productName}
+          productIcon={productIcon}
+          navSections={navSections}
+          navIcons={navIcons}
+          sectionIcons={sectionIcons}
+          onOpenStartMenu={() => setMenuOpen(true)}
+        />
+      ) : (
+      <>
       <div className="flex flex-1 min-h-0">
       <main
         className="flex-1 flex flex-col overflow-hidden cursor-default"
@@ -768,6 +789,8 @@ export default function Layout({
           </>
         )}
       </div>
+      </>
+      )}
 
       {/* Taskbar context menu */}
       {taskbarMenu && (

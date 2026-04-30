@@ -5,6 +5,8 @@ import { confirm } from './ConfirmDialog';
 import { useWindowManager } from './WindowManager';
 import { glassStyle as getGlassStyle } from '../utils/glass';
 import { PopupMenu, PopupMenuItem, PopupMenuDivider } from './PopupMenu';
+import { useIsMobile } from './useIsMobile';
+import { setMobileMode } from './mobileShellStore';
 
 /** Context that passes the modal's unique ID to children */
 const ModalIdContext = createContext<string>('');
@@ -374,6 +376,7 @@ export { triggerSplitView };
 
 
 export default function Modal({ open, onClose, title, icon, copyText, size = 'lg', dirty = false, onNext, onPrev, footer, bodyScroll, onMinimize, initialBox, actions, actionsLeft, allowPinOnTop, initialPosition, widget, compact, appStyle, autoHeight, autoMinHeight, widgetMenu, dimensions, windowKey, children }: ModalProps) {
+  const isMobile = useIsMobile();
   const [displayTitle, setDisplayTitle] = useState<React.ReactNode>(title);
   useEffect(() => { setDisplayTitle(title); }, [title]);
   const [touched, setTouched] = useState(false);
@@ -531,16 +534,17 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     const onReorder = () => {
       setZIndex(getZForModal(modalId));
     };
-    // Split view: tile modals side by side (utility/pinned windows excluded)
+    // Split view: tile modals side by side (utility, widget, and pinned
+    // windows are excluded — those manage their own placement).
     const onSplitView = () => {
-      if (allowPinOnTop) return; // Utility windows don't participate in split
-      // Count non-utility windows for layout
+      if (allowPinOnTop || widget) return;
+      // Count tileable windows for layout — exclude both utility and widget.
       const allPanels = document.querySelectorAll('[data-modal-panel]');
       let nonUtilityCount = 0;
       let myNonUtilIdx = -1;
       activationOrder.forEach((id, _i) => {
         const panel = Array.from(allPanels).find(p => p.getAttribute('data-modal-id') === id);
-        if (panel && !panel.hasAttribute('data-utility')) {
+        if (panel && !panel.hasAttribute('data-utility') && !panel.hasAttribute('data-widget')) {
           if (id === modalId) myNonUtilIdx = nonUtilityCount;
           nonUtilityCount++;
         }
@@ -957,7 +961,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   const content = (
     <div>
       {/* Window */}
-      <div ref={panelRef} data-modal-panel data-modal-id={modalId} data-window-key={windowKey || undefined} {...(allowPinOnTop ? { 'data-utility': '' } : {})}
+      <div ref={panelRef} data-modal-panel data-modal-id={modalId} data-window-key={windowKey || undefined} {...(allowPinOnTop ? { 'data-utility': '' } : {})} {...(widget ? { 'data-widget': '' } : {})}
         className={`fixed rounded-lg flex flex-col overflow-hidden group ${widget ? (isActive ? 'shadow-2xl' : 'shadow-lg') : `border ${isActive ? 'shadow-2xl border-gray-200' : 'shadow-lg border-gray-300'}`}`}
         onMouseDown={(e) => {
           setWindowMenu(null);
@@ -968,7 +972,16 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
             activateModal(modalId);
           }
         }}
-        style={{
+        style={isMobile ? {
+          // Mobile fullscreen: ignore stored box, fill viewport down to bottom
+          // nav. Widgets stay hidden on mobile.
+          zIndex: zIndex + 1,
+          top: 0, left: 0, right: 0,
+          bottom: 'var(--mobile-bottom-nav, 56px)',
+          width: 'auto', height: 'auto',
+          ...(widget ? { display: 'none' } : {}),
+          ...(zIndex < 0 ? { display: 'none' } : {}),
+        } : {
           zIndex: pinnedOnTop ? 999 : zIndex + 1, width: box.w, height: autoHeight ? 'auto' : box.h, top: box.y,
           ...(autoHeight ? {
             minHeight: `${autoMinHeight ?? 240}px`,
@@ -978,10 +991,35 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
           ...(zIndex < 0 && !pinnedOnTop ? { display: 'none' } : {}),
         }}
       >
-        {/* HEADER — draggable */}
+        {/* HEADER — draggable on desktop, mobile-style top bar on phones */}
         {widget ? (
           /* Widget: no title bar — drag via body, close via right-click context menu */
           null
+        ) : isMobile ? (
+          /* Mobile: top bar with back arrow → home, title, close. No drag. */
+          <div className="flex items-center justify-between px-2 py-2 border-b border-gray-200 bg-white/95 backdrop-blur shrink-0 select-none">
+            <button
+              onClick={() => setMobileMode('home')}
+              className="p-2 -ml-1 rounded-full active:bg-gray-200 text-gray-700 shrink-0"
+              aria-label="Back to home"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+              </svg>
+            </button>
+            <div className="flex-1 min-w-0 flex items-center gap-1.5 px-1 text-gray-900">
+              {effectiveIcon}
+              <span className="text-sm font-medium truncate">{displayTitle}</span>
+            </div>
+            <button
+              type="button"
+              onClick={guardedClose}
+              className="p-2 -mr-1 rounded-full active:bg-gray-200 text-gray-600 shrink-0"
+              aria-label="Close"
+            >
+              <XMarkIcon className="h-5 w-5" />
+            </button>
+          </div>
         ) : compact ? (
           /* Compact: smaller title bar with title + close only */
           <div onPointerDown={startDrag}
@@ -1108,8 +1146,8 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
           </div>
         </div>
 
-        {/* RESIZE HANDLES — corners and edges (hidden in widget mode; only rendered when active to avoid z-index bleed on inactive windows) */}
-        {!widget && isActive && <>
+        {/* RESIZE HANDLES — corners and edges (hidden in widget/mobile mode; only rendered when active to avoid z-index bleed on inactive windows) */}
+        {!widget && !isMobile && isActive && <>
         <div onPointerDown={e => startResizeCorner(e, 'se')} className="absolute bottom-0 right-0 w-3 h-3 cursor-nwse-resize z-10" />
         <div onPointerDown={e => startResizeCorner(e, 'sw')} className="absolute bottom-0 left-0 w-3 h-3 cursor-nesw-resize z-10" />
         <div onPointerDown={e => startResizeCorner(e, 'ne')} className="absolute top-0 right-0 w-3 h-3 cursor-nesw-resize z-10" />

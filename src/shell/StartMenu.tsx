@@ -12,6 +12,7 @@ import {
 } from '../shell-config/nav';
 import { useAuth } from '../contexts/AuthContext';
 import { glassStyle, GLASS_INPUT_BG } from '../utils/glass';
+import { useIsMobile } from './useIsMobile';
 
 interface StartMenuProps {
   open: boolean; onClose: () => void; openPage: (path: string) => void;
@@ -46,6 +47,7 @@ export default function StartMenu({
     virtualSections.map(v => [v.label, v]),
   );
   const { hasAnyPerm } = useAuth();
+  const isMobile = useIsMobile();
   const [hoveredSection, setHoveredSection] = useState<string | null>(null);
   const [hoveredY, setHoveredY] = useState(0);
   const [search, setSearch] = useState('');
@@ -70,6 +72,87 @@ export default function StartMenu({
   if (!open) return null;
 
   const handleClick = (path: string) => { openPage(path); onClose(); };
+
+  // Mobile: render as full-screen slide-up sheet with search + flat list.
+  // Folders live on MobileHome; this sheet is the quick-launch / search UI
+  // surfaced from the bottom-nav "Menu" button.
+  if (isMobile) {
+    const allItems: { item: NavItem; sectionLabel?: string }[] = [];
+    for (const entry of navSections) {
+      if (isSection(entry)) {
+        const sec = entry as NavSection;
+        if (sec.perms && !hasAnyPerm(sec.perms)) continue;
+        for (const it of sec.items) {
+          if (it.perms && !hasAnyPerm(it.perms)) continue;
+          allItems.push({ item: it, sectionLabel: sec.label });
+        }
+      } else {
+        const it = entry as NavItem;
+        if (it.perms && !hasAnyPerm(it.perms)) continue;
+        allItems.push({ item: it });
+      }
+    }
+    const filtered = search.length >= 1
+      ? allItems.filter(({ item }) => item.label.toLowerCase().includes(search.toLowerCase()))
+      : allItems;
+
+    return (
+      <div
+        ref={menuRef}
+        className="fixed inset-0 z-[260] flex flex-col bg-white"
+        style={{ paddingBottom: 'var(--mobile-bottom-nav, 56px)' }}
+      >
+        {/* Sheet handle + header */}
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200">
+          <button onClick={onClose} className="p-2 -ml-1 rounded-full active:bg-gray-200 text-gray-700" aria-label="Close menu">
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          <div className={`flex-1 flex items-center gap-2 ${GLASS_INPUT_BG} rounded-lg px-3 py-2`}>
+            <svg className="h-4 w-4 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+            </svg>
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search apps..."
+              className="flex-1 bg-transparent text-sm outline-none placeholder-gray-400"
+              autoFocus
+            />
+          </div>
+        </div>
+
+        {/* Flat list */}
+        <div className="flex-1 overflow-y-auto">
+          {filtered.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-12">No matching apps</p>
+          ) : (
+            filtered.map(({ item, sectionLabel }, i) => {
+              const icon = navIcons[item.to];
+              return (
+                <button
+                  key={`${item.to}-${i}`}
+                  onClick={() => handleClick(item.to)}
+                  className="w-full flex items-center gap-3 px-4 py-3 active:bg-gray-100 border-b border-gray-100 text-left"
+                >
+                  <span className="h-8 w-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-600 shrink-0">
+                    {icon && isValidElement(icon)
+                      ? cloneElement(icon as ReactElement, { className: 'h-5 w-5' })
+                      : null}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium text-gray-900 truncate">{item.label}</div>
+                    {sectionLabel && <div className="text-[11px] text-gray-500 truncate">{sectionLabel}</div>}
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
+      </div>
+    );
+  }
 
   // Use the "vertical" (sidebar-style) layout for top, left, right taskbar positions.
   // Only the bottom taskbar uses the original layout (top items first, ERP after divider).
