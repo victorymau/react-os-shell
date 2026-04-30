@@ -1,24 +1,27 @@
 /**
- * Mobile shell — the phone/tablet-portrait replacement for the desktop
- * <Layout> chrome (taskbar / start menu sidebar / windowed apps).
+ * Mobile shell — phone/tablet-portrait replacement for the desktop <Layout>
+ * chrome (taskbar / start-menu sidebar / windowed apps).
  *
- * State machine driven by mobileShellStore:
+ * Modes (mobileShellStore):
  *   home     — full-screen icon grid (folders + apps)
  *   switcher — Chrome-tab-style snapshot grid of open apps
  *   app      — current Modal renders fullscreen; we just paint the bottom nav
  *
- * MobileShell does NOT render the apps themselves — those continue to be
- * rendered by WindowManagerProvider as Modals. On mobile, Modal's own
- * fullscreen path takes over. We only render the chrome (home / switcher / nav)
- * on top of whatever Modal is showing.
+ * The bottom nav surfaces four entry points: Home, Apps switcher,
+ * Notifications (sheet), Profile (sheet). Notifications and Profile sheets
+ * live as MobileShell-owned state so they don't pollute the global mode
+ * machine.
  */
-import { useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useWindowManager } from './WindowManager';
 import { activateModal } from './Modal';
 import { getMobileMode, setMobileMode, subscribeMobileMode } from './mobileShellStore';
 import MobileHome from './MobileHome';
 import MobileSwitcher from './MobileSwitcher';
+import MobileNotificationSheet from './MobileNotificationSheet';
+import MobileProfileSheet from './MobileProfileSheet';
 import type { NavItem, NavSection } from './nav-types';
+import type { NotificationsConfig } from './NotificationBell';
 
 interface MobileShellProps {
   productName?: string;
@@ -29,27 +32,36 @@ interface MobileShellProps {
   /** Wallpaper / background style computed by Layout — applied to the home
    *  overlay so the user's chosen wallpaper carries onto mobile. */
   wallpaperStyle?: React.CSSProperties;
-  onOpenStartMenu: () => void;
+  /** Notification system config — when omitted, the bell button is hidden. */
+  notifications?: NotificationsConfig;
+  /** User profile (`first_name`, `last_name`, `avatar_url`, `group_names`). */
+  profile?: any;
+  /** Auth user (`email`). */
+  user?: any;
+  /** Open a route in the shell — used by the profile sheet. */
+  onNavigate?: (path: string) => void;
+  /** Logout handler — wired to Layout's logout-animation trigger. */
+  onLogout?: () => void;
 }
 
 export default function MobileShell({
-  productName,
-  productIcon,
   navSections,
   navIcons,
   sectionIcons,
   wallpaperStyle,
-  onOpenStartMenu,
+  notifications,
+  profile,
+  user,
+  onNavigate,
+  onLogout,
 }: MobileShellProps) {
   const { openWindows, openPage, closeEntity } = useWindowManager();
   const mode = useSyncExternalStore(subscribeMobileMode, getMobileMode);
-
-  const switcherWindows = openWindows;
+  const [sheet, setSheet] = useState<'notifications' | 'profile' | null>(null);
+  const unreadCount = notifications?.useUnreadCount() ?? 0;
 
   // When the user closes an app, go back to home — even if other apps are
-  // still open. The user can pick the next one from the switcher or home.
-  // Mirrors a phone OS where closing a window returns you to the launcher,
-  // not to whatever was behind it.
+  // still open. Mirrors phone-OS expectations (close = back to launcher).
   const prevOpenCountRef = useRef(openWindows.length);
   useEffect(() => {
     if (openWindows.length < prevOpenCountRef.current && mode === 'app') {
@@ -59,8 +71,6 @@ export default function MobileShell({
   }, [openWindows.length, mode]);
 
   const activateWindowById = (windowId: string) => {
-    // Same DOM lookup the desktop taskbar uses — translate openWindows.id to
-    // the modal-internal id and bring it forward.
     const panel = document.querySelector(`[data-modal-panel][data-window-key="${windowId}"]`);
     const mid = panel?.getAttribute('data-modal-id');
     if (mid) activateModal(mid);
@@ -76,6 +86,8 @@ export default function MobileShell({
     setMobileMode('app');
   };
 
+  const closeSheet = () => setSheet(null);
+
   return (
     <>
       {/* Home overlay — wallpaper underneath, content scrolls over it */}
@@ -84,7 +96,7 @@ export default function MobileShell({
           className="fixed inset-0 z-[200]"
           style={{
             ...wallpaperStyle,
-            paddingBottom: 'var(--mobile-bottom-nav, 56px)',
+            paddingBottom: 'var(--mobile-bottom-nav, 70px)',
           }}
         >
           <MobileHome
@@ -100,22 +112,43 @@ export default function MobileShell({
 
       {/* Switcher overlay */}
       {mode === 'switcher' && (
-        <div className="fixed inset-0 z-[200] bg-gray-900/95 backdrop-blur-sm" style={{ paddingBottom: 'var(--mobile-bottom-nav, 56px)' }}>
+        <div className="fixed inset-0 z-[200] bg-gray-900/95 backdrop-blur-sm" style={{ paddingBottom: 'var(--mobile-bottom-nav, 70px)' }}>
           <MobileSwitcher
-            windows={switcherWindows}
+            windows={openWindows}
             onActivate={handleActivateWindow}
             onClose={(id) => closeEntity(id)}
           />
         </div>
       )}
 
+      {/* Notification sheet */}
+      {sheet === 'notifications' && notifications && (
+        <MobileNotificationSheet config={notifications} onClose={closeSheet} />
+      )}
+
+      {/* Profile sheet */}
+      {sheet === 'profile' && (
+        <MobileProfileSheet
+          profile={profile}
+          user={user}
+          onClose={closeSheet}
+          onNavigate={(path) => { onNavigate?.(path); }}
+          onLogout={() => onLogout?.()}
+        />
+      )}
+
       {/* Bottom nav — always visible, sits above modals AND overlays */}
       <MobileBottomNav
         mode={mode}
-        openCount={switcherWindows.length}
-        onHome={() => setMobileMode('home')}
-        onSwitcher={() => setMobileMode('switcher')}
-        onMenu={onOpenStartMenu}
+        openCount={openWindows.length}
+        unreadCount={unreadCount}
+        showNotifications={!!notifications}
+        profileAvatar={profile?.avatar_url}
+        profileInitial={(profile?.first_name?.charAt(0) || user?.email?.charAt(0) || '?').toUpperCase()}
+        onHome={() => { closeSheet(); setMobileMode('home'); }}
+        onSwitcher={() => { closeSheet(); setMobileMode('switcher'); }}
+        onNotifications={() => setSheet(sheet === 'notifications' ? null : 'notifications')}
+        onProfile={() => setSheet(sheet === 'profile' ? null : 'profile')}
       />
     </>
   );
@@ -124,12 +157,21 @@ export default function MobileShell({
 interface MobileBottomNavProps {
   mode: 'home' | 'switcher' | 'app';
   openCount: number;
+  unreadCount: number;
+  showNotifications: boolean;
+  profileAvatar?: string;
+  profileInitial: string;
   onHome: () => void;
   onSwitcher: () => void;
-  onMenu: () => void;
+  onNotifications: () => void;
+  onProfile: () => void;
 }
 
-function MobileBottomNav({ mode, openCount, onHome, onSwitcher, onMenu }: MobileBottomNavProps) {
+function MobileBottomNav({
+  mode, openCount, unreadCount, showNotifications,
+  profileAvatar, profileInitial,
+  onHome, onSwitcher, onNotifications, onProfile,
+}: MobileBottomNavProps) {
   const btnClass = (active: boolean) =>
     `flex-1 flex flex-col items-center justify-center gap-0.5 py-2 transition-colors ${
       active ? 'text-blue-600' : 'text-gray-500 active:text-gray-700'
@@ -138,17 +180,18 @@ function MobileBottomNav({ mode, openCount, onHome, onSwitcher, onMenu }: Mobile
   return (
     <nav
       className="fixed bottom-0 inset-x-0 z-[300] flex items-stretch bg-white/95 backdrop-blur border-t border-gray-200"
-      style={{ height: 'var(--mobile-bottom-nav, 56px)', paddingBottom: 'env(safe-area-inset-bottom)' }}
+      style={{ height: 'var(--mobile-bottom-nav, 70px)', paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       <button onClick={onHome} className={btnClass(mode === 'home')} aria-label="Home">
-        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+        <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
         </svg>
         <span className="text-[10px] font-medium">Home</span>
       </button>
+
       <button onClick={onSwitcher} className={btnClass(mode === 'switcher')} aria-label="App switcher">
         <span className="relative">
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+          <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}>
             <rect x="3.5" y="3.5" width="7" height="7" rx="1.25" />
             <rect x="13.5" y="3.5" width="7" height="7" rx="1.25" />
             <rect x="3.5" y="13.5" width="7" height="7" rx="1.25" />
@@ -162,11 +205,32 @@ function MobileBottomNav({ mode, openCount, onHome, onSwitcher, onMenu }: Mobile
         </span>
         <span className="text-[10px] font-medium">Apps</span>
       </button>
-      <button onClick={onMenu} className={btnClass(false)} aria-label="Start menu">
-        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
-        </svg>
-        <span className="text-[10px] font-medium">Menu</span>
+
+      {showNotifications && (
+        <button onClick={onNotifications} className={btnClass(false)} aria-label="Notifications">
+          <span className="relative">
+            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
+            </svg>
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold leading-4 text-center">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
+          </span>
+          <span className="text-[10px] font-medium">Alerts</span>
+        </button>
+      )}
+
+      <button onClick={onProfile} className={btnClass(false)} aria-label="Profile">
+        {profileAvatar ? (
+          <img src={profileAvatar} alt="" className="h-6 w-6 rounded-full object-cover border border-gray-200" />
+        ) : (
+          <div className="h-6 w-6 rounded-full bg-blue-100 flex items-center justify-center text-[10px] font-bold text-blue-700">
+            {profileInitial}
+          </div>
+        )}
+        <span className="text-[10px] font-medium">Profile</span>
       </button>
     </nav>
   );

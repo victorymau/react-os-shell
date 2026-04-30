@@ -538,7 +538,7 @@ export default function Layout({
   // shrink fullscreen apps so they don't render under the nav. Zero on desktop
   // so the variable can be used unconditionally in Modal styles.
   useEffect(() => {
-    document.documentElement.style.setProperty('--mobile-bottom-nav', isMobile ? '56px' : '0px');
+    document.documentElement.style.setProperty('--mobile-bottom-nav', isMobile ? '70px' : '0px');
   }, [isMobile]);
   const [balloonDismissed, setBalloonDismissed] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
@@ -701,7 +701,11 @@ export default function Layout({
               navIcons={navIcons}
               sectionIcons={sectionIcons}
               wallpaperStyle={wallpaperStyle}
-              onOpenStartMenu={() => setMenuOpen(true)}
+              notifications={notifications}
+              profile={profile}
+              user={user}
+              onNavigate={(path) => openPage(path)}
+              onLogout={() => setShowLogout(true)}
             />
           );
         }

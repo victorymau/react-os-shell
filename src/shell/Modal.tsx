@@ -6,6 +6,7 @@ import { useWindowManager } from './WindowManager';
 import { glassStyle as getGlassStyle } from '../utils/glass';
 import { PopupMenu, PopupMenuItem, PopupMenuDivider } from './PopupMenu';
 import { useIsMobile } from './useIsMobile';
+import { setMobileMode } from './mobileShellStore';
 
 /** Context that passes the modal's unique ID to children */
 const ModalIdContext = createContext<string>('');
@@ -418,8 +419,15 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
       swipeStartRef.current = null;
       setSwipeDragging(false);
       if (past) {
+        // Swipe-from-edge sends the user to home. The app stays open in the
+        // background (still in `openWindows`) so they can resume it from the
+        // switcher. Reset translateX after the slide-off animation so the
+        // next time the user reactivates this app it sits at rest.
         setSwipeX(window.innerWidth);
-        setTimeout(() => onClose(), 180);
+        setTimeout(() => {
+          setMobileMode('home');
+          setSwipeX(0);
+        }, 180);
       } else {
         setSwipeX(0);
       }
@@ -432,7 +440,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [swipeDragging, onClose]);
+  }, [swipeDragging]);
   const [displayTitle, setDisplayTitle] = useState<React.ReactNode>(title);
   useEffect(() => { setDisplayTitle(title); }, [title]);
   const [touched, setTouched] = useState(false);
