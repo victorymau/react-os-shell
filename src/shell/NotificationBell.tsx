@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react
 import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDate } from '../utils/date';
-import toast from './toast';
+import { playNotification } from '../utils/sounds';
 import { PopupMenu, PopupMenuItem, PopupMenuDivider, PopupMenuLabel } from './PopupMenu';
 
 /** Generic notification shape consumed by the shell. Consumer-specific
@@ -87,6 +87,24 @@ export default function NotificationBell({
     onItemClick(notif);
   }, [queryClient, markRead, onItemClick]);
 
+  // The actionable in-page notification — top-right, click anywhere on the
+  // card to open the entity (same behavior as clicking the same item in the
+  // bell popup), X to dismiss only. Lives as React state (not via toast.info)
+  // so the click target is a first-class part of the notification system.
+  const [inlineNotif, setInlineNotif] = useState<ShellNotification | null>(null);
+  const inlineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dismissInline = useCallback(() => {
+    if (inlineTimerRef.current) { clearTimeout(inlineTimerRef.current); inlineTimerRef.current = null; }
+    setInlineNotif(null);
+  }, []);
+  const showInlineNotif = useCallback((notif: ShellNotification, durationMs = 5000) => {
+    setInlineNotif(notif);
+    playNotification();
+    if (inlineTimerRef.current) clearTimeout(inlineTimerRef.current);
+    inlineTimerRef.current = setTimeout(() => setInlineNotif(null), durationMs);
+  }, []);
+  useEffect(() => () => { if (inlineTimerRef.current) clearTimeout(inlineTimerRef.current); }, []);
+
   const prevCountRef = useRef<number | null>(null);
   useEffect(() => {
     if (prevCountRef.current === null) { prevCountRef.current = unreadCount; return; }
@@ -102,14 +120,12 @@ export default function NotificationBell({
             n.onclick = () => { window.focus(); handleClick(latest); n.close(); };
           }
         } else {
-          // Tap the toast to open the mentioned entity, just like clicking
-          // the same notification in the bell popup.
-          toast.info(title, { duration: 5000, onClick: () => handleClick(latest) });
+          showInlineNotif(latest);
         }
       }).catch(() => {});
     }
     prevCountRef.current = unreadCount;
-  }, [unreadCount, list, handleClick]);
+  }, [unreadCount, list, showInlineNotif]);
 
   // Always run on mount + every 30s so the dropdown is always populated
   // with cached data before the first click — no loading-state flash.
@@ -228,6 +244,40 @@ export default function NotificationBell({
             </>
           )}
         </PopupMenu>,
+        document.body
+      )}
+
+      {inlineNotif && createPortal(
+        <>
+        <style>{`@keyframes notif-in { from { opacity: 0; transform: translateX(30px) scale(0.95); } to { opacity: 1; transform: translateX(0) scale(1); } }`}</style>
+        <div
+          onClick={() => { handleClick(inlineNotif); dismissInline(); }}
+          className="fixed top-4 right-4 z-[9999] w-[320px] max-w-[calc(100vw-2rem)] cursor-pointer rounded-2xl bg-white/85 backdrop-blur-md border border-white/40 shadow-2xl flex items-start gap-3 px-4 py-3"
+          style={{ animation: 'notif-in 300ms cubic-bezier(0.4,0,0.2,1)' }}
+        >
+          <div className="h-9 w-9 shrink-0 rounded-lg bg-blue-500/15 flex items-center justify-center">
+            <svg className="h-5 w-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
+            </svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-blue-600 mb-0.5">Notification</div>
+            <div className="text-sm font-medium text-gray-800 leading-snug truncate">{inlineNotif.title}</div>
+            {inlineNotif.message && (
+              <div className="text-xs text-gray-500 leading-snug truncate mt-0.5">{inlineNotif.message}</div>
+            )}
+          </div>
+          <button
+            onClick={(e) => { e.stopPropagation(); dismissInline(); }}
+            className="shrink-0 p-1 -mr-1 -mt-1 text-gray-400 hover:text-gray-600 transition-colors"
+            aria-label="Dismiss notification"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        </>,
         document.body
       )}
     </div>

@@ -82,7 +82,7 @@ function showToast(variant: 'success' | 'error', message: string) {
 
 // ── Notification (system alert) — top-right, stays longer ──
 
-function showNotification(message: string, opts?: { duration?: number; onClick?: () => void }) {
+function showNotification(message: string, opts?: { duration?: number }) {
   import('../utils/sounds').then(s => s.playNotification()).catch(() => {});
 
   const container = getOrCreate(NOTIF_CONTAINER_ID, 'fixed top-4 right-4 z-[9999] flex flex-col gap-3 items-end pointer-events-none');
@@ -118,14 +118,8 @@ function showNotification(message: string, opts?: { duration?: number; onClick?:
     setTimeout(() => el.remove(), FADE_MS);
   };
 
-  // X always dismisses without firing onClick. Body click fires onClick (if
-  // provided) so the user can tap the toast to open the mentioned entity —
-  // same flow as clicking the notification in the bell popup.
   el.querySelector('button')?.addEventListener('click', (e) => { e.stopPropagation(); dismiss(); });
-  el.addEventListener('click', () => {
-    if (opts?.onClick) opts.onClick();
-    dismiss();
-  });
+  el.addEventListener('click', dismiss);
 
   container.appendChild(el);
   requestAnimationFrame(() => { el.style.opacity = '1'; el.style.transform = 'translateX(0) scale(1)'; });
@@ -136,7 +130,7 @@ function showNotification(message: string, opts?: { duration?: number; onClick?:
 const toast = {
   success: (message: string) => showToast('success', message),
   error: (message: string) => showToast('error', message),
-  info: (message: string, opts?: { duration?: number; onClick?: () => void }) => showNotification(message, opts),
+  info: (message: string, opts?: { duration?: number }) => showNotification(message, opts),
 };
 
 export default toast;
