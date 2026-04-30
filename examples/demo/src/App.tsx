@@ -85,8 +85,18 @@ const lookupLabel = (to: string) =>
   ?? (webApps as any)[to]?.label
   ?? to;
 
+// Top-level apps, then a divider, then Customization as its own row.
+// (No "Settings" section anymore.)
+type TopNavItem = { to: string; label: string; dividerAfter?: boolean };
+const TOP_NAV_ITEMS: TopNavItem[] = (() => {
+  const items: TopNavItem[] = Array.from(TOP_LEVEL_ROUTES).map(to => ({ to, label: lookupLabel(to) }));
+  if (items.length) items[items.length - 1].dividerAfter = true;
+  items.push({ to: '/settings/customization', label: 'Customization' });
+  return items;
+})();
+
 const NAV_SECTIONS = [
-  ...Array.from(TOP_LEVEL_ROUTES).map(to => ({ to, label: lookupLabel(to) })),
+  ...TOP_NAV_ITEMS,
   {
     label: 'Utilities',
     items: Object.entries(utilityApps)
@@ -94,10 +104,9 @@ const NAV_SECTIONS = [
       .map(([to, e]) => ({ to, label: (e as any).label })),
   },
   { label: 'Games', items: Object.entries(gameApps).map(([to, e]) => ({ to, label: (e as any).label })) },
-  { label: 'Settings', items: [{ to: '/settings/customization', label: 'Customization' }] },
 ];
 
-const START_MENU_CATEGORIES = { erp: [], system: ['Utilities', 'Games', 'Settings'] };
+const START_MENU_CATEGORIES = { erp: [], system: ['Utilities', 'Games'] };
 
 // Per-route icons rendered next to each start-menu item. Keep paths tight —
 // they re-render at h-4 w-4 inside the menu.

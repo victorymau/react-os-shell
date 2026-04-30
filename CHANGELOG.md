@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.1.52] — 2026-04-30
+
+### Changed
+- Demo start menu: removed the "Settings" section. **Customization** is now a top-level entry, with a divider above it (via `dividerAfter` on the previous item) so it sits visually below the line.
+- Trash desktop icon: solid heroicons trash glyph filled with silver (`#c0c4cc`) and a slate-blue stroke for a metallic edge — replaces the previous outline-only version.
+
 ## [0.1.51] — 2026-04-30
 
 ### Fixed
