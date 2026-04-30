@@ -297,11 +297,18 @@ export default function MobileHome({
           WebkitTouchCallout: 'none',
         }}
       >
-        {/* Widgets — fixed 168×168 cards, wrapped in a flex row so they pack
-         *  2-per-row on most phones and reflow to 1-per-row on narrow ones. */}
+        {/* Centered max-width container — caps the home grid so that on
+         *  modern phones (≥380 px) cells settle at exactly 80 px and widgets
+         *  (col-span-2) come out at 172 px = 2×80 + 12 gap. On narrower
+         *  viewports both shrink proportionally; columns still align. */}
+        <div className="mx-auto" style={{ maxWidth: 380 }}>
+
+        {/* Widgets — share the icon grid layout (grid-cols-4 gap-3) so the
+         *  widget width = 2 cells + 1 gap, exactly aligned with the icons
+         *  below. aspect-square keeps each card the same height as width. */}
         {widgetWindows.length > 0 && (
           <section className="mb-4">
-            <div className="flex flex-wrap gap-3">
+            <div className="grid grid-cols-4 gap-3">
               {widgetWindows.map(w => {
                 const entry = WINDOW_REGISTRY[w.route!] as PageRegistryEntry | undefined;
                 if (!entry) return null;
@@ -309,8 +316,7 @@ export default function MobileHome({
                 return (
                   <div
                     key={w.id}
-                    className="relative rounded-2xl bg-white/85 backdrop-blur border border-white/40 shadow-md overflow-hidden"
-                    style={{ width: 168, height: 168 }}
+                    className="col-span-2 relative rounded-2xl bg-white/85 backdrop-blur border border-white/40 shadow-md overflow-hidden aspect-square"
                   >
                     <Suspense fallback={<div className="flex items-center justify-center h-full"><LoadingSpinner /></div>}>
                       <Component />
@@ -356,6 +362,8 @@ export default function MobileHome({
             </div>
           </section>
         )}
+
+        </div>
       </div>
 
       {/* Floating "ghost" of the icon being dragged — follows the finger. */}
