@@ -26,6 +26,9 @@ interface MobileShellProps {
   navSections: (NavSection | NavItem)[];
   navIcons: Record<string, ReactNode>;
   sectionIcons: Record<string, ReactNode>;
+  /** Wallpaper / background style computed by Layout — applied to the home
+   *  overlay so the user's chosen wallpaper carries onto mobile. */
+  wallpaperStyle?: React.CSSProperties;
   onOpenStartMenu: () => void;
 }
 
@@ -35,6 +38,7 @@ export default function MobileShell({
   navSections,
   navIcons,
   sectionIcons,
+  wallpaperStyle,
   onOpenStartMenu,
 }: MobileShellProps) {
   const { openWindows, openPage, closeEntity } = useWindowManager();
@@ -70,12 +74,16 @@ export default function MobileShell({
 
   return (
     <>
-      {/* Home overlay */}
+      {/* Home overlay — wallpaper underneath, content scrolls over it */}
       {mode === 'home' && (
-        <div className="fixed inset-0 z-[200] bg-gray-100" style={{ paddingBottom: 'var(--mobile-bottom-nav, 56px)' }}>
+        <div
+          className="fixed inset-0 z-[200]"
+          style={{
+            ...wallpaperStyle,
+            paddingBottom: 'var(--mobile-bottom-nav, 56px)',
+          }}
+        >
           <MobileHome
-            productName={productName}
-            productIcon={productIcon}
             navSections={navSections}
             navIcons={navIcons}
             sectionIcons={sectionIcons}

@@ -675,24 +675,10 @@ export default function Layout({
         />
       )}
 
-      {isMobile ? (
-        <MobileShell
-          productName={productName}
-          productIcon={productIcon}
-          navSections={navSections}
-          navIcons={navIcons}
-          sectionIcons={sectionIcons}
-          onOpenStartMenu={() => setMenuOpen(true)}
-        />
-      ) : (
-      <>
-      <div className="flex flex-1 min-h-0">
-      <main
-        className="flex-1 flex flex-col overflow-hidden cursor-default"
-        onDoubleClick={() => {
-          if (desktopDblClick === 'deactivate') { setMenuOpen(false); window.dispatchEvent(new CustomEvent('deactivate-all-modals')); }
-        }}
-        style={{
+      {(() => {
+        // Shared wallpaper style used by both desktop main and mobile home so
+        // the user's chosen background carries across breakpoints.
+        const wallpaperStyle: React.CSSProperties = {
           backgroundColor: desktopBg?.startsWith('#') ? desktopBg : desktopBg === 'none' ? (() => {
             const customBg = getComputedStyle(document.documentElement).getPropertyValue('--custom-bg-color')?.trim();
             if (customBg) return customBg;
@@ -704,7 +690,31 @@ export default function Layout({
           backgroundSize: 'cover',
           backgroundPosition: 'center',
           backgroundRepeat: 'no-repeat',
+        };
+
+        if (isMobile) {
+          return (
+            <MobileShell
+              productName={productName}
+              productIcon={productIcon}
+              navSections={navSections}
+              navIcons={navIcons}
+              sectionIcons={sectionIcons}
+              wallpaperStyle={wallpaperStyle}
+              onOpenStartMenu={() => setMenuOpen(true)}
+            />
+          );
+        }
+
+        return (
+      <>
+      <div className="flex flex-1 min-h-0">
+      <main
+        className="flex-1 flex flex-col overflow-hidden cursor-default"
+        onDoubleClick={() => {
+          if (desktopDblClick === 'deactivate') { setMenuOpen(false); window.dispatchEvent(new CustomEvent('deactivate-all-modals')); }
         }}
+        style={wallpaperStyle}
       >
         {/* Desktop with shortcuts, folders, and context menu */}
         <Desktop profile={profile} />
@@ -790,7 +800,8 @@ export default function Layout({
         )}
       </div>
       </>
-      )}
+        );
+      })()}
 
       {/* Taskbar context menu */}
       {taskbarMenu && (
