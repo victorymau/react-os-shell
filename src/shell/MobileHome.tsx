@@ -1,26 +1,30 @@
 /**
- * Mobile home screen — folders + apps below an inline widget tray, all
- * rendered over the desktop wallpaper. Folders open as a centered popup with
- * a blurred backdrop (instead of pushing a separate sub-screen).
+ * Mobile home screen — open widgets render at the top, app + folder icons
+ * sit in a unified grid below. Long-press any icon to drag it to a new
+ * position; the order is persisted to localStorage so it carries across
+ * sessions, mirroring how desktop remembers each window's box.
  *
- * Reuses the existing nav data shape (no new props for consumers) — the same
- * sections that populate the desktop StartMenu populate the mobile home.
+ * Folders open as a centered popup with a blurred backdrop. Reuses the
+ * existing nav data shape — same sections that populate the desktop
+ * StartMenu populate the mobile home.
  */
-import { useState, useMemo, useEffect, Suspense, type ReactNode, isValidElement, cloneElement, type ReactElement } from 'react';
+import { useState, useMemo, useEffect, useRef, Suspense, type ReactNode, isValidElement, cloneElement, type ReactElement } from 'react';
 import { isSection, type NavItem, type NavSection } from './nav-types';
 import { WINDOW_REGISTRY, isPageEntry, type PageRegistryEntry } from '../windowRegistry/types';
 import type { MinimizedItem } from './WindowManager';
 import LoadingSpinner from './LoadingSpinner';
 
-// Persisted order of widget routes on mobile. Mirrors how desktop remembers
-// each widget's box position (`erp_window_positions`); on mobile a
-// 360-px-wide phone, the only useful axis is vertical so we just persist
-// the route list order.
+// Persisted vertical order of widget cards (top of home).
 const MOBILE_WIDGET_ORDER_KEY = 'erp_mobile_widget_order';
+// Persisted icon order of the unified home grid (apps + folders).
+const MOBILE_HOME_ORDER_KEY = 'erp_mobile_home_order';
 
-function loadWidgetOrder(): string[] {
+// Long-press to enter drag mode (ms). 400 is the iOS/Android home-screen feel.
+const LONG_PRESS_MS = 400;
+
+function loadOrder(key: string): string[] {
   try {
-    const raw = localStorage.getItem(MOBILE_WIDGET_ORDER_KEY);
+    const raw = localStorage.getItem(key);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) return parsed.filter(s => typeof s === 'string');
@@ -29,8 +33,8 @@ function loadWidgetOrder(): string[] {
   return [];
 }
 
-function saveWidgetOrder(order: string[]): void {
-  try { localStorage.setItem(MOBILE_WIDGET_ORDER_KEY, JSON.stringify(order)); } catch {}
+function saveOrder(key: string, order: string[]): void {
+  try { localStorage.setItem(key, JSON.stringify(order)); } catch {}
 }
 
 interface MobileHomeProps {
@@ -41,6 +45,10 @@ interface MobileHomeProps {
   onOpenApp: (path: string) => void;
   onActivateWindow: (id: string) => void;
 }
+
+type HomeIcon =
+  | { kind: 'app'; id: string; label: string; route: string }
+  | { kind: 'folder'; id: string; label: string; section: NavSection };
 
 const FALLBACK_FOLDER_ICON = (
   <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -74,20 +82,135 @@ export default function MobileHome({
 }: MobileHomeProps) {
   const [selectedFolder, setSelectedFolder] = useState<NavSection | null>(null);
 
-  // Split top-level items vs sections
-  const { topItems, sections } = useMemo(() => {
-    const t: NavItem[] = [];
-    const s: NavSection[] = [];
+  // Build the unified icon set (apps + folders, mixed). User-saved order
+  // determines final layout; new icons (added later) append at the end.
+  const homeIconsRaw = useMemo<HomeIcon[]>(() => {
+    const list: HomeIcon[] = [];
     for (const entry of navSections) {
-      if (isSection(entry)) s.push(entry);
-      else t.push(entry);
+      if (isSection(entry)) {
+        const sec = entry as NavSection;
+        list.push({ kind: 'folder', id: `folder:${sec.label}`, label: sec.label, section: sec });
+      } else {
+        const it = entry as NavItem;
+        list.push({ kind: 'app', id: `app:${it.to}`, label: it.label, route: it.to });
+      }
     }
-    return { topItems: t, sections: s };
+    return list;
   }, [navSections]);
 
-  // Open widget windows — render their components inline at the top.
-  // Sort by user-saved order; new widgets append at the end.
-  const [widgetOrder, setWidgetOrder] = useState<string[]>(() => loadWidgetOrder());
+  const [homeOrder, setHomeOrder] = useState<string[]>(() => loadOrder(MOBILE_HOME_ORDER_KEY));
+
+  const homeIcons = useMemo(() => {
+    const indexFor = (id: string) => {
+      const i = homeOrder.indexOf(id);
+      return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+    };
+    return homeIconsRaw.slice().sort((a, b) => {
+      const ia = indexFor(a.id);
+      const ib = indexFor(b.id);
+      if (ia !== ib) return ia - ib;
+      return homeIconsRaw.indexOf(a) - homeIconsRaw.indexOf(b);
+    });
+  }, [homeIconsRaw, homeOrder]);
+
+  // Sync persisted order with the visible icon set: append newcomers, drop
+  // anything no longer registered.
+  useEffect(() => {
+    const visibleIds = homeIconsRaw.map(i => i.id);
+    const next = [
+      ...homeOrder.filter(id => visibleIds.includes(id)),
+      ...visibleIds.filter(id => !homeOrder.includes(id)),
+    ];
+    if (next.length !== homeOrder.length || next.some((id, i) => id !== homeOrder[i])) {
+      setHomeOrder(next);
+      saveOrder(MOBILE_HOME_ORDER_KEY, next);
+    }
+  }, [homeIconsRaw, homeOrder]);
+
+  // ── Long-press drag state ─────────────────────────────────────────────────
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
+  const dragOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Set true when long-press fires so the subsequent click is suppressed
+  // (otherwise releasing after a drag would activate the icon).
+  const longPressFiredRef = useRef(false);
+
+  const cancelLongPress = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const beginLongPress = (id: string, e: React.PointerEvent<HTMLElement>) => {
+    // Ignore second pointers on the same gesture.
+    if (dragId) return;
+    const x = e.clientX;
+    const y = e.clientY;
+    const target = e.currentTarget;
+    longPressFiredRef.current = false;
+    cancelLongPress();
+    longPressTimerRef.current = setTimeout(() => {
+      if (!target.isConnected) return;
+      const rect = target.getBoundingClientRect();
+      dragOffsetRef.current = { x: x - rect.left, y: y - rect.top };
+      longPressFiredRef.current = true;
+      setDragId(id);
+      setDragPos({ x, y });
+      try { (navigator as any).vibrate?.(15); } catch {}
+    }, LONG_PRESS_MS);
+  };
+
+  // Drag move + release wired globally so the icon follows the finger even
+  // outside its starting button.
+  useEffect(() => {
+    if (!dragId) return;
+    const onMove = (e: PointerEvent) => {
+      setDragPos({ x: e.clientX, y: e.clientY });
+      const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+      const targetEl = el?.closest('[data-home-icon-id]') as HTMLElement | null;
+      if (!targetEl) return;
+      const targetId = targetEl.dataset.homeIconId!;
+      if (targetId === dragId) return;
+      setHomeOrder(prev => {
+        const fromIdx = prev.indexOf(dragId);
+        const toIdx = prev.indexOf(targetId);
+        if (fromIdx === -1 || toIdx === -1) return prev;
+        const next = prev.slice();
+        next.splice(fromIdx, 1);
+        next.splice(toIdx, 0, dragId);
+        return next;
+      });
+    };
+    const onUp = () => {
+      setDragId(null);
+      setDragPos(null);
+      // Persist whatever order ended up after the drag.
+      setHomeOrder(prev => { saveOrder(MOBILE_HOME_ORDER_KEY, prev); return prev; });
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+  }, [dragId]);
+
+  const handleIconClick = (icon: HomeIcon) => {
+    if (longPressFiredRef.current) {
+      // Drag just ended — swallow this click.
+      longPressFiredRef.current = false;
+      return;
+    }
+    if (icon.kind === 'app') onOpenApp(icon.route);
+    else setSelectedFolder(icon.section);
+  };
+
+  // ── Widget tray (top of home) ─────────────────────────────────────────────
+  const [widgetOrder, setWidgetOrder] = useState<string[]>(() => loadOrder(MOBILE_WIDGET_ORDER_KEY));
 
   const widgetWindows = useMemo(() => {
     const widgets = openWindows.filter(w => {
@@ -102,8 +225,6 @@ export default function MobileHome({
     return widgets.slice().sort((a, b) => indexFor(a.route!) - indexFor(b.route!));
   }, [openWindows, widgetOrder]);
 
-  // Keep the persisted order in sync — append newly-opened widgets, drop
-  // closed ones — so localStorage doesn't accumulate stale routes.
   useEffect(() => {
     const visibleRoutes = widgetWindows.map(w => w.route!).filter(Boolean);
     const next = [
@@ -112,7 +233,7 @@ export default function MobileHome({
     ];
     if (next.length !== widgetOrder.length || next.some((r, i) => r !== widgetOrder[i])) {
       setWidgetOrder(next);
-      saveWidgetOrder(next);
+      saveOrder(MOBILE_WIDGET_ORDER_KEY, next);
     }
   }, [widgetWindows, widgetOrder]);
 
@@ -124,11 +245,12 @@ export default function MobileHome({
       if (j < 0 || j >= prev.length) return prev;
       const next = prev.slice();
       [next[i], next[j]] = [next[j], next[i]];
-      saveWidgetOrder(next);
+      saveOrder(MOBILE_WIDGET_ORDER_KEY, next);
       return next;
     });
   };
 
+  // Open window count per route — drives the small dot/badge on each icon.
   const openCountByRoute = useMemo(() => {
     const map = new Map<string, number>();
     for (const w of openWindows) {
@@ -143,12 +265,13 @@ export default function MobileHome({
     return openWindows.filter(w => w.route && routes.has(w.route));
   };
 
+  const draggedIcon = dragId ? homeIcons.find(i => i.id === dragId) : null;
+
   return (
     <>
       <div className="h-full overflow-y-auto px-3 pt-4 pb-4">
-        {/* Widgets — order is user-controlled via the up/down handles and
-         *  persisted to localStorage so it carries across sessions, just like
-         *  desktop widget box positions. */}
+        {/* Widgets — open widget components stacked vertically, with up/down
+         *  reorder handles. */}
         {widgetWindows.length > 0 && (
           <section className="mb-5">
             <div className="grid grid-cols-1 gap-3">
@@ -167,8 +290,6 @@ export default function MobileHome({
                     <Suspense fallback={<div className="flex items-center justify-center h-full"><LoadingSpinner /></div>}>
                       <Component />
                     </Suspense>
-                    {/* Reorder handles — top-right corner, only show when more
-                     *  than one widget. Buttons disable themselves at edges. */}
                     {widgetWindows.length > 1 && (
                       <div className="absolute top-1.5 right-1.5 flex flex-col gap-0.5 z-10">
                         <button
@@ -200,40 +321,50 @@ export default function MobileHome({
           </section>
         )}
 
-        {/* Top-level apps */}
-        {topItems.length > 0 && (
-          <section className="mb-5">
-            <AppGrid
-              items={topItems}
-              navIcons={navIcons}
-              openCountByRoute={openCountByRoute}
-              onOpenApp={onOpenApp}
-            />
-          </section>
-        )}
-
-        {/* Folders */}
-        {sections.length > 0 && (
+        {/* Unified home grid — apps + folders, in user-saved order.
+         *  Long-press any icon to grab it; drag onto another icon to swap. */}
+        {homeIcons.length > 0 && (
           <section>
             <div className="grid grid-cols-4 gap-3">
-              {sections.map(section => {
-                const openInThis = openInFolder(section).length;
+              {homeIcons.map(icon => {
+                const isFolder = icon.kind === 'folder';
+                const openCount = isFolder
+                  ? openInFolder((icon as Extract<HomeIcon, { kind: 'folder' }>).section).length
+                  : (openCountByRoute.get((icon as Extract<HomeIcon, { kind: 'app' }>).route) ?? 0);
+                const isBeingDragged = dragId === icon.id;
+
                 return (
                   <button
-                    key={section.label}
-                    onClick={() => setSelectedFolder(section)}
-                    className="flex flex-col items-center gap-1.5 p-2 rounded-lg active:bg-white/40"
+                    key={icon.id}
+                    data-home-icon-id={icon.id}
+                    onPointerDown={(e) => beginLongPress(icon.id, e)}
+                    onPointerUp={cancelLongPress}
+                    onPointerCancel={cancelLongPress}
+                    onPointerLeave={cancelLongPress}
+                    onClick={() => handleIconClick(icon)}
+                    style={{ touchAction: 'none', visibility: isBeingDragged ? 'hidden' : 'visible' }}
+                    className={`flex flex-col items-center gap-1.5 p-2 rounded-lg active:bg-white/40 ${dragId && !isBeingDragged ? 'transition-transform' : ''}`}
                   >
-                    <span className="relative h-14 w-14 rounded-2xl bg-white/70 backdrop-blur border border-white/40 flex items-center justify-center text-blue-700 shadow-sm">
-                      {sizeIcon(sectionIcons[section.label], FALLBACK_FOLDER_ICON)}
-                      {openInThis > 0 && (
+                    <span
+                      className={`relative h-14 w-14 rounded-2xl flex items-center justify-center shadow-sm border ${
+                        isFolder
+                          ? 'bg-white/70 backdrop-blur border-white/40 text-blue-700'
+                          : 'bg-white/85 backdrop-blur border-white/40 text-gray-800'
+                      }`}
+                    >
+                      {isFolder
+                        ? sizeIcon(sectionIcons[icon.label], FALLBACK_FOLDER_ICON)
+                        : sizeIcon(navIcons[(icon as Extract<HomeIcon, { kind: 'app' }>).route], FALLBACK_APP_ICON)}
+                      {openCount > 0 && (isFolder ? (
                         <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-blue-500 text-white text-[10px] font-bold leading-[18px] text-center border-2 border-white">
-                          {openInThis}
+                          {openCount}
                         </span>
-                      )}
+                      ) : (
+                        <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-blue-500 border-2 border-white" />
+                      ))}
                     </span>
                     <span className="text-[11px] font-medium text-white drop-shadow-sm truncate w-full text-center">
-                      {section.label}
+                      {icon.label}
                     </span>
                   </button>
                 );
@@ -243,7 +374,36 @@ export default function MobileHome({
         )}
       </div>
 
-      {/* Folder popup — centered modal with blurred backdrop */}
+      {/* Floating "ghost" of the icon being dragged — follows the finger. */}
+      {draggedIcon && dragPos && (
+        <div
+          className="fixed pointer-events-none z-[400] transition-none"
+          style={{
+            left: dragPos.x - dragOffsetRef.current.x,
+            top: dragPos.y - dragOffsetRef.current.y,
+            transform: 'scale(1.12)',
+          }}
+        >
+          <div className="flex flex-col items-center gap-1.5 p-2">
+            <span
+              className={`relative h-14 w-14 rounded-2xl flex items-center justify-center shadow-2xl border ${
+                draggedIcon.kind === 'folder'
+                  ? 'bg-white backdrop-blur border-white/40 text-blue-700'
+                  : 'bg-white backdrop-blur border-white/40 text-gray-800'
+              }`}
+            >
+              {draggedIcon.kind === 'folder'
+                ? sizeIcon(sectionIcons[draggedIcon.label], FALLBACK_FOLDER_ICON)
+                : sizeIcon(navIcons[(draggedIcon as Extract<HomeIcon, { kind: 'app' }>).route], FALLBACK_APP_ICON)}
+            </span>
+            <span className="text-[11px] font-medium text-white drop-shadow-md truncate max-w-[80px] text-center">
+              {draggedIcon.label}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Folder popup — centered modal with blurred backdrop. */}
       {selectedFolder && (
         <FolderPopup
           folder={selectedFolder}
@@ -256,43 +416,6 @@ export default function MobileHome({
         />
       )}
     </>
-  );
-}
-
-function AppGrid({
-  items,
-  navIcons,
-  openCountByRoute,
-  onOpenApp,
-}: {
-  items: NavItem[];
-  navIcons: Record<string, ReactNode>;
-  openCountByRoute: Map<string, number>;
-  onOpenApp: (path: string) => void;
-}) {
-  return (
-    <div className="grid grid-cols-4 gap-3">
-      {items.map(item => {
-        const openCount = openCountByRoute.get(item.to) ?? 0;
-        return (
-          <button
-            key={item.to}
-            onClick={() => onOpenApp(item.to)}
-            className="flex flex-col items-center gap-1.5 p-2 rounded-lg active:bg-white/40"
-          >
-            <span className="relative h-14 w-14 rounded-2xl bg-white/85 backdrop-blur border border-white/40 flex items-center justify-center text-gray-800 shadow-sm">
-              {sizeIcon(navIcons[item.to], FALLBACK_APP_ICON)}
-              {openCount > 0 && (
-                <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-blue-500 border-2 border-white" />
-              )}
-            </span>
-            <span className="text-[11px] font-medium text-white drop-shadow-sm truncate w-full text-center">
-              {item.label}
-            </span>
-          </button>
-        );
-      })}
-    </div>
   );
 }
 
@@ -354,12 +477,26 @@ function FolderPopup({
           {openInFolder.length > 0 && (
             <h3 className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2">All</h3>
           )}
-          <AppGrid
-            items={folder.items}
-            navIcons={navIcons}
-            openCountByRoute={openCountByRoute}
-            onOpenApp={onOpenApp}
-          />
+          <div className="grid grid-cols-4 gap-3">
+            {folder.items.map(item => {
+              const openCount = openCountByRoute.get(item.to) ?? 0;
+              return (
+                <button
+                  key={item.to}
+                  onClick={() => onOpenApp(item.to)}
+                  className="flex flex-col items-center gap-1.5 p-2 rounded-lg active:bg-gray-100"
+                >
+                  <span className="relative h-14 w-14 rounded-2xl bg-white border border-gray-200 flex items-center justify-center text-gray-800 shadow-sm">
+                    {sizeIcon(navIcons[item.to], FALLBACK_APP_ICON)}
+                    {openCount > 0 && (
+                      <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-blue-500 border-2 border-white" />
+                    )}
+                  </span>
+                  <span className="text-[11px] font-medium text-gray-700 truncate w-full text-center">{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
