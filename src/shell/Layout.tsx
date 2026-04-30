@@ -538,7 +538,7 @@ export default function Layout({
   // shrink fullscreen apps so they don't render under the nav. Zero on desktop
   // so the variable can be used unconditionally in Modal styles.
   useEffect(() => {
-    document.documentElement.style.setProperty('--mobile-bottom-nav', isMobile ? '70px' : '0px');
+    document.documentElement.style.setProperty('--mobile-bottom-nav', isMobile ? '98px' : '0px');
   }, [isMobile]);
   const [balloonDismissed, setBalloonDismissed] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
