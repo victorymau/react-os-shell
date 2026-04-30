@@ -447,15 +447,17 @@ function FolderPopup({
         @keyframes folder-pop-out { from { opacity: 1; transform: scale(1) translateY(0); } to { opacity: 0; transform: scale(0.9) translateY(4px); } }
       `}</style>
 
-      {/* Title indented to line up with the first icon inside the card
-       *  (outer px-6 + extra ml-4 ≈ card's px-4 inner padding). */}
-      <h2 className="text-2xl font-semibold text-white drop-shadow-md mb-4 self-start ml-4">{folder.label}</h2>
+      {/* Title + card share the same max-width wrapper so the title's ml-4
+       *  (= card's px-4 inner padding) lands precisely on the first icon's
+       *  left edge regardless of viewport. */}
+      <div className="w-full max-w-[304px]">
+      <h2 className="text-2xl font-semibold text-white drop-shadow-md mb-4 ml-4">{folder.label}</h2>
 
       {/* Card width capped so 3 cells × ~80 px + 2 × 16 px gap + 2 × 16 px
        *  inner padding lands at ~304 px — folder icon size matches the home
        *  icon size on most phones. */}
       <div
-        className="w-full max-w-[304px] max-h-[70vh] flex flex-col rounded-3xl bg-white/15 backdrop-blur-xl border border-white/25 shadow-2xl overflow-hidden"
+        className="max-h-[70vh] flex flex-col rounded-3xl bg-white/15 backdrop-blur-xl border border-white/25 shadow-2xl overflow-hidden"
         style={{
           animation: closing
             ? 'folder-pop-out 180ms ease-in forwards'
@@ -481,6 +483,7 @@ function FolderPopup({
             })}
           </div>
         </div>
+      </div>
       </div>
     </div>
   );

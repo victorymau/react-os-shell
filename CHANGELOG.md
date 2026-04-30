@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.2.18] — 2026-04-30
+
+### Fixed
+- Folder popup title left edge now aligns with the first icon's left edge. Title and card share a `max-w-[304px]` wrapper, so the title's `ml-4` and the card's `px-4` inner padding both resolve to the same 16 px offset from the shared wrapper edge — robust against viewport changes (was previously off by ~20 px because the title respected outer `px-6` while the card was centered in a wider parent).
+
 ## [0.2.17] — 2026-04-30
 
 ### Changed
