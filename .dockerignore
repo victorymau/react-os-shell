@@ -1,0 +1,22 @@
+# Cuts the Docker build context down — npm reinstalls everything inside the
+# image so we don't ship local node_modules / build artifacts.
+node_modules
+**/node_modules
+dist
+**/dist
+.git
+.github
+.claude
+.vscode
+.idea
+*.log
+.DS_Store
+.env
+.env.*
+coverage
+.nyc_output
+tsconfig.tsbuildinfo
+**/tsconfig.tsbuildinfo
+Dockerfile
+.dockerignore
+docker-compose.yml

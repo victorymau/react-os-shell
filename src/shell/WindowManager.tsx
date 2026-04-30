@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useCallback, useEffect, useLayoutE
 import { useLocation } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import apiClient from '../api/client';
+import apiClient, { isShellApiClientConfigured } from '../api/client';
 import { WINDOW_REGISTRY, isPageEntry, isEntityEntry, type PageRegistryEntry, type ModalRegistryEntry } from '../windowRegistry/types';
 import Modal, { triggerSplitView, modalDepthRef, getActiveModalId, subscribeActive, activateModal, useWindowMenuItem } from './Modal';
 import PartNumberDetailPopup from './PartNumberDetailPopup';
@@ -63,6 +63,7 @@ export function useWindowManager() {
 function RestoredPartNumber({ partNumber, savedBox, onClose, onMinimize }: { partNumber: string; savedBox?: SavedBox; onClose: () => void; onMinimize: (sb: SavedBox) => void }) {
   const { data: pn, isLoading } = useQuery({
     queryKey: ['part-number-lookup', partNumber],
+    enabled: isShellApiClientConfigured(),
     queryFn: () => apiClient.get('/products/part-numbers/', { params: { search: partNumber, page_size: 1 } }).then(r => {
       const results = r.data?.results ?? r.data ?? [];
       return results.find((p: any) => p.part_number === partNumber) || results[0] || null;
@@ -97,7 +98,7 @@ function RestoredPartNumber({ partNumber, savedBox, onClose, onMinimize }: { par
 /** Universal fav star for any window — pages and entities. Saves to preferences.favorite_documents */
 function WindowFavStar({ item }: { item: MinimizedItem }) {
   const queryClient = useQueryClient();
-  const { data: profile } = useQuery({ queryKey: ['my-profile-sidebar'], queryFn: () => apiClient.get('/auth/me/').then(r => r.data) });
+  const { data: profile } = useQuery({ queryKey: ['my-profile-sidebar'], enabled: isShellApiClientConfigured(), queryFn: () => apiClient.get('/auth/me/').then(r => r.data) });
   const favDocs: { entityType: string; entityId: string; label: string }[] = (profile?.preferences || {}).favorite_documents || [];
 
   // For pages, use route as entityType='page' and entityId=route
@@ -131,7 +132,7 @@ function WindowFavStar({ item }: { item: MinimizedItem }) {
 /** Adds "Add to Desktop" / "Remove from Desktop" to the window menu */
 function DesktopShortcutMenuItem({ item }: { item: MinimizedItem }) {
   const queryClient = useQueryClient();
-  const { data: profile } = useQuery({ queryKey: ['my-profile-sidebar'], queryFn: () => apiClient.get('/auth/me/').then(r => r.data) });
+  const { data: profile } = useQuery({ queryKey: ['my-profile-sidebar'], enabled: isShellApiClientConfigured(), queryFn: () => apiClient.get('/auth/me/').then(r => r.data) });
   const favDocs: { entityType: string; entityId: string; label: string }[] = (profile?.preferences || {}).favorite_documents || [];
   const favType = item.type === 'page' ? 'page' : (item.entityType || '');
   const favId = item.type === 'page' ? (item.route || '') : (item.entityId || '');
@@ -174,7 +175,7 @@ function PageWindow({ item, onClose }: { item: MinimizedItem; onClose: () => voi
 /** Star button to favorite a document — saves to preferences.favorite_documents */
 export function DocFavStar({ entityType, entityId, label }: { entityType: string; entityId: string; label: string }) {
   const queryClient = useQueryClient();
-  const { data: profile } = useQuery({ queryKey: ['my-profile-sidebar'], queryFn: () => apiClient.get('/auth/me/').then(r => r.data) });
+  const { data: profile } = useQuery({ queryKey: ['my-profile-sidebar'], enabled: isShellApiClientConfigured(), queryFn: () => apiClient.get('/auth/me/').then(r => r.data) });
   const favDocs: { entityType: string; entityId: string; label: string }[] = (profile?.preferences || {}).favorite_documents || [];
   const isFav = favDocs.some(d => d.entityType === entityType && d.entityId === entityId);
 
@@ -212,7 +213,7 @@ function RestoredRegistryModal({ item, onClose, onMinimize }: { item: MinimizedI
     queryFn: () => apiClient.get(`${entry.endpoint}${item.entityId}/`).then(r => r.data),
     initialData: item.entitySnapshot,
     initialDataUpdatedAt: 0, // Treat snapshot as stale so query refetches immediately
-    enabled: !entry.selfFetching && !isDuplicate,
+    enabled: !entry.selfFetching && !isDuplicate && isShellApiClientConfigured(),
     staleTime: 0,
     refetchOnWindowFocus: true,
     refetchOnMount: 'always',

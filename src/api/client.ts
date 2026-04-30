@@ -18,7 +18,6 @@
 import axios, { AxiosInstance } from 'axios';
 
 let _apiClient: AxiosInstance | null = null;
-let _warnedMissing = false;
 
 /** Consumer registers their own axios instance — typically the same one
  *  they use elsewhere. The package only delegates HTTP to this. */
@@ -26,28 +25,25 @@ export function setShellApiClient(instance: AxiosInstance) {
   _apiClient = instance;
 }
 
-// HTTP methods that should no-op (resolve with empty data) when no client is
-// wired, so the shell's internal `useQuery` calls don't throw uncaught errors.
+/** Whether the consumer has wired an api client. Internal shell queries gate
+ *  themselves on this so demos / consumers without a backend don't fire
+ *  doomed HTTP requests. */
+export function isShellApiClientConfigured(): boolean {
+  return _apiClient !== null;
+}
+
+// HTTP methods that resolve with empty data when no client is wired. Internal
+// callers gate on `isShellApiClientConfigured()` so this branch shouldn't
+// fire normally; it remains as a safety net for consumer-supplied apps that
+// import the shell's `apiClient` directly without setting one up.
 const NOOP_METHODS = new Set([
   'get', 'post', 'put', 'patch', 'delete', 'head', 'options', 'request',
 ]);
-
-function warnOnce(prop: string) {
-  if (_warnedMissing) return;
-  _warnedMissing = true;
-  console.warn(
-    `react-os-shell: apiClient.${prop}() called before setShellApiClient(). ` +
-    `Wire your axios instance once at app startup, or ignore this warning if ` +
-    `your demo intentionally has no backend — internal HTTP calls will resolve ` +
-    `with empty data.`
-  );
-}
 
 const apiClient: AxiosInstance = new Proxy({} as AxiosInstance, {
   get(_t, prop) {
     if (_apiClient) return (_apiClient as any)[prop];
     if (typeof prop === 'string' && NOOP_METHODS.has(prop)) {
-      warnOnce(prop);
       return () => Promise.resolve({ data: null, status: 0, statusText: '', headers: {}, config: {} });
     }
     return undefined;

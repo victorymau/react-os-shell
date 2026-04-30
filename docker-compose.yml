@@ -1,0 +1,19 @@
+# One-shot way to run the demo locally without touching Node on the host:
+#
+#   docker compose up --build
+#
+# Then open http://localhost:4173/
+#
+# `--build` is only needed the first time and after source changes; subsequent
+# runs can just be `docker compose up`. To stop: Ctrl+C, or `docker compose down`.
+
+services:
+  demo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: react-os-shell-demo:local
+    container_name: react-os-shell-demo
+    ports:
+      - "4173:4173"
+    restart: unless-stopped
