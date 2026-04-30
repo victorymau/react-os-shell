@@ -51,22 +51,22 @@ type HomeIcon =
   | { kind: 'folder'; id: string; label: string; section: NavSection };
 
 const FALLBACK_FOLDER_ICON = (
-  <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+  <svg className="h-9 w-9" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 00-1.883 2.542l.857 6a2.25 2.25 0 002.227 1.932H19.05a2.25 2.25 0 002.227-1.932l.857-6a2.25 2.25 0 00-1.883-2.542m-16.5 0V6A2.25 2.25 0 016 3.75h3.879a1.5 1.5 0 011.06.44l2.122 2.12a1.5 1.5 0 001.06.44H18A2.25 2.25 0 0120.25 9v.776" />
   </svg>
 );
 
 const FALLBACK_APP_ICON = (
-  <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+  <svg className="h-9 w-9" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75A2.25 2.25 0 016 4.5h12a2.25 2.25 0 012.25 2.25v10.5A2.25 2.25 0 0118 19.5H6a2.25 2.25 0 01-2.25-2.25V6.75z" />
   </svg>
 );
 
-function sizeIcon(node: ReactNode, fallback: ReactNode): ReactNode {
+function sizeIcon(node: ReactNode, fallback: ReactNode, sizeClass = 'h-9 w-9'): ReactNode {
   if (!node) return fallback;
   if (isValidElement(node)) {
     return cloneElement(node as ReactElement, {
-      className: `h-8 w-8 ${(node as ReactElement).props?.className ?? ''}`.trim(),
+      className: `${sizeClass} ${(node as ReactElement).props?.className ?? ''}`.trim(),
     } as any);
   }
   return node;
@@ -269,12 +269,14 @@ export default function MobileHome({
 
   return (
     <>
-      <div className="h-full overflow-y-auto px-3 pt-4 pb-4">
-        {/* Widgets — open widget components stacked vertically, with up/down
-         *  reorder handles. */}
+      <div className="h-full overflow-y-auto px-2 pt-4 pb-4">
+        {/* Widgets — square half-width cards (two per row), iOS home-screen
+         *  style. Widget components designed for desktop dimensions are clipped
+         *  by overflow-hidden; consumers wanting better fit can adjust the
+         *  widget app to lay out for a square aspect ratio. */}
         {widgetWindows.length > 0 && (
-          <section className="mb-5">
-            <div className="grid grid-cols-1 gap-3">
+          <section className="mb-4">
+            <div className="grid grid-cols-2 gap-2">
               {widgetWindows.map((w, i) => {
                 const entry = WINDOW_REGISTRY[w.route!] as PageRegistryEntry | undefined;
                 if (!entry) return null;
@@ -284,8 +286,7 @@ export default function MobileHome({
                 return (
                   <div
                     key={w.id}
-                    className="relative rounded-2xl bg-white/85 backdrop-blur border border-white/40 shadow-md overflow-hidden"
-                    style={{ height: entry.dimensions?.[1] ?? 320 }}
+                    className="relative rounded-2xl bg-white/85 backdrop-blur border border-white/40 shadow-md overflow-hidden aspect-square"
                   >
                     <Suspense fallback={<div className="flex items-center justify-center h-full"><LoadingSpinner /></div>}>
                       <Component />
@@ -325,7 +326,7 @@ export default function MobileHome({
          *  Long-press any icon to grab it; drag onto another icon to swap. */}
         {homeIcons.length > 0 && (
           <section>
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-4 gap-1">
               {homeIcons.map(icon => {
                 const isFolder = icon.kind === 'folder';
                 const openCount = isFolder
@@ -343,10 +344,10 @@ export default function MobileHome({
                     onPointerLeave={cancelLongPress}
                     onClick={() => handleIconClick(icon)}
                     style={{ touchAction: 'none', visibility: isBeingDragged ? 'hidden' : 'visible' }}
-                    className={`flex flex-col items-center gap-1.5 p-2 rounded-lg active:bg-white/40 ${dragId && !isBeingDragged ? 'transition-transform' : ''}`}
+                    className={`flex flex-col items-center gap-1 px-1 py-2 rounded-lg active:bg-white/40 ${dragId && !isBeingDragged ? 'transition-transform' : ''}`}
                   >
                     <span
-                      className={`relative h-14 w-14 rounded-2xl flex items-center justify-center shadow-sm border ${
+                      className={`relative h-16 w-16 rounded-2xl flex items-center justify-center shadow-sm border ${
                         isFolder
                           ? 'bg-white/70 backdrop-blur border-white/40 text-blue-700'
                           : 'bg-white/85 backdrop-blur border-white/40 text-gray-800'

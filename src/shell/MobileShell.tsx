@@ -12,7 +12,7 @@
  * fullscreen path takes over. We only render the chrome (home / switcher / nav)
  * on top of whatever Modal is showing.
  */
-import { useEffect, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react';
 import { useWindowManager } from './WindowManager';
 import { activateModal } from './Modal';
 import { getMobileMode, setMobileMode, subscribeMobileMode } from './mobileShellStore';
@@ -46,13 +46,17 @@ export default function MobileShell({
 
   const switcherWindows = openWindows;
 
-  // If the active app gets closed externally and we were in 'app' mode, fall
-  // back to home so the user isn't staring at an empty fullscreen.
+  // When the user closes an app, go back to home — even if other apps are
+  // still open. The user can pick the next one from the switcher or home.
+  // Mirrors a phone OS where closing a window returns you to the launcher,
+  // not to whatever was behind it.
+  const prevOpenCountRef = useRef(openWindows.length);
   useEffect(() => {
-    if (mode === 'app' && openWindows.length === 0) {
+    if (openWindows.length < prevOpenCountRef.current && mode === 'app') {
       setMobileMode('home');
     }
-  }, [mode, openWindows.length]);
+    prevOpenCountRef.current = openWindows.length;
+  }, [openWindows.length, mode]);
 
   const activateWindowById = (windowId: string) => {
     // Same DOM lookup the desktop taskbar uses — translate openWindows.id to
