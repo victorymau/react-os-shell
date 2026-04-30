@@ -226,11 +226,14 @@ export default function StartMenu({
                 <div className="border-t border-white/20 my-1.5 mx-2" />
                 {/* Then top-level items + system */}
                 {topItems.map(item => (
-                  <button key={item.to} onClick={() => handleClick(item.to)}
-                    className={`${itemCls} text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors`}>
-                    {iconEl(item.to)}
-                    <span>{item.label}</span>
-                  </button>
+                  <div key={item.to}>
+                    <button onClick={() => handleClick(item.to)}
+                      className={`${itemCls} text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors`}>
+                      {iconEl(item.to)}
+                      <span>{item.label}</span>
+                    </button>
+                    {item.dividerAfter && <div className="border-t border-white/20 my-1.5 mx-2" />}
+                  </div>
                 ))}
                 <button onClick={() => handleClick('/notifications')} className={`${itemCls} text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors`}>
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" /></svg>
@@ -243,11 +246,14 @@ export default function StartMenu({
               {!isVertical && (<>
                 {/* Horizontal layout: top-level items first, ERP after divider */}
                 {topItems.map(item => (
-                  <button key={item.to} onClick={() => handleClick(item.to)}
-                    className={`${itemCls} text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors`}>
-                    {iconEl(item.to)}
-                    <span>{item.label}</span>
-                  </button>
+                  <div key={item.to}>
+                    <button onClick={() => handleClick(item.to)}
+                      className={`${itemCls} text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors`}>
+                      {iconEl(item.to)}
+                      <span>{item.label}</span>
+                    </button>
+                    {item.dividerAfter && <div className="border-t border-white/20 my-1.5 mx-2" />}
+                  </div>
                 ))}
                 <button onClick={() => handleClick('/notifications')} className={`${itemCls} text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors`}>
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" /></svg>

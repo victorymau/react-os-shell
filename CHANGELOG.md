@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.1.55] — 2026-04-30
+
+### Fixed
+- StartMenu: `NavItem.dividerAfter` was only honored inside flyout submenus — the main top-items list (both vertical and horizontal taskbar layouts) skipped it. Now renders the divider in all three places. The demo's start menu now shows the expected separator between Browser and Customization.
+
 ## [0.1.54] — 2026-04-30
 
 ### Added
