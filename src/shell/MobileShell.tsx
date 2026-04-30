@@ -153,7 +153,6 @@ export default function MobileShell({
       {/* Bottom nav — always visible, sits above modals AND overlays */}
       <MobileBottomNav
         mode={mode}
-        openCount={switcherWindows.length}
         unreadCount={unreadCount}
         showNotifications={!!notifications}
         profileAvatar={profile?.avatar_url}
@@ -169,7 +168,6 @@ export default function MobileShell({
 
 interface MobileBottomNavProps {
   mode: 'home' | 'switcher' | 'app';
-  openCount: number;
   unreadCount: number;
   showNotifications: boolean;
   profileAvatar?: string;
@@ -181,7 +179,7 @@ interface MobileBottomNavProps {
 }
 
 function MobileBottomNav({
-  mode, openCount, unreadCount, showNotifications,
+  mode, unreadCount, showNotifications,
   profileAvatar, profileInitial,
   onHome, onSwitcher, onNotifications, onProfile,
 }: MobileBottomNavProps) {
@@ -203,54 +201,47 @@ function MobileBottomNav({
       }}
     >
       <button onClick={onHome} className={btnClass(mode === 'home')} aria-label="Home">
-        <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}>
+        <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
         </svg>
-        <span className="text-[10px] font-medium">Home</span>
+        <span className="text-[11px] font-medium">Home</span>
       </button>
 
       <button onClick={onSwitcher} className={btnClass(mode === 'switcher')} aria-label="App switcher">
-        <span className="relative">
-          <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}>
-            <rect x="3.5" y="3.5" width="7" height="7" rx="1.25" />
-            <rect x="13.5" y="3.5" width="7" height="7" rx="1.25" />
-            <rect x="3.5" y="13.5" width="7" height="7" rx="1.25" />
-            <rect x="13.5" y="13.5" width="7" height="7" rx="1.25" />
-          </svg>
-          {openCount > 0 && (
-            <span className="absolute -top-1 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-blue-500 text-white text-[10px] font-bold leading-4 text-center">
-              {openCount}
-            </span>
-          )}
-        </span>
-        <span className="text-[10px] font-medium">Apps</span>
+        <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}>
+          <rect x="3.5" y="3.5" width="7" height="7" rx="1.25" />
+          <rect x="13.5" y="3.5" width="7" height="7" rx="1.25" />
+          <rect x="3.5" y="13.5" width="7" height="7" rx="1.25" />
+          <rect x="13.5" y="13.5" width="7" height="7" rx="1.25" />
+        </svg>
+        <span className="text-[11px] font-medium">Apps</span>
       </button>
 
       {showNotifications && (
         <button onClick={onNotifications} className={btnClass(false)} aria-label="Notifications">
           <span className="relative">
-            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}>
+            <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
             </svg>
             {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold leading-4 text-center">
+              <span className="absolute -top-1.5 -right-2 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold leading-[18px] text-center">
                 {unreadCount > 99 ? '99+' : unreadCount}
               </span>
             )}
           </span>
-          <span className="text-[10px] font-medium">Alerts</span>
+          <span className="text-[11px] font-medium">Alerts</span>
         </button>
       )}
 
       <button onClick={onProfile} className={btnClass(false)} aria-label="Profile">
         {profileAvatar ? (
-          <img src={profileAvatar} alt="" className="h-6 w-6 rounded-full object-cover border border-gray-200" />
+          <img src={profileAvatar} alt="" className="h-8 w-8 rounded-full object-cover border border-gray-200" />
         ) : (
-          <div className="h-6 w-6 rounded-full bg-blue-100 flex items-center justify-center text-[10px] font-bold text-blue-700">
+          <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-700">
             {profileInitial}
           </div>
         )}
-        <span className="text-[10px] font-medium">Profile</span>
+        <span className="text-[11px] font-medium">Profile</span>
       </button>
     </nav>
   );

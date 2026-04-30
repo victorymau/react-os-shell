@@ -89,19 +89,16 @@ function sizeIcon(node: ReactNode, fallback: ReactNode, sizeClass = 'h-10 w-10')
 
 /** A colored gradient tile with the app's glyph in white — one per app on
  *  the home grid. iOS-style. */
-function AppTile({ route, icon, badge }: { route: string; icon: ReactNode; badge?: boolean }) {
+function AppTile({ route, icon }: { route: string; icon: ReactNode }) {
   return (
     <span className={`relative aspect-square w-full max-w-[80px] mx-auto rounded-2xl bg-gradient-to-br ${hashGradient(route)} flex items-center justify-center text-white shadow-sm border border-white/30`}>
       {sizeIcon(icon, FALLBACK_APP_ICON, 'h-11 w-11')}
-      {badge && (
-        <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-blue-400 border-2 border-white" />
-      )}
     </span>
   );
 }
 
 /** Folder tile = 2×2 mini-grid of the apps inside, on a translucent backplate. */
-function FolderTile({ section, navIcons, badge }: { section: NavSection; navIcons: Record<string, ReactNode>; badge?: number }) {
+function FolderTile({ section, navIcons }: { section: NavSection; navIcons: Record<string, ReactNode> }) {
   const previewItems = section.items.slice(0, 4);
   return (
     <span className="relative aspect-square w-full max-w-[80px] mx-auto rounded-2xl bg-white/30 backdrop-blur-sm border border-white/40 p-1.5 grid grid-cols-2 gap-1 shadow-sm">
@@ -116,11 +113,6 @@ function FolderTile({ section, navIcons, badge }: { section: NavSection; navIcon
       {Array.from({ length: Math.max(0, 4 - previewItems.length) }).map((_, i) => (
         <span key={`empty-${i}`} className="rounded-md bg-white/20" />
       ))}
-      {badge !== undefined && badge > 0 && (
-        <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-blue-500 text-white text-[10px] font-bold leading-[18px] text-center border-2 border-white">
-          {badge}
-        </span>
-      )}
     </span>
   );
 }
@@ -338,12 +330,6 @@ export default function MobileHome({
             <div className="grid grid-cols-4 gap-3">
               {homeIcons.map(icon => {
                 const isFolder = icon.kind === 'folder';
-                const folderOpen = isFolder
-                  ? openInFolder((icon as Extract<HomeIcon, { kind: 'folder' }>).section).length
-                  : 0;
-                const appOpen = !isFolder
-                  ? (openCountByRoute.get((icon as Extract<HomeIcon, { kind: 'app' }>).route) ?? 0)
-                  : 0;
                 const isBeingDragged = dragId === icon.id;
 
                 return (
@@ -359,8 +345,8 @@ export default function MobileHome({
                     className={`flex flex-col items-center gap-1 py-1 rounded-lg active:bg-white/20 ${dragId && !isBeingDragged ? 'transition-transform' : ''}`}
                   >
                     {isFolder
-                      ? <FolderTile section={(icon as Extract<HomeIcon, { kind: 'folder' }>).section} navIcons={navIcons} badge={folderOpen} />
-                      : <AppTile route={(icon as Extract<HomeIcon, { kind: 'app' }>).route} icon={navIcons[(icon as Extract<HomeIcon, { kind: 'app' }>).route]} badge={appOpen > 0} />}
+                      ? <FolderTile section={(icon as Extract<HomeIcon, { kind: 'folder' }>).section} navIcons={navIcons} />
+                      : <AppTile route={(icon as Extract<HomeIcon, { kind: 'app' }>).route} icon={navIcons[(icon as Extract<HomeIcon, { kind: 'app' }>).route]} />}
                     <span className="text-[11px] font-medium text-white drop-shadow-sm truncate w-full text-center">
                       {icon.label}
                     </span>
@@ -399,7 +385,6 @@ export default function MobileHome({
           folder={selectedFolder}
           navIcons={navIcons}
           openInFolder={openInFolder(selectedFolder)}
-          openCountByRoute={openCountByRoute}
           onClose={() => setSelectedFolder(null)}
           onOpenApp={(path) => { setSelectedFolder(null); onOpenApp(path); }}
           onActivateWindow={(id) => { setSelectedFolder(null); onActivateWindow(id); }}
@@ -413,7 +398,6 @@ function FolderPopup({
   folder,
   navIcons,
   openInFolder,
-  openCountByRoute,
   onClose,
   onOpenApp,
   onActivateWindow,
@@ -421,7 +405,6 @@ function FolderPopup({
   folder: NavSection;
   navIcons: Record<string, ReactNode>;
   openInFolder: MinimizedItem[];
-  openCountByRoute: Map<string, number>;
   onClose: () => void;
   onOpenApp: (path: string) => void;
   onActivateWindow: (id: string) => void;
@@ -471,14 +454,13 @@ function FolderPopup({
           )}
           <div className="grid grid-cols-3 gap-3">
             {folder.items.map(item => {
-              const openCount = openCountByRoute.get(item.to) ?? 0;
               return (
                 <button
                   key={item.to}
                   onClick={() => onOpenApp(item.to)}
                   className="flex flex-col items-center gap-1.5 p-1 rounded-lg active:bg-white/15"
                 >
-                  <AppTile route={item.to} icon={navIcons[item.to]} badge={openCount > 0} />
+                  <AppTile route={item.to} icon={navIcons[item.to]} />
                   <span className="text-[11px] font-medium text-white drop-shadow-sm truncate w-full text-center">{item.label}</span>
                 </button>
               );
