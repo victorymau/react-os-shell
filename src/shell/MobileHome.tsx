@@ -297,11 +297,14 @@ export default function MobileHome({
           WebkitTouchCallout: 'none',
         }}
       >
-        {/* Centered max-width container — caps the home grid so that on
-         *  modern phones (≥380 px) cells settle at exactly 80 px and widgets
-         *  (col-span-2) come out at 172 px = 2×80 + 12 gap. On narrower
-         *  viewports both shrink proportionally; columns still align. */}
-        <div className="mx-auto" style={{ maxWidth: 380 }}>
+        {/* Centered max-width container — sized so that on modern phones the
+         *  grid resolves to exactly 4 × 80 + 3 × 12 = 356 px. At that width:
+         *    cell = 80 px (matches the icon's max-w-[80px] cap, so icons fill
+         *           their cells exactly — no centered margin)
+         *    widget = 2 cells + 1 gap = 172 px
+         *  Edges of widgets and icons line up exactly. On narrower viewports
+         *  both shrink in lockstep; columns still align. */}
+        <div className="mx-auto" style={{ maxWidth: 356 }}>
 
         {/* Widgets — share the icon grid layout (grid-cols-4 gap-3) so the
          *  widget width = 2 cells + 1 gap, exactly aligned with the icons
