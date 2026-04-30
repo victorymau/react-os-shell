@@ -88,10 +88,11 @@ function sizeIcon(node: ReactNode, fallback: ReactNode, sizeClass = 'h-10 w-10')
 }
 
 /** A colored gradient tile with the app's glyph in white — one per app on
- *  the home grid. iOS-style. */
+ *  the home grid. iOS-style. Icon fills its grid cell so the left/right
+ *  edges land precisely on the column lines (no centered margin). */
 function AppTile({ route, icon }: { route: string; icon: ReactNode }) {
   return (
-    <span className={`relative aspect-square w-full max-w-[80px] mx-auto rounded-2xl bg-gradient-to-br ${hashGradient(route)} flex items-center justify-center text-white shadow-sm border border-white/30`}>
+    <span className={`relative aspect-square w-full rounded-2xl bg-gradient-to-br ${hashGradient(route)} flex items-center justify-center text-white shadow-sm border border-white/30`}>
       {sizeIcon(icon, FALLBACK_APP_ICON, 'h-11 w-11')}
     </span>
   );
@@ -101,7 +102,7 @@ function AppTile({ route, icon }: { route: string; icon: ReactNode }) {
 function FolderTile({ section, navIcons }: { section: NavSection; navIcons: Record<string, ReactNode> }) {
   const previewItems = section.items.slice(0, 4);
   return (
-    <span className="relative aspect-square w-full max-w-[80px] mx-auto rounded-2xl bg-white/30 backdrop-blur-sm border border-white/40 p-1.5 grid grid-cols-2 gap-1 shadow-sm">
+    <span className="relative aspect-square w-full rounded-2xl bg-white/30 backdrop-blur-sm border border-white/40 p-1.5 grid grid-cols-2 gap-1 shadow-sm">
       {previewItems.map(item => (
         <span
           key={item.to}
@@ -297,14 +298,11 @@ export default function MobileHome({
           WebkitTouchCallout: 'none',
         }}
       >
-        {/* Centered max-width container — sized so that on modern phones the
-         *  grid resolves to exactly 4 × 80 + 3 × 12 = 356 px. At that width:
-         *    cell = 80 px (matches the icon's max-w-[80px] cap, so icons fill
-         *           their cells exactly — no centered margin)
-         *    widget = 2 cells + 1 gap = 172 px
-         *  Edges of widgets and icons line up exactly. On narrower viewports
-         *  both shrink in lockstep; columns still align. */}
-        <div className="mx-auto" style={{ maxWidth: 356 }}>
+        {/* Edge padding (px-3 = 12 px) matches the grid gap (gap-3 = 12 px),
+         *  so the space between the screen edge and the first icon equals the
+         *  space between two icons. Icons fill their grid cells (no max-width
+         *  cap), so widget col-span-2 edges align exactly with icon edges. */}
+        <div>
 
         {/* Widgets — share the icon grid layout (grid-cols-4 gap-3) so the
          *  widget width = 2 cells + 1 gap, exactly aligned with the icons
