@@ -5,10 +5,20 @@
  * call `openPage('/preview')`. If the window is already open, it swaps to the
  * new PDF in-place via a custom event.
  */
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, createContext, useContext } from 'react';
+import { createPortal } from 'react-dom';
 import * as pdfjsLib from 'pdfjs-dist';
 import toast from '../shell/toast';
 import { WindowTitle, getActiveModalId } from '../shell/Modal';
+
+/** Slot at the right end of the outer Preview toolbar — each format panel
+ *  portals its own action buttons (page nav, zoom, layers, download, etc.)
+ *  here so we render a single toolbar row instead of two stacked. */
+const ToolbarSlotContext = createContext<HTMLElement | null>(null);
+function PanelActions({ children }: { children: React.ReactNode }) {
+  const slot = useContext(ToolbarSlotContext);
+  return slot ? createPortal(children, slot) : null;
+}
 
 // online-3d-viewer pulls three@0.176, where WebGLRenderer's stencil context
 // attribute defaults to FALSE. Without a stencil buffer the capped section
@@ -120,6 +130,9 @@ export default function Preview() {
 
   const fileRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  // Slot element for panel-portaled action buttons. Use state (not ref) so the
+  // first render that mounts the slot triggers a re-render in panel children.
+  const [toolbarSlotEl, setToolbarSlotEl] = useState<HTMLDivElement | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   // Drag-enter/leave fire on every child the cursor crosses, so a single
   // boolean flickers. Track depth with a counter — overlay shows on first
@@ -219,6 +232,9 @@ export default function Preview() {
           <span className="text-xs font-medium text-gray-700 truncate max-w-[200px]" title={data.filename}>{data.filename}</span>
         </>
       )}
+      {/* Panel-specific actions (page nav, zoom, layers, download, …) get
+       *  portaled into this slot by whichever panel is active. */}
+      <div ref={setToolbarSlotEl} className="ml-auto flex items-center gap-1 text-xs" />
     </div>
   );
 
@@ -287,7 +303,9 @@ export default function Preview() {
     >
       <WindowTitle title={`${titleName} - Preview`} />
       {Toolbar}
-      <div className="flex-1 min-h-0">{body}</div>
+      <ToolbarSlotContext.Provider value={toolbarSlotEl}>
+        <div className="flex-1 min-h-0">{body}</div>
+      </ToolbarSlotContext.Provider>
       {isDragging && (
         <div className="absolute inset-0 bg-blue-500/15 border-4 border-dashed border-blue-500 pointer-events-none flex items-center justify-center z-20">
           <div className="px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-medium shadow-lg">
@@ -423,54 +441,48 @@ function PdfPanel({ url, filename, onDownload, onEmail }: PdfPanelProps) {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-200 bg-gray-50 shrink-0 text-xs">
-        <div className="flex items-center gap-1">
-          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1} className="px-2 py-1 rounded hover:bg-gray-200 disabled:opacity-30">
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
-          </button>
-          <span className="text-gray-600 font-medium tabular-nums">{page} / {totalPages}</span>
-          <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages} className="px-2 py-1 rounded hover:bg-gray-200 disabled:opacity-30">
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
-          </button>
-        </div>
-
-        <div className="flex items-center gap-1">
-          <button onClick={() => setScale(s => Math.max(0.3, Math.round((s - 0.25) * 100) / 100))} className={btn}>−</button>
-          <select
-            value={ZOOM_PRESETS.includes(Math.round(scale * 100)) ? Math.round(scale * 100) : 'custom'}
-            onChange={e => {
-              const v = e.target.value;
-              if (v !== 'custom') setScale(Number(v) / 100);
-            }}
-            className="bg-transparent hover:bg-gray-200 rounded px-1 py-1 text-gray-600 tabular-nums cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-400"
-            title="Zoom"
-          >
-            {!ZOOM_PRESETS.includes(Math.round(scale * 100)) && (
-              <option value="custom">{Math.round(scale * 100)}%</option>
-            )}
-            {ZOOM_PRESETS.map(p => <option key={p} value={p}>{p}%</option>)}
-          </select>
-          <button onClick={() => setScale(s => Math.min(4, Math.round((s + 0.25) * 100) / 100))} className={btn}>+</button>
-          <button onClick={fitWidth} className={btn}>Fit</button>
-        </div>
-
-        <div className="flex items-center gap-1">
-          <button onClick={handlePrint} className={btn}>
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z" /></svg>
-            Print
-          </button>
-          <button onClick={onDownload ?? handleDefaultDownload} className={btn}>
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
-            Download
-          </button>
-          {onEmail && (
-            <button onClick={onEmail} className={btn}>
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" /></svg>
-              Email
-            </button>
+      <PanelActions>
+        <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1} className="px-1 py-1 rounded hover:bg-gray-200 disabled:opacity-30 text-gray-600">
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+        </button>
+        <span className="text-gray-600 font-medium tabular-nums">{page} / {totalPages}</span>
+        <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages} className="px-1 py-1 rounded hover:bg-gray-200 disabled:opacity-30 text-gray-600">
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+        </button>
+        <div className="h-4 w-px bg-gray-300 mx-1" />
+        <button onClick={() => setScale(s => Math.max(0.3, Math.round((s - 0.25) * 100) / 100))} className={btn}>−</button>
+        <select
+          value={ZOOM_PRESETS.includes(Math.round(scale * 100)) ? Math.round(scale * 100) : 'custom'}
+          onChange={e => {
+            const v = e.target.value;
+            if (v !== 'custom') setScale(Number(v) / 100);
+          }}
+          className="bg-transparent hover:bg-gray-200 rounded px-1 py-1 text-gray-600 tabular-nums cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-400"
+          title="Zoom"
+        >
+          {!ZOOM_PRESETS.includes(Math.round(scale * 100)) && (
+            <option value="custom">{Math.round(scale * 100)}%</option>
           )}
-        </div>
-      </div>
+          {ZOOM_PRESETS.map(p => <option key={p} value={p}>{p}%</option>)}
+        </select>
+        <button onClick={() => setScale(s => Math.min(4, Math.round((s + 0.25) * 100) / 100))} className={btn}>+</button>
+        <button onClick={fitWidth} className={btn}>Fit</button>
+        <div className="h-4 w-px bg-gray-300 mx-1" />
+        <button onClick={handlePrint} className={btn}>
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z" /></svg>
+          Print
+        </button>
+        <button onClick={onDownload ?? handleDefaultDownload} className={btn}>
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+          Download
+        </button>
+        {onEmail && (
+          <button onClick={onEmail} className={btn}>
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" /></svg>
+            Email
+          </button>
+        )}
+      </PanelActions>
 
       <div ref={containerRef} className="flex-1 overflow-auto bg-gray-100">
         {loading ? (
@@ -676,37 +688,31 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-200 bg-gray-50 shrink-0 text-xs">
-        <div className="flex items-center gap-1">
-          <span className="font-medium text-gray-600">DXF</span>
-          <span className="text-gray-400 truncate max-w-xs">{filename}</span>
-        </div>
-        <div className="flex items-center gap-1 relative">
-          <button
-            onClick={() => setShowLayers(s => !s)}
-            className={btn + (showLayers ? ' bg-gray-200' : '')}
-            title="Toggle layer visibility"
-            disabled={layers.length === 0}
-          >
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6.429 9.75L2.25 12l4.179 2.25m0-4.5l5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0l4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0l-5.571 3-5.571-3" /></svg>
-            Layers {layers.length > 0 && <span className="text-gray-400">({layers.filter(l => l.visible).length}/{layers.length})</span>}
+      <PanelActions>
+        <button
+          onClick={() => setShowLayers(s => !s)}
+          className={btn + (showLayers ? ' bg-gray-200' : '')}
+          title="Toggle layer visibility"
+          disabled={layers.length === 0}
+        >
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6.429 9.75L2.25 12l4.179 2.25m0-4.5l5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0l4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0l-5.571 3-5.571-3" /></svg>
+          Layers {layers.length > 0 && <span className="text-gray-400">({layers.filter(l => l.visible).length}/{layers.length})</span>}
+        </button>
+        <button onClick={() => setShowHint(s => !s)} className={btn} title="How to navigate">
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" /></svg>
+        </button>
+        <button onClick={handleResetView} className={btn} title="Fit drawing to view">Fit</button>
+        <button onClick={onDownload ?? handleDefaultDownload} className={btn}>
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+          Download
+        </button>
+        {onEmail && (
+          <button onClick={onEmail} className={btn}>
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" /></svg>
+            Email
           </button>
-          <button onClick={() => setShowHint(s => !s)} className={btn} title="How to navigate">
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" /></svg>
-          </button>
-          <button onClick={handleResetView} className={btn} title="Fit drawing to view">Fit</button>
-          <button onClick={onDownload ?? handleDefaultDownload} className={btn}>
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
-            Download
-          </button>
-          {onEmail && (
-            <button onClick={onEmail} className={btn}>
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" /></svg>
-              Email
-            </button>
-          )}
-        </div>
-      </div>
+        )}
+      </PanelActions>
       <div className="relative flex-1 bg-white min-h-0">
         {/* dxf-viewer overrides container's `position` to `relative` in its
          *  constructor, which kills any `inset: 0` sizing. Use explicit
@@ -1473,10 +1479,7 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
 
   return (
     <div className="flex flex-col h-full bg-white">
-      {/* Top toolbar */}
-      <div className="flex items-center gap-1 px-2 py-1.5 bg-gray-50 border-b border-gray-200 shrink-0">
-        <span className="text-[11px] font-semibold tracking-wide text-gray-700 px-2 truncate max-w-xs" title={filename}>{filename}</span>
-        <div className={tBtnSep} />
+      <PanelActions>
         <button onClick={handleFit} className={tBtn} title="Fit to view">
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
@@ -1507,7 +1510,7 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
             <path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" />
           </svg>
         </button>
-        <div className="flex-1" />
+        <div className={tBtnSep} />
         <button onClick={() => setShowMeshes(s => !s)} className={showMeshes ? tBtnActive : tBtn} title="Toggle meshes panel">
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
@@ -1531,7 +1534,7 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
             </svg>
           </button>
         )}
-      </div>
+      </PanelActions>
 
       {/* Body: meshes | viewport | settings */}
       <div className="flex-1 flex min-h-0">
@@ -1718,30 +1721,23 @@ function ImagePanel({ url, filename, onDownload, onEmail }: ImagePanelProps) {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-200 bg-gray-50 shrink-0 text-xs">
-        <div className="flex items-center gap-1">
-          <span className="font-medium text-gray-600">Image</span>
-          <span className="text-gray-400 truncate max-w-xs">{filename}</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <button onClick={() => setZoom(z => Math.max(0.1, Math.round((z - 0.25) * 100) / 100))} className={btn}>−</button>
-          <span className="text-gray-500 w-12 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
-          <button onClick={() => setZoom(z => Math.min(8, Math.round((z + 0.25) * 100) / 100))} className={btn}>+</button>
-          <button onClick={() => setZoom(1)} className={btn}>1:1</button>
-        </div>
-        <div className="flex items-center gap-1">
-          <button onClick={onDownload ?? handleDefaultDownload} className={btn}>
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
-            Download
+      <PanelActions>
+        <button onClick={() => setZoom(z => Math.max(0.1, Math.round((z - 0.25) * 100) / 100))} className={btn}>−</button>
+        <span className="text-gray-500 w-12 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
+        <button onClick={() => setZoom(z => Math.min(8, Math.round((z + 0.25) * 100) / 100))} className={btn}>+</button>
+        <button onClick={() => setZoom(1)} className={btn}>1:1</button>
+        <div className="h-4 w-px bg-gray-300 mx-1" />
+        <button onClick={onDownload ?? handleDefaultDownload} className={btn}>
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+          Download
+        </button>
+        {onEmail && (
+          <button onClick={onEmail} className={btn}>
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" /></svg>
+            Email
           </button>
-          {onEmail && (
-            <button onClick={onEmail} className={btn}>
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" /></svg>
-              Email
-            </button>
-          )}
-        </div>
-      </div>
+        )}
+      </PanelActions>
       <div className="flex-1 overflow-auto bg-gray-100 flex items-center justify-center p-4">
         {error ? (
           <div className="text-sm text-red-600">Failed to load image.</div>
