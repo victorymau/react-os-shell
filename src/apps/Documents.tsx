@@ -39,8 +39,12 @@ interface DocData {
   ext: string;
 }
 
+const BLANK_DOC: DocData = { filename: 'Untitled', kind: 'docx', content: '', ext: 'docx' };
+
 export default function Documents() {
-  const [data, setData] = useState<DocData | null>(null);
+  // Documents is for editing — open with a blank paper-style canvas so the
+  // user can start typing immediately. Loading a file replaces this state.
+  const [data, setData] = useState<DocData>(BLANK_DOC);
   const [busy, setBusy] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [edited, setEdited] = useState(false);
@@ -157,63 +161,51 @@ export default function Documents() {
           </svg>
           Open
         </button>
-        {data && (
-          <button onClick={downloadCurrent} className="text-xs text-gray-700 hover:text-gray-900 px-2 py-1 rounded hover:bg-gray-200 transition-colors">
-            Save
-          </button>
-        )}
+        <button onClick={downloadCurrent} className="text-xs text-gray-700 hover:text-gray-900 px-2 py-1 rounded hover:bg-gray-200 transition-colors">
+          Save
+        </button>
         <span className="text-[10px] text-gray-400 ml-1">TXT · DOCX · Code</span>
-        {data?.filename && (
-          <>
-            <div className="h-4 w-px bg-gray-300 mx-1" />
-            <span className="text-xs font-medium text-gray-700 truncate max-w-[200px]" title={data.filename}>
-              {data.filename}{edited ? ' •' : ''}
-            </span>
-          </>
-        )}
+        <div className="h-4 w-px bg-gray-300 mx-1" />
+        <span className="text-xs font-medium text-gray-700 truncate max-w-[200px]" title={data.filename}>
+          {data.filename}{edited ? ' •' : ''}
+        </span>
 
-        {/* Formatting toolbar — only meaningful when a document is open. */}
-        {data && (
-          <>
-            <div className="h-4 w-px bg-gray-300 mx-1" />
-            <div className="flex items-center gap-0.5">
-              <button onMouseDown={e => e.preventDefault()} onClick={() => exec('bold')}
-                className="px-2 py-1 text-xs rounded font-bold text-gray-700 hover:bg-gray-200 transition-colors" title="Bold">B</button>
-              <button onMouseDown={e => e.preventDefault()} onClick={() => exec('italic')}
-                className="px-2 py-1 text-xs rounded italic text-gray-700 hover:bg-gray-200 transition-colors" title="Italic">I</button>
-              <button onMouseDown={e => e.preventDefault()} onClick={() => exec('underline')}
-                className="px-2 py-1 text-xs rounded underline text-gray-700 hover:bg-gray-200 transition-colors" title="Underline">U</button>
-              <button onMouseDown={e => e.preventDefault()} onClick={() => exec('strikeThrough')}
-                className="px-2 py-1 text-xs rounded line-through text-gray-700 hover:bg-gray-200 transition-colors" title="Strikethrough">S</button>
-            </div>
-            <div className="h-4 w-px bg-gray-300 mx-1" />
-            <select onMouseDown={e => e.preventDefault()} onChange={e => { exec('fontSize', e.target.value); e.currentTarget.value = ''; }}
-              defaultValue="" className="text-xs border border-gray-300 rounded px-1 py-0.5 bg-white">
-              <option value="" disabled>Size</option>
-              <option value="1">XS</option>
-              <option value="2">S</option>
-              <option value="3">M</option>
-              <option value="4">L</option>
-              <option value="5">XL</option>
-              <option value="6">2XL</option>
-            </select>
-            <input type="color" defaultValue="#000000" onChange={e => exec('foreColor', e.target.value)}
-              className="w-7 h-6 border border-gray-300 rounded cursor-pointer" title="Text color" />
-            <div className="h-4 w-px bg-gray-300 mx-1" />
-            <button onMouseDown={e => e.preventDefault()} onClick={() => exec('insertUnorderedList')}
-              className="px-2 py-1 text-xs rounded text-gray-700 hover:bg-gray-200 transition-colors" title="Bulleted list">• List</button>
-            <button onMouseDown={e => e.preventDefault()} onClick={() => exec('insertOrderedList')}
-              className="px-2 py-1 text-xs rounded text-gray-700 hover:bg-gray-200 transition-colors" title="Numbered list">1.</button>
-          </>
-        )}
+        {/* Formatting toolbar */}
+        <div className="h-4 w-px bg-gray-300 mx-1" />
+        <div className="flex items-center gap-0.5">
+          <button onMouseDown={e => e.preventDefault()} onClick={() => exec('bold')}
+            className="px-2 py-1 text-xs rounded font-bold text-gray-700 hover:bg-gray-200 transition-colors" title="Bold">B</button>
+          <button onMouseDown={e => e.preventDefault()} onClick={() => exec('italic')}
+            className="px-2 py-1 text-xs rounded italic text-gray-700 hover:bg-gray-200 transition-colors" title="Italic">I</button>
+          <button onMouseDown={e => e.preventDefault()} onClick={() => exec('underline')}
+            className="px-2 py-1 text-xs rounded underline text-gray-700 hover:bg-gray-200 transition-colors" title="Underline">U</button>
+          <button onMouseDown={e => e.preventDefault()} onClick={() => exec('strikeThrough')}
+            className="px-2 py-1 text-xs rounded line-through text-gray-700 hover:bg-gray-200 transition-colors" title="Strikethrough">S</button>
+        </div>
+        <div className="h-4 w-px bg-gray-300 mx-1" />
+        <select onMouseDown={e => e.preventDefault()} onChange={e => { exec('fontSize', e.target.value); e.currentTarget.value = ''; }}
+          defaultValue="" className="text-xs border border-gray-300 rounded px-1 py-0.5 bg-white">
+          <option value="" disabled>Size</option>
+          <option value="1">XS</option>
+          <option value="2">S</option>
+          <option value="3">M</option>
+          <option value="4">L</option>
+          <option value="5">XL</option>
+          <option value="6">2XL</option>
+        </select>
+        <input type="color" defaultValue="#000000" onChange={e => exec('foreColor', e.target.value)}
+          className="w-7 h-6 border border-gray-300 rounded cursor-pointer" title="Text color" />
+        <div className="h-4 w-px bg-gray-300 mx-1" />
+        <button onMouseDown={e => e.preventDefault()} onClick={() => exec('insertUnorderedList')}
+          className="px-2 py-1 text-xs rounded text-gray-700 hover:bg-gray-200 transition-colors" title="Bulleted list">• List</button>
+        <button onMouseDown={e => e.preventDefault()} onClick={() => exec('insertOrderedList')}
+          className="px-2 py-1 text-xs rounded text-gray-700 hover:bg-gray-200 transition-colors" title="Numbered list">1.</button>
       </div>
 
       {/* Body */}
       <div className="flex-1 min-h-0 overflow-hidden">
         {busy ? (
           <div className="flex items-center justify-center h-full text-sm text-gray-400">Loading…</div>
-        ) : !data ? (
-          <EmptyState onPick={handlePick} />
         ) : (
           <div className={`h-full overflow-auto ${data.kind === 'docx' ? 'bg-gray-100 px-12 py-10' : 'bg-white'}`}>
             <div
@@ -244,25 +236,3 @@ export default function Documents() {
   );
 }
 
-function EmptyState({ onPick }: { onPick: () => void }) {
-  return (
-    <div className="flex flex-col items-center justify-center h-full text-gray-500 text-sm gap-3 p-8 text-center">
-      <svg className="h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6M9 16h6" />
-      </svg>
-      <p className="font-medium text-gray-700">
-        Drop a file here, or click <button onClick={onPick} className="text-blue-600 hover:underline">Open</button>.
-      </p>
-      <div className="text-xs text-gray-500 max-w-md">
-        <p className="font-semibold uppercase tracking-wide text-[10px] text-gray-400 mb-1">Supported formats</p>
-        <ul className="space-y-0.5">
-          <li><span className="font-mono text-gray-700">.txt .md .csv .log .json .xml .yaml .toml .ini .env .sql</span> — editable plain text</li>
-          <li><span className="font-mono text-gray-700">.html .css .js .ts .tsx .jsx .py .rb .go .rs .java .c .cpp .sh</span> — code as plain text</li>
-          <li><span className="font-mono text-gray-700">.docx</span> — Word documents (read-only; requires the optional <span className="font-mono">mammoth</span> peer dep)</li>
-        </ul>
-        <p className="mt-2 text-[11px] text-gray-400 italic">.doc (legacy Word binary) needs to be converted to .docx first.</p>
-      </div>
-    </div>
-  );
-}
