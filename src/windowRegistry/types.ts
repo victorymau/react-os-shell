@@ -29,8 +29,12 @@ export interface PageRegistryEntry {
   compact?: boolean;
   /** Custom window dimensions [width, height] in pixels. */
   dimensions?: [number, number];
-  /** Auto-size height based on content (widget only). */
+  /** Auto-size window height to its content. Combine with naturally-flowing
+   *  content (forms, settings, simple tools); avoid for windows whose root
+   *  uses `h-full` / `flex-1` since those would collapse. */
   autoHeight?: boolean;
+  /** Floor for `autoHeight` (px). Defaults to 240. */
+  autoMinHeight?: number;
   /** When true, openPage(path) opens a new instance each time instead of
    *  activating an existing one. Each instance gets a unique window id and
    *  the taskbar groups them under a single icon. */
@@ -57,6 +61,10 @@ export interface ModalRegistryEntry {
   rendersOwnModal?: boolean;
   /** Query key prefix for React Query — must match what detail components invalidate. */
   queryKey?: string;
+  /** Auto-size window height to its content. See PageRegistryEntry.autoHeight. */
+  autoHeight?: boolean;
+  /** Floor for `autoHeight` (px). Defaults to 240. */
+  autoMinHeight?: number;
   /** navIcon route key for window title icon (e.g. '/orders'). */
   icon?: string;
 }

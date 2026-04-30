@@ -197,8 +197,14 @@ interface ModalProps {
   widget?: boolean;
   /** Compact title bar: smaller header with title + close only, no minimize/maximize */
   compact?: boolean;
-  /** Auto-size height based on content (widget only) */
+  /** Auto-size height based on content. Window's height adapts to whatever the
+   *  body renders; combined with `autoMinHeight` to prevent collapse and capped
+   *  to the available viewport so nothing overflows the screen. Only set this
+   *  for windows whose root content uses natural (block / shrink-to-fit) sizing
+   *  — windows whose root uses `h-full` / `flex-1` would collapse here. */
   autoHeight?: boolean;
+  /** Minimum height (px) when `autoHeight` is on. Defaults to 240. */
+  autoMinHeight?: number;
   /** Custom menu items for widget right-click context menu */
   widgetMenu?: React.ReactNode;
   /** Custom window dimensions [width, height] in pixels */
@@ -362,7 +368,7 @@ function triggerSplitView() {
 export { triggerSplitView };
 
 
-export default function Modal({ open, onClose, title, icon, copyText, size = 'lg', dirty = false, onNext, onPrev, footer, bodyScroll, onMinimize, initialBox, actions, actionsLeft, allowPinOnTop, initialPosition, widget, compact, autoHeight, widgetMenu, dimensions, windowKey, children }: ModalProps) {
+export default function Modal({ open, onClose, title, icon, copyText, size = 'lg', dirty = false, onNext, onPrev, footer, bodyScroll, onMinimize, initialBox, actions, actionsLeft, allowPinOnTop, initialPosition, widget, compact, autoHeight, autoMinHeight, widgetMenu, dimensions, windowKey, children }: ModalProps) {
   const [displayTitle, setDisplayTitle] = useState<React.ReactNode>(title);
   useEffect(() => { setDisplayTitle(title); }, [title]);
   const [touched, setTouched] = useState(false);
@@ -538,13 +544,14 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
       if (count < 2) return;
       const myIdx = myNonUtilIdx;
       if (myIdx < 0) return;
-      const padding = 20;
-      const taskbarH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--taskbar-height')) || 56;
-      const availW = window.innerWidth - padding * 2;
-      const availH = window.innerHeight - taskbarH - padding * 2;
-      const colW = Math.floor((availW - padding * (count - 1)) / count);
-      const x = padding + myIdx * (colW + padding);
-      setBox({ x, y: padding, w: colW, h: availH });
+      const a = workArea();
+      // Edge-to-edge tiling: distribute pixels exactly so the rightmost column
+      // ends on the work-area edge instead of leaving a rounding gap.
+      const baseW = Math.floor(a.w / count);
+      const remainder = a.w - baseW * count;
+      const colW = baseW + (myIdx < remainder ? 1 : 0);
+      const xOffset = myIdx * baseW + Math.min(myIdx, remainder);
+      setBox({ x: a.x + xOffset, y: a.y, w: colW, h: a.h });
       setMaximized(false);
     };
 
@@ -958,6 +965,10 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
         }}
         style={{
           zIndex: pinnedOnTop ? 999 : zIndex + 1, width: box.w, height: autoHeight ? 'auto' : box.h, top: box.y,
+          ...(autoHeight ? {
+            minHeight: `${autoMinHeight ?? 240}px`,
+            maxHeight: `calc(100vh - var(--taskbar-height, 0px) - 24px)`,
+          } : {}),
           ...(widget && widgetAnchor === 'right' ? { right: window.innerWidth - box.x - box.w } : { left: box.x }),
           ...(zIndex < 0 && !pinnedOnTop ? { display: 'none' } : {}),
         }}
