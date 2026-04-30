@@ -22,7 +22,6 @@ RUN npm ci
 # Copy package source + build it (tsup → ./dist).
 COPY tsconfig.json tsup.config.ts ./
 COPY src ./src
-COPY index.css ./
 RUN npm run build
 
 # Demo install — file:../.. picks up /app/dist + /app/package.json from above.
