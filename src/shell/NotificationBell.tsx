@@ -68,6 +68,25 @@ export default function NotificationBell({
     if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
   }, []);
 
+  // Extracted click flow shared by the bell popup, the toast, and the
+  // browser-Notification fallback. Optimistic mark-read + invoke consumer
+  // `onItemClick` to open the entity.
+  const handleClick = useCallback((notif: ShellNotification) => {
+    if (!notif.is_read) {
+      queryClient.setQueryData(['notification-unread-count'], (old: any) => old ? { ...old, count: Math.max(0, (old.count || 0) - 1) } : old);
+      queryClient.setQueryData(['notifications-dropdown'], (old: any) => {
+        if (!old?.results) return old;
+        return { ...old, results: old.results.map((n: any) => n.id === notif.id ? { ...n, is_read: true } : n) };
+      });
+      markRead(notif.id).catch(() => {
+        queryClient.invalidateQueries({ queryKey: ['notification-unread-count'] });
+        queryClient.invalidateQueries({ queryKey: ['notifications-dropdown'] });
+      });
+    }
+    setOpen(false);
+    onItemClick(notif);
+  }, [queryClient, markRead, onItemClick]);
+
   const prevCountRef = useRef<number | null>(null);
   useEffect(() => {
     if (prevCountRef.current === null) { prevCountRef.current = unreadCount; return; }
@@ -80,15 +99,17 @@ export default function NotificationBell({
         if (document.hidden) {
           if ('Notification' in window && Notification.permission === 'granted') {
             const n = new Notification(title, { body, icon: '/favicon.svg', tag: `notif-${latest.id}` });
-            n.onclick = () => { window.focus(); onItemClick(latest); n.close(); };
+            n.onclick = () => { window.focus(); handleClick(latest); n.close(); };
           }
         } else {
-          toast.info(title, { duration: 5000 });
+          // Tap the toast to open the mentioned entity, just like clicking
+          // the same notification in the bell popup.
+          toast.info(title, { duration: 5000, onClick: () => handleClick(latest) });
         }
       }).catch(() => {});
     }
     prevCountRef.current = unreadCount;
-  }, [unreadCount, list, onItemClick]);
+  }, [unreadCount, list, handleClick]);
 
   // Always run on mount + every 30s so the dropdown is always populated
   // with cached data before the first click — no loading-state flash.
@@ -104,22 +125,6 @@ export default function NotificationBell({
   // popup is portaled into document.body it doesn't sit inside dropdownRef,
   // so any handler scoped to dropdownRef would fire pointerdown on items
   // inside the popup and close it before their onClick runs — see #issue.
-
-  const handleClick = (notif: ShellNotification) => {
-    if (!notif.is_read) {
-      queryClient.setQueryData(['notification-unread-count'], (old: any) => old ? { ...old, count: Math.max(0, (old.count || 0) - 1) } : old);
-      queryClient.setQueryData(['notifications-dropdown'], (old: any) => {
-        if (!old?.results) return old;
-        return { ...old, results: old.results.map((n: any) => n.id === notif.id ? { ...n, is_read: true } : n) };
-      });
-      markRead(notif.id).catch(() => {
-        queryClient.invalidateQueries({ queryKey: ['notification-unread-count'] });
-        queryClient.invalidateQueries({ queryKey: ['notifications-dropdown'] });
-      });
-    }
-    setOpen(false);
-    onItemClick(notif);
-  };
 
   const handleMarkAllRead = () => {
     queryClient.setQueryData(['notification-unread-count'], (old: any) => old ? { ...old, count: 0 } : old);
