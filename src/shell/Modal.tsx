@@ -197,6 +197,11 @@ interface ModalProps {
   widget?: boolean;
   /** Compact title bar: smaller header with title + close only, no minimize/maximize */
   compact?: boolean;
+  /** App-style window: full title bar but body uses no padding so the app's own
+   *  chrome (toolbars, menus) sits flush against the window frame. For
+   *  self-chromed apps like Preview, Files, Browser. Implies `bodyScroll: false`
+   *  — apps manage their own scrolling internally. */
+  appStyle?: boolean;
   /** Auto-size height based on content. Window's height adapts to whatever the
    *  body renders; combined with `autoMinHeight` to prevent collapse and capped
    *  to the available viewport so nothing overflows the screen. Only set this
@@ -368,7 +373,7 @@ function triggerSplitView() {
 export { triggerSplitView };
 
 
-export default function Modal({ open, onClose, title, icon, copyText, size = 'lg', dirty = false, onNext, onPrev, footer, bodyScroll, onMinimize, initialBox, actions, actionsLeft, allowPinOnTop, initialPosition, widget, compact, autoHeight, autoMinHeight, widgetMenu, dimensions, windowKey, children }: ModalProps) {
+export default function Modal({ open, onClose, title, icon, copyText, size = 'lg', dirty = false, onNext, onPrev, footer, bodyScroll, onMinimize, initialBox, actions, actionsLeft, allowPinOnTop, initialPosition, widget, compact, appStyle, autoHeight, autoMinHeight, widgetMenu, dimensions, windowKey, children }: ModalProps) {
   const [displayTitle, setDisplayTitle] = useState<React.ReactNode>(title);
   useEffect(() => { setDisplayTitle(title); }, [title]);
   const [touched, setTouched] = useState(false);
@@ -998,6 +1003,29 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
               </button>
             </div>
           </div>
+        ) : appStyle ? (
+          /* App style: small title bar like compact, but keeps minimize/maximize for full window control. */
+          <div onPointerDown={startDrag}
+            className={`flex items-center justify-between px-3 py-1.5 border-b border-gray-200 shrink-0 cursor-move select-none rounded-t-lg ${isActive ? 'backdrop-blur-sm' : ''}`}
+            style={{ touchAction: 'none', backgroundColor: isActive ? `rgb(var(--window-header-rgb) / var(--active-header-opacity, 0.8))` : `rgb(var(--window-header-rgb) / var(--inactive-header-opacity, 0.7))` }}>
+            <div className="text-sm font-medium min-w-0 flex-1 truncate flex items-center gap-1.5" style={{ color: isActive ? 'rgb(17 24 39)' : 'rgb(156 163 175)' }}>
+              {renderIconButton()}
+              <span className="truncate">{displayTitle}</span>
+            </div>
+            <div className="flex items-center gap-0.5 shrink-0 ml-2">
+              {allowPinOnTop && (
+                <button onClick={() => setPinnedOnTop(p => !p)} title={pinnedOnTop ? 'Unpin from top' : 'Pin on top'}
+                  className={`p-0.5 rounded hover:bg-gray-200 ${pinnedOnTop ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>
+                  <svg className="h-3 w-3" fill={pinnedOnTop ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 3.75V16.5L12 14.25 7.5 16.5V3.75m9 0H18A2.25 2.25 0 0120.25 6v12A2.25 2.25 0 0118 20.25H6A2.25 2.25 0 013.75 18V6A2.25 2.25 0 016 3.75h1.5m9 0h-9" /></svg>
+                </button>
+              )}
+              <button onClick={() => { const idx = activationOrder.indexOf(modalId); if (idx !== -1) activationOrder.splice(idx, 1); activeListeners.forEach(fn => fn()); window.dispatchEvent(new CustomEvent('modal-reorder')); }} title="Minimize" className="text-gray-400 hover:text-gray-600 px-1 py-0.5 rounded hover:bg-gray-200 text-xs leading-none">─</button>
+              <button onClick={() => { if (maximized) { setMaximized(false); setBox(calcWindowed()); } else { reset(); } }} title={maximized ? 'Windowed' : 'Maximize'} className="text-gray-400 hover:text-gray-600 px-1 py-0.5 rounded hover:bg-gray-200 text-xs leading-none">{maximized ? '❐' : '⤢'}</button>
+              <button type="button" onClick={guardedClose} className="rounded p-0.5 text-gray-400 hover:text-gray-600 hover:bg-gray-200">
+                <XMarkIcon className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
         ) : (
         <div onPointerDown={startDrag}
           className={`flex items-center justify-between px-4 py-2.5 border-b border-gray-200 shrink-0 cursor-move select-none rounded-t-lg ${isActive ? 'backdrop-blur-sm' : ''}`}
@@ -1034,7 +1062,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
         <ModalActionsContext.Provider value={{ rightRef: actionsRef as React.RefObject<HTMLDivElement | null>, leftRef: actionsLeftRef as React.RefObject<HTMLDivElement | null>, notify: () => setHasActions(true), active: isActive, isDirty }}>
         <div
           {...(widget ? { onPointerDown: startDrag, onContextMenu: (e: React.MouseEvent) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }); } } : {})}
-          className={`flex-1 min-h-0 flex flex-col ${widget ? 'p-0 cursor-move' : compact ? 'p-2' : 'p-4'} ${widget ? '' : 'backdrop-blur-sm'} ${bodyScroll === false ? 'overflow-hidden' : 'overflow-y-auto'} ${widget ? 'rounded-lg select-none' : ''}`}
+          className={`flex-1 min-h-0 flex flex-col ${widget ? 'p-0 cursor-move' : appStyle ? 'p-0' : compact ? 'p-2' : 'p-4'} ${widget ? '' : 'backdrop-blur-sm'} ${(bodyScroll === false || appStyle) ? 'overflow-hidden' : 'overflow-y-auto'} ${widget ? 'rounded-lg select-none' : ''}`}
           style={{ ...(widget ? { touchAction: 'none' } : {}), backgroundColor: widget ? 'transparent' : (isActive ? `rgb(var(--window-content-rgb) / var(--active-content-opacity, 0.9))` : `rgb(var(--window-content-rgb) / var(--inactive-content-opacity, 0.8))`) }}>
           {children}
         </div>
@@ -1067,7 +1095,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
 
         {/* FOOTER — always rendered; visible when footer prop or portal actions exist; hidden for widgets/compact */}
         <div onPointerDown={startDrag}
-          className={`px-4 py-2 border-t border-gray-200 shrink-0 flex items-center justify-between text-xs select-none cursor-move${isActive ? ' backdrop-blur-sm' : ''}${widget || compact || (!footer && !hasActions && !actions && !actionsLeft) ? ' hidden' : ''}`}
+          className={`px-4 py-2 border-t border-gray-200 shrink-0 flex items-center justify-between text-xs select-none cursor-move${isActive ? ' backdrop-blur-sm' : ''}${widget || compact || appStyle || (!footer && !hasActions && !actions && !actionsLeft) ? ' hidden' : ''}`}
           style={{ touchAction: 'none', backgroundColor: isActive ? `rgb(var(--window-footer-rgb) / var(--active-header-opacity, 0.8))` : `rgb(var(--window-footer-rgb) / var(--inactive-header-opacity, 0.7))` }}>
           <div className="flex items-center gap-2 min-w-0">
             {actionsLeft}

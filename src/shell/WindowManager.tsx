@@ -162,7 +162,7 @@ function PageWindow({ item, onClose }: { item: MinimizedItem; onClose: () => voi
   const entry = raw as PageRegistryEntry;
   const Component = entry.component;
   return (
-    <Modal open={true} onClose={onClose} icon={navIcons[item.route!]} title={entry.label} size={entry.size || '2xl'} allowPinOnTop={entry.allowPinOnTop} initialPosition={entry.initialPosition} widget={entry.widget} compact={entry.compact} autoHeight={entry.autoHeight} autoMinHeight={entry.autoMinHeight} dimensions={entry.dimensions} windowKey={item.id}>
+    <Modal open={true} onClose={onClose} icon={navIcons[item.route!]} title={entry.label} size={entry.size || '2xl'} allowPinOnTop={entry.allowPinOnTop} initialPosition={entry.initialPosition} widget={entry.widget} compact={entry.compact} appStyle={entry.appStyle} autoHeight={entry.autoHeight} autoMinHeight={entry.autoMinHeight} dimensions={entry.dimensions} windowKey={item.id}>
       <DesktopShortcutMenuItem item={item} />
       <Suspense fallback={<div className="flex items-center justify-center py-12"><LoadingSpinner /></div>}>
         <Component />
@@ -288,6 +288,7 @@ function RestoredRegistryModal({ item, onClose, onMinimize }: { item: MinimizedI
       size={(entry.size || '2xl') as any}
       autoHeight={entry.autoHeight}
       autoMinHeight={entry.autoMinHeight}
+      appStyle={entry.appStyle}
     >
       <DesktopShortcutMenuItem item={item} />
       <Suspense fallback={<LoadingSpinner />}>

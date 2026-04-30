@@ -27,6 +27,9 @@ export interface PageRegistryEntry {
   widget?: boolean;
   /** Compact title bar: smaller header with title + close only, no footer. */
   compact?: boolean;
+  /** App-style window for self-chromed apps (Preview, Files, Browser, etc.):
+   *  small title bar with full controls, no body padding, no footer. */
+  appStyle?: boolean;
   /** Custom window dimensions [width, height] in pixels. */
   dimensions?: [number, number];
   /** Auto-size window height to its content. Combine with naturally-flowing
@@ -65,6 +68,8 @@ export interface ModalRegistryEntry {
   autoHeight?: boolean;
   /** Floor for `autoHeight` (px). Defaults to 240. */
   autoMinHeight?: number;
+  /** App-style window: small title bar, no body padding, no footer. */
+  appStyle?: boolean;
   /** navIcon route key for window title icon (e.g. '/orders'). */
   icon?: string;
 }

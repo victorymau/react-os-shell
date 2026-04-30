@@ -51,7 +51,7 @@ const Browser = lazy(() => import('./Browser'));
 
 export const utilityApps: WindowRegistry = {
   '/calculator': { component: Calculator, label: 'Calculator', size: 'sm', allowPinOnTop: true, utility: true, widget: true, autoHeight: true, dimensions: [280, 420] },
-  '/spreadsheet': { component: Spreadsheet, label: 'Spreadsheets', size: '2xl', compact: true, multiInstance: true },
+  '/spreadsheet': { component: Spreadsheet, label: 'Spreadsheets', size: '2xl', appStyle: true, multiInstance: true },
   '/notepad': { component: Notepad, label: 'Notepad', size: 'lg', allowPinOnTop: true },
   '/weather': { component: Weather, label: 'Weather', size: 'sm', utility: true, widget: true, autoHeight: true, dimensions: [320, 400] },
   '/currency': { component: CurrencyConverter, label: 'Currency Converter', size: 'sm', utility: true, widget: true, autoHeight: true, dimensions: [320, 480] },
@@ -68,19 +68,19 @@ export const gameApps: WindowRegistry = {
 };
 
 export const googleApps: WindowRegistry = {
-  '/email': { component: Email, label: 'Email', size: '2xl' },
+  '/email': { component: Email, label: 'Email', size: '2xl', appStyle: true },
   '/gemini': { component: GeminiChat, label: 'Gemini AI', size: 'lg' },
   '/calendar': { component: Calendar, label: 'Calendar', size: 'xl' },
 };
 
 export const documentApps: WindowRegistry = {
-  '/preview': { component: Preview, label: 'Preview', size: '2xl', multiInstance: true },
-  '/documents': { component: Documents, label: 'Documents', size: 'xl', multiInstance: true },
-  '/files': { component: Files, label: 'Files', size: 'xl' },
+  '/preview': { component: Preview, label: 'Preview', size: '2xl', appStyle: true, multiInstance: true },
+  '/documents': { component: Documents, label: 'Documents', size: 'xl', appStyle: true, multiInstance: true },
+  '/files': { component: Files, label: 'Files', size: 'xl', appStyle: true },
 };
 
 export const webApps: WindowRegistry = {
-  '/browser': { component: Browser, label: 'Browser', size: '2xl', multiInstance: true },
+  '/browser': { component: Browser, label: 'Browser', size: '2xl', appStyle: true, multiInstance: true },
 };
 
 export const bundledApps: WindowRegistry = {
