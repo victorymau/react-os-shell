@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.1.54] — 2026-04-30
+
+### Added
+- Demo-mode mock data for Google apps. Set `window.__REACT_OS_SHELL_DEMO_MODE__ = true` and Email shows a small static thread list / reading pane against bundled fixtures, and Calendar fills the current week with six sample events. The public Pages demo opts in by default so Email/Calendar are populated without requiring a Google OAuth Client ID. A clear "Demo mode — sample data" banner in Email distinguishes it from real Gmail.
+- New `docs/google-auth.md` documents the three integration paths — demo mode, BYO Client ID (current default), and full backend OAuth code flow with refresh tokens for production deployments. Includes the Google Cloud setup checklist, verification gotchas (100-user cap, CASA Tier 2 audit for restricted scopes), and an estimate for the backend implementation.
+
 ## [0.1.53] — 2026-04-30
 
 ### Added

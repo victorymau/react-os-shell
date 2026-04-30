@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import useGoogleAuth from '../hooks/useGoogleAuth';
+import { isDemoMode, getDemoEmails } from './google-demo-fixtures';
 import toast from '../shell/toast';
 import Modal, { ModalActions } from '../shell/Modal';
 import EditableGrid from '../shell/EditableGrid';
@@ -841,6 +842,10 @@ export default function Email() {
   ];
 
   if (!isConnected) {
+    // Demo mode: render a small static preview instead of the connect screen
+    // so the public Pages demo has populated UI without requiring a real
+    // Google OAuth Client ID.
+    if (isDemoMode()) return <EmailDemoView />;
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center max-w-md space-y-4 px-6">
@@ -1832,5 +1837,60 @@ function SpreadsheetViewer({ data, onClose }: { data: { name: string; sheetNames
         </div>
       </div>
     </Modal>
+  );
+}
+
+// ── Demo view ──────────────────────────────────────────────────────────
+// Used when window.__REACT_OS_SHELL_DEMO_MODE__ is set. Renders a small
+// static thread list + reading pane against the bundled fixtures so the
+// public demo has populated UI without a real Google OAuth Client ID.
+function EmailDemoView() {
+  const [emails] = useState(() => getDemoEmails());
+  const [selectedId, setSelectedId] = useState<string | null>(emails[0]?.id ?? null);
+  const selected = emails.find(e => e.id === selectedId);
+  const formatTime = (iso: string) => {
+    const diff = Date.now() - new Date(iso).getTime();
+    const mins = Math.floor(diff / 60_000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    return `${Math.floor(hrs / 24)}d ago`;
+  };
+  return (
+    <div className="flex flex-col h-full">
+      <div className="px-3 py-1.5 border-b border-amber-200 bg-amber-50 text-[11px] text-amber-800">
+        Demo mode — these emails are sample data. Set up a Google OAuth Client ID in Customization to see your real Gmail.
+      </div>
+      <div className="flex flex-1 min-h-0">
+        <div className="w-80 shrink-0 border-r border-gray-200 overflow-y-auto">
+          {emails.map(e => (
+            <button
+              key={e.id}
+              onClick={() => setSelectedId(e.id)}
+              className={`w-full text-left px-3 py-2 border-b border-gray-100 ${selectedId === e.id ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <span className={`truncate text-sm ${e.unread ? 'font-semibold text-gray-900' : 'text-gray-700'}`}>{e.from}</span>
+                <span className="text-[10px] text-gray-400 shrink-0 tabular-nums">{formatTime(e.receivedAt)}</span>
+              </div>
+              <div className={`truncate text-sm ${e.unread ? 'font-medium text-gray-800' : 'text-gray-600'}`}>{e.subject}</div>
+              <div className="truncate text-xs text-gray-500">{e.snippet}</div>
+            </button>
+          ))}
+        </div>
+        <div className="flex-1 p-6 overflow-y-auto bg-white">
+          {selected ? (
+            <>
+              <h2 className="text-xl font-semibold text-gray-900 mb-1">{selected.subject}</h2>
+              <div className="text-xs text-gray-500 mb-4">From {selected.from} · {formatTime(selected.receivedAt)}</div>
+              <pre className="whitespace-pre-wrap font-sans text-sm text-gray-800 leading-relaxed">{selected.body}</pre>
+            </>
+          ) : (
+            <div className="text-sm text-gray-400 text-center pt-20">Select a message</div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }

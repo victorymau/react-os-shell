@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import Modal, { ModalActions } from '../shell/Modal';
 import toast from '../shell/toast';
 import useGoogleAuth, { getGoogleAccessToken } from '../hooks/useGoogleAuth';
+import { isDemoMode, getDemoCalendarEvents } from './google-demo-fixtures';
 import { useShellPrefs } from '../shell/ShellPrefs';
 
 // ── Types ──
@@ -82,7 +83,16 @@ export default function Calendar() {
   const google = useGoogleAuth();
   const localEvents: CalendarEvent[] = prefs.calendar_events || [];
   const [googleEvents, setGoogleEvents] = useState<CalendarEvent[]>([]);
-  const events = useMemo(() => [...localEvents, ...googleEvents], [localEvents, googleEvents]);
+  // Demo mode: when no Google account is connected, show bundled sample
+  // events so the public demo isn't an empty calendar.
+  const demoEvents = useMemo<CalendarEvent[]>(
+    () => (isDemoMode() && !google.isConnected ? getDemoCalendarEvents() : []),
+    [google.isConnected],
+  );
+  const events = useMemo(
+    () => [...localEvents, ...googleEvents, ...demoEvents],
+    [localEvents, googleEvents, demoEvents],
+  );
   const today = new Date();
   const [currentDate, setCurrentDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
 
