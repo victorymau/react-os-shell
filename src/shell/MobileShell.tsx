@@ -12,10 +12,11 @@
  * live as MobileShell-owned state so they don't pollute the global mode
  * machine.
  */
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useWindowManager } from './WindowManager';
 import { activateModal } from './Modal';
 import { getMobileMode, setMobileMode, subscribeMobileMode } from './mobileShellStore';
+import { WINDOW_REGISTRY, isPageEntry, type PageRegistryEntry } from '../windowRegistry/types';
 import MobileHome from './MobileHome';
 import MobileSwitcher from './MobileSwitcher';
 import MobileNotificationSheet from './MobileNotificationSheet';
@@ -59,6 +60,18 @@ export default function MobileShell({
   const mode = useSyncExternalStore(subscribeMobileMode, getMobileMode);
   const [sheet, setSheet] = useState<'notifications' | 'profile' | null>(null);
   const unreadCount = notifications?.useUnreadCount() ?? 0;
+
+  // The Apps switcher and the open-app count badge ignore widget windows —
+  // widgets render directly on the home screen, so they shouldn't pollute the
+  // "running apps" view.
+  const switcherWindows = useMemo(() => {
+    return openWindows.filter(w => {
+      if (!w.route) return true;
+      const entry = WINDOW_REGISTRY[w.route];
+      if (!entry || !isPageEntry(entry)) return true;
+      return !(entry as PageRegistryEntry).widget;
+    });
+  }, [openWindows]);
 
   // When the user closes an app, go back to home — even if other apps are
   // still open. Mirrors phone-OS expectations (close = back to launcher).
@@ -110,11 +123,11 @@ export default function MobileShell({
         </div>
       )}
 
-      {/* Switcher overlay */}
+      {/* Switcher overlay — widgets are excluded so it shows only real apps. */}
       {mode === 'switcher' && (
         <div className="fixed inset-0 z-[200] bg-gray-900/95 backdrop-blur-sm" style={{ paddingBottom: 'var(--mobile-bottom-nav, 70px)' }}>
           <MobileSwitcher
-            windows={openWindows}
+            windows={switcherWindows}
             onActivate={handleActivateWindow}
             onClose={(id) => closeEntity(id)}
           />
@@ -140,7 +153,7 @@ export default function MobileShell({
       {/* Bottom nav — always visible, sits above modals AND overlays */}
       <MobileBottomNav
         mode={mode}
-        openCount={openWindows.length}
+        openCount={switcherWindows.length}
         unreadCount={unreadCount}
         showNotifications={!!notifications}
         profileAvatar={profile?.avatar_url}
@@ -173,14 +186,21 @@ function MobileBottomNav({
   onHome, onSwitcher, onNotifications, onProfile,
 }: MobileBottomNavProps) {
   const btnClass = (active: boolean) =>
-    `flex-1 flex flex-col items-center justify-center gap-0.5 py-2 transition-colors ${
-      active ? 'text-blue-600' : 'text-gray-500 active:text-gray-700'
+    `flex-1 flex flex-col items-center justify-center gap-0.5 py-2 transition-colors select-none ${
+      active ? 'text-blue-600' : 'text-gray-700 active:text-gray-900'
     }`;
 
   return (
     <nav
-      className="fixed bottom-0 inset-x-0 z-[300] flex items-stretch bg-white/95 backdrop-blur border-t border-gray-200"
-      style={{ height: 'var(--mobile-bottom-nav, 70px)', paddingBottom: 'env(safe-area-inset-bottom)' }}
+      className="fixed bottom-0 inset-x-0 z-[300] flex items-stretch border-t border-white/40"
+      style={{
+        height: 'var(--mobile-bottom-nav, 70px)',
+        paddingBottom: 'env(safe-area-inset-bottom)',
+        WebkitBackdropFilter: 'blur(28px) saturate(1.8)',
+        backdropFilter: 'blur(28px) saturate(1.8)',
+        background: 'linear-gradient(135deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.45) 50%, rgba(255,255,255,0.55) 100%)',
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.6), 0 -2px 12px rgba(0,0,0,0.08)',
+      }}
     >
       <button onClick={onHome} className={btnClass(mode === 'home')} aria-label="Home">
         <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}>
