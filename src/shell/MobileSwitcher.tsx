@@ -13,9 +13,10 @@ interface MobileSwitcherProps {
   windows: MinimizedItem[];
   onActivate: (id: string) => void;
   onClose: (id: string) => void;
+  onCloseAll: () => void;
 }
 
-export default function MobileSwitcher({ windows, onActivate, onClose }: MobileSwitcherProps) {
+export default function MobileSwitcher({ windows, onActivate, onClose, onCloseAll }: MobileSwitcherProps) {
   // Cards size based on viewport — half the screen width, two columns with gap.
   const [cardSize, setCardSize] = useState(() => computeCardSize());
 
@@ -41,23 +42,36 @@ export default function MobileSwitcher({ windows, onActivate, onClose }: MobileS
   }
 
   return (
-    <div className="h-full overflow-y-auto px-3 pt-4 pb-4">
-      <h1 className="text-white text-base font-semibold mb-3 px-1">Open apps · {windows.length}</h1>
-      <div className="grid grid-cols-2 gap-3">
-        {windows.map(w => (
-          <div key={w.id} className="flex flex-col items-stretch gap-1">
-            <ThumbCard
-              id={w.id}
-              label={w.label}
-              maxW={cardSize.w}
-              maxH={cardSize.h}
-              titleAbove
-              onClick={() => onActivate(w.id)}
-              onClose={() => onClose(w.id)}
-            />
-            <span className="text-[11px] text-white/80 truncate px-1">{w.label}</span>
-          </div>
-        ))}
+    <div className="h-full flex flex-col">
+      <div className="flex-1 overflow-y-auto px-3 pt-4 pb-4">
+        <h1 className="text-white text-base font-semibold mb-3 px-1">Open apps · {windows.length}</h1>
+        <div className="grid grid-cols-2 gap-3">
+          {windows.map(w => (
+            <div key={w.id} className="flex flex-col items-stretch gap-1">
+              <ThumbCard
+                id={w.id}
+                label={w.label}
+                maxW={cardSize.w}
+                maxH={cardSize.h}
+                titleAbove
+                onClick={() => onActivate(w.id)}
+                onClose={() => onClose(w.id)}
+              />
+              <span className="text-[11px] text-white/80 truncate px-1">{w.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      {/* Close-all bar — sits just above the bottom nav. The switcher's outer
+       *  paddingBottom already reserves space for the nav; this bar slots
+       *  above that reservation. */}
+      <div className="shrink-0 px-3 py-3 flex justify-center">
+        <button
+          onClick={onCloseAll}
+          className="px-5 py-2.5 rounded-full bg-white/15 backdrop-blur-md border border-white/25 text-white text-sm font-medium active:bg-white/25 shadow-lg"
+        >
+          Close All
+        </button>
       </div>
     </div>
   );

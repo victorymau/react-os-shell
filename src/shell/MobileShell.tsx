@@ -130,6 +130,7 @@ export default function MobileShell({
             windows={switcherWindows}
             onActivate={handleActivateWindow}
             onClose={(id) => closeEntity(id)}
+            onCloseAll={() => switcherWindows.forEach(w => closeEntity(w.id))}
           />
         </div>
       )}

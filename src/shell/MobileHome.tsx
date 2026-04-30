@@ -384,10 +384,8 @@ export default function MobileHome({
         <FolderPopup
           folder={selectedFolder}
           navIcons={navIcons}
-          openInFolder={openInFolder(selectedFolder)}
           onClose={() => setSelectedFolder(null)}
           onOpenApp={(path) => { setSelectedFolder(null); onOpenApp(path); }}
-          onActivateWindow={(id) => { setSelectedFolder(null); onActivateWindow(id); }}
         />
       )}
     </>
@@ -397,68 +395,70 @@ export default function MobileHome({
 function FolderPopup({
   folder,
   navIcons,
-  openInFolder,
   onClose,
   onOpenApp,
-  onActivateWindow,
 }: {
   folder: NavSection;
   navIcons: Record<string, ReactNode>;
-  openInFolder: MinimizedItem[];
   onClose: () => void;
   onOpenApp: (path: string) => void;
-  onActivateWindow: (id: string) => void;
 }) {
+  // Two-phase close: kick off the fade-out / scale-down animation, then unmount
+  // after the duration so the user actually sees the reverse transition.
+  // Used both for tap-outside dismiss and tap-an-app-inside-the-folder.
+  const [closing, setClosing] = useState(false);
+  const beginClose = () => {
+    if (closing) return;
+    setClosing(true);
+    setTimeout(onClose, 200);
+  };
+  const closeThen = (after: () => void) => {
+    if (closing) return;
+    setClosing(true);
+    setTimeout(after, 200);
+  };
+
   return (
     <div
       className="fixed inset-0 z-[210] flex flex-col items-center justify-center px-6 bg-black/45 backdrop-blur-xl select-none"
       style={{
         paddingBottom: 'calc(var(--mobile-bottom-nav, 70px) + 16px)',
-        animation: 'folder-fade-in 220ms ease-out',
+        animation: closing
+          ? 'folder-fade-out 200ms ease-in forwards'
+          : 'folder-fade-in 220ms ease-out',
         WebkitUserSelect: 'none',
         WebkitTouchCallout: 'none',
       }}
-      onClick={onClose}
+      onClick={beginClose}
     >
       <style>{`
         @keyframes folder-fade-in { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes folder-fade-out { from { opacity: 1; } to { opacity: 0; } }
         @keyframes folder-pop-in { from { opacity: 0; transform: scale(0.86) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        @keyframes folder-pop-out { from { opacity: 1; transform: scale(1) translateY(0); } to { opacity: 0; transform: scale(0.9) translateY(4px); } }
       `}</style>
 
       <h2 className="text-2xl font-semibold text-white drop-shadow-md mb-4 self-start">{folder.label}</h2>
 
       <div
         className="w-full max-w-md max-h-[70vh] flex flex-col rounded-3xl bg-white/15 backdrop-blur-xl border border-white/25 shadow-2xl overflow-hidden"
-        style={{ animation: 'folder-pop-in 240ms cubic-bezier(0.34, 1.56, 0.64, 1)' }}
+        style={{
+          animation: closing
+            ? 'folder-pop-out 180ms ease-in forwards'
+            : 'folder-pop-in 240ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex-1 overflow-y-auto px-4 py-5">
-          {openInFolder.length > 0 && (
-            <section className="mb-4">
-              <h3 className="text-[11px] font-semibold uppercase tracking-wide text-white/70 mb-2">Open</h3>
-              <div className="grid grid-cols-2 gap-2">
-                {openInFolder.map(w => (
-                  <button
-                    key={w.id}
-                    onClick={() => onActivateWindow(w.id)}
-                    className="flex items-center gap-2 p-2 rounded-lg bg-white/15 active:bg-white/25 text-left"
-                  >
-                    <span className={`h-7 w-7 rounded bg-gradient-to-br ${hashGradient(w.route ?? '')} flex items-center justify-center text-white shrink-0`}>
-                      {sizeIcon(w.route ? navIcons[w.route] : null, FALLBACK_APP_ICON, 'h-4 w-4')}
-                    </span>
-                    <span className="text-xs font-medium text-white truncate flex-1">{w.label}</span>
-                  </button>
-                ))}
-              </div>
-            </section>
-          )}
-          <div className="grid grid-cols-3 gap-3">
+          {/* Folder shows just the apps inside — open-window summary lives on
+           *  the home screen and the switcher, not here. */}
+          <div className="grid grid-cols-4 gap-3">
             {folder.items.map(item => {
               return (
                 <button
                   key={item.to}
-                  onClick={() => onOpenApp(item.to)}
-                  className="flex flex-col items-center gap-1.5 p-1 rounded-lg active:bg-white/15"
+                  onClick={() => closeThen(() => onOpenApp(item.to))}
+                  className="flex flex-col items-center gap-1 py-1 rounded-lg active:bg-white/15"
                 >
                   <AppTile route={item.to} icon={navIcons[item.to]} />
                   <span className="text-[11px] font-medium text-white drop-shadow-sm truncate w-full text-center">{item.label}</span>
