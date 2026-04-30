@@ -1050,7 +1050,10 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
         } : {
           zIndex: pinnedOnTop ? 999 : zIndex + 1, width: box.w, height: autoHeight ? 'auto' : box.h, top: box.y,
           ...(autoHeight ? {
-            minHeight: `${autoMinHeight ?? 240}px`,
+            // Widgets must fit content exactly (Weather, Currency, etc.) —
+            // the 240 px floor only applies to non-widget app windows where
+            // a near-empty body would look broken.
+            minHeight: `${autoMinHeight ?? (widget ? 0 : 240)}px`,
             maxHeight: `calc(100vh - var(--taskbar-height, 0px) - 24px)`,
           } : {}),
           ...(widget && widgetAnchor === 'right' ? { right: window.innerWidth - box.x - box.w } : { left: box.x }),
