@@ -89,6 +89,11 @@ export default function useGoogleAuth(): GoogleAuthState {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const clientRef = useRef<any>(null);
+  // Tracks an in-flight silent renewal so handleTokenResponse can suppress
+  // its loading/error UI when the request didn't come from a user click.
+  const silentInFlightRef = useRef(false);
+  // setTimeout handle for the next scheduled silent renewal.
+  const refreshTimerRef = useRef<number | null>(null);
 
   const clientId = getGoogleClientId();
   const hasClientId = !!clientId;
@@ -113,9 +118,47 @@ export default function useGoogleAuth(): GoogleAuthState {
     } catch { /* ignore */ }
   }, []);
 
+  const cancelRefreshTimer = useCallback(() => {
+    if (refreshTimerRef.current !== null) {
+      window.clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+    }
+  }, []);
+
+  // Schedule a silent refresh to fire ~60s before the current token expires.
+  // Google reissues a fresh token without showing UI when the user's Google
+  // session is still active and they previously granted consent.
+  const scheduleSilentRefresh = useCallback(() => {
+    cancelRefreshTimer();
+    const expiry = parseInt(localStorage.getItem(TOKEN_EXPIRY_KEY) || '0', 10);
+    if (!expiry) return;
+    const delay = Math.max(0, expiry - Date.now() - 60_000);
+    refreshTimerRef.current = window.setTimeout(() => {
+      refreshTimerRef.current = null;
+      if (!clientRef.current) return;
+      silentInFlightRef.current = true;
+      try {
+        clientRef.current.requestAccessToken({ prompt: '' });
+      } catch {
+        silentInFlightRef.current = false;
+      }
+    }, delay);
+  }, [cancelRefreshTimer]);
+
   const handleTokenResponse = useCallback((response: any) => {
+    const wasSilent = silentInFlightRef.current;
+    silentInFlightRef.current = false;
     if (response.error) {
-      setError(response.error);
+      if (wasSilent) {
+        // Silent renewal failed (user signed out of Google, revoked access,
+        // session expired, etc.). Drop the token quietly — the consumer
+        // sees `isConnected = false` and the Connect button reappears.
+        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(TOKEN_EXPIRY_KEY);
+        setAccessToken(null);
+      } else {
+        setError(response.error);
+      }
       setLoading(false);
       return;
     }
@@ -126,10 +169,15 @@ export default function useGoogleAuth(): GoogleAuthState {
     setAccessToken(token);
     setError(null);
     setLoading(false);
-    fetchUserInfo(token);
-  }, [fetchUserInfo]);
+    if (!wasSilent) fetchUserInfo(token);
+    // Chain the next silent refresh.
+    scheduleSilentRefresh();
+  }, [fetchUserInfo, scheduleSilentRefresh]);
 
-  // Initialize GIS client
+  // Initialize GIS client. Once ready, schedule a silent refresh if we
+  // already hold a valid token (e.g. user just reopened the tab with time
+  // left on the clock) — and if the token has actually expired, request a
+  // fresh one silently so they don't have to click Connect again.
   useEffect(() => {
     if (!clientId) return;
     loadGisScript().then(() => {
@@ -140,8 +188,21 @@ export default function useGoogleAuth(): GoogleAuthState {
         scope: SCOPES,
         callback: handleTokenResponse,
       });
+      if (isTokenValid()) {
+        scheduleSilentRefresh();
+      } else if (localStorage.getItem(TOKEN_KEY)) {
+        // We had a token last session but it's now expired. Try silent
+        // renewal — succeeds if the Google session is still alive.
+        silentInFlightRef.current = true;
+        try {
+          clientRef.current.requestAccessToken({ prompt: '' });
+        } catch {
+          silentInFlightRef.current = false;
+        }
+      }
     }).catch(err => setError(err.message));
-  }, [clientId, handleTokenResponse]);
+    return () => cancelRefreshTimer();
+  }, [clientId, handleTokenResponse, scheduleSilentRefresh, cancelRefreshTimer]);
 
   const connect = useCallback(() => {
     if (!clientRef.current) {
@@ -154,9 +215,9 @@ export default function useGoogleAuth(): GoogleAuthState {
   }, []);
 
   const disconnect = useCallback(() => {
+    cancelRefreshTimer();
     const token = localStorage.getItem(TOKEN_KEY);
     if (token) {
-      // Revoke token
       const google = (window as any).google;
       if (google?.accounts?.oauth2) {
         google.accounts.oauth2.revoke(token);
@@ -167,13 +228,21 @@ export default function useGoogleAuth(): GoogleAuthState {
     localStorage.removeItem(USER_KEY);
     setAccessToken(null);
     setUser(null);
-  }, []);
+  }, [cancelRefreshTimer]);
 
-  // Check token expiry periodically
+  // Belt-and-suspenders expiry check. Most expiries are caught by the
+  // scheduled refresh above; this fires every 30s if the timer ever
+  // misses (e.g. setTimeout drift after long sleep).
   useEffect(() => {
     const interval = setInterval(() => {
       if (accessToken && !isTokenValid()) {
         setAccessToken(null);
+        // Try one silent refresh before giving up.
+        if (clientRef.current && !silentInFlightRef.current) {
+          silentInFlightRef.current = true;
+          try { clientRef.current.requestAccessToken({ prompt: '' }); }
+          catch { silentInFlightRef.current = false; }
+        }
       }
     }, 30000);
     return () => clearInterval(interval);

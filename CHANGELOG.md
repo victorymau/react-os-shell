@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.1.53] — 2026-04-30
+
+### Added
+- `useGoogleAuth` now does silent token refresh in-browser. ~60s before the access token expires we call `tokenClient.requestAccessToken({ prompt: '' })` — Google reissues a fresh token without showing UI as long as the user's Google session is still active. The hook also attempts one silent refresh on mount if we held a token last session that has since expired, so reopening the tab no longer flashes the Connect button. If silent renewal fails (user signed out of Google, revoked access, etc.) the stored token is dropped quietly and the consumer falls back to the regular Connect flow. Renewal does not run while the tab is closed — that needs a backend refresh-token flow, out of scope here.
+
 ## [0.1.52] — 2026-04-30
 
 ### Changed
