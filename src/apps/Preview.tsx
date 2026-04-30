@@ -843,9 +843,11 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
   const [edgeColor, setEdgeColor] = useState('#000000');
   const [edgeThreshold, setEdgeThreshold] = useState(1);
 
-  // Sidebar visibility.
-  const [showMeshes, setShowMeshes] = useState(true);
-  const [showSettings, setShowSettings] = useState(true);
+  // Floating panel visibility — default closed so the viewport is unobstructed.
+  const [showMeshes, setShowMeshes] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  // Camera projection — perspective is the default (matches o3dv's own default).
+  const [perspective, setPerspective] = useState(true);
 
   // Section view (capped clipping plane).
   const [sectionEnabled, setSectionEnabled] = useState(false);
@@ -1347,6 +1349,17 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
     } catch {}
   };
 
+  // Switch between perspective and orthographic projection. The viewer keeps
+  // the current camera position; just rebuilds the THREE camera under the hood.
+  useEffect(() => {
+    const OV = ovRef.current;
+    const v = viewerRef.current;
+    if (!OV || !v?.viewer || loading) return;
+    try {
+      v.viewer.SetProjectionMode(perspective ? OV.ProjectionMode.Perspective : OV.ProjectionMode.Orthographic);
+    } catch {}
+  }, [perspective, loading]);
+
   // Camera presets — eye/center/up around the model's bounding sphere.
   const setCameraPreset = (preset: 'top' | 'front' | 'side' | 'iso') => {
     const OV = ovRef.current;
@@ -1510,6 +1523,13 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
             <path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" />
           </svg>
         </button>
+        <button
+          onClick={() => setPerspective(p => !p)}
+          className={perspective ? tBtnActive : tBtn}
+          title={perspective ? 'Switch to orthographic view' : 'Switch to perspective view'}
+        >
+          <span className="text-[10px] font-semibold">{perspective ? 'PSP' : 'ORT'}</span>
+        </button>
         <div className={tBtnSep} />
         <button onClick={() => setShowMeshes(s => !s)} className={showMeshes ? tBtnActive : tBtn} title="Toggle meshes panel">
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -1536,26 +1556,30 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
         )}
       </PanelActions>
 
-      {/* Body: meshes | viewport | settings */}
+      {/* Body: viewport with floating Meshes / Model Display panels overlaid */}
       <div className="flex-1 flex min-h-0">
-        {showMeshes && (
-          <div className="w-60 shrink-0 bg-gray-50 border-r border-gray-200 flex flex-col">
-            <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500 border-b border-gray-200">Meshes</div>
-            <div className="flex-1 overflow-y-auto py-1">
-              {tree ? renderTreeNode(tree) : (
-                <div className="px-3 py-3 text-[11px] text-gray-500 italic">{loading ? 'Reading model…' : 'No structure available'}</div>
-              )}
-            </div>
-            {tree && (
-              <div className="px-3 py-1.5 text-[10px] text-gray-500 border-t border-gray-200">
-                {hidden.size === 0 ? 'All visible' : `${hidden.size} hidden`}
-              </div>
-            )}
-          </div>
-        )}
-
         <div className="relative flex-1 min-w-0" style={{ background: bgColor }}>
           <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+
+          {/* Floating Meshes panel — anchored top-left, mirrors DXF Layers panel */}
+          {showMeshes && (
+            <div className="absolute top-2 left-2 w-64 max-h-[80%] flex flex-col bg-white/95 backdrop-blur border border-gray-200 rounded-md shadow-xl z-10 text-xs">
+              <div className="flex items-center justify-between px-2 py-1.5 border-b border-gray-200 bg-gray-50">
+                <span className="font-medium text-gray-700">Meshes</span>
+                <button onClick={() => setShowMeshes(false)} className="px-1.5 py-0.5 rounded hover:bg-gray-200 text-gray-600" title="Close">×</button>
+              </div>
+              <div className="flex-1 overflow-y-auto py-1">
+                {tree ? renderTreeNode(tree) : (
+                  <div className="px-3 py-3 text-[11px] text-gray-500 italic">{loading ? 'Reading model…' : 'No structure available'}</div>
+                )}
+              </div>
+              {tree && (
+                <div className="px-3 py-1.5 text-[10px] text-gray-500 border-t border-gray-200">
+                  {hidden.size === 0 ? 'All visible' : `${hidden.size} hidden`}
+                </div>
+              )}
+            </div>
+          )}
 
           {showHint && !loading && !error && (
             <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-gray-900/85 text-white text-[11px] px-3 py-1.5 rounded-full shadow-lg flex items-center gap-3 z-10 pointer-events-none">
@@ -1580,120 +1604,124 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
           {error && (
             <div className="absolute inset-0 flex items-center justify-center text-sm text-red-600 px-6 text-center bg-white/85">{error}</div>
           )}
-        </div>
 
-        {showSettings && (
-          <div className="w-60 shrink-0 bg-gray-50 border-l border-gray-200 flex flex-col">
-            <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500 border-b border-gray-200">Model Display</div>
-            <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 text-[12px] text-gray-700">
-              <label className="flex items-center justify-between gap-2">
-                <span>Background Color</span>
-                <input type="color" value={bgColor} onChange={(e) => setBgColor(e.target.value)} className="h-6 w-10 rounded border border-gray-300 bg-white" />
-              </label>
-              <label className="flex items-center justify-between gap-2">
-                <span>Show Edges</span>
-                <button
-                  onClick={() => setShowEdges(s => !s)}
-                  role="switch"
-                  aria-checked={showEdges}
-                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${showEdges ? 'bg-blue-500' : 'bg-gray-300'}`}
-                >
-                  <span className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${showEdges ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
-                </button>
-              </label>
-              <label className="flex items-center justify-between gap-2">
-                <span className={showEdges ? '' : 'opacity-40'}>Edge Color</span>
-                <input
-                  type="color"
-                  value={edgeColor}
-                  onChange={(e) => setEdgeColor(e.target.value)}
-                  disabled={!showEdges}
-                  className="h-6 w-10 rounded border border-gray-300 bg-white disabled:opacity-40"
-                />
-              </label>
-              <div className={showEdges ? '' : 'opacity-40 pointer-events-none'}>
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <span>Edge Threshold</span>
-                  <span className="text-gray-500 tabular-nums">{edgeThreshold}°</span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={45}
-                  step={1}
-                  value={edgeThreshold}
-                  onChange={(e) => setEdgeThreshold(Number(e.target.value))}
-                  className="w-full accent-blue-500"
-                />
+          {/* Floating Model Display panel — anchored top-right */}
+          {showSettings && (
+            <div className="absolute top-2 right-2 w-64 max-h-[80%] flex flex-col bg-white/95 backdrop-blur border border-gray-200 rounded-md shadow-xl z-10 text-xs">
+              <div className="flex items-center justify-between px-2 py-1.5 border-b border-gray-200 bg-gray-50">
+                <span className="font-medium text-gray-700">Model Display</span>
+                <button onClick={() => setShowSettings(false)} className="px-1.5 py-0.5 rounded hover:bg-gray-200 text-gray-600" title="Close">×</button>
               </div>
-
-              <div className="border-t border-gray-200 -mx-3 px-3 pt-3 mt-1">
+              <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 text-[12px] text-gray-700">
                 <label className="flex items-center justify-between gap-2">
-                  <span className="font-medium">Section View</span>
+                  <span>Background Color</span>
+                  <input type="color" value={bgColor} onChange={(e) => setBgColor(e.target.value)} className="h-6 w-10 rounded border border-gray-300 bg-white" />
+                </label>
+                <label className="flex items-center justify-between gap-2">
+                  <span>Show Edges</span>
                   <button
-                    onClick={() => setSectionEnabled(s => !s)}
+                    onClick={() => setShowEdges(s => !s)}
                     role="switch"
-                    aria-checked={sectionEnabled}
-                    className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${sectionEnabled ? 'bg-blue-500' : 'bg-gray-300'}`}
+                    aria-checked={showEdges}
+                    className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${showEdges ? 'bg-blue-500' : 'bg-gray-300'}`}
                   >
-                    <span className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${sectionEnabled ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
+                    <span className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${showEdges ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
                   </button>
                 </label>
+                <label className="flex items-center justify-between gap-2">
+                  <span className={showEdges ? '' : 'opacity-40'}>Edge Color</span>
+                  <input
+                    type="color"
+                    value={edgeColor}
+                    onChange={(e) => setEdgeColor(e.target.value)}
+                    disabled={!showEdges}
+                    className="h-6 w-10 rounded border border-gray-300 bg-white disabled:opacity-40"
+                  />
+                </label>
+                <div className={showEdges ? '' : 'opacity-40 pointer-events-none'}>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span>Edge Threshold</span>
+                    <span className="text-gray-500 tabular-nums">{edgeThreshold}°</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={45}
+                    step={1}
+                    value={edgeThreshold}
+                    onChange={(e) => setEdgeThreshold(Number(e.target.value))}
+                    className="w-full accent-blue-500"
+                  />
+                </div>
 
-                <div className={sectionEnabled ? 'mt-2 space-y-2' : 'mt-2 space-y-2 opacity-40 pointer-events-none'}>
-                  <div>
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      <span>Axis</span>
-                      <button
-                        onClick={() => setSectionFlip(f => !f)}
-                        className="text-[10px] text-gray-600 hover:text-gray-900 px-1.5 py-0.5 rounded bg-gray-100 hover:bg-gray-200"
-                        title="Flip section direction"
-                      >
-                        {sectionFlip ? '← flipped' : 'flip →'}
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-3 gap-1">
-                      {(['x', 'y', 'z'] as const).map(ax => (
+                <div className="border-t border-gray-200 -mx-3 px-3 pt-3 mt-1">
+                  <label className="flex items-center justify-between gap-2">
+                    <span className="font-medium">Section View</span>
+                    <button
+                      onClick={() => setSectionEnabled(s => !s)}
+                      role="switch"
+                      aria-checked={sectionEnabled}
+                      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${sectionEnabled ? 'bg-blue-500' : 'bg-gray-300'}`}
+                    >
+                      <span className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${sectionEnabled ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
+                    </button>
+                  </label>
+
+                  <div className={sectionEnabled ? 'mt-2 space-y-2' : 'mt-2 space-y-2 opacity-40 pointer-events-none'}>
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span>Axis</span>
                         <button
-                          key={ax}
-                          onClick={() => setSectionAxis(ax)}
-                          className={`py-1 rounded text-[11px] font-semibold ${sectionAxis === ax ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                          onClick={() => setSectionFlip(f => !f)}
+                          className="text-[10px] text-gray-600 hover:text-gray-900 px-1.5 py-0.5 rounded bg-gray-100 hover:bg-gray-200"
+                          title="Flip section direction"
                         >
-                          {ax.toUpperCase()}
+                          {sectionFlip ? '← flipped' : 'flip →'}
                         </button>
-                      ))}
+                      </div>
+                      <div className="grid grid-cols-3 gap-1">
+                        {(['x', 'y', 'z'] as const).map(ax => (
+                          <button
+                            key={ax}
+                            onClick={() => setSectionAxis(ax)}
+                            className={`py-1 rounded text-[11px] font-semibold ${sectionAxis === ax ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                          >
+                            {ax.toUpperCase()}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
 
-                  <div>
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      <span>Position</span>
-                      <span className="text-gray-500 tabular-nums">{Math.round(sectionPosition * 100)}%</span>
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span>Position</span>
+                        <span className="text-gray-500 tabular-nums">{Math.round(sectionPosition * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        value={sectionPosition}
+                        onChange={(e) => setSectionPosition(Number(e.target.value))}
+                        className="w-full accent-blue-500"
+                      />
                     </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={1}
-                      step={0.01}
-                      value={sectionPosition}
-                      onChange={(e) => setSectionPosition(Number(e.target.value))}
-                      className="w-full accent-blue-500"
-                    />
-                  </div>
 
+                  </div>
                 </div>
               </div>
+              <div className="px-3 py-2 border-t border-gray-200">
+                <button
+                  onClick={handleResetDisplay}
+                  className="w-full text-[11px] text-gray-700 bg-gray-100 hover:bg-gray-200 rounded py-1.5 transition-colors"
+                >
+                  Reset to Default
+                </button>
+              </div>
             </div>
-            <div className="px-3 py-2 border-t border-gray-200">
-              <button
-                onClick={handleResetDisplay}
-                className="w-full text-[11px] text-gray-700 bg-gray-100 hover:bg-gray-200 rounded py-1.5 transition-colors"
-              >
-                Reset to Default
-              </button>
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
