@@ -439,61 +439,53 @@ function FolderPopup({
 }) {
   return (
     <div
-      className="fixed inset-0 z-[210] flex items-center justify-center px-4 bg-black/40 backdrop-blur-md"
-      style={{ paddingBottom: 'var(--mobile-bottom-nav, 56px)' }}
+      className="fixed inset-0 z-[210] flex flex-col items-center justify-center px-6 bg-black/45 backdrop-blur-xl"
+      style={{ paddingBottom: 'calc(var(--mobile-bottom-nav, 56px) + 16px)' }}
       onClick={onClose}
     >
+      {/* Folder name floats above the card (no header bar inside) */}
+      <h2 className="text-2xl font-semibold text-white drop-shadow-md mb-4 self-start">{folder.label}</h2>
+
       <div
-        className="w-full max-w-sm max-h-[80vh] flex flex-col rounded-2xl bg-white/95 backdrop-blur border border-white/40 shadow-2xl overflow-hidden"
+        className="w-full max-w-md max-h-[70vh] flex flex-col rounded-3xl bg-white/15 backdrop-blur-xl border border-white/25 shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-          <h2 className="text-base font-semibold text-gray-900 truncate">{folder.label}</h2>
-          <button onClick={onClose} className="p-1.5 -mr-1 rounded-full active:bg-gray-200 text-gray-600" aria-label="Close folder">
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </header>
-        <div className="flex-1 overflow-y-auto px-4 py-4">
+        <div className="flex-1 overflow-y-auto px-4 py-5">
           {openInFolder.length > 0 && (
             <section className="mb-4">
-              <h3 className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2">Open</h3>
+              <h3 className="text-[11px] font-semibold uppercase tracking-wide text-white/70 mb-2">Open</h3>
               <div className="grid grid-cols-2 gap-2">
                 {openInFolder.map(w => (
                   <button
                     key={w.id}
                     onClick={() => onActivateWindow(w.id)}
-                    className="flex items-center gap-2 p-2 rounded-lg bg-blue-50 active:bg-blue-100 text-left"
+                    className="flex items-center gap-2 p-2 rounded-lg bg-white/15 active:bg-white/25 text-left"
                   >
-                    <span className="h-7 w-7 rounded bg-white flex items-center justify-center text-blue-600 shrink-0">
-                      {sizeIcon(w.route ? navIcons[w.route] : null, FALLBACK_APP_ICON)}
+                    <span className="h-7 w-7 rounded bg-white/20 flex items-center justify-center text-white shrink-0">
+                      {sizeIcon(w.route ? navIcons[w.route] : null, FALLBACK_APP_ICON, 'h-5 w-5')}
                     </span>
-                    <span className="text-xs font-medium text-gray-800 truncate flex-1">{w.label}</span>
+                    <span className="text-xs font-medium text-white truncate flex-1">{w.label}</span>
                   </button>
                 ))}
               </div>
             </section>
           )}
-          {openInFolder.length > 0 && (
-            <h3 className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2">All</h3>
-          )}
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             {folder.items.map(item => {
               const openCount = openCountByRoute.get(item.to) ?? 0;
               return (
                 <button
                   key={item.to}
                   onClick={() => onOpenApp(item.to)}
-                  className="flex flex-col items-center gap-1.5 p-2 rounded-lg active:bg-gray-100"
+                  className="flex flex-col items-center gap-1.5 p-1 rounded-lg active:bg-white/15"
                 >
-                  <span className="relative h-14 w-14 rounded-2xl bg-white border border-gray-200 flex items-center justify-center text-gray-800 shadow-sm">
+                  <span className="relative h-16 w-16 rounded-2xl bg-white/85 backdrop-blur border border-white/40 flex items-center justify-center text-gray-800 shadow-sm">
                     {sizeIcon(navIcons[item.to], FALLBACK_APP_ICON)}
                     {openCount > 0 && (
                       <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-blue-500 border-2 border-white" />
                     )}
                   </span>
-                  <span className="text-[11px] font-medium text-gray-700 truncate w-full text-center">{item.label}</span>
+                  <span className="text-[11px] font-medium text-white drop-shadow-sm truncate w-full text-center">{item.label}</span>
                 </button>
               );
             })}

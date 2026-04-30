@@ -6,7 +6,6 @@ import { useWindowManager } from './WindowManager';
 import { glassStyle as getGlassStyle } from '../utils/glass';
 import { PopupMenu, PopupMenuItem, PopupMenuDivider } from './PopupMenu';
 import { useIsMobile } from './useIsMobile';
-import { setMobileMode } from './mobileShellStore';
 
 /** Context that passes the modal's unique ID to children */
 const ModalIdContext = createContext<string>('');
@@ -377,6 +376,63 @@ export { triggerSplitView };
 
 export default function Modal({ open, onClose, title, icon, copyText, size = 'lg', dirty = false, onNext, onPrev, footer, bodyScroll, onMinimize, initialBox, actions, actionsLeft, allowPinOnTop, initialPosition, widget, compact, appStyle, autoHeight, autoMinHeight, widgetMenu, dimensions, windowKey, children }: ModalProps) {
   const isMobile = useIsMobile();
+  // Mobile swipe-from-left-edge gesture: track horizontal offset of the panel.
+  // 0 = at rest. While the user is dragging from the left edge, this grows
+  // with the finger. On release, if past the threshold the panel slides off
+  // and `onClose` fires; otherwise it animates back to 0.
+  const [swipeX, setSwipeX] = useState(0);
+  const [swipeDragging, setSwipeDragging] = useState(false);
+  const swipeStartRef = useRef<{ startX: number; startY: number; pointerId: number } | null>(null);
+  const swipeXRef = useRef(0);
+  useEffect(() => { swipeXRef.current = swipeX; }, [swipeX]);
+
+  const handleEdgePointerDown = useCallback((e: React.PointerEvent) => {
+    if (!isMobile) return;
+    swipeStartRef.current = { startX: e.clientX, startY: e.clientY, pointerId: e.pointerId };
+    setSwipeDragging(true);
+  }, [isMobile]);
+
+  // Move + release wired globally during a swipe so the panel keeps tracking
+  // the finger even if it leaves the edge zone (e.g. the user drags clear
+  // across the screen).
+  useEffect(() => {
+    if (!swipeDragging) return;
+    const onMove = (ev: PointerEvent) => {
+      if (!swipeStartRef.current) return;
+      const dx = ev.clientX - swipeStartRef.current.startX;
+      const dy = Math.abs(ev.clientY - swipeStartRef.current.startY);
+      if (dy > Math.abs(dx) + 12) {
+        // Vertical movement dominates — abandon the gesture so the user can
+        // scroll content normally.
+        swipeStartRef.current = null;
+        setSwipeDragging(false);
+        setSwipeX(0);
+        return;
+      }
+      setSwipeX(Math.max(0, dx));
+    };
+    const onUp = () => {
+      if (!swipeStartRef.current) return;
+      const threshold = window.innerWidth * 0.3;
+      const past = swipeXRef.current > threshold;
+      swipeStartRef.current = null;
+      setSwipeDragging(false);
+      if (past) {
+        setSwipeX(window.innerWidth);
+        setTimeout(() => onClose(), 180);
+      } else {
+        setSwipeX(0);
+      }
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+  }, [swipeDragging, onClose]);
   const [displayTitle, setDisplayTitle] = useState<React.ReactNode>(title);
   useEffect(() => { setDisplayTitle(title); }, [title]);
   const [touched, setTouched] = useState(false);
@@ -979,6 +1035,8 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
           top: 0, left: 0, right: 0,
           bottom: 'var(--mobile-bottom-nav, 56px)',
           width: 'auto', height: 'auto',
+          transform: `translateX(${swipeX}px)`,
+          transition: swipeDragging ? 'none' : 'transform 180ms ease-out',
           ...(widget ? { display: 'none' } : {}),
           ...(zIndex < 0 ? { display: 'none' } : {}),
         } : {
@@ -991,35 +1049,25 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
           ...(zIndex < 0 && !pinnedOnTop ? { display: 'none' } : {}),
         }}
       >
-        {/* HEADER — draggable on desktop, mobile-style top bar on phones */}
+        {/* Mobile swipe-from-left-edge gesture zone. Captures pointerdown only
+         *  in the leftmost 22px so it doesn't interfere with normal taps or
+         *  scrolls in the body. */}
+        {isMobile && !widget && (
+          <div
+            onPointerDown={handleEdgePointerDown}
+            className="absolute top-0 bottom-0 left-0 w-[22px] z-[5]"
+            style={{ touchAction: 'pan-y' }}
+            aria-hidden="true"
+          />
+        )}
+
+        {/* HEADER — draggable on desktop, hidden on mobile (apps go fullscreen
+         *  with a swipe-from-left-edge gesture to close). */}
         {widget ? (
           /* Widget: no title bar — drag via body, close via right-click context menu */
           null
         ) : isMobile ? (
-          /* Mobile: top bar with back arrow → home, title, close. No drag. */
-          <div className="flex items-center justify-between px-2 py-2 border-b border-gray-200 bg-white/95 backdrop-blur shrink-0 select-none">
-            <button
-              onClick={() => setMobileMode('home')}
-              className="p-2 -ml-1 rounded-full active:bg-gray-200 text-gray-700 shrink-0"
-              aria-label="Back to home"
-            >
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-              </svg>
-            </button>
-            <div className="flex-1 min-w-0 flex items-center gap-1.5 px-1 text-gray-900">
-              {effectiveIcon}
-              <span className="text-sm font-medium truncate">{displayTitle}</span>
-            </div>
-            <button
-              type="button"
-              onClick={guardedClose}
-              className="p-2 -mr-1 rounded-full active:bg-gray-200 text-gray-600 shrink-0"
-              aria-label="Close"
-            >
-              <XMarkIcon className="h-5 w-5" />
-            </button>
-          </div>
+          null
         ) : compact ? (
           /* Compact: smaller title bar with title + close only */
           <div onPointerDown={startDrag}
@@ -1133,7 +1181,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
 
         {/* FOOTER — always rendered; visible when footer prop or portal actions exist; hidden for widgets/compact */}
         <div onPointerDown={startDrag}
-          className={`px-4 py-2 border-t border-gray-200 shrink-0 flex items-center justify-between text-xs select-none cursor-move${isActive ? ' backdrop-blur-sm' : ''}${widget || compact || appStyle || (!footer && !hasActions && !actions && !actionsLeft) ? ' hidden' : ''}`}
+          className={`px-4 py-2 border-t border-gray-200 shrink-0 flex items-center justify-between text-xs select-none cursor-move${isActive ? ' backdrop-blur-sm' : ''}${widget || compact || appStyle || isMobile || (!footer && !hasActions && !actions && !actionsLeft) ? ' hidden' : ''}`}
           style={{ touchAction: 'none', backgroundColor: isActive ? `rgb(var(--window-footer-rgb) / var(--active-header-opacity, 0.8))` : `rgb(var(--window-footer-rgb) / var(--inactive-header-opacity, 0.7))` }}>
           <div className="flex items-center gap-2 min-w-0">
             {actionsLeft}
