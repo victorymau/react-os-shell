@@ -305,11 +305,12 @@ export default function MobileHome({
           WebkitTouchCallout: 'none',
         }}
       >
-        {/* Widgets — square half-width cards, two per row, gap doubled vs the
-         *  icon grid. No reorder handles on the cards. */}
+        {/* Widgets — share the icon grid's 4-col layout (gap-3) and span 2
+         *  columns each, so each widget is exactly 2 icon-tiles wide and the
+         *  column lines align with the icon grid below. */}
         {widgetWindows.length > 0 && (
           <section className="mb-4">
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-4 gap-3">
               {widgetWindows.map(w => {
                 const entry = WINDOW_REGISTRY[w.route!] as PageRegistryEntry | undefined;
                 if (!entry) return null;
@@ -317,7 +318,7 @@ export default function MobileHome({
                 return (
                   <div
                     key={w.id}
-                    className="relative rounded-2xl bg-white/85 backdrop-blur border border-white/40 shadow-md overflow-hidden aspect-square"
+                    className="col-span-2 relative rounded-2xl bg-white/85 backdrop-blur border border-white/40 shadow-md overflow-hidden aspect-square"
                   >
                     <Suspense fallback={<div className="flex items-center justify-center h-full"><LoadingSpinner /></div>}>
                       <Component />
