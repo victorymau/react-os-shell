@@ -472,11 +472,13 @@ function PdfPanel({ url, filename, onDownload, onEmail }: PdfPanelProps) {
         </div>
       </div>
 
-      <div ref={containerRef} className="flex-1 overflow-auto bg-gray-100 flex justify-center p-4">
+      <div ref={containerRef} className="flex-1 overflow-auto bg-gray-100">
         {loading ? (
-          <div className="flex items-center justify-center py-20 text-gray-400 text-sm">Loading PDF...</div>
+          <div className="flex items-center justify-center h-full text-gray-400 text-sm">Loading PDF...</div>
         ) : (
-          <canvas ref={canvasRef} className="shadow-lg rounded" />
+          <div className="min-h-full flex items-center justify-center p-4">
+            <canvas ref={canvasRef} className="shadow-lg rounded" />
+          </div>
         )}
       </div>
     </div>
