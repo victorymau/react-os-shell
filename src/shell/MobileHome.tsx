@@ -291,25 +291,25 @@ export default function MobileHome({
   return (
     <>
       <div
-        className="h-full overflow-y-auto px-3 pt-4 pb-4 select-none"
+        className="h-full overflow-y-auto px-4 pt-4 pb-4 select-none"
         style={{
           // Disable iOS long-press text-selection / "Copy" callout on icon labels.
           WebkitUserSelect: 'none',
           WebkitTouchCallout: 'none',
         }}
       >
-        {/* Edge padding (px-3 = 12 px) matches the grid gap (gap-3 = 12 px),
+        {/* Edge padding (px-4 = 16 px) matches the grid gap (gap-4 = 16 px),
          *  so the space between the screen edge and the first icon equals the
          *  space between two icons. Icons fill their grid cells (no max-width
          *  cap), so widget col-span-2 edges align exactly with icon edges. */}
         <div>
 
-        {/* Widgets — share the icon grid layout (grid-cols-4 gap-3) so the
+        {/* Widgets — share the icon grid layout (grid-cols-4 gap-4) so the
          *  widget width = 2 cells + 1 gap, exactly aligned with the icons
          *  below. aspect-square keeps each card the same height as width. */}
         {widgetWindows.length > 0 && (
           <section className="mb-4">
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-4 gap-4">
               {widgetWindows.map(w => {
                 const entry = WINDOW_REGISTRY[w.route!] as PageRegistryEntry | undefined;
                 if (!entry) return null;
@@ -334,7 +334,7 @@ export default function MobileHome({
          *  2×2 mini-grid. Long-press any tile to start dragging. */}
         {homeIcons.length > 0 && (
           <section>
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-4 gap-4">
               {homeIcons.map(icon => {
                 const isFolder = icon.kind === 'folder';
                 const isBeingDragged = dragId === icon.id;
@@ -451,8 +451,11 @@ function FolderPopup({
        *  (outer px-6 + extra ml-4 ≈ card's px-4 inner padding). */}
       <h2 className="text-2xl font-semibold text-white drop-shadow-md mb-4 self-start ml-4">{folder.label}</h2>
 
+      {/* Card width capped so 3 cells × ~80 px + 2 × 16 px gap + 2 × 16 px
+       *  inner padding lands at ~304 px — folder icon size matches the home
+       *  icon size on most phones. */}
       <div
-        className="w-full max-w-md max-h-[70vh] flex flex-col rounded-3xl bg-white/15 backdrop-blur-xl border border-white/25 shadow-2xl overflow-hidden"
+        className="w-full max-w-[304px] max-h-[70vh] flex flex-col rounded-3xl bg-white/15 backdrop-blur-xl border border-white/25 shadow-2xl overflow-hidden"
         style={{
           animation: closing
             ? 'folder-pop-out 180ms ease-in forwards'
@@ -463,7 +466,7 @@ function FolderPopup({
         <div className="flex-1 overflow-y-auto px-4 py-5">
           {/* Folder shows just the apps inside — open-window summary lives on
            *  the home screen and the switcher, not here. */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-3 gap-4">
             {folder.items.map(item => {
               return (
                 <button

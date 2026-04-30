@@ -45,5 +45,7 @@ export function glassStyle(opacity?: number): CSSProperties {
 /** Glass divider border color */
 export const GLASS_DIVIDER = 'border-white/20';
 
-/** Glass input/search bar background */
-export const GLASS_INPUT_BG = 'bg-white/15';
+/** Glass input/search bar background — declared in styles.css so it can adapt
+ *  to dark mode (a flat `bg-white/15` reads as a too-bright tile on the dark
+ *  glass gradient). */
+export const GLASS_INPUT_BG = 'glass-input-bg';

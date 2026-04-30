@@ -29,6 +29,17 @@
    generated when consumers import react-os-shell/styles.css. */
 @source "./**/*.js";
 
+/* Glass input field — used by the start-menu search and any consumer that
+ * imports GLASS_INPUT_BG. Adapts to dark mode so the tile blends with the
+ * dark glass gradient instead of reading as a bright white panel that
+ * mismatches its frame. */
+.glass-input-bg {
+  background-color: rgba(255, 255, 255, 0.15);
+}
+[data-theme="dark"] .glass-input-bg {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
 /* Base theme colors for transparent windows */
 :root {
   --window-header-rgb: 243 244 246;

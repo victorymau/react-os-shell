@@ -4,6 +4,230 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.2.17] — 2026-04-30
+
+### Changed
+- Mobile home: gap between icons (and matching edge padding) raised from 12 px to 16 px (gap-3 → gap-4, +33% — closest Tailwind step to the requested 35%). Edge-padding still equals grid-gap so the spacing reads uniformly across the row.
+
+## [0.2.16] — 2026-04-30
+
+### Fixed
+- Desktop widgets (Weather, Currency, etc.) now collapse to their content's natural height. The 240 px `min-height` floor that `autoHeight` applies to fit-the-content app windows was wrongly reaching widget panels too — Weather had ~70 px of empty grey at the bottom. The floor now applies only to non-widget app windows (`!widget`); widgets default to 0.
+
+## [0.2.15] — 2026-04-30
+
+### Changed
+- Mobile folder popup: grid drops from 4 columns to 3 (more breathing room, matches iOS folder layout).
+- Folder popup title indented (`ml-4`) so its left edge sits at the same x as the first icon inside the card.
+
+## [0.2.14] — 2026-04-30
+
+### Fixed
+- `Dockerfile`: removed a stale `COPY index.css` referencing a file that doesn't exist at the repo root. The package's CSS lives at `src/styles.css` (already covered by `COPY src ./src`); `docker compose up --build` now works on a clean checkout.
+
+## [0.2.13] — 2026-04-30
+
+### Changed
+- Mobile home: dropped the `mx-auto max-w-[356px]` cap and the icon `max-w-[80px]` cap. Edge padding (`px-3` = 12 px) now matches grid-gap (`gap-3` = 12 px) so the space between the screen edge and the first icon equals the space between two icons. Icons fill their cells exactly and grow proportionally with the viewport on bigger phones.
+
+## [0.2.12] — 2026-04-30
+
+### Fixed
+- Mobile home `max-width` adjusted from 380 px to 356 px (= `4×80 + 3×12`) so cell width matches the icon's 80 px cap exactly. Widget `col-span-2` edges now line up to the pixel with icon edges (previously ~1.5 px off on iPhone 14 Pro).
+
+## [0.2.11] — 2026-04-30
+
+### Added
+- `Dockerfile` (multi-stage), `docker-compose.yml`, and `.dockerignore` — `docker compose up --build` now spins up the demo on `http://localhost:4173/`. Stage 1 builds the package + demo bundle; stage 2 serves the built demo via `vite preview`.
+- New `isShellApiClientConfigured()` helper exported from `src/api/client.ts`. Internal shell queries (profile sidebar, favorites star, entity detail fetcher) gate on it so consumers / demos without a backend don't fire doomed HTTP calls.
+
+### Changed
+- `apiClient` proxy: when no client is wired, HTTP methods now resolve with empty data instead of throwing. The previous hard error broke the demo (which intentionally has no backend).
+
+## [0.2.10] — 2026-04-30
+
+### Changed
+- Mobile widgets and icons share a single `grid-cols-4 gap-3` inside a centered `max-w-[380px]` container. Widgets span 2 columns (so width = 2 × icon + 1 gap) and align with the icon columns by construction.
+
+### Fixed
+- Removed the noisy `apiClient.get() called before setShellApiClient()` runtime error fired on every shell-internal query in demos with no backend. Internal callers now check configuration first.
+
+## [0.2.9] — 2026-04-30
+
+### Added
+- Folder popup close animation (220 ms backdrop fade + 200 ms card scale-down). Triggers on tap-outside AND tap-an-app-inside.
+- Mobile switcher: new "Close All" pill at the bottom, just above the bottom nav. Iterates over visible (non-widget) windows and closes each.
+
+### Changed
+- Folder popup: dropped the "Open" section listing already-open windows in this folder. Folder is a pure launcher now; switcher remains the place to see running apps. Inner grid changed from `cols-3` to `cols-4` so visible icon spacing matches the home grid.
+
+## [0.2.8] — 2026-04-30
+
+### Fixed
+- Bottom nav reverted to 100 px (was wrongly bumped to 168 in 0.2.7). The 168 was meant for the widget tile width.
+
+### Changed
+- Widgets render as flex-wrap row of fixed `168 × 168` cards — packs two-per-row on most phones, reflows to one column on narrow viewports.
+
+## [0.2.7] — 2026-04-30
+
+### Changed
+- Bottom nav: bigger icons (`h-6` → `h-8`), larger profile avatar / initial. Removed the open-app count badge from the Apps button.
+- Home: removed the blue dot indicating an app has open windows; removed the count badge on folder tiles. Plain icons only.
+- Widgets: 3 per row instead of 2.
+- Bottom nav height to 168 px *(corrected to 100 px in 0.2.8)*.
+
+## [0.2.6] — 2026-04-30
+
+### Changed
+- Mobile bottom nav to 120 px.
+
+## [0.2.5] — 2026-04-30
+
+### Changed
+- Mobile widgets aligned with the icon grid: shared `grid-cols-4 gap-3` layout, each widget spans 2 columns. Widget width = 2 × cell + 1 gap; column lines line up between widget row and icon row.
+
+## [0.2.4] — 2026-04-30
+
+### Changed
+- Mobile bottom nav to 100 px.
+
+## [0.2.3] — 2026-04-30
+
+### Changed
+- Mobile bottom nav to 98 px (later adjusted to 100 in 0.2.4).
+
+## [0.2.2] — 2026-04-30
+
+### Added
+- App icon tiles use a per-route gradient (hashed into a 15-color palette) with a white glyph — each app gets a stable color across sessions.
+- Folder tile shows a 2×2 preview of the apps inside, iOS-style. Empty cells stay blank when the folder has fewer than 4 apps.
+- Folder popup opens with a scale + fade animation; backdrop fades in.
+
+### Changed
+- Mobile widget gap doubled (`gap-3` → `gap-6`); icon tile slightly larger (`max-w-[80px]`, `h-11` glyph).
+- Bottom nav re-styled as glass (frosted blur with soft inner highlight) instead of flat white.
+- Apps switcher and the open-count badge ignore widgets — the running-apps view only shows real apps.
+
+### Fixed
+- Long-press text-selection / iOS callout disabled across the home overlay and folder popup.
+
+### Removed
+- Per-widget up/down reorder buttons (widget order still persists across sessions; long-press drag is the icon-grid mechanism).
+
+## [0.2.1] — 2026-04-30
+
+Mobile-interface era opens. Version jumped from 0.1.70 to 0.2.1 to mark the transition.
+
+### Added
+- New `MobileNotificationSheet` — full-screen list driven by the same `NotificationsConfig` Layout already receives. Mark-all-read; tap to open the mentioned entity (same flow as the desktop bell popup).
+- New `MobileProfileSheet` — avatar / name / email / group chips on top, Customization route + Sign out actions below.
+
+### Changed
+- Mobile home grid: icon tile up to 72×72, inner glyph to `h-10`. Widget gap and icon gap unified at `gap-3`.
+- Swipe-from-left-edge no longer closes the app — it sends the user back to home; the app stays alive in the openWindows stack and can be reopened from the switcher.
+- Bottom nav 25% taller (56 → 70 px) and restructured into four buttons: Home, Apps, Notifications (sheet), Profile (sheet). Replaces the previous Menu button.
+
+## [0.1.70] — 2026-04-30
+
+### Added
+- Open apps on mobile support **swipe-right-from-left-edge to close**: 22 px gesture zone on the panel's left edge captures pointerdown; the panel translates with the finger; release past 30% of viewport width slides it off and closes; release before threshold animates back. Vertical movement abandons the gesture so content scrolling still works.
+
+### Changed
+- Mobile folder popup matches iOS layout: title floats above the card (no header bar inside); card uses frosted-glass `rounded-3xl bg-white/15 backdrop-blur-xl`.
+- Open apps render fully chromeless on mobile — top bar removed, footer hidden — so apps fill the viewport edge-to-edge.
+
+## [0.1.69] — 2026-04-30
+
+### Changed
+- Mobile widgets: 2-column square cards (`aspect-square`, `overflow-hidden`) instead of a single full-width column.
+- Mobile icon tile: `h-14` → `h-16`, glyph `h-8` → `h-9`, grid gap `gap-3` → `gap-1`, page padding `px-3` → `px-2`.
+- Closing an app on mobile always returns to home (matches phone-OS expectations) instead of falling back to whatever was layered behind.
+
+## [0.1.68] — 2026-04-30
+
+### Changed
+- Reverted the `onClick` option on `toast.info` (per feedback that the toast utility shouldn't carry click semantics). Actionable in-page notification card now lives directly in `NotificationBell` as React state. Behavior is unchanged: tap the body to open the mentioned entity, X to dismiss.
+
+## [0.1.67] — 2026-04-30
+
+### Added *(superseded by 0.1.68)*
+- Toast notification body click now opens the mentioned entity (mark-read + `onItemClick`), same flow as clicking the same notification in the bell popup. The X dismisses without firing the action.
+
+## [0.1.66] — 2026-04-30
+
+### Added
+- Mobile home: long-press any icon (400 ms) to drag it. The dragged icon becomes a "ghost" following the finger; live reorder; release to drop. Order persists to `erp_mobile_home_order` in localStorage so it carries across sessions, mirroring how the desktop remembers window positions.
+- Apps and folders share a single grid (was two separate sections). Folder ids namespaced as `folder:Label`; app ids as `app:/route`.
+
+## [0.1.65] — 2026-04-30
+
+### Added
+- Mobile home renders open widget components inline at the top as cards (their components mount directly; same lazy load path as desktop modals).
+- Folders open as a centered popup with a blurred backdrop instead of a sub-screen. Tap-outside closes; popup also surfaces any open windows from that folder.
+- Each widget card had tiny up/down handles to reorder; new order persisted to `erp_mobile_widget_order` *(handles removed in 0.2.2)*.
+
+### Changed
+- Wallpaper carries through from desktop to the mobile home overlay (via shared `wallpaperStyle` computed in Layout).
+- Dropped the "react-os-shell" title bar from the mobile home.
+
+## [0.1.64] — 2026-04-30
+
+### Added
+- Mobile shell. New `useIsMobile()` hook (`max-width: 767px` or `pointer: coarse`) drives an adaptive shell — the chrome (taskbar / start-menu sidebar / windowed apps) is replaced by a phone-friendly layout while everything else (registry, providers, Modal, apps) stays shared.
+- New shell components: `MobileShell` (orchestrator + bottom nav), `MobileHome` (folder + app grid driven by `navSections`), `MobileSwitcher` (Chrome-tab snapshot grid via the now-exported `ThumbCard`), and `mobileShellStore` for the home/switcher/app mode machine.
+- Modal: fullscreen rendering on mobile (no drag/resize handles, mobile-style top bar with back arrow + close).
+- StartMenu: full-screen slide-up sheet with search-first flat list on mobile.
+
+### Fixed
+- Split-view skips widget windows (used to leave a phantom column gap when a widget was open).
+
+## [0.1.63] — 2026-04-30
+
+### Added
+- 3D viewer (`StepPanel`): floating Meshes panel (top-left) and Model Display panel (top-right), iOS-Layers-panel-style frosted glass. Default closed; toolbar buttons toggle them so the viewport gets the full window on open.
+- New PSP/ORT toolbar button toggles perspective vs. orthographic projection via `Viewer.SetProjectionMode()`.
+
+## [0.1.62] — 2026-04-30
+
+### Changed
+- Preview: collapsed format-specific toolbars into the outer toolbar via a new `ToolbarSlotContext` + `<PanelActions>` portal wrapper. Each panel (PDF / DXF / Image / 3D) renders its controls into the right end of the outer toolbar instead of stacking below it. ~32 px reclaimed per Preview window. Removed redundant "DXF filename" / "Image filename" labels.
+
+## [0.1.61] — 2026-04-30
+
+### Fixed
+- Preview: PDF page now centers in the available viewer space (was pinned to top with empty grey below when shorter than the viewport). Wrapped the canvas in a `min-h-full flex items-center justify-center` inner container; scrolls naturally when the page overflows.
+
+## [0.1.60] — 2026-04-30
+
+### Changed
+- Documents app opens straight into a blank `Untitled` paper-style canvas instead of an empty-state landing screen. Open / Save / formatting toolbar are always available; drag-and-drop still loads files. Preview keeps its role as the read-only viewer.
+
+## [0.1.59] — 2026-04-30
+
+### Added
+- New `appStyle: true` window preset alongside `widget` and `compact`. Small (compact-sized) title bar that keeps minimize/maximize controls; body padding stripped to `p-0` so app toolbars sit flush against the frame; body `overflow-hidden`; footer hidden. Designed for self-chromed apps that ship their own toolbars/menus.
+- Flipped on Preview, Files, Browser, Documents, Email, Spreadsheet (Spreadsheet moved off `compact` so it regains minimize/maximize).
+
+## [0.1.58] — 2026-04-30
+
+### Fixed
+- Preview: PDF zoom dropdown now actually changes the displayed size. pdf.js v5 stamps inline `canvas.style.width/height` during render — once the inline values exist they win against intrinsic sizing, so changing `canvas.width` only altered the backing-buffer resolution (image went blurry) while the rendered element kept the original size. Lock `canvas.style.width/height` to the current viewport on every render so zoom percentages reflect on screen.
+
+## [0.1.57] — 2026-04-30
+
+### Added
+- `autoHeight` windows now respect a `minHeight` floor (default 240 px, configurable via new `autoMinHeight`) and a `maxHeight` cap to viewport. Prevents tiny near-empty panels and prevents content overflow off-screen.
+- Entity registry entries can now opt into `autoHeight` / `autoMinHeight` (parity with page entries).
+
+### Changed
+- Split view tiles across the entire work area with no padding gap; integer pixel distribution so the last column ends flush against the right edge.
+
+## [0.1.56] — 2026-04-30
+
+### Added
+- Preview: PDF zoom percentage is now a `<select>` dropdown offering preset zoom levels (50, 75, 100, 125, 150, 200, 300, 400 %). If the current scale doesn't match a preset (e.g. after using +/− or Fit), the actual value is preserved as a "custom" option so it still displays correctly.
+
 ## [0.1.55] — 2026-04-30
 
 ### Fixed
