@@ -369,6 +369,12 @@ function PdfPanel({ url, filename, onDownload, onEmail }: PdfPanelProps) {
       const canvas = canvasRef.current;
       canvas.width = viewport.width;
       canvas.height = viewport.height;
+      // Lock the displayed (CSS) size to the viewport. pdf.js stamps inline
+      // style.width/height on render and inline values stick across re-renders
+      // even when canvas.width shrinks — without this, zoom changes only
+      // affect resolution, not visible size.
+      canvas.style.width = `${viewport.width}px`;
+      canvas.style.height = `${viewport.height}px`;
       const ctx = canvas.getContext('2d')!;
       p.render({ canvas, canvasContext: ctx, viewport }).promise.catch(() => {});
     });
