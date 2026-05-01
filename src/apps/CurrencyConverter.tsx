@@ -79,8 +79,12 @@ export default function CurrencyConverter() {
 
   return (
     <>
+      {/* Theme-aware background — `--window-content-rgb` resolves to white in
+       *  light mode and the dark Catppuccin base in dark mode (and the per-
+       *  theme tint for pink / green / grey / blue). Hard-coded white
+       *  previously made the widget unreadable in dark mode. */}
       <div className="flex flex-col h-full rounded-lg"
-        style={{ backgroundColor: `rgba(255,255,255,${appearance.activeOpacity / 100})`, backdropFilter: appearance.activeBlur > 0 ? `blur(${appearance.activeBlur}px)` : undefined }}>
+        style={{ backgroundColor: `rgb(var(--window-content-rgb) / ${appearance.activeOpacity / 100})`, backdropFilter: appearance.activeBlur > 0 ? `blur(${appearance.activeBlur}px)` : undefined }}>
         <div className="px-3 py-2 space-y-0.5 flex-1">
           {loading && <div className="text-xs text-gray-400 text-center py-4">Loading rates...</div>}
           {pairs.map(([from, to], idx) => {

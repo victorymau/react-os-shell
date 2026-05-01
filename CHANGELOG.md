@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.2.26] — 2026-05-01
+
+### Fixed
+- **Currency widget: dark mode** — its background was hard-coded `rgba(255,255,255,…)`, so it stayed bright white regardless of theme (and made the dark text colors that the shell already overrides unreadable). Switched to `rgb(var(--window-content-rgb) / opacity)` — the widget now picks up the active theme automatically (white in light, Catppuccin base in dark, plus the per-theme tints for pink / green / grey / blue).
+
 ## [0.2.25] — 2026-05-01
 
 ### Added
