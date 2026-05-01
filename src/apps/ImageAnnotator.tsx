@@ -73,15 +73,18 @@ export default function ImageAnnotator({ src, filename, onClose }: ImageAnnotato
   const [pendingText, setPendingText] = useState<{ x: number; y: number; value: string; editingId?: string } | null>(null);
   const [pendingCrop, setPendingCrop] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
 
-  // Drag state — used for both drawing and moving. `moveStart` is the
-  // pointer's image-coord at down; `originalAnno` is a snapshot so move
-  // deltas apply against the at-down state, not the running state.
+  // Drag state — used for drawing, moving, and resizing. `start` is the
+  // pointer's image-coord at down; `original` is a snapshot so deltas apply
+  // against the at-down state, not the running state.
+  type Corner = 'nw' | 'ne' | 'se' | 'sw' | 'start' | 'end';
   const dragRef = useRef<
     | { kind: 'draw'; start: { x: number; y: number } }
     | { kind: 'move'; id: string; start: { x: number; y: number }; original: Annotation }
+    | { kind: 'resize'; id: string; corner: Corner; start: { x: number; y: number }; original: Annotation }
     | { kind: 'crop'; start: { x: number; y: number } }
     | null
   >(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   const displaySize = useMemo(() => {
     if (!fitSize) return null;
@@ -126,7 +129,12 @@ export default function ImageAnnotator({ src, filename, onClose }: ImageAnnotato
   }, [imageSize]);
 
   // Render canvas: image + mosaic regions baked in. Re-runs whenever the
-  // mosaic set changes or the source image changes.
+  // mosaic set changes or the source image changes. We also depend on
+  // `fitSize` so the effect re-runs the moment the canvas actually mounts
+  // (the canvas is conditionally rendered only when displaySize / fitSize is
+  // available — otherwise the first run finds canvasRef.current === null and
+  // bails, leaving the canvas blank until the user happens to make any other
+  // state change that re-triggers this effect).
   const mosaicAnnos = useMemo(
     () => annotations.filter(a => a.type === 'mosaic') as Extract<Annotation, { type: 'mosaic' }>[],
     [annotations],
@@ -140,7 +148,7 @@ export default function ImageAnnotator({ src, filename, onClose }: ImageAnnotato
     const ctx = c.getContext('2d')!;
     ctx.drawImage(img, 0, 0);
     for (const m of mosaicAnnos) applyMosaic(ctx, m);
-  }, [imageSize, mosaicAnnos]);
+  }, [imageSize, mosaicAnnos, fitSize]);
 
   // Convert pointer event → image-pixel coords using SVG's CTM.
   const evToImage = (e: { clientX: number; clientY: number }): { x: number; y: number } => {
@@ -155,18 +163,73 @@ export default function ImageAnnotator({ src, filename, onClose }: ImageAnnotato
     return { x: t.x, y: t.y };
   };
 
-  // ── selection / hit-testing ────────────────────────────────────────────────
+  // ── selection / drag (window-level listeners) ─────────────────────────────
+  // We attach pointermove/pointerup on the window when dragging so the gesture
+  // keeps working even if the cursor leaves the SVG (common at high zoom or
+  // when scrolled). All coord conversion still goes through SVG's CTM, so
+  // zoom doesn't affect anything.
+  const beginDrag = (drag: NonNullable<typeof dragRef.current>) => {
+    dragRef.current = drag;
+    setIsDragging(true);
+  };
+
+  useEffect(() => {
+    if (!isDragging) return;
+    const onMove = (ev: PointerEvent) => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      const p = evToImage(ev);
+      if (drag.kind === 'draw') {
+        setPreview(makeShape(tool, drag.start, p, color, stroke));
+      } else if (drag.kind === 'crop') {
+        setPendingCrop(normalizeRect(drag.start, p));
+      } else if (drag.kind === 'move') {
+        const dx = p.x - drag.start.x;
+        const dy = p.y - drag.start.y;
+        setAnnotations(prev => prev.map(a => a.id === drag.id ? translate(drag.original, dx, dy) : a));
+      } else if (drag.kind === 'resize') {
+        setAnnotations(prev => prev.map(a => a.id === drag.id ? resize(drag.original, drag.corner, p) : a));
+      }
+    };
+    const onUp = () => {
+      const drag = dragRef.current;
+      dragRef.current = null;
+      setIsDragging(false);
+      if (drag?.kind === 'draw') {
+        // Read latest preview directly from state via the setter.
+        setPreview(p => {
+          if (!p || isTrivial(p)) return null;
+          const anno: Annotation = { ...p, id: newId() } as Annotation;
+          setAnnotations(prev => [...prev, anno]);
+          setSelectedId(anno.id);
+          setTool('select');
+          return null;
+        });
+      }
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+  }, [isDragging, tool, color, stroke]);
+
   const handleAnnoPointerDown = (e: React.PointerEvent<SVGElement>, anno: Annotation) => {
-    if (tool !== 'select') return; // Other tools handle their own drawing
+    if (tool !== 'select') return;
     e.stopPropagation();
     setSelectedId(anno.id);
-    const start = evToImage(e);
-    dragRef.current = { kind: 'move', id: anno.id, start, original: anno };
-    (e.currentTarget as any).setPointerCapture?.(e.pointerId);
+    beginDrag({ kind: 'move', id: anno.id, start: evToImage(e), original: anno });
+  };
+
+  const handleHandlePointerDown = (e: React.PointerEvent<SVGElement>, anno: Annotation, corner: Corner) => {
+    e.stopPropagation();
+    beginDrag({ kind: 'resize', id: anno.id, corner, start: evToImage(e), original: anno });
   };
 
   const handleSvgPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
-    // Click on whitespace deselects when in select mode.
     if (tool === 'select') {
       setSelectedId(null);
       return;
@@ -178,52 +241,11 @@ export default function ImageAnnotator({ src, filename, onClose }: ImageAnnotato
     }
     const start = evToImage(e);
     if (tool === 'crop') {
-      dragRef.current = { kind: 'crop', start };
-      e.currentTarget.setPointerCapture(e.pointerId);
+      beginDrag({ kind: 'crop', start });
       return;
     }
-    dragRef.current = { kind: 'draw', start };
-    e.currentTarget.setPointerCapture(e.pointerId);
     setPreview(makeShape(tool, start, start, color, stroke));
-  };
-
-  const handleSvgPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
-    const drag = dragRef.current;
-    if (!drag) return;
-    const p = evToImage(e);
-    if (drag.kind === 'draw') {
-      setPreview(makeShape(tool, drag.start, p, color, stroke));
-    } else if (drag.kind === 'crop') {
-      setPendingCrop(normalizeRect(drag.start, p));
-    } else if (drag.kind === 'move') {
-      const dx = p.x - drag.start.x;
-      const dy = p.y - drag.start.y;
-      setAnnotations(prev => prev.map(a => a.id === drag.id ? translate(drag.original, dx, dy) : a));
-    }
-  };
-
-  const handleSvgPointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
-    const drag = dragRef.current;
-    if (!drag) return;
-    dragRef.current = null;
-    e.currentTarget.releasePointerCapture?.(e.pointerId);
-
-    if (drag.kind === 'draw') {
-      // Empty drag → cancel (no annotation).
-      const p = preview;
-      if (!p) return;
-      const tooSmall = isTrivial(p);
-      setPreview(null);
-      if (tooSmall) return;
-      const anno: Annotation = { ...p, id: newId() } as Annotation;
-      setAnnotations(prev => [...prev, anno]);
-      setSelectedId(anno.id);
-      setTool('select');
-    } else if (drag.kind === 'crop') {
-      // Crop stays as a pending region until user confirms.
-    } else if (drag.kind === 'move') {
-      // Already updated in real-time; nothing to do.
-    }
+    beginDrag({ kind: 'draw', start });
   };
 
   const handleAnnoDoubleClick = (anno: Annotation) => {
@@ -326,30 +348,36 @@ export default function ImageAnnotator({ src, filename, onClose }: ImageAnnotato
     setSelectedId(null);
   };
 
-  const downloadAnnotated = async () => {
+  // Composite the current canvas + SVG layers into an off-screen canvas at
+  // full image resolution. Used by both Save (download) and Copy (clipboard).
+  const compositeToCanvas = async (): Promise<HTMLCanvasElement | null> => {
     const c = canvasRef.current;
     const svg = svgRef.current;
-    if (!c || !svg || !imageSize) return;
-    // Composite: draw canvas (image + mosaic) + serialize SVG and rasterize.
+    if (!c || !svg || !imageSize) return null;
     const out = document.createElement('canvas');
     out.width = imageSize.w;
     out.height = imageSize.h;
     const octx = out.getContext('2d')!;
     octx.drawImage(c, 0, 0);
-    // Serialize SVG WITHOUT selection chrome.
     const clone = svg.cloneNode(true) as SVGSVGElement;
     clone.querySelectorAll('[data-chrome]').forEach(n => n.remove());
     const xml = new XMLSerializer().serializeToString(clone);
     const svgBlob = new Blob([xml], { type: 'image/svg+xml;charset=utf-8' });
     const svgUrl = URL.createObjectURL(svgBlob);
     const svgImg = new Image();
-    await new Promise<void>((resolve, reject) => {
+    await new Promise<void>((resolve) => {
       svgImg.onload = () => resolve();
-      svgImg.onerror = reject;
+      svgImg.onerror = () => resolve();
       svgImg.src = svgUrl;
-    }).catch(() => {});
+    });
     octx.drawImage(svgImg, 0, 0, imageSize.w, imageSize.h);
     URL.revokeObjectURL(svgUrl);
+    return out;
+  };
+
+  const downloadAnnotated = async () => {
+    const out = await compositeToCanvas();
+    if (!out) return;
     out.toBlob(blob => {
       if (!blob) { toast.error('Failed to export'); return; }
       const url = URL.createObjectURL(blob);
@@ -359,6 +387,24 @@ export default function ImageAnnotator({ src, filename, onClose }: ImageAnnotato
       a.download = `${base}-annotated.png`;
       a.click();
       URL.revokeObjectURL(url);
+    }, 'image/png');
+  };
+
+  const copyToClipboard = async () => {
+    if (!('clipboard' in navigator) || typeof ClipboardItem === 'undefined') {
+      toast.error('Clipboard images are not supported in this browser');
+      return;
+    }
+    const out = await compositeToCanvas();
+    if (!out) return;
+    out.toBlob(async blob => {
+      if (!blob) { toast.error('Failed to copy'); return; }
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        toast.success('Copied to clipboard');
+      } catch {
+        toast.error('Copy failed (clipboard permission?)');
+      }
     }, 'image/png');
   };
 
@@ -443,6 +489,7 @@ export default function ImageAnnotator({ src, filename, onClose }: ImageAnnotato
         <div className="h-5 w-px bg-gray-300 mx-1" />
 
         <button onClick={undoLast} disabled={annotations.length === 0} className="px-2 py-1 text-xs rounded hover:bg-gray-200 disabled:opacity-30 text-gray-700">Undo</button>
+        <button onClick={copyToClipboard} className="px-2 py-1 text-xs rounded hover:bg-gray-200 text-gray-700">Copy</button>
         <button onClick={downloadAnnotated} className="px-2 py-1 text-xs rounded hover:bg-gray-200 text-gray-700">Save</button>
 
         <div className="ml-auto flex items-center gap-2">
@@ -477,17 +524,16 @@ export default function ImageAnnotator({ src, filename, onClose }: ImageAnnotato
                 cursor: tool === 'select' ? 'default' : tool === 'text' ? 'text' : 'crosshair',
               }}
               onPointerDown={handleSvgPointerDown}
-              onPointerMove={handleSvgPointerMove}
-              onPointerUp={handleSvgPointerUp}
-              onPointerCancel={() => { dragRef.current = null; setPreview(null); }}
             >
               {annotations.map(a => (
                 <AnnotationView
                   key={a.id}
                   anno={a}
                   selected={selectedId === a.id}
+                  zoom={zoom}
                   onPointerDown={(e) => handleAnnoPointerDown(e, a)}
                   onDoubleClick={() => handleAnnoDoubleClick(a)}
+                  onHandlePointerDown={(e, corner) => handleHandlePointerDown(e, a, corner)}
                 />
               ))}
               {preview && <AnnotationView anno={{ ...preview, id: '__preview' } as Annotation} preview />}
@@ -497,30 +543,14 @@ export default function ImageAnnotator({ src, filename, onClose }: ImageAnnotato
             </svg>
 
             {pendingText && (
-              <div
-                style={{
-                  position: 'absolute',
-                  left: `${pendingText.x * scale}px`,
-                  top: `${pendingText.y * scale}px`,
-                  transform: 'translateY(-2px)',
-                  zIndex: 5,
-                }}
-              >
-                <textarea
-                  autoFocus
-                  value={pendingText.value}
-                  onChange={(e) => setPendingText({ ...pendingText, value: e.target.value })}
-                  onBlur={commitText}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Escape') { setPendingText(null); }
-                    else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitText(); }
-                  }}
-                  placeholder="Type then Enter…"
-                  rows={1}
-                  className="bg-white/95 border border-blue-400 rounded px-1 py-0.5 text-sm outline-none resize-none shadow-md"
-                  style={{ color, fontWeight: 600, minWidth: 80 }}
-                />
-              </div>
+              <PendingTextEditor
+                pendingText={pendingText}
+                color={color}
+                scale={scale}
+                onChange={(value) => setPendingText({ ...pendingText, value })}
+                onCommit={commitText}
+                onCancel={() => setPendingText(null)}
+              />
             )}
           </div>
         )}
@@ -546,15 +576,20 @@ interface AnnoViewProps {
   anno: Annotation;
   selected?: boolean;
   preview?: boolean;
+  zoom?: number;
   onPointerDown?: (e: React.PointerEvent<SVGElement>) => void;
   onDoubleClick?: () => void;
+  onHandlePointerDown?: (e: React.PointerEvent<SVGElement>, corner: 'nw' | 'ne' | 'se' | 'sw' | 'start' | 'end') => void;
 }
 
-function AnnotationView({ anno, selected, preview, onPointerDown, onDoubleClick }: AnnoViewProps) {
-  // The selection outline is rendered as a sibling so it can use a different
-  // stroke style without affecting the underlying shape.
+function AnnotationView({ anno, selected, preview, zoom = 1, onPointerDown, onDoubleClick, onHandlePointerDown }: AnnoViewProps) {
   const dim = boundingBox(anno);
-  const interactive: any = onPointerDown ? { onPointerDown, style: { cursor: 'move' } } : {};
+  // pointerEvents="all" is critical: with fill="none", default pointer-events
+  // would only catch clicks on the (often-thin) stroke. "all" makes the entire
+  // bounding shape hit-testable so selection works at any zoom level.
+  const interactive: any = onPointerDown
+    ? { onPointerDown, pointerEvents: 'all', style: { cursor: 'move' } }
+    : {};
   const dblc: any = onDoubleClick ? { onDoubleClick } : {};
 
   let body: JSX.Element;
@@ -582,8 +617,6 @@ function AnnotationView({ anno, selected, preview, onPointerDown, onDoubleClick 
       <ArrowShape anno={anno} interactive={interactive} />
     );
   } else if (anno.type === 'mosaic') {
-    // The mosaic is baked into the canvas; here we render only an
-    // invisible hit area for selection (no stroke when not selected).
     body = (
       <rect
         x={anno.x} y={anno.y} width={anno.w} height={anno.h}
@@ -618,16 +651,119 @@ function AnnotationView({ anno, selected, preview, onPointerDown, onDoubleClick 
     <g>
       {body}
       {selected && !preview && (
-        <rect
-          data-chrome="selection"
-          x={dim.x - 4} y={dim.y - 4}
-          width={dim.w + 8} height={dim.h + 8}
-          fill="none" stroke="#3b82f6" strokeWidth={2}
-          strokeDasharray="6,4"
-          pointerEvents="none"
-        />
+        <>
+          <rect
+            data-chrome="selection"
+            x={dim.x - 4} y={dim.y - 4}
+            width={dim.w + 8} height={dim.h + 8}
+            fill="none" stroke="#3b82f6" strokeWidth={2 / zoom}
+            strokeDasharray={`${6 / zoom},${4 / zoom}`}
+            pointerEvents="none"
+          />
+          {onHandlePointerDown && <ResizeHandles anno={anno} zoom={zoom} onHandlePointerDown={onHandlePointerDown} />}
+        </>
       )}
     </g>
+  );
+}
+
+/** Resize handles for selected annotation. 4 corners for shapes/mosaic;
+ *  2 endpoints for arrow. Text isn't resizable here (use the Size slider in
+ *  the toolbar to change its font size). All handle dimensions are divided
+ *  by the current zoom level so they stay a constant ~10 px on screen. */
+function ResizeHandles({
+  anno, zoom, onHandlePointerDown,
+}: {
+  anno: Annotation;
+  zoom: number;
+  onHandlePointerDown: (e: React.PointerEvent<SVGElement>, corner: 'nw' | 'ne' | 'se' | 'sw' | 'start' | 'end') => void;
+}) {
+  const r = 6 / zoom;
+  const sw = 1.5 / zoom;
+  const handleProps = (cursor: string) => ({
+    fill: '#fff',
+    stroke: '#3b82f6',
+    strokeWidth: sw,
+    pointerEvents: 'all' as const,
+    style: { cursor } as React.CSSProperties,
+  });
+
+  if (anno.type === 'arrow') {
+    return (
+      <>
+        <circle cx={anno.x1} cy={anno.y1} r={r} {...handleProps('grab')} data-chrome="handle" onPointerDown={(e) => onHandlePointerDown(e, 'start')} />
+        <circle cx={anno.x2} cy={anno.y2} r={r} {...handleProps('grab')} data-chrome="handle" onPointerDown={(e) => onHandlePointerDown(e, 'end')} />
+      </>
+    );
+  }
+  if (anno.type === 'text') {
+    return null; // resize text via the toolbar slider
+  }
+  // rect / circle / mosaic
+  const x = anno.x;
+  const y = anno.y;
+  const w = anno.w;
+  const h = anno.h;
+  return (
+    <>
+      <circle cx={x}     cy={y}     r={r} {...handleProps('nwse-resize')} data-chrome="handle" onPointerDown={(e) => onHandlePointerDown(e, 'nw')} />
+      <circle cx={x + w} cy={y}     r={r} {...handleProps('nesw-resize')} data-chrome="handle" onPointerDown={(e) => onHandlePointerDown(e, 'ne')} />
+      <circle cx={x + w} cy={y + h} r={r} {...handleProps('nwse-resize')} data-chrome="handle" onPointerDown={(e) => onHandlePointerDown(e, 'se')} />
+      <circle cx={x}     cy={y + h} r={r} {...handleProps('nesw-resize')} data-chrome="handle" onPointerDown={(e) => onHandlePointerDown(e, 'sw')} />
+    </>
+  );
+}
+
+/** Inline textarea overlay for new / editing text annotations. Manual focus
+ *  via ref + useEffect — `autoFocus` was unreliable on freshly-mounted
+ *  elements after the SVG had captured the prior pointer event. Stopping
+ *  pointer events from bubbling keeps SVG handlers from interfering. */
+function PendingTextEditor({
+  pendingText, color, scale, onChange, onCommit, onCancel,
+}: {
+  pendingText: { x: number; y: number; value: string; editingId?: string };
+  color: string;
+  scale: number;
+  onChange: (value: string) => void;
+  onCommit: () => void;
+  onCancel: () => void;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    // requestAnimationFrame so the element is laid out before focus —
+    // some browsers ignore focus on a freshly-mounted element otherwise.
+    const id = requestAnimationFrame(() => {
+      ref.current?.focus();
+      ref.current?.select?.();
+    });
+    return () => cancelAnimationFrame(id);
+  }, []);
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: `${pendingText.x * scale}px`,
+        top: `${pendingText.y * scale}px`,
+        transform: 'translateY(-2px)',
+        zIndex: 5,
+      }}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <textarea
+        ref={ref}
+        value={pendingText.value}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={onCommit}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+          else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onCommit(); }
+        }}
+        placeholder="Type then Enter…"
+        rows={1}
+        className="bg-white/95 border border-blue-400 rounded px-1 py-0.5 text-sm outline-none resize-none shadow-md"
+        style={{ color, fontWeight: 600, minWidth: 80 }}
+      />
+    </div>
   );
 }
 
@@ -707,6 +843,34 @@ function translate(a: Annotation, dx: number, dy: number): Annotation {
   }
   // rect/circle/mosaic
   return { ...a, x: a.x + dx, y: a.y + dy } as Annotation;
+}
+
+/** Apply a resize gesture to an annotation. `corner` identifies which handle
+ *  is being dragged; `p` is the current pointer's image-coord. The result is
+ *  a normalised annotation (always positive w/h). */
+function resize(
+  original: Annotation,
+  corner: 'nw' | 'ne' | 'se' | 'sw' | 'start' | 'end',
+  p: { x: number; y: number },
+): Annotation {
+  if (original.type === 'arrow') {
+    if (corner === 'start') return { ...original, x1: p.x, y1: p.y };
+    if (corner === 'end')   return { ...original, x2: p.x, y2: p.y };
+    return original;
+  }
+  if (original.type === 'text') return original;
+  // rect / circle / mosaic — opposite-corner stays anchored.
+  const left   = original.x;
+  const right  = original.x + original.w;
+  const top    = original.y;
+  const bottom = original.y + original.h;
+  let x1 = left, y1 = top, x2 = right, y2 = bottom;
+  if (corner === 'nw') { x1 = p.x; y1 = p.y; }
+  if (corner === 'ne') { x2 = p.x; y1 = p.y; }
+  if (corner === 'se') { x2 = p.x; y2 = p.y; }
+  if (corner === 'sw') { x1 = p.x; y2 = p.y; }
+  const r = normalizeRect({ x: x1, y: y1 }, { x: x2, y: y2 });
+  return { ...original, x: r.x, y: r.y, w: r.w, h: r.h } as Annotation;
 }
 
 function boundingBox(a: Annotation): { x: number; y: number; w: number; h: number } {

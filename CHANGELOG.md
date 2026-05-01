@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.2.24] — 2026-05-01
+
+### Fixed
+- **Annotator: black canvas on entry** — the image-render effect ran before the canvas mounted (canvas only renders once `displaySize` is computed, which depends on a different effect). Effect found `canvasRef.current === null` and bailed; canvas only filled in once the user happened to make any state change. Added `fitSize` to the effect's deps so it re-runs the moment the canvas mounts.
+- **Annotator: text input now actually opens** — replaced `autoFocus` with a `requestAnimationFrame` + `ref.current.focus()` that runs after the textarea is laid out. Wrapped in a div that stops pointer events from bubbling so the SVG below doesn't interfere.
+- **Annotator: selection broken at low zoom** — shapes had `fill="none"`, so default `pointer-events="visiblePainted"` only registered clicks on the (~1 px at low zoom) stroke. Added `pointer-events="all"` so the entire shape geometry is hit-testable at any zoom level.
+
+### Added
+- **Annotator: resize handles** — selected shapes (rect / circle / mosaic) get 4 corner handles; selected arrows get 2 endpoint handles. Drag a handle to resize / re-aim. Handles stay constant ~10 px on screen via inverse-zoom scaling. Text resizes via the toolbar size slider.
+- **Annotator: Copy button** — composites image + annotations and writes a PNG to the system clipboard via `ClipboardItem`. Toast confirms success / surfaces permission errors.
+
+### Changed
+- **Annotator: drag uses window-level pointer listeners** during gestures. Drawing, moving, resizing, and cropping no longer rely on the cursor staying inside the SVG — works reliably at high zoom and when scrolled.
+
 ## [0.2.23] — 2026-05-01
 
 ### Changed
