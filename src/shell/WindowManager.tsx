@@ -465,9 +465,7 @@ function TaskbarTabPreview({ items, anchorEl, onActivate, onClose, onMouseEnter,
         maxWidth: 'calc(100vw - 16px)',
         opacity: pos.ready ? 1 : 0,
       }}
-      className={isGroup
-        ? 'flex gap-2 p-2 rounded-lg bg-white/40 backdrop-blur-sm border border-white/30 shadow-2xl flex-wrap'
-        : ''}
+      className={isGroup ? 'flex gap-2 flex-wrap' : ''}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >

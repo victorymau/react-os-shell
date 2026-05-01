@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.2.19] — 2026-05-01
+
+### Changed
+- Taskbar tab preview: dropped the wrapper's `bg-white/40 backdrop-blur-sm border` chrome on the multi-tab grouped popover. Each `ThumbCard` already carries its own glass treatment, so the wrapper was double-glassing and leaking through on certain backgrounds. Wrapper is now just a transparent `flex flex-wrap gap-2` container.
+
 ## [0.2.18] — 2026-04-30
 
 ### Fixed
