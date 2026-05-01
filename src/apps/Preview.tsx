@@ -10,6 +10,7 @@ import { createPortal } from 'react-dom';
 import * as pdfjsLib from 'pdfjs-dist';
 import toast from '../shell/toast';
 import { WindowTitle, getActiveModalId } from '../shell/Modal';
+import ImageAnnotator from './ImageAnnotator';
 
 /** Slot at the right end of the outer Preview toolbar — each format panel
  *  portals its own action buttons (page nav, zoom, layers, download, etc.)
@@ -1737,6 +1738,7 @@ interface ImagePanelProps {
 function ImagePanel({ url, filename, onDownload, onEmail }: ImagePanelProps) {
   const [zoom, setZoom] = useState(1);
   const [error, setError] = useState(false);
+  const [annotating, setAnnotating] = useState(false);
 
   const handleDefaultDownload = () => {
     const a = document.createElement('a');
@@ -1747,6 +1749,12 @@ function ImagePanel({ url, filename, onDownload, onEmail }: ImagePanelProps) {
 
   const btn = 'px-2 py-1 rounded hover:bg-gray-200 transition-colors text-gray-600 flex items-center gap-1';
 
+  // Annotation mode hands the panel over to the editor — no toolbar from
+  // here; the annotator brings its own.
+  if (annotating) {
+    return <ImageAnnotator src={url} filename={filename} onClose={() => setAnnotating(false)} />;
+  }
+
   return (
     <div className="flex flex-col h-full">
       <PanelActions>
@@ -1755,6 +1763,10 @@ function ImagePanel({ url, filename, onDownload, onEmail }: ImagePanelProps) {
         <button onClick={() => setZoom(z => Math.min(8, Math.round((z + 0.25) * 100) / 100))} className={btn}>+</button>
         <button onClick={() => setZoom(1)} className={btn}>1:1</button>
         <div className="h-4 w-px bg-gray-300 mx-1" />
+        <button onClick={() => setAnnotating(true)} className={btn} title="Annotate this image">
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" /></svg>
+          Annotate
+        </button>
         <button onClick={onDownload ?? handleDefaultDownload} className={btn}>
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
           Download

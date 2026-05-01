@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.2.21] — 2026-05-01
+
+### Added
+- Preview's image viewer now has an **Annotate** mode (new toolbar button when an image is open). Tools:
+  - **Rectangle** with rounded corners
+  - **Ellipse / circle**
+  - **Arrow** (line + filled head)
+  - **Mosaic** (averages an area into 12 px blocks — useful for redacting names, faces, account numbers)
+  - **Text** (click to drop a textarea, Enter to commit, Escape to cancel; multi-line via Shift+Enter)
+  - **Crop** (drag to select, Apply / Cancel buttons appear in the toolbar)
+- 8-color palette + variable stroke width (2–12 px), Undo (50-step history), Save (PNG download named `<original>-annotated.png`), Exit returns to the normal viewer.
+- Implementation: dual-canvas (committed bitmap + live preview overlay), `ImageData` snapshots for undo. Lives in new `src/apps/ImageAnnotator.tsx`.
+
 ## [0.2.20] — 2026-05-01
 
 ### Added
