@@ -6,7 +6,7 @@ import { useWindowManager } from './WindowManager';
 import { glassStyle as getGlassStyle } from '../utils/glass';
 import { PopupMenu, PopupMenuItem, PopupMenuDivider } from './PopupMenu';
 import { useIsMobile } from './useIsMobile';
-import { setMobileMode } from './mobileShellStore';
+import { getSwipingParentKey, setSwipingParentKey, subscribeSwipingParentKey } from './mobileSwipeStore';
 
 /** Context that passes the modal's unique ID to children */
 const ModalIdContext = createContext<string>('');
@@ -218,6 +218,10 @@ interface ModalProps {
   dimensions?: [number, number];
   /** Stable key for persisting window position to sessionStorage */
   windowKey?: string;
+  /** windowKey of whichever window was active when this one opened. On
+   *  mobile, swipe-to-back broadcasts this value so the parent window can
+   *  un-hide itself underneath the sliding panel. */
+  openedFromKey?: string;
   children: React.ReactNode;
 }
 
@@ -375,7 +379,7 @@ function triggerSplitView() {
 export { triggerSplitView };
 
 
-export default function Modal({ open, onClose, title, icon, copyText, size = 'lg', dirty = false, onNext, onPrev, footer, bodyScroll, onMinimize, initialBox, actions, actionsLeft, allowPinOnTop, initialPosition, widget, compact, appStyle, autoHeight, autoMinHeight, widgetMenu, dimensions, windowKey, children }: ModalProps) {
+export default function Modal({ open, onClose, title, icon, copyText, size = 'lg', dirty = false, onNext, onPrev, footer, bodyScroll, onMinimize, initialBox, actions, actionsLeft, allowPinOnTop, initialPosition, widget, compact, appStyle, autoHeight, autoMinHeight, widgetMenu, dimensions, windowKey, openedFromKey, children }: ModalProps) {
   const isMobile = useIsMobile();
   // Mobile swipe-from-left-edge gesture: track horizontal offset of the panel.
   // 0 = at rest. While the user is dragging from the left edge, this grows
@@ -391,7 +395,15 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     if (!isMobile) return;
     swipeStartRef.current = { startX: e.clientX, startY: e.clientY, pointerId: e.pointerId };
     setSwipeDragging(true);
-  }, [isMobile]);
+    // Tell sibling Modals which window's parent should reveal itself behind
+    // this swipe — `null` (no `openedFromKey`) means "this is a top-level
+    // app, fall back to the home wallpaper".
+    setSwipingParentKey(openedFromKey ?? null);
+  }, [isMobile, openedFromKey]);
+
+  // Subscribe to the swipe store so non-active panels can render themselves
+  // visible underneath a sibling that's currently being swiped to its parent.
+  const swipingParentKey = useSyncExternalStore(subscribeSwipingParentKey, getSwipingParentKey);
 
   // Move + release wired globally during a swipe so the panel keeps tracking
   // the finger even if it leaves the edge zone (e.g. the user drags clear
@@ -408,6 +420,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
         swipeStartRef.current = null;
         setSwipeDragging(false);
         setSwipeX(0);
+        setSwipingParentKey(null);
         return;
       }
       setSwipeX(Math.max(0, dx));
@@ -419,17 +432,19 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
       swipeStartRef.current = null;
       setSwipeDragging(false);
       if (past) {
-        // Swipe-from-edge sends the user to home. The app stays open in the
-        // background (still in `openWindows`) so they can resume it from the
-        // switcher. Reset translateX after the slide-off animation so the
-        // next time the user reactivates this app it sits at rest.
+        // Swipe-from-edge closes the current window so whatever was opened
+        // before it (the parent list, or — if this was a top-level app —
+        // home) becomes visible underneath. MobileShell falls back to home
+        // when the close empties openWindows.
         setSwipeX(window.innerWidth);
         setTimeout(() => {
-          setMobileMode('home');
+          onClose();
           setSwipeX(0);
+          setSwipingParentKey(null);
         }, 180);
       } else {
         setSwipeX(0);
+        setSwipingParentKey(null);
       }
     };
     window.addEventListener('pointermove', onMove);
@@ -1038,7 +1053,12 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
         }}
         style={isMobile ? {
           // Mobile fullscreen: ignore stored box, fill viewport down to bottom
-          // nav. Widgets stay hidden on mobile.
+          // nav. Widgets stay hidden on mobile. Only the active window is
+          // visible — all others hidden so swipe-right reveals the home
+          // wallpaper backdrop. Exception: when a sibling Modal is being
+          // swiped to-back and we're its `openedFrom` parent, un-hide so the
+          // user sees their parent list during the slide instead of just the
+          // wallpaper.
           zIndex: zIndex + 1,
           top: 0, left: 0, right: 0,
           bottom: 'var(--mobile-bottom-nav, 56px)',
@@ -1047,6 +1067,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
           transition: swipeDragging ? 'none' : 'transform 180ms ease-out',
           ...(widget ? { display: 'none' } : {}),
           ...(zIndex < 0 ? { display: 'none' } : {}),
+          ...((!isActive && !pinnedOnTop && !(swipingParentKey && windowKey === swipingParentKey)) ? { display: 'none' } : {}),
         } : {
           zIndex: pinnedOnTop ? 999 : zIndex + 1, width: box.w, height: autoHeight ? 'auto' : box.h, top: box.y,
           ...(autoHeight ? {

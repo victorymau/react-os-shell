@@ -27,6 +27,11 @@ export interface MinimizedItem {
   entityId?: string;
   /** Cached entity data for instant rendering while refetch happens */
   entitySnapshot?: any;
+  /** windowKey of the window that was active when this opened — used by the
+   *  mobile swipe-to-back gesture to reveal the parent (e.g. the list a
+   *  detail entity was opened from) instead of the home wallpaper. Undefined
+   *  when this window opened directly from home / the start menu. */
+  openedFrom?: string;
 }
 
 interface MinimizedContextType {
@@ -163,7 +168,7 @@ function PageWindow({ item, onClose }: { item: MinimizedItem; onClose: () => voi
   const entry = raw as PageRegistryEntry;
   const Component = entry.component;
   return (
-    <Modal open={true} onClose={onClose} icon={navIcons[item.route!]} title={entry.label} size={entry.size || '2xl'} allowPinOnTop={entry.allowPinOnTop} initialPosition={entry.initialPosition} widget={entry.widget} compact={entry.compact} appStyle={entry.appStyle} autoHeight={entry.autoHeight} autoMinHeight={entry.autoMinHeight} dimensions={entry.dimensions} windowKey={item.id}>
+    <Modal open={true} onClose={onClose} icon={navIcons[item.route!]} title={entry.label} size={entry.size || '2xl'} allowPinOnTop={entry.allowPinOnTop} initialPosition={entry.initialPosition} widget={entry.widget} compact={entry.compact} appStyle={entry.appStyle} autoHeight={entry.autoHeight} autoMinHeight={entry.autoMinHeight} dimensions={entry.dimensions} windowKey={item.id} openedFromKey={item.openedFrom}>
       <DesktopShortcutMenuItem item={item} />
       <Suspense fallback={<div className="flex items-center justify-center py-12"><LoadingSpinner /></div>}>
         <Component />
@@ -286,6 +291,7 @@ function RestoredRegistryModal({ item, onClose, onMinimize }: { item: MinimizedI
       footer={footerContent}
       copyText={item.id}
       windowKey={item.id}
+      openedFromKey={item.openedFrom}
       size={(entry.size || '2xl') as any}
       autoHeight={entry.autoHeight}
       autoMinHeight={entry.autoMinHeight}
@@ -311,6 +317,18 @@ function RestoredRegistryModal({ item, onClose, onMinimize }: { item: MinimizedI
 /** Find a modal panel by its window key (the openWindows item id). */
 function findPanelByWindowKey(key: string): HTMLElement | null {
   return document.querySelector(`[data-modal-panel][data-window-key="${key}"]`) as HTMLElement | null;
+}
+
+/** Look up the windowKey of whichever modal is currently active. Used when
+ *  opening a new window so we can record what was on screen at the moment of
+ *  open as the new window's `openedFrom` — drives the mobile swipe-to-back
+ *  gesture's "reveal the parent" behavior. Returns undefined when nothing is
+ *  active (i.e. the user opened from home / start menu). */
+function currentlyActiveWindowKey(): string | undefined {
+  const activeId = getActiveModalId();
+  if (!activeId) return undefined;
+  const panel = document.querySelector(`[data-modal-panel][data-modal-id="${activeId}"]`) as HTMLElement | null;
+  return panel?.getAttribute('data-window-key') ?? undefined;
 }
 
 /** Find a modal panel whose title text contains `label`. Used as a fallback
@@ -666,6 +684,7 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
   const openEntity = useCallback((entityType: string, entityId: string, snapshot?: any, label?: string, route?: string) => {
     if (!WINDOW_REGISTRY[entityType] || !isEntityEntry(WINDOW_REGISTRY[entityType])) return;
     const id = label || entityId;
+    const openedFrom = currentlyActiveWindowKey();
     // If already open, just activate it
     setOpenWindows(prev => {
       const existing = prev.find(m => m.entityId === entityId && m.entityType === entityType);
@@ -687,6 +706,7 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
         id, type: 'modal' as const, label: label || entityId,
         route: route || window.location.pathname,
         entityType, entityId, entitySnapshot: snapshot,
+        openedFrom,
       }];
     });
   }, []);
@@ -695,6 +715,7 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
   const openPage = useCallback((path: string) => {
     if (!WINDOW_REGISTRY[path] || !isPageEntry(WINDOW_REGISTRY[path])) return;
     const entry = WINDOW_REGISTRY[path] as PageRegistryEntry;
+    const openedFrom = currentlyActiveWindowKey();
     setOpenWindows(prev => {
       // Multi-instance pages always spawn a new window with a unique id.
       if (entry.multiInstance) {
@@ -705,6 +726,7 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
           id, type: 'page' as const,
           label: instanceCount === 0 ? entry.label : `${entry.label} ${nextNum}`,
           route: path,
+          openedFrom,
         }];
       }
       const existing = prev.find(m => m.type === 'page' && m.route === path);
@@ -728,6 +750,7 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
       return [...prev, {
         id: `page:${path}`, type: 'page' as const, label: entry.label,
         route: path,
+        openedFrom,
       }];
     });
   }, []);

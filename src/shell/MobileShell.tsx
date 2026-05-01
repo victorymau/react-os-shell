@@ -73,11 +73,12 @@ export default function MobileShell({
     });
   }, [openWindows]);
 
-  // When the user closes an app, go back to home — even if other apps are
-  // still open. Mirrors phone-OS expectations (close = back to launcher).
+  // When the last open window closes, fall back to home. While other windows
+  // are still open we stay in 'app' mode so the next window in the stack
+  // (typically the parent list a child entity was opened from) shows through.
   const prevOpenCountRef = useRef(openWindows.length);
   useEffect(() => {
-    if (openWindows.length < prevOpenCountRef.current && mode === 'app') {
+    if (openWindows.length === 0 && mode === 'app') {
       setMobileMode('home');
     }
     prevOpenCountRef.current = openWindows.length;
@@ -103,6 +104,15 @@ export default function MobileShell({
 
   return (
     <>
+      {/* Wallpaper backdrop — always rendered in mobile mode so swipe-right
+       *  reveals the home wallpaper underneath the swiping window, instead of
+       *  another open app. Sits below window z-indices (windows start at 50+).
+       *  In 'home' mode the home overlay above renders on top of this. */}
+      <div
+        className="fixed inset-0 z-0 pointer-events-none"
+        style={wallpaperStyle}
+      />
+
       {/* Home overlay — wallpaper underneath, content scrolls over it */}
       {mode === 'home' && (
         <div

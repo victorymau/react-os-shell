@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.2.20] — 2026-05-01
+
+### Added
+- Mobile swipe-from-left-edge becomes a real "back" gesture: closes the current window and reveals whichever window was active when this one opened (e.g. swiping back from a detail entity returns you to the parent list). New `MinimizedItem.openedFrom` is stamped at `openPage` / `openEntity` time and threaded into Modal as `openedFromKey`. A new `mobileSwipeStore` lets the parent Modal un-hide itself underneath the sliding panel during the swipe.
+- Mobile shell renders a wallpaper backdrop in every mode (not just home) so swipe-to-back from a top-level app reveals the home wallpaper instead of another open app.
+
+### Changed
+- Mobile: closing a window only falls back to home when no other windows are open. With siblings still in the stack, the next-most-recent window stays in 'app' mode (matches phone-OS expectations: closing a child entity returns you to its parent, not all the way to the launcher).
+
 ## [0.2.19] — 2026-05-01
 
 ### Changed
