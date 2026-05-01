@@ -10,7 +10,7 @@ import { createPortal } from 'react-dom';
 import * as pdfjsLib from 'pdfjs-dist';
 import toast from '../shell/toast';
 import { WindowTitle, getActiveModalId } from '../shell/Modal';
-import ImageAnnotator from './ImageAnnotator';
+import ImageAnnotator, { type ImageAnnotatorHandle } from './ImageAnnotator';
 
 /** Slot at the right end of the outer Preview toolbar — each format panel
  *  portals its own action buttons (page nav, zoom, layers, download, etc.)
@@ -1739,6 +1739,7 @@ function ImagePanel({ url, filename, onDownload, onEmail }: ImagePanelProps) {
   const [zoom, setZoom] = useState(1);
   const [error, setError] = useState(false);
   const [annotating, setAnnotating] = useState(false);
+  const annotatorRef = useRef<ImageAnnotatorHandle>(null);
 
   const handleDefaultDownload = () => {
     const a = document.createElement('a');
@@ -1749,24 +1750,38 @@ function ImagePanel({ url, filename, onDownload, onEmail }: ImagePanelProps) {
 
   const btn = 'px-2 py-1 rounded hover:bg-gray-200 transition-colors text-gray-600 flex items-center gap-1';
 
-  // Annotation mode hands the panel over to the editor — no toolbar from
-  // here; the annotator brings its own.
-  if (annotating) {
-    return <ImageAnnotator src={url} filename={filename} onClose={() => setAnnotating(false)} />;
-  }
-
   return (
     <div className="flex flex-col h-full">
       <PanelActions>
-        <button onClick={() => setZoom(z => Math.max(0.1, Math.round((z - 0.25) * 100) / 100))} className={btn}>−</button>
-        <span className="text-gray-500 w-12 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
-        <button onClick={() => setZoom(z => Math.min(8, Math.round((z + 0.25) * 100) / 100))} className={btn}>+</button>
-        <button onClick={() => setZoom(1)} className={btn}>1:1</button>
-        <div className="h-4 w-px bg-gray-300 mx-1" />
-        <button onClick={() => setAnnotating(true)} className={btn} title="Annotate this image">
-          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" /></svg>
-          Annotate
-        </button>
+        {!annotating && (
+          <>
+            <button onClick={() => setZoom(z => Math.max(0.1, Math.round((z - 0.25) * 100) / 100))} className={btn}>−</button>
+            <span className="text-gray-500 w-12 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
+            <button onClick={() => setZoom(z => Math.min(8, Math.round((z + 0.25) * 100) / 100))} className={btn}>+</button>
+            <button onClick={() => setZoom(1)} className={btn}>1:1</button>
+            <div className="h-4 w-px bg-gray-300 mx-1" />
+            <button onClick={() => setAnnotating(true)} className={btn} title="Annotate this image">
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" /></svg>
+              Annotate
+            </button>
+          </>
+        )}
+        {annotating && (
+          <>
+            <button onClick={() => setAnnotating(false)} className={btn} title="Back to viewer">
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+              View
+            </button>
+            <button onClick={() => annotatorRef.current?.copy()} className={btn}>
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75" /></svg>
+              Copy
+            </button>
+            <button onClick={() => annotatorRef.current?.save()} className={btn}>
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+              Save
+            </button>
+          </>
+        )}
         <button onClick={onDownload ?? handleDefaultDownload} className={btn}>
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
           Download
@@ -1778,19 +1793,23 @@ function ImagePanel({ url, filename, onDownload, onEmail }: ImagePanelProps) {
           </button>
         )}
       </PanelActions>
-      <div className="flex-1 overflow-auto bg-gray-100 flex items-center justify-center p-4">
-        {error ? (
-          <div className="text-sm text-red-600">Failed to load image.</div>
-        ) : (
-          <img
-            src={url}
-            alt={filename}
-            onError={() => setError(true)}
-            style={{ transform: `scale(${zoom})`, transformOrigin: 'center center', transition: 'transform 120ms ease' }}
-            className="max-w-full max-h-full shadow-lg rounded bg-white"
-          />
-        )}
-      </div>
+      {annotating ? (
+        <ImageAnnotator ref={annotatorRef} src={url} filename={filename} />
+      ) : (
+        <div className="flex-1 overflow-auto bg-gray-100 flex items-center justify-center p-4">
+          {error ? (
+            <div className="text-sm text-red-600">Failed to load image.</div>
+          ) : (
+            <img
+              src={url}
+              alt={filename}
+              onError={() => setError(true)}
+              style={{ transform: `scale(${zoom})`, transformOrigin: 'center center', transition: 'transform 120ms ease' }}
+              className="max-w-full max-h-full shadow-lg rounded bg-white"
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.2.25] — 2026-05-01
+
+### Added
+- **Annotator: Pen / Draw tool** — freehand strokes (SVG `<path>` with linecap/join round). Each stroke is a vector annotation; selectable, movable, recolorable, deletable like any other.
+- **Live restyling of selected annotations**:
+  - Color picker recolors the selected shape in place
+  - Weight slider re-strokes selected rect / circle / arrow / draw
+  - Rectangle gains a Radius slider (0–48 px) for tunable corner roundness
+  - Text gains font picker (System / Serif / Mono / Cursive), Bold / Italic / Underline toggles, and a Size slider (10–96 px)
+  - Inline text editor reflects the chosen font / style / size live
+- **Cmd-Z / Ctrl-Z** as an undo shortcut (in addition to the existing Undo button).
+- **Toolbar split** — Save / Copy moved to the OUTER Preview toolbar (same level as Open). The annotator's inline toolbar carries only the editing controls.
+
+### Removed
+- Annotator "Exit" button. Use the View button on the outer toolbar to return to the viewer (or close the Preview window).
+
+### Changed
+- Toolbar restructured to be context-aware: secondary controls (weight, radius, font/style/size) appear only when the relevant tool is active or a matching annotation is selected. Less clutter, fewer dead inputs.
+
 ## [0.2.24] — 2026-05-01
 
 ### Fixed
