@@ -50,9 +50,14 @@ export default function ImageAnnotator({ src, filename, onClose }: ImageAnnotato
   const [pendingText, setPendingText] = useState<{ x: number; y: number; value: string } | null>(null);
   // Pending crop region (image coords). Two phases: dragging (live), applied (waiting for confirm).
   const [pendingCrop, setPendingCrop] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
-  // Display scale — natural canvas pixels divided by displayed CSS pixels —
-  // used to translate pointer coords into canvas coords when the canvas is
-  // letterboxed inside its container.
+  // Display size — explicit CSS dimensions both canvases share, computed to
+  // fit the image into the available area while preserving its aspect ratio.
+  // Locking both canvases to the same pixel size (via inline style) avoids
+  // the trap where one uses `maxWidth/maxHeight:100%` and the other uses
+  // `width/height:100%` and they resolve to different sizes — which made the
+  // live preview drift away from where the committed drawing actually lands.
+  const [displaySize, setDisplaySize] = useState<{ w: number; h: number } | null>(null);
+  // Scale derived from displaySize for pointer → canvas-coord conversion.
   const [displayScale, setDisplayScale] = useState(1);
 
   // Load source image into the main canvas at its natural dimensions.
@@ -77,15 +82,30 @@ export default function ImageAnnotator({ src, filename, onClose }: ImageAnnotato
     img.src = src;
   }, [src]);
 
-  // Track displayed CSS dimensions so pointer coords can be converted to
-  // canvas (image-pixel) coords. Re-measure on container resize.
+  // Compute the canvas's display dimensions: fit the image's natural size
+  // into the available area, preserving aspect. We apply this size to BOTH
+  // canvases via inline style so they overlap exactly. Re-measure on
+  // container resize.
   useEffect(() => {
     if (!imageReady) return;
     const update = () => {
       const c = canvasRef.current;
-      if (!c) return;
-      const rect = c.getBoundingClientRect();
-      if (rect.width > 0) setDisplayScale(c.width / rect.width);
+      const wrap = wrapRef.current;
+      if (!c || !wrap) return;
+      const wrapRect = wrap.getBoundingClientRect();
+      // p-4 padding on the wrap = 16 px each side.
+      const availW = Math.max(0, wrapRect.width - 32);
+      const availH = Math.max(0, wrapRect.height - 32);
+      if (availW === 0 || availH === 0) return;
+      const ratio = c.width / c.height;
+      let w = c.width;
+      let h = c.height;
+      // Shrink to fit, preserving aspect. Whichever axis is more
+      // constrained wins; the other axis is derived from the ratio.
+      if (w > availW) { w = availW; h = w / ratio; }
+      if (h > availH) { h = availH; w = h * ratio; }
+      setDisplaySize({ w, h });
+      setDisplayScale(c.width / w);
     };
     update();
     const ro = new ResizeObserver(update);
@@ -369,23 +389,26 @@ export default function ImageAnnotator({ src, filename, onClose }: ImageAnnotato
       </div>
 
       {/* Canvas area */}
-      <div ref={wrapRef} className="flex-1 overflow-auto bg-gray-200 flex items-center justify-center p-4 relative">
-        <div className="relative inline-block max-w-full max-h-full">
+      <div ref={wrapRef} className="flex-1 overflow-hidden bg-gray-200 flex items-center justify-center p-4 relative">
+        <div
+          className="relative shadow-lg rounded overflow-hidden"
+          style={displaySize ? { width: displaySize.w, height: displaySize.h } : undefined}
+        >
           <canvas
             ref={canvasRef}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
             onPointerCancel={() => { dragRef.current = null; clearOverlay(); }}
-            style={{ touchAction: 'none', maxWidth: '100%', maxHeight: '100%', display: 'block', cursor: tool === 'text' ? 'text' : 'crosshair' }}
-            className="shadow-lg rounded bg-white"
+            style={{ touchAction: 'none', display: 'block', width: '100%', height: '100%', cursor: tool === 'text' ? 'text' : 'crosshair', background: '#fff' }}
           />
           <canvas
             ref={overlayRef}
             style={{
-              position: 'absolute', inset: 0, pointerEvents: 'none',
-              maxWidth: '100%', maxHeight: '100%',
+              position: 'absolute', top: 0, left: 0,
               width: '100%', height: '100%',
+              pointerEvents: 'none',
+              display: 'block',
             }}
           />
           {pendingText && (

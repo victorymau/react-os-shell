@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.2.22] — 2026-05-01
+
+### Fixed
+- Image annotator: drawings drifted away from where the user dragged when the image was bigger than the canvas display area. The bug was a CSS sizing mismatch — the main canvas used `maxWidth/maxHeight: 100%` (preserves aspect ratio) while the overlay used `width/height: 100%` (stretches to wrapper), so they resolved to slightly different pixel sizes whenever the image had to letterbox-fit. Live preview was drawn at one scale, the commit landed at another. Now both canvases share an explicit-pixel-sized wrapper computed in JS (fits the image while preserving aspect), so the in-progress overlay and the committed bitmap always overlap exactly.
+
 ## [0.2.21] — 2026-05-01
 
 ### Added
