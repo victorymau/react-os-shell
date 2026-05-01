@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.2.23] — 2026-05-01
+
+### Changed
+- **Image annotator: vector model** — annotations are now first-class editable objects (state-driven) instead of raster commits to the canvas. Two-layer rendering: image + mosaic on the canvas (real pixels, since mosaic edits pixels), shapes / arrows / text on an SVG overlay (interactive).
+- **Select / move / delete** — new Select tool (now the default). Tap a shape to select it (blue dashed bbox appears), drag to move, Delete or Backspace to remove. Esc deselects. Click whitespace to deselect.
+- **Editable text** — double-click any text annotation to re-edit it. Enter commits, Esc cancels. Empty text on edit removes the annotation.
+- **Color recolor** — picking a color in the toolbar while a shape is selected updates that shape's color in place.
+- **Zoom** — toolbar +/- buttons (25 % – 400 %) and a Fit button. SVG `viewBox` is locked to image-pixel coords, so zooming is purely a CSS transform — coordinates and saved exports are unaffected.
+- **Crop** keeps its old "drag → Apply / Cancel" flow but now actually crops the underlying image (and translates / culls existing annotations) rather than just resizing the canvas.
+
+### Fixed
+- **Text input now works** on letterboxed images. The previous version positioned the textarea using a `displayScale` derived at click time; on the new vector model the textarea is positioned in the same coordinate system as the SVG so it always lands where the user clicked.
+- **Save** rasterises both layers (canvas + SVG-cloned-without-selection-chrome) at full image resolution. The downloaded PNG no longer captures the selection outline.
+
 ## [0.2.22] — 2026-05-01
 
 ### Fixed
