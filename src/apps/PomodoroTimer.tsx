@@ -276,7 +276,7 @@ export default function PomodoroTimer() {
 
   return (
     <>
-      <div className={`flex flex-col h-full select-none rounded-2xl overflow-hidden ring-1 ring-gray-200 transition-colors duration-300 ${tx.primary}`}
+      <div className={`flex flex-col h-full select-none rounded-2xl overflow-hidden transition-colors duration-300 ${tx.primary}`}
         style={{
           backgroundColor: panelBg,
           backdropFilter: appearance.activeBlur > 0 ? `blur(${appearance.activeBlur}px)` : undefined,

@@ -147,7 +147,7 @@ export default function WorldClock() {
     <>
       {/* Theme-aware panel — same colour as the taskbar so all dashboard
        *  widgets read as a coordinated set across light and dark themes. */}
-      <div className="rounded-2xl overflow-hidden ring-1 ring-gray-200"
+      <div className="rounded-2xl overflow-hidden"
         style={{
           backgroundColor: `rgb(var(--taskbar-bg-rgb, 243 244 246) / ${appearance.activeOpacity / 100})`,
           backdropFilter: appearance.activeBlur > 0 ? `blur(${appearance.activeBlur}px)` : undefined,
