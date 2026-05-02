@@ -372,14 +372,126 @@ function useIsActiveModal(modalId: string): boolean {
   return activationOrder.length <= 1 || activeId === modalId;
 }
 
-// Exposé view: arrange every open modal in a non-overlapping grid so
-// the user can scan all open windows at once (macOS Mission Control
-// behaviour). Kept under the `modal-split-view` event name so existing
-// taskbar wiring keeps working without a rename.
+// ── Exposé / Mission-Control mode ─────────────────────────────────────────
+//
+// Module-level toggle that, when on, visually scales every open modal
+// down into a non-overlapping grid (CSS transform; the modals stay where
+// they are layout-wise, so exiting just clears the transform). Each
+// scaled tile renders the live modal content as a thumbnail, plus a
+// label below; clicking a tile activates that modal and exits exposé;
+// clicking the backdrop (or pressing Escape, or the taskbar button
+// again) exits without changing the active modal.
+let _exposeOn = false;
+const _exposeListeners = new Set<() => void>();
+function _notifyExpose() { _exposeListeners.forEach((fn) => fn()); }
+function subscribeExpose(fn: () => void) { _exposeListeners.add(fn); return () => _exposeListeners.delete(fn); }
+function getExposeState() { return _exposeOn; }
+function setExposeState(v: boolean) {
+  if (_exposeOn === v) return;
+  _exposeOn = v;
+  _notifyExpose();
+}
+export function toggleExposeMode() { setExposeState(!_exposeOn); }
+export function exitExposeMode() { setExposeState(false); }
+
+// Backwards-compat — old taskbar wiring fires this event; treat it as a toggle.
 function triggerSplitView() {
+  setExposeState(!_exposeOn);
   window.dispatchEvent(new CustomEvent('modal-split-view'));
 }
 export { triggerSplitView };
+
+// Escape exits exposé.
+window.addEventListener('keydown', (e) => {
+  if (_exposeOn && e.key === 'Escape') {
+    setExposeState(false);
+  }
+});
+
+interface ExposeTile { x: number; y: number; w: number; h: number; }
+
+/**
+ * Compute the grid cell rectangle for a given modal id when exposé is on.
+ * Returns null when the modal isn't tileable (utility / widget / pinned).
+ *
+ * Layout: roughly-square grid (cols=ceil(sqrt(N)), rows=ceil(N/cols)).
+ * Tiles in the last row are centred when the row is short. The grid
+ * uses the document work-area minus the taskbar.
+ */
+function computeExposeTile(modalId: string): ExposeTile | null {
+  if (typeof document === 'undefined') return null;
+  const allPanels = Array.from(document.querySelectorAll('[data-modal-panel]'));
+  // Skip utility, widget, and panels that have been hidden via display:none.
+  const tileable: HTMLElement[] = allPanels.filter((p) => {
+    const el = p as HTMLElement;
+    if (el.hasAttribute('data-utility') || el.hasAttribute('data-widget')) return false;
+    if (el.style.display === 'none') return false;
+    return true;
+  }) as HTMLElement[];
+  // Stable ordering by data-modal-id so the same window lands in the same
+  // tile each time exposé is opened — avoids visual reshuffling.
+  tileable.sort((a, b) => (a.getAttribute('data-modal-id') || '').localeCompare(b.getAttribute('data-modal-id') || ''));
+  const myIdx = tileable.findIndex((p) => p.getAttribute('data-modal-id') === modalId);
+  const count = tileable.length;
+  if (myIdx < 0 || count < 1) return null;
+
+  const cols = Math.ceil(Math.sqrt(count));
+  const rows = Math.ceil(count / cols);
+  const myRow = Math.floor(myIdx / cols);
+  const myCol = myIdx % cols;
+  const lastRowCount = count - cols * (rows - 1);
+  const isLastRow = myRow === rows - 1 && lastRowCount < cols;
+
+  const taskbarH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--taskbar-height')) || 0;
+  const taskbarW = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--taskbar-width')) || 0;
+  const tbPos = (getComputedStyle(document.documentElement).getPropertyValue('--taskbar-position') || 'bottom').trim();
+  const xOffset = tbPos === 'left' ? taskbarW : 0;
+  const xRight = tbPos === 'right' ? taskbarW : 0;
+  const yOffset = tbPos === 'top' ? taskbarH : 0;
+  const yBottom = (tbPos === 'top' || tbPos === 'left' || tbPos === 'right') ? 0 : taskbarH;
+  const a = {
+    x: xOffset, y: yOffset,
+    w: window.innerWidth - xOffset - xRight,
+    h: window.innerHeight - yOffset - yBottom,
+  };
+  // Layout constants. Generous gaps + label space below each tile so the
+  // grid reads as separate windows the way macOS Exposé does.
+  const gapX = 20;
+  const gapY = 14;
+  const labelH = 22;
+  const cellW = (a.w - gapX * (cols + 1)) / cols;
+  const cellH = (a.h - gapY * (rows + 1) - labelH * rows) / rows;
+
+  const lastRowOffsetX = isLastRow ? ((cols - lastRowCount) * (cellW + gapX)) / 2 : 0;
+  const tileX = a.x + gapX + myCol * (cellW + gapX) + lastRowOffsetX;
+  const tileY = a.y + gapY + myRow * (cellH + gapY + labelH);
+  return { x: tileX, y: tileY, w: cellW, h: cellH };
+}
+
+/**
+ * Singleton backdrop that's shown while exposé mode is on. Click anywhere
+ * (outside a window thumbnail) to exit exposé. Should be mounted exactly
+ * once, near the root — typically by WindowManager.
+ */
+export function ExposeBackdrop() {
+  const on = useSyncExternalStore(subscribeExpose, getExposeState);
+  if (!on || typeof document === 'undefined') return null;
+  return createPortal(
+    <div
+      onMouseDown={(e) => { e.stopPropagation(); setExposeState(false); }}
+      style={{
+        position: 'fixed', inset: 0,
+        background: 'rgba(0,0,0,0.55)',
+        backdropFilter: 'blur(2px)',
+        WebkitBackdropFilter: 'blur(2px)',
+        zIndex: 2000,
+        cursor: 'pointer',
+        animation: 'expose-fade-in 220ms ease-out',
+      }}
+    />,
+    document.body
+  );
+}
 
 
 export default function Modal({ open, onClose, title, icon, copyText, size = 'lg', dirty = false, onNext, onPrev, footer, bodyScroll, onMinimize, initialBox, actions, actionsLeft, allowPinOnTop, initialPosition, widget, compact, appStyle, autoHeight, autoMinHeight, widgetMenu, dimensions, windowKey, openedFromKey, children }: ModalProps) {
@@ -524,6 +636,13 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   const [zIndex, setZIndex] = useState(50);
   const isActive = useIsActiveModal(modalId);
 
+  // Exposé: when enabled, every tileable modal scales down via CSS
+  // transform into its grid cell. Utility, widget, and pinned panels
+  // sit out — they keep their normal layout.
+  const exposeOn = useSyncExternalStore(subscribeExpose, getExposeState);
+  const isExposeTileable = !allowPinOnTop && !widget;
+  const exposeActive = exposeOn && isExposeTileable;
+
 
   // Track whether ModalActions portal has content (either left or right)
   useEffect(() => {
@@ -616,63 +735,12 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     const onReorder = () => {
       setZIndex(getZForModal(modalId));
     };
-    // Exposé view: arrange every open modal in a non-overlapping grid
-    // (utility, widget, and pinned windows are excluded — those manage
-    // their own placement). Each modal is sized to its grid cell with
-    // a small margin so the tiles read as separate windows, the same
-    // way macOS Mission Control / Exposé lays things out.
-    const onSplitView = () => {
-      if (allowPinOnTop || widget) return;
-      // Build the ordered list of tileable windows (skip utility/widget).
-      const allPanels = document.querySelectorAll('[data-modal-panel]');
-      const tileable: string[] = [];
-      let myIdx = -1;
-      activationOrder.forEach((id) => {
-        const panel = Array.from(allPanels).find(p => p.getAttribute('data-modal-id') === id);
-        if (panel && !panel.hasAttribute('data-utility') && !panel.hasAttribute('data-widget')) {
-          if (id === modalId) myIdx = tileable.length;
-          tileable.push(id);
-        }
-      });
-      const count = tileable.length;
-      if (count < 2 || myIdx < 0) return;
-
-      // Roughly-square grid: cols = ceil(sqrt(N)), rows = ceil(N / cols).
-      // For N=2 this still picks a 2×1 layout (matches the prior split-view
-      // behaviour); larger counts get a proper grid.
-      const cols = Math.ceil(Math.sqrt(count));
-      const rows = Math.ceil(count / cols);
-      const myCol = myIdx % cols;
-      const myRow = Math.floor(myIdx / cols);
-
-      // If the last row is short, centre its tiles so the gap doesn't sit
-      // on one side of the screen — the way macOS does for an odd-count
-      // grid.
-      const lastRowCount = count - cols * (rows - 1);
-      const isLastRow = myRow === rows - 1 && lastRowCount < cols;
-      const effectiveCols = isLastRow ? lastRowCount : cols;
-      const effectiveCol = isLastRow ? myIdx - cols * (rows - 1) : myCol;
-
-      const a = workArea();
-      const gap = 12;
-      // Compute cell dimensions; subtract gap on each side so panels don't
-      // touch their neighbours (or the work-area edge).
-      const cellW = (a.w - gap * (effectiveCols + 1)) / effectiveCols;
-      const cellH = (a.h - gap * (rows + 1)) / rows;
-      const cellX = a.x + gap + effectiveCol * (cellW + gap);
-      const cellY = a.y + gap + myRow * (cellH + gap);
-
-      // Optional centring offset for short last rows.
-      const xOffset = isLastRow ? (a.w - (effectiveCols * cellW + (effectiveCols + 1) * gap)) / 2 : 0;
-
-      setBox({
-        x: Math.round(cellX + xOffset),
-        y: Math.round(cellY),
-        w: Math.round(cellW),
-        h: Math.round(cellH),
-      });
-      setMaximized(false);
-    };
+    // The old "split view" handler used to setBox to tile windows side
+    // by side. Exposé replaces that with a non-destructive overlay
+    // (CSS transform on the panel, see further down) — so this handler
+    // is now a no-op. Kept around as an event listener target only so
+    // the prior wiring keeps working until every consumer migrates.
+    const onSplitView = () => { /* no-op: exposé toggle handled by setExposeState */ };
 
     // Center window on double-click from taskbar
     const onCenter = (e: Event) => {
@@ -1068,12 +1136,42 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   if (!open || interceptedRef.current) return null;
 
   // ── Full window — render via portal when nested to escape parent overflow:hidden ──
+  const exposeTile = exposeActive ? computeExposeTile(modalId) : null;
+  const exposeStyle = (() => {
+    if (!exposeActive || !exposeTile) return null;
+    const scale = Math.min(exposeTile.w / box.w, exposeTile.h / box.h);
+    const scaledW = box.w * scale;
+    const scaledH = box.h * scale;
+    const tx = exposeTile.x + (exposeTile.w - scaledW) / 2 - box.x;
+    const ty = exposeTile.y + (exposeTile.h - scaledH) / 2 - box.y;
+    return {
+      transform: `translate(${tx}px, ${ty}px) scale(${scale})`,
+      transformOrigin: 'top left' as const,
+      transition: 'transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 280ms',
+      cursor: 'pointer',
+      zIndex: 2010,
+      boxShadow: '0 16px 48px rgba(0,0,0,0.55)',
+      pointerEvents: 'auto' as const,
+    };
+  })();
+
   const content = (
     <div>
       {/* Window */}
       <div ref={panelRef} data-modal-panel data-modal-id={modalId} data-window-key={windowKey || undefined} {...(allowPinOnTop ? { 'data-utility': '' } : {})} {...(widget ? { 'data-widget': '' } : {})}
         className={`fixed rounded-lg flex flex-col overflow-hidden group ${widget ? (isActive ? 'shadow-2xl' : 'shadow-lg') : `border ${isActive ? 'shadow-2xl border-gray-200' : 'shadow-lg border-gray-300'}`}`}
+        onMouseDownCapture={(e) => {
+          if (exposeActive) {
+            // In exposé mode, any click on a tileable window selects it.
+            e.preventDefault();
+            e.stopPropagation();
+            setExposeState(false);
+            activateModal(modalId);
+            return;
+          }
+        }}
         onMouseDown={(e) => {
+          if (exposeActive) return;
           setWindowMenu(null);
           // Don't activate if the click is inside a child modal (nested portal)
           const targetPanel = (e.target as HTMLElement).closest('[data-modal-panel]');
@@ -1110,6 +1208,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
           } : {}),
           ...(widget && widgetAnchor === 'right' ? { right: window.innerWidth - box.x - box.w } : { left: box.x }),
           ...(zIndex < 0 && !pinnedOnTop ? { display: 'none' } : {}),
+          ...(exposeStyle ?? {}),
         }}
       >
         {/* Mobile swipe-from-left-edge gesture zone. Captures pointerdown only
@@ -1257,8 +1356,8 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
           </div>
         </div>
 
-        {/* RESIZE HANDLES — corners and edges (hidden in widget/mobile mode; only rendered when active to avoid z-index bleed on inactive windows) */}
-        {!widget && !isMobile && isActive && <>
+        {/* RESIZE HANDLES — corners and edges (hidden in widget/mobile/exposé mode; only rendered when active to avoid z-index bleed on inactive windows) */}
+        {!widget && !isMobile && !exposeActive && isActive && <>
         <div onPointerDown={e => startResizeCorner(e, 'se')} className="absolute bottom-0 right-0 w-3 h-3 cursor-nwse-resize z-10" />
         <div onPointerDown={e => startResizeCorner(e, 'sw')} className="absolute bottom-0 left-0 w-3 h-3 cursor-nesw-resize z-10" />
         <div onPointerDown={e => startResizeCorner(e, 'ne')} className="absolute top-0 right-0 w-3 h-3 cursor-nesw-resize z-10" />
@@ -1268,7 +1367,34 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
         <div onPointerDown={e => startResizeCorner(e, 'e')} className="absolute top-3 bottom-3 right-0 w-1 cursor-ew-resize" />
         <div onPointerDown={e => startResizeCorner(e, 'w')} className="absolute top-3 bottom-3 left-0 w-1 cursor-ew-resize" />
         </>}
+        {/* EXPOSÉ click capture — sits above all content so any click selects this window */}
+        {exposeActive && (
+          <div
+            className="absolute inset-0"
+            style={{ zIndex: 9999, cursor: 'pointer', background: 'transparent' }}
+            onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); setExposeState(false); activateModal(modalId); }}
+            onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
+          />
+        )}
       </div>
+      {/* EXPOSÉ label — title under the thumbnail */}
+      {exposeActive && exposeTile && (
+        <div
+          className="fixed pointer-events-none select-none truncate text-center"
+          style={{
+            left: exposeTile.x,
+            top: exposeTile.y + exposeTile.h + 4,
+            width: exposeTile.w,
+            zIndex: 2011,
+            color: 'white',
+            fontSize: 12,
+            fontWeight: 500,
+            textShadow: '0 1px 2px rgba(0,0,0,0.6)',
+          }}
+        >
+          {displayTitle}
+        </div>
+      )}
     </div>
   );
 

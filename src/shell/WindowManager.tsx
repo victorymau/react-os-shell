@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient, { isShellApiClientConfigured } from '../api/client';
 import { WINDOW_REGISTRY, isPageEntry, isEntityEntry, type PageRegistryEntry, type ModalRegistryEntry } from '../windowRegistry/types';
-import Modal, { triggerSplitView, modalDepthRef, getActiveModalId, subscribeActive, activateModal, useWindowMenuItem } from './Modal';
+import Modal, { triggerSplitView, modalDepthRef, getActiveModalId, subscribeActive, activateModal, useWindowMenuItem, ExposeBackdrop } from './Modal';
 import PartNumberDetailPopup from './PartNumberDetailPopup';
 import LoadingSpinner from './LoadingSpinner';
 import { navIcons } from '../shell-config/nav';
@@ -618,18 +618,16 @@ function TaskbarWindows({ openWindows, onRemove, onCloseAll, onSplitView, onActi
       })}
       <div className="flex-1" />
       {tabWindows.length >= 2 && (
-        <button onClick={onSplitView} title="Show all open windows in a grid"
+        <button onClick={onSplitView} title="Exposé — show all open windows as thumbnails"
           className="flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium text-blue-600 border border-blue-300 hover:bg-blue-50 transition-colors shrink-0">
-          {/* 2×2 grid icon — reads as "show all windows", swapped from the
-              old side-by-side bars when this action moved from a 2-up
-              tile to a macOS Exposé-style grid. */}
+          {/* 2×2 grid icon — exposé toggle, mirrors macOS Mission Control. */}
           <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <rect x="3.5" y="3.5" width="7" height="7" rx="1" />
             <rect x="13.5" y="3.5" width="7" height="7" rx="1" />
             <rect x="3.5" y="13.5" width="7" height="7" rx="1" />
             <rect x="13.5" y="13.5" width="7" height="7" rx="1" />
           </svg>
-          Show All
+          Exposé
         </button>
       )}
       {hoveredItems && hoveredAnchor && (
@@ -795,6 +793,9 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
           if (mid) activateModal(mid);
         }}
       />
+
+      {/* Exposé backdrop — singleton overlay shown when exposé mode is on. */}
+      <ExposeBackdrop />
 
       {/* All open windows — pages and entities (hidden on auth pages) */}
       {!isAuthPage && openWindows.map(item => (
