@@ -1192,7 +1192,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
         // clipped by adjacent panels.
         zIndex: exposeHovered ? 2020 : 2010,
         boxShadow: exposeHovered
-          ? '0 20px 56px rgba(0,0,0,0.6), 0 0 0 4px rgba(96,165,250,0.95)'
+          ? '0 24px 72px rgba(0,0,0,0.6), 0 0 0 2px rgba(255,255,255,0.55), 0 0 36px 12px rgba(96,165,250,0.85), 0 0 96px 28px rgba(96,165,250,0.55)'
           : '0 16px 48px rgba(0,0,0,0.55)',
         pointerEvents: 'auto' as const,
       };
@@ -1442,7 +1442,8 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
           />
         )}
       </div>
-      {/* EXPOSÉ label — title under the thumbnail. Highlighted on hover. */}
+      {/* EXPOSÉ label — title under the thumbnail (no hover styling on the
+       *  text — the glow on the thumbnail itself is the affordance). */}
       {exposeActive && exposeTile && (
         <div
           className="fixed pointer-events-none select-none truncate text-center"
@@ -1455,11 +1456,6 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
             fontSize: 12,
             fontWeight: 500,
             textShadow: '0 1px 2px rgba(0,0,0,0.6)',
-            padding: '2px 8px',
-            borderRadius: 6,
-            background: exposeHovered ? 'rgba(59,130,246,0.85)' : 'transparent',
-            transition: 'background 120ms',
-            boxSizing: 'border-box',
           }}
         >
           {displayTitle}
