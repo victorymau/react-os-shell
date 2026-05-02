@@ -8,7 +8,6 @@ import ShortcutHelp from './ShortcutHelp';
 import NotificationBell, { type NotificationsConfig } from './NotificationBell';
 import { useShellPrefs } from './ShellPrefs';
 import { useWindowManager } from './WindowManager';
-import Modal from './Modal';
 import { useTheme } from '../hooks/useTheme';
 import Desktop from './Desktop';
 import GoogleConnectModal from './GoogleConnectModal';
@@ -335,10 +334,10 @@ function TaskbarClock() {
   const [now, setNow] = useState(new Date());
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState(false);
-  const [pinned, setPinned] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const { prefs, save } = useShellPrefs();
+  const { openPage } = useWindowManager();
   const worldClocks: string[] = prefs.world_clocks || ['Europe/London', 'Asia/Shanghai', 'America/Los_Angeles', 'America/New_York'];
 
   useEffect(() => {
@@ -346,7 +345,7 @@ function TaskbarClock() {
     return () => clearInterval(t);
   }, []);
 
-  useClickOutside(ref, useCallback(() => { if (open && !pinned) { setOpen(false); setAdding(false); } }, [open, pinned]));
+  useClickOutside(ref, useCallback(() => { if (open) { setOpen(false); setAdding(false); } }, [open]));
 
   const fmtTime = (tz: string) => now.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', timeZone: tz });
   const fmtDate = (tz: string) => now.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: tz });
@@ -378,8 +377,11 @@ function TaskbarClock() {
         <p className="text-[10px] text-gray-700">{now.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</p>
       </button>
 
-      {/* Clock popup — inline or pinned as widget */}
-      {open && !pinned && (() => {
+      {/* Clock popup — inline preview only. Clicking the pin opens the
+       *  registered `/world-clock` widget so it lives outside the taskbar
+       *  DOM (no taskbar context-menu bleed-through) and inherits the
+       *  standard widget dimensions / theme-aware styling. */}
+      {open && (() => {
         const taskbarPos = getComputedStyle(document.documentElement).getPropertyValue('--taskbar-position')?.trim() || 'bottom';
         const rect = buttonRef.current?.getBoundingClientRect();
         const right = rect ? window.innerWidth - rect.right : 0;
@@ -389,8 +391,8 @@ function TaskbarClock() {
 
         return (
           <div className="fixed z-[300] w-72 rounded-lg border border-gray-200 bg-white shadow-xl" style={posStyle}>
-            {/* Pin button */}
-            <button onClick={() => { setPinned(true); }} title="Pin as widget"
+            {/* Pin button — opens the registered /world-clock widget */}
+            <button onClick={() => { openPage('/world-clock'); setOpen(false); }} title="Open as widget"
               className="absolute top-2 right-2 text-gray-300 hover:text-gray-600 transition-colors z-10">
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 3.75L8.25 10.5m0 0l-3-1.5L3 12.75l5.25 5.25 3.75-2.25-1.5-3L17.25 6M8.25 10.5l-3 3M17.25 6l3 3" /></svg>
             </button>
@@ -399,16 +401,6 @@ function TaskbarClock() {
           </div>
         );
       })()}
-
-      {/* Pinned widget — rendered as a draggable Modal */}
-      {pinned && (
-        <Modal open={true} onClose={() => { setPinned(false); setOpen(false); }}
-          title={<span className="flex items-center gap-1.5"><svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>World Clock</span>}
-          size="sm" allowPinOnTop initialPosition="top-right" widget>
-          <ClockContent localTz={localTz} worldClocks={worldClocks} now={now} fmtTime={fmtTime} fmtDate={fmtDate} fmtOffset={fmtOffset}
-            removeClock={removeClock} adding={adding} setAdding={setAdding} addClock={addClock} availableToAdd={availableToAdd} showAdd={false} />
-        </Modal>
-      )}
     </div>
   );
 }

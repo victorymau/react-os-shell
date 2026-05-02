@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.2.42] — 2026-05-02
+
+### Fixed
+- **TaskbarClock pin opens the registered World Clock widget.** Previously the pin button rendered its own inline `<Modal>` *inside the taskbar DOM tree* with ad-hoc `size="sm"` and the old `ClockContent` layout — which (a) came out at a different width than the other widgets and (b) leaked right-clicks up to the taskbar context menu. The pin now calls `openPage('/world-clock')` so the widget detaches into a normal window with the registered `[320, 480]` dimensions and the standard widget right-click menu (Position / Size / Settings / Always on Top / Close), matching Currency and Weather.
+
 ## [0.2.41] — 2026-05-02
 
 ### Changed
