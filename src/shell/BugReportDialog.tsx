@@ -124,15 +124,7 @@ export function BugReportProvider({ children }: { children: React.ReactNode }) {
   return (
     <>
       {children}
-      <Dialog
-        open={open}
-        // While the annotator overlay is up it lives as a sibling node, not a
-        // descendant of the dialog. HeadlessUI treats clicks inside it as
-        // "outside" the dialog and would call onClose, dismissing the whole
-        // bug report. Suppress onClose for the duration of the annotation.
-        onClose={annotating ? () => {} : handleCancel}
-        className="relative z-[9999]"
-      >
+      <Dialog open={open} onClose={handleCancel} className="relative z-[9999]">
         <DialogBackdrop className="fixed inset-0 bg-black/40" />
         <div className="fixed inset-0 flex items-center justify-center p-4">
           <DialogPanel className="w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl">
@@ -203,15 +195,19 @@ export function BugReportProvider({ children }: { children: React.ReactNode }) {
             </div>
           </DialogPanel>
         </div>
-      </Dialog>
 
-      {annotating && previewUrl && (
-        <BugReportAnnotator
-          src={previewUrl}
-          onApply={(blob) => { setScreenshot(blob); setAnnotating(false); }}
-          onCancel={() => setAnnotating(false)}
-        />
-      )}
+        {/* Annotator lives inside the Dialog tree on purpose: HeadlessUI marks
+            DOM outside the open Dialog as inert (so pointer events don't fire
+            there) AND treats clicks outside the Dialog as outside-clicks (which
+            would call onClose). Nesting the annotator here sidesteps both. */}
+        {annotating && previewUrl && (
+          <BugReportAnnotator
+            src={previewUrl}
+            onApply={(blob) => { setScreenshot(blob); setAnnotating(false); }}
+            onCancel={() => setAnnotating(false)}
+          />
+        )}
+      </Dialog>
     </>
   );
 }
