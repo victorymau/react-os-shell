@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.2.27] — 2026-05-02
+
+### Changed
+- **Window arrangement: Exposé grid replaces side-by-side split** — the taskbar action that used to tile every open window in a single row now arranges them in a roughly-square grid (cols = `ceil(√N)`, rows = `ceil(N / cols)`), the way macOS Mission Control / Exposé lays things out. For N=2 the layout is identical to the previous split (2 columns, 1 row); larger counts now read as a tidy grid instead of a forest of skinny columns. Last-row tiles are centred when the row is short, with a small gap between cells so windows don't visually fuse. The taskbar button label changes from "Split" to "Show All" with a 2×2 grid icon, but the underlying event name (`modal-split-view`) is unchanged so existing wiring keeps working.
+
 ## [0.2.26] — 2026-05-01
 
 ### Fixed

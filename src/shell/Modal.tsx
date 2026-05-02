@@ -372,7 +372,10 @@ function useIsActiveModal(modalId: string): boolean {
   return activationOrder.length <= 1 || activeId === modalId;
 }
 
-// Split view: tile all open modals side by side
+// Exposé view: arrange every open modal in a non-overlapping grid so
+// the user can scan all open windows at once (macOS Mission Control
+// behaviour). Kept under the `modal-split-view` event name so existing
+// taskbar wiring keeps working without a rename.
 function triggerSplitView() {
   window.dispatchEvent(new CustomEvent('modal-split-view'));
 }
@@ -613,33 +616,61 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     const onReorder = () => {
       setZIndex(getZForModal(modalId));
     };
-    // Split view: tile modals side by side (utility, widget, and pinned
-    // windows are excluded — those manage their own placement).
+    // Exposé view: arrange every open modal in a non-overlapping grid
+    // (utility, widget, and pinned windows are excluded — those manage
+    // their own placement). Each modal is sized to its grid cell with
+    // a small margin so the tiles read as separate windows, the same
+    // way macOS Mission Control / Exposé lays things out.
     const onSplitView = () => {
       if (allowPinOnTop || widget) return;
-      // Count tileable windows for layout — exclude both utility and widget.
+      // Build the ordered list of tileable windows (skip utility/widget).
       const allPanels = document.querySelectorAll('[data-modal-panel]');
-      let nonUtilityCount = 0;
-      let myNonUtilIdx = -1;
-      activationOrder.forEach((id, _i) => {
+      const tileable: string[] = [];
+      let myIdx = -1;
+      activationOrder.forEach((id) => {
         const panel = Array.from(allPanels).find(p => p.getAttribute('data-modal-id') === id);
         if (panel && !panel.hasAttribute('data-utility') && !panel.hasAttribute('data-widget')) {
-          if (id === modalId) myNonUtilIdx = nonUtilityCount;
-          nonUtilityCount++;
+          if (id === modalId) myIdx = tileable.length;
+          tileable.push(id);
         }
       });
-      const count = nonUtilityCount;
-      if (count < 2) return;
-      const myIdx = myNonUtilIdx;
-      if (myIdx < 0) return;
+      const count = tileable.length;
+      if (count < 2 || myIdx < 0) return;
+
+      // Roughly-square grid: cols = ceil(sqrt(N)), rows = ceil(N / cols).
+      // For N=2 this still picks a 2×1 layout (matches the prior split-view
+      // behaviour); larger counts get a proper grid.
+      const cols = Math.ceil(Math.sqrt(count));
+      const rows = Math.ceil(count / cols);
+      const myCol = myIdx % cols;
+      const myRow = Math.floor(myIdx / cols);
+
+      // If the last row is short, centre its tiles so the gap doesn't sit
+      // on one side of the screen — the way macOS does for an odd-count
+      // grid.
+      const lastRowCount = count - cols * (rows - 1);
+      const isLastRow = myRow === rows - 1 && lastRowCount < cols;
+      const effectiveCols = isLastRow ? lastRowCount : cols;
+      const effectiveCol = isLastRow ? myIdx - cols * (rows - 1) : myCol;
+
       const a = workArea();
-      // Edge-to-edge tiling: distribute pixels exactly so the rightmost column
-      // ends on the work-area edge instead of leaving a rounding gap.
-      const baseW = Math.floor(a.w / count);
-      const remainder = a.w - baseW * count;
-      const colW = baseW + (myIdx < remainder ? 1 : 0);
-      const xOffset = myIdx * baseW + Math.min(myIdx, remainder);
-      setBox({ x: a.x + xOffset, y: a.y, w: colW, h: a.h });
+      const gap = 12;
+      // Compute cell dimensions; subtract gap on each side so panels don't
+      // touch their neighbours (or the work-area edge).
+      const cellW = (a.w - gap * (effectiveCols + 1)) / effectiveCols;
+      const cellH = (a.h - gap * (rows + 1)) / rows;
+      const cellX = a.x + gap + effectiveCol * (cellW + gap);
+      const cellY = a.y + gap + myRow * (cellH + gap);
+
+      // Optional centring offset for short last rows.
+      const xOffset = isLastRow ? (a.w - (effectiveCols * cellW + (effectiveCols + 1) * gap)) / 2 : 0;
+
+      setBox({
+        x: Math.round(cellX + xOffset),
+        y: Math.round(cellY),
+        w: Math.round(cellW),
+        h: Math.round(cellH),
+      });
       setMaximized(false);
     };
 
