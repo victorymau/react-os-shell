@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, isValidElement, cloneElement, type ReactElement } from 'react';
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore, isValidElement, cloneElement, type ReactElement } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../contexts/AuthContext';
@@ -6,6 +6,7 @@ import apiClient from '../api/client';
 import GlobalSearch, { type SearchConfig } from './GlobalSearch';
 import ShortcutHelp from './ShortcutHelp';
 import NotificationBell, { type NotificationsConfig } from './NotificationBell';
+import { getPomoSnapshot, subscribePomo } from './pomodoroStore';
 import { useShellPrefs } from './ShellPrefs';
 import { useWindowManager } from './WindowManager';
 import { useTheme } from '../hooks/useTheme';
@@ -330,45 +331,52 @@ export function ClockContent({ localTz, worldClocks, now, fmtTime, fmtDate, fmtO
   );
 }
 
+/**
+ * Compact countdown chip rendered in the system tray when a Pomodoro
+ * session is in progress. Subscribes to `pomodoroStore` so it updates
+ * once per second without re-rendering the whole shell. Tapping it opens
+ * (or focuses) the Pomodoro widget.
+ */
+function TaskbarPomodoro() {
+  const snap = useSyncExternalStore(subscribePomo, getPomoSnapshot, getPomoSnapshot);
+  const { openPage } = useWindowManager();
+
+  // Show whenever the user has an active or paused-mid-session timer.
+  const inSession = snap.running || (snap.remaining < snap.total && snap.remaining > 0);
+  if (!inSession) return null;
+
+  const mm = String(Math.floor(snap.remaining / 60)).padStart(2, '0');
+  const ss = String(snap.remaining % 60).padStart(2, '0');
+  const dot =
+    snap.mode === 'focus' ? 'bg-blue-500' :
+    snap.mode === 'short' ? 'bg-emerald-500' : 'bg-emerald-600';
+  const label =
+    snap.mode === 'focus' ? 'Focus' :
+    snap.mode === 'short' ? 'Short break' : 'Long break';
+
+  return (
+    <button onClick={() => openPage('/pomodoro')}
+      title={`${label} · ${mm}:${ss}${snap.running ? '' : ' (paused)'}`}
+      className={`shrink-0 flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-mono font-semibold tabular-nums hover:bg-gray-200/50 transition-colors ${snap.running ? 'text-gray-800' : 'text-gray-400'}`}>
+      <span className={`block w-1.5 h-1.5 rounded-full ${dot} ${snap.running ? 'animate-pulse' : 'opacity-60'}`} />
+      {mm}:{ss}
+    </button>
+  );
+}
+
 function TaskbarClock() {
   const [now, setNow] = useState(new Date());
   const [open, setOpen] = useState(false);
-  const [adding, setAdding] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const { prefs, save } = useShellPrefs();
   const { openPage } = useWindowManager();
-  const worldClocks: string[] = prefs.world_clocks || ['Europe/London', 'Asia/Shanghai', 'America/Los_Angeles', 'America/New_York'];
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 10000);
     return () => clearInterval(t);
   }, []);
 
-  useClickOutside(ref, useCallback(() => { if (open) { setOpen(false); setAdding(false); } }, [open]));
-
-  const fmtTime = (tz: string) => now.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', timeZone: tz });
-  const fmtDate = (tz: string) => now.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: tz });
-  const fmtOffset = (tz: string) => {
-    const parts = new Intl.DateTimeFormat('en', { timeZone: tz, timeZoneName: 'shortOffset' }).formatToParts(now);
-    return parts.find(p => p.type === 'timeZoneName')?.value || '';
-  };
-
-  const saveClocks = (clocks: string[]) => {
-    save({ world_clocks: clocks });
-  };
-
-  const addClock = (tz: string) => {
-    if (!worldClocks.includes(tz)) saveClocks([...worldClocks, tz]);
-    setAdding(false);
-  };
-
-  const removeClock = (tz: string) => {
-    saveClocks(worldClocks.filter(t => t !== tz));
-  };
-
-  const localTz = localStorage.getItem('user_timezone') || Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const availableToAdd = ALL_TIMEZONES.filter(t => t.tz !== localTz && !worldClocks.includes(t.tz));
+  useClickOutside(ref, useCallback(() => { if (open) setOpen(false); }, [open]));
 
   return (
     <div ref={ref} className="relative shrink-0">
@@ -377,30 +385,124 @@ function TaskbarClock() {
         <p className="text-[10px] text-gray-700">{now.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</p>
       </button>
 
-      {/* Clock popup — inline preview only. Clicking the pin opens the
-       *  registered `/world-clock` widget so it lives outside the taskbar
-       *  DOM (no taskbar context-menu bleed-through) and inherits the
-       *  standard widget dimensions / theme-aware styling. */}
       {open && (() => {
         const taskbarPos = getComputedStyle(document.documentElement).getPropertyValue('--taskbar-position')?.trim() || 'bottom';
         const rect = buttonRef.current?.getBoundingClientRect();
-        const right = rect ? window.innerWidth - rect.right : 0;
+        const right = rect ? Math.max(8, window.innerWidth - rect.right) : 8;
         const posStyle = taskbarPos === 'top'
           ? { right, top: (rect?.bottom ?? 0) + 4 }
           : { right, bottom: window.innerHeight - (rect?.top ?? 0) + 4 };
 
         return (
-          <div className="fixed z-[300] w-72 rounded-lg border border-gray-200 bg-white shadow-xl" style={posStyle}>
-            {/* Pin button — opens the registered /world-clock widget */}
-            <button onClick={() => { openPage('/world-clock'); setOpen(false); }} title="Open as widget"
-              className="absolute top-2 right-2 text-gray-300 hover:text-gray-600 transition-colors z-10">
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 3.75L8.25 10.5m0 0l-3-1.5L3 12.75l5.25 5.25 3.75-2.25-1.5-3L17.25 6M8.25 10.5l-3 3M17.25 6l3 3" /></svg>
-            </button>
-            <ClockContent localTz={localTz} worldClocks={worldClocks} now={now} fmtTime={fmtTime} fmtDate={fmtDate} fmtOffset={fmtOffset}
-              removeClock={removeClock} adding={adding} setAdding={setAdding} addClock={addClock} availableToAdd={availableToAdd} showAdd />
+          <div className="fixed z-[300] rounded-lg border border-gray-200 bg-white shadow-xl" style={posStyle}>
+            <CalendarPopup now={now} onOpenCalendar={() => { openPage('/calendar'); setOpen(false); }} />
           </div>
         );
       })()}
+    </div>
+  );
+}
+
+/**
+ * Mini month calendar shown when the user clicks the taskbar clock.
+ * Header has month + year and prev/next nav arrows; today is filled in
+ * the accent colour; days outside the current month are dimmed. The
+ * footer offers a one-click escape to open the full Calendar app.
+ */
+function CalendarPopup({ now, onOpenCalendar }: { now: Date; onOpenCalendar: () => void }) {
+  const [month, setMonth] = useState(() => new Date(now.getFullYear(), now.getMonth(), 1));
+
+  const monthLabel = month.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  const fullDate = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  const fullTime = now.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+
+  const firstDay = month.getDay(); // 0 = Sunday
+  const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+  const prevDays = new Date(month.getFullYear(), month.getMonth(), 0).getDate();
+
+  const cells: { day: number; thisMonth: boolean; date: Date }[] = [];
+  for (let i = firstDay - 1; i >= 0; i--) {
+    const day = prevDays - i;
+    cells.push({ day, thisMonth: false, date: new Date(month.getFullYear(), month.getMonth() - 1, day) });
+  }
+  for (let day = 1; day <= daysInMonth; day++) {
+    cells.push({ day, thisMonth: true, date: new Date(month.getFullYear(), month.getMonth(), day) });
+  }
+  let nextDay = 1;
+  while (cells.length < 42) {
+    cells.push({ day: nextDay, thisMonth: false, date: new Date(month.getFullYear(), month.getMonth() + 1, nextDay) });
+    nextDay++;
+  }
+
+  const today = new Date();
+  const isToday = (d: Date) =>
+    d.getFullYear() === today.getFullYear() &&
+    d.getMonth() === today.getMonth() &&
+    d.getDate() === today.getDate();
+
+  const goPrev = () => setMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1));
+  const goNext = () => setMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1));
+  const goToday = () => setMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+
+  return (
+    <div className="w-[260px] p-3">
+      {/* Live date + time line */}
+      <div className="px-1 pb-2.5 border-b border-gray-100">
+        <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">{fullDate}</div>
+        <div className="text-2xl font-semibold text-gray-800 tabular-nums leading-tight mt-0.5">{fullTime}</div>
+      </div>
+
+      {/* Month nav */}
+      <div className="flex items-center justify-between mt-2.5 mb-2">
+        <button onClick={goPrev} className="p-1 rounded hover:bg-gray-100 text-gray-600" aria-label="Previous month">
+          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <button onClick={goToday} className="text-sm font-semibold text-gray-700 hover:text-blue-600 transition-colors">
+          {monthLabel}
+        </button>
+        <button onClick={goNext} className="p-1 rounded hover:bg-gray-100 text-gray-600" aria-label="Next month">
+          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Day labels */}
+      <div className="grid grid-cols-7 mb-1 text-[10px] font-semibold text-gray-400 text-center uppercase tracking-wide">
+        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => <div key={i} className="py-1">{d}</div>)}
+      </div>
+
+      {/* Day grid */}
+      <div className="grid grid-cols-7 gap-px text-center">
+        {cells.map((cell, i) => {
+          const todayCell = cell.thisMonth && isToday(cell.date);
+          return (
+            <div key={i}
+              className={`text-[12px] py-1.5 rounded-md transition-colors ${
+                todayCell
+                  ? 'bg-blue-500 text-white font-semibold'
+                  : cell.thisMonth
+                    ? 'text-gray-700 hover:bg-gray-100'
+                    : 'text-gray-300'
+              }`}>
+              {cell.day}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Footer */}
+      <div className="mt-2 pt-2 border-t border-gray-100">
+        <button onClick={onOpenCalendar}
+          className="w-full text-[11px] font-medium text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded py-1 transition-colors flex items-center justify-center gap-1.5">
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+          </svg>
+          Open Calendar
+        </button>
+      </div>
     </div>
   );
 }
@@ -775,12 +877,14 @@ export default function Layout({
                   <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill={googleConnected ? '#16a34a' : '#9ca3af'} />
                 </svg>
               </button>
+              <TaskbarPomodoro />
               {notifications && <NotificationBell {...notifications} popDirection={taskbarPosition === 'right' ? 'left' : 'right'} />}
             </div>
           </div>
         ) : (
           /* Horizontal: icons then clock */
           <>
+            <TaskbarPomodoro />
             {notifications && <NotificationBell {...notifications} />}
             <button onClick={() => setGoogleConnectOpen(true)} title={googleConnected ? 'Google Connected' : 'Connect Google'}
               className={`shrink-0 rounded-md p-2 transition-colors ${googleConnected ? 'hover:bg-green-50' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-200'}`}>
