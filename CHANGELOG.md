@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.2.36] — 2026-05-02
+
+### Fixed
+- **Annotator no longer dismisses the bug-report dialog.** The annotator overlay renders as a sibling node (full-screen, on top), not a descendant of the bug-report `<Dialog>`. HeadlessUI was treating clicks inside the annotator as outside-clicks on the dialog and calling `onClose`, wiping the report mid-edit. The dialog's `onClose` is now suppressed for the duration of the annotation; closing has to come from the annotator's own Cancel/Apply.
+
 ## [0.2.35] — 2026-05-02
 
 ### Changed
