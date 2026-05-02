@@ -12,10 +12,11 @@
  * Subsets are also exported (`utilityApps`, `gameApps`, `googleApps`) so a
  * consumer can pick-and-choose without importing every component.
  *
- * NOTE: 4 apps require consumer-supplied persistence (Calendar / Notepad /
- * WorldClock for stored preferences, Minesweeper for leaderboard). They're
- * exported individually but absent from `bundledApps` — wire the prefs
- * provider to opt them in.
+ * NOTE: 3 apps require consumer-supplied persistence (Calendar / Notepad for
+ * stored content, Minesweeper for leaderboard). They're exported individually
+ * but absent from `bundledApps` — wire the prefs provider to opt them in.
+ * WorldClock uses `useShellPrefs()` so it lives in `bundledApps`; without a
+ * consumer-supplied prefs adapter the city list won't survive a reload.
  */
 import { lazy } from 'react';
 import type { WindowRegistry } from '../windowRegistry/types';
@@ -27,6 +28,7 @@ const Weather = lazy(() => import('./Weather'));
 const CurrencyConverter = lazy(() => import('./CurrencyConverter'));
 const PomodoroTimer = lazy(() => import('./PomodoroTimer'));
 const Notepad = lazy(() => import('./Notepad'));
+const WorldClock = lazy(() => import('./WorldClock'));
 
 // ── Games ──
 const Chess = lazy(() => import('./Chess'));
@@ -56,6 +58,7 @@ export const utilityApps: WindowRegistry = {
   '/weather': { component: Weather, label: 'Weather', size: 'sm', utility: true, widget: true, autoHeight: true, dimensions: [320, 400] },
   '/currency': { component: CurrencyConverter, label: 'Currency Converter', size: 'sm', utility: true, widget: true, autoHeight: true, dimensions: [320, 480] },
   '/pomodoro': { component: PomodoroTimer, label: 'Pomodoro Timer', size: 'sm', utility: true, widget: true, autoHeight: true, dimensions: [320, 420] },
+  '/world-clock': { component: WorldClock, label: 'World Clock', size: 'sm', utility: true, widget: true, autoHeight: true, dimensions: [320, 480] },
 };
 
 export const gameApps: WindowRegistry = {
@@ -98,6 +101,7 @@ export {
   Weather,
   CurrencyConverter,
   PomodoroTimer,
+  WorldClock,
   Chess,
   Checkers,
   Sudoku,

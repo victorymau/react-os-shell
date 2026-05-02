@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.2.41] — 2026-05-02
+
+### Changed
+- **World Clock is now a widget.** Same dimensions as the other utility widgets (`320 × 480`, `autoHeight`), same theme-aware background as the Currency widget (`rgb(var(--window-content-rgb) / opacity)` so it reads in both light and dark themes). Local time sits at the top, then a list of cities — no inline "+ Add World Clock" button. Adding/removing cities and the appearance sliders moved to the widget's right-click → Settings menu (the standard `useWidgetSettings` + `WidgetSettingsModal` pattern, identical to Weather and Currency).
+- **`WorldClock` joins `bundledApps`.** Now reads/writes the city list via `useShellPrefs()` (`world_clocks` key) instead of the consumer-specific `getMe`/`updateMe` auth API, so it can ship without consumer-side wiring. Without a `ShellPrefsProvider` the list still works in-memory; persistence requires a prefs adapter as before.
+
 ## [0.2.36] — 2026-05-02
 
 ### Fixed
