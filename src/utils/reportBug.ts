@@ -1,7 +1,8 @@
 /**
- * Report a bug — screenshot the current tab, let the user review + describe it,
- * then hand the payload to the consumer-supplied `submit` callback. Triggered
- * from the wallpaper / taskbar right-click menus.
+ * Suggestion or Bug — screenshot the current tab, let the user pick whether
+ * it's a Bug or a Suggestion and describe it, then hand the payload to the
+ * consumer-supplied `submit` callback. Triggered from the wallpaper / taskbar
+ * right-click menus.
  *
  * The shell does NOT call any HTTP endpoint here; the caller passes a
  * `BugReportConfig['submit']` (typically resolved via `useBugReport()`).
@@ -59,9 +60,10 @@ export async function reportBug(submit: BugReportConfig['submit']): Promise<void
       url: window.location.href,
       userAgent: navigator.userAgent,
       viewport: `${window.innerWidth}x${window.innerHeight}`,
+      reportType: submission.reportType,
     });
-    toast.success('Bug report sent to admins.');
+    toast.success(submission.reportType === 'bug' ? 'Bug sent to admins.' : 'Suggestion sent to admins.');
   } catch (err: any) {
-    toast.error(err?.response?.data?.detail || 'Failed to send bug report.');
+    toast.error(err?.response?.data?.detail || 'Failed to send.');
   }
 }

@@ -455,7 +455,7 @@ function TaskbarContextMenu({ x, y, position, size, onChangePosition, onChangeSi
         <button onClick={() => { onClose(); onReportBug(); }}
           className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors rounded-lg mx-1 flex items-center gap-2" style={{ width: 'calc(100% - 8px)' }}>
           <span className="w-3.5 shrink-0" />
-          Report Bug
+          Suggestion or Bug
         </button>
       </>}
     </div>

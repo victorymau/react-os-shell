@@ -394,6 +394,22 @@ function setExposeState(v: boolean) {
 export function toggleExposeMode() { setExposeState(!_exposeOn); }
 export function exitExposeMode() { setExposeState(false); }
 
+// When the user clicks a thumbnail to leave exposé, we publish that modal's
+// id here so all panels know which one is the "spotlight" pick. The picked
+// panel animates from its tile back to its real box; unpicked panels stay
+// pinned in their tile and fade out so the picked window has a clean stage.
+let _exposeExitFocusId: string | null = null;
+const _exposeExitListeners = new Set<() => void>();
+function subscribeExposeExitFocus(fn: () => void) {
+  _exposeExitListeners.add(fn); return () => _exposeExitListeners.delete(fn);
+}
+function getExposeExitFocus() { return _exposeExitFocusId; }
+function setExposeExitFocus(id: string | null) {
+  if (_exposeExitFocusId === id) return;
+  _exposeExitFocusId = id;
+  _exposeExitListeners.forEach(fn => fn());
+}
+
 // Backwards-compat — old taskbar wiring fires this event; treat it as a toggle.
 function triggerSplitView() {
   setExposeState(!_exposeOn);
@@ -659,25 +675,40 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   // transform into its grid cell. Utility, widget, and pinned panels
   // sit out — they keep their normal layout.
   const exposeOn = useSyncExternalStore(subscribeExpose, getExposeState);
+  const exposeExitFocusId = useSyncExternalStore(subscribeExposeExitFocus, getExposeExitFocus);
   const isExposeTileable = !allowPinOnTop && !widget;
   const exposeActive = exposeOn && isExposeTileable;
   // Hover highlight for the thumbnail while in exposé.
   const [exposeHovered, setExposeHovered] = useState(false);
   // Exit-animation window: keep `transition: transform` on the panel for ~320ms
   // after exposé closes so the panel slides smoothly back to its real box
-  // instead of snapping. Without this, removing `exposeStyle` drops the transition
-  // prop instantly and the browser sees no animatable change.
+  // instead of snapping. Without this, removing `exposeStyle` drops the
+  // transition prop instantly and the browser sees no animatable change.
+  // The window the user clicked (when leaving via thumbnail) becomes the
+  // "picked" one: same glide-home animation as everyone else, but with a
+  // spring-y curve and elevated z-index so it reads as the focal point.
   const [exposeExiting, setExposeExiting] = useState(false);
+  const exposeExitRole = (exposeExiting && isExposeTileable && exposeExitFocusId === modalId)
+    ? 'picked' as const
+    : null;
   const prevExposeActiveRef = useRef(exposeActive);
   useEffect(() => {
     if (prevExposeActiveRef.current && !exposeActive) {
       setExposeExiting(true);
-      const t = setTimeout(() => setExposeExiting(false), 320);
+      // Wait long enough for the picked window's spring (640 ms) to settle
+      // before stripping the transition rule, otherwise the late-overshoot
+      // tail snaps to the final position.
+      const t = setTimeout(() => {
+        setExposeExiting(false);
+        // Only the picked modal resets the global focus; other panels read
+        // it from the store during the whole window so no race.
+        if (_exposeExitFocusId === modalId) setExposeExitFocus(null);
+      }, 700);
       prevExposeActiveRef.current = exposeActive;
       return () => clearTimeout(t);
     }
     prevExposeActiveRef.current = exposeActive;
-  }, [exposeActive]);
+  }, [exposeActive, modalId]);
   // Reset hover whenever exposé toggles off so the highlight ring doesn't
   // linger past the transition.
   useEffect(() => { if (!exposeActive) setExposeHovered(false); }, [exposeActive]);
@@ -1198,11 +1229,19 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
       };
     }
     if (exposeExiting && isExposeTileable) {
-      // While the panel is settling back to its real position, keep the
-      // transition rule applied so the browser animates `transform`
-      // disappearing rather than snapping instantly.
+      // All tileable windows glide from their thumbnail back to their real
+      // position simultaneously — preserve the transition rule so the
+      // transform-from-tile animates instead of snapping. The "picked" one
+      // (when the user clicked a thumbnail to leave) gets a spring-y curve
+      // and an elevated z-index so it reads as the focal point of the move.
+      // Durations are deliberately on the slow side (~600 ms) so the user
+      // can read the choreography as every window slides back home.
+      const picked = exposeExitRole === 'picked';
       return {
-        transition: 'transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 280ms',
+        transition: picked
+          ? 'transform 640ms cubic-bezier(0.34, 1.42, 0.64, 1), box-shadow 600ms'
+          : 'transform 600ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 600ms',
+        ...(picked ? { zIndex: 2030 } : {}),
       };
     }
     return null;
@@ -1218,6 +1257,10 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
             // In exposé mode, any click on a tileable window selects it.
             e.preventDefault();
             e.stopPropagation();
+            // Publish the picked id BEFORE flipping exposeState off so all
+            // panels see it on their first exit-render and pick the right
+            // role (picked vs unpicked).
+            setExposeExitFocus(modalId);
             setExposeState(false);
             activateModal(modalId);
             return;

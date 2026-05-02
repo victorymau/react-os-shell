@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.2.30] — 2026-05-02
+
+### Changed
+- **Exposé exit: slower, more readable choreography.** Bumped the glide-home transition from 280 ms (unpicked) / 320 ms (picked spring) up to 600 ms / 640 ms so the user can clearly see every window slide back to where it lives, with the picked one settling last. The `setExposeExiting(false)` timeout was bumped to 700 ms to wait for the spring tail, otherwise the transition rule was being stripped mid-animation and the picked panel snapped to its final position. Spring curve softened slightly (`cubic-bezier(0.34, 1.42, 0.64, 1)`) so the larger overshoot from the longer duration doesn't feel cartoony.
+
+## [0.2.29] — 2026-05-02
+
+### Changed
+- **Bug report → Suggestion or Bug.** The wallpaper / taskbar right-click menu item is now labelled **Suggestion or Bug** so people use the same channel to send improvement ideas, not just complaints. The dialog gains a Bug / Suggestion segmented toggle (Bug is the default) and adapts its label and placeholder to match — the rest of the flow (screenshot capture, optional description, Cancel / Send) is unchanged.
+
+### Added
+- `BugReportSubmitPayload.reportType: 'bug' | 'suggestion'` — the chosen type is now passed through to the consumer's `submit` callback so it can be persisted server-side. Existing consumers that ignore the field will keep working; the toast text adapts to the type ("Bug sent to admins." / "Suggestion sent to admins.").
+- `BugReport.report_type?: 'bug' | 'suggestion'` — optional field on the generic record shape so consumer-side list/detail UIs can render a Bug vs Suggestion badge.
+
+## [0.2.28] — 2026-05-02
+
+### Changed
+- **Exposé exit: every window glides back, picked one is the focal point.** Clicking a thumbnail kept making everyone disappear except the chosen one — felt jarring. All tileable windows now animate from their thumbnail back to their real position simultaneously (the existing 280 ms `cubic-bezier(0.2, 0.8, 0.2, 1)` glide). The picked window swaps in a spring-y `cubic-bezier(0.34, 1.56, 0.64, 1)` curve over 320 ms with an elevated z-index so it reads as the focal point of the move while still being part of the same coordinated motion. New module-level `_exposeExitFocusId` store carries the picked id across panels.
+
 ## [0.2.27] — 2026-05-02
 
 ### Changed
