@@ -93,6 +93,9 @@ export function BugReportProvider({ children }: { children: React.ReactNode }) {
     setScreenshot(s);
     setDescription('');
     setReportType('bug');
+    // Defensive: ensure we never re-open straight into the annotator if a
+    // previous session somehow exited with `annotating` left at true.
+    setAnnotating(false);
     setOpen(true);
     return new Promise<BugReportSubmission | null>(resolve => {
       resolveRef.current = resolve;
@@ -110,11 +113,13 @@ export function BugReportProvider({ children }: { children: React.ReactNode }) {
   }, [screenshot]);
 
   const handleSubmit = () => {
+    setAnnotating(false);
     setOpen(false);
     resolveRef.current?.({ description: description.trim(), reportType });
   };
 
   const handleCancel = () => {
+    setAnnotating(false);
     setOpen(false);
     resolveRef.current?.(null);
   };
@@ -124,7 +129,17 @@ export function BugReportProvider({ children }: { children: React.ReactNode }) {
   return (
     <>
       {children}
-      <Dialog open={open} onClose={handleCancel} className="relative z-[9999]">
+      <Dialog
+        open={open}
+        // Suppress onClose while the annotator is up. The annotator is nested
+        // inside <Dialog> (so it isn't inert and receives pointer events), but
+        // it's a sibling of <DialogPanel> — and HeadlessUI treats anything
+        // outside the panel as an outside-click. Without this, every click on
+        // the annotator's toolbar/canvas would dismiss the bug-report dialog.
+        // The annotator's own Apply / Cancel buttons drive setAnnotating(false).
+        onClose={annotating ? () => {} : handleCancel}
+        className="relative z-[9999]"
+      >
         <DialogBackdrop className="fixed inset-0 bg-black/40" />
         <div className="fixed inset-0 flex items-center justify-center p-4">
           <DialogPanel className="w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl">
