@@ -656,7 +656,8 @@ function saveWindowState(windows: MinimizedItem[]) {
 
 const DEFAULT_WIDGETS: MinimizedItem[] = [
   { id: 'page:/weather', type: 'page', label: 'Weather', route: '/weather' },
-  { id: 'page:/currency', type: 'page', label: 'Currency', route: '/currency' },
+  { id: 'page:/currency', type: 'page', label: 'Currency Converter', route: '/currency' },
+  { id: 'page:/world-clock', type: 'page', label: 'World Clock', route: '/world-clock' },
 ];
 
 function restoreWindowState(): MinimizedItem[] {

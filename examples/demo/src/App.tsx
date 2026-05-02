@@ -27,6 +27,7 @@ import {
   setShellAuthBridge,
   setShellWindowRegistry,
   setShellNavIcons,
+  setWindowDefaultPosition,
   createWindowRegistry,
   useLocalStoragePrefs,
   useWindowManager,
@@ -255,11 +256,22 @@ function VersionBadge() {
 }
 
 // Opens the default widgets once when the desktop first mounts after sign-in.
+// Seeds initial positions so the first-run desktop reads as a tidy row of
+// three widgets — 40 px from the top/left, 20 px between each. The seed
+// only applies if no saved position exists for that window key, so users
+// who have moved the widgets keep their layout.
 function DefaultWindows() {
   const { openPage } = useWindowManager();
   useEffect(() => {
+    const PAD = 40;
+    const GAP = 20;
+    const W = 320;
+    setWindowDefaultPosition('page:/weather',     { x: PAD,                     y: PAD, w: W, h: 130 });
+    setWindowDefaultPosition('page:/currency',    { x: PAD + (W + GAP),         y: PAD, w: W, h: 200 });
+    setWindowDefaultPosition('page:/world-clock', { x: PAD + 2 * (W + GAP),     y: PAD, w: W, h: 280 });
     openPage('/weather');
     openPage('/currency');
+    openPage('/world-clock');
   }, [openPage]);
   return null;
 }

@@ -2,230 +2,366 @@ import { useState, useEffect, useCallback } from 'react';
 import { useWidgetSettings } from '../shell/Modal';
 import WidgetSettingsModal, { loadAppearance, type WidgetAppearance } from '../shell/WidgetSettingsModal';
 import { useShellPrefs } from '../shell/ShellPrefs';
+import { AVAILABLE_CITIES, fetchCityWeather, getCondition, toFahrenheit, type CityWeather } from './_weatherData';
 
-// [condition, day emoji, night emoji, day gradient, night gradient]
-const WMO: Record<number, [string, string, string, string, string]> = {
-  0: ['Clear Sky', '☀️', '🌙', 'from-sky-400 to-blue-500', 'from-indigo-800 to-slate-900'],
-  1: ['Mainly Clear', '🌤️', '🌙', 'from-sky-400 to-blue-500', 'from-indigo-800 to-slate-900'],
-  2: ['Partly Cloudy', '⛅', '☁️', 'from-sky-400 to-blue-400', 'from-indigo-700 to-slate-800'],
-  3: ['Overcast', '☁️', '☁️', 'from-gray-400 to-gray-500', 'from-gray-700 to-slate-800'],
-  45: ['Foggy', '🌫️', '🌫️', 'from-gray-400 to-gray-500', 'from-gray-700 to-slate-800'],
-  48: ['Foggy', '🌫️', '🌫️', 'from-gray-400 to-gray-500', 'from-gray-700 to-slate-800'],
-  51: ['Light Drizzle', '🌦️', '🌧️', 'from-gray-400 to-blue-500', 'from-gray-700 to-indigo-800'],
-  53: ['Drizzle', '🌧️', '🌧️', 'from-gray-500 to-blue-600', 'from-gray-700 to-indigo-800'],
-  55: ['Heavy Drizzle', '🌧️', '🌧️', 'from-gray-500 to-blue-600', 'from-gray-700 to-indigo-800'],
-  61: ['Light Rain', '🌦️', '🌧️', 'from-gray-400 to-blue-500', 'from-gray-700 to-indigo-800'],
-  63: ['Rain', '🌧️', '🌧️', 'from-gray-500 to-blue-600', 'from-gray-700 to-indigo-800'],
-  65: ['Heavy Rain', '🌧️', '🌧️', 'from-gray-600 to-blue-700', 'from-gray-700 to-indigo-900'],
-  71: ['Light Snow', '🌨️', '🌨️', 'from-blue-200 to-blue-400', 'from-blue-800 to-slate-900'],
-  73: ['Snow', '❄️', '❄️', 'from-blue-300 to-blue-500', 'from-blue-800 to-slate-900'],
-  75: ['Heavy Snow', '❄️', '❄️', 'from-blue-400 to-blue-600', 'from-blue-800 to-slate-900'],
-  80: ['Rain Showers', '🌧️', '🌧️', 'from-gray-500 to-blue-600', 'from-gray-700 to-indigo-800'],
-  82: ['Heavy Showers', '🌧️', '🌧️', 'from-gray-600 to-blue-700', 'from-gray-700 to-indigo-900'],
-  95: ['Thunderstorm', '⛈️', '⛈️', 'from-gray-700 to-indigo-800', 'from-gray-800 to-indigo-950'],
-  96: ['Thunderstorm', '⛈️', '⛈️', 'from-gray-700 to-indigo-800', 'from-gray-800 to-indigo-950'],
-  99: ['Thunderstorm', '⛈️', '⛈️', 'from-gray-700 to-indigo-900', 'from-gray-800 to-indigo-950'],
-};
-
-const getCondition = (code: number, isDay = true) => {
-  const entry = WMO[code] || ['Unknown', '❓', '❓', 'from-gray-400 to-gray-500', 'from-gray-700 to-slate-800'];
-  return [entry[0], isDay ? entry[1] : entry[2], isDay ? entry[3] : entry[4]] as [string, string, string];
-};
-
-const AVAILABLE_CITIES: Record<string, { lat: number; lon: number }> = {
-  'Sydney': { lat: -33.8688, lon: 151.2093 },
-  'London': { lat: 51.5074, lon: -0.1278 },
-  'Los Angeles': { lat: 34.0522, lon: -118.2437 },
-  'Shanghai': { lat: 31.2304, lon: 121.4737 },
-  'New York': { lat: 40.7128, lon: -74.0060 },
-  'Tokyo': { lat: 35.6762, lon: 139.6503 },
-  'Dubai': { lat: 25.2048, lon: 55.2708 },
-  'Singapore': { lat: 1.3521, lon: 103.8198 },
-  'Hong Kong': { lat: 22.3193, lon: 114.1694 },
-  'Paris': { lat: 48.8566, lon: 2.3522 },
-  'Berlin': { lat: 52.5200, lon: 13.4050 },
-  'Mumbai': { lat: 19.0760, lon: 72.8777 },
-  'Bangkok': { lat: 13.7563, lon: 100.5018 },
-  'Melbourne': { lat: -37.8136, lon: 144.9631 },
-  'Toronto': { lat: 43.6532, lon: -79.3832 },
-  'Miami': { lat: 25.7617, lon: -80.1918 },
-  'Chicago': { lat: 41.8781, lon: -87.6298 },
-  'Auckland': { lat: -36.8485, lon: 174.7633 },
-};
-
-const DEFAULT_CITIES = ['Sydney', 'London', 'Los Angeles', 'Shanghai'];
-const STORAGE_KEY = 'weather_cities';
+const STORAGE_KEY = 'weather_city';
+const LEGACY_KEY = 'weather_cities';
 const SETTINGS_KEY = 'weather_appearance';
-const CACHE_KEY = 'weather_multi_cache';
-const CACHE_TTL = 30 * 60 * 1000;
 
-interface CityWeather { city: string; temp: number; code: number; high: number; low: number; isDay: boolean; timezone: string }
 interface WeatherPrefs { useFahrenheit: boolean; showLocalTime: boolean; use24Hour: boolean }
-const DEFAULT_PREFS: WeatherPrefs = { useFahrenheit: false, showLocalTime: false, use24Hour: false };
+const DEFAULT_PREFS: WeatherPrefs = { useFahrenheit: false, showLocalTime: true, use24Hour: false };
 
-function loadCities(): string[] {
-  try { const s = JSON.parse(localStorage.getItem(STORAGE_KEY) || ''); if (Array.isArray(s) && s.length) return s; } catch {}
-  return DEFAULT_CITIES;
-}
-
-const toF = (c: number) => Math.round(c * 9 / 5 + 32);
-
-function getTimeInTz(timezone: string, use24Hour = false): { hours: number; minutes: number; text: string } {
+function detectLocalCity(): string {
   try {
-    const now = new Date();
-    const h24Parts = new Intl.DateTimeFormat('en-US', { timeZone: timezone, hour: 'numeric', minute: '2-digit', hour12: false }).formatToParts(now);
-    const h24 = parseInt(h24Parts.find(p => p.type === 'hour')?.value || '0');
-    const m = parseInt(h24Parts.find(p => p.type === 'minute')?.value || '0');
-    if (use24Hour) {
-      return { hours: h24, minutes: m, text: `${String(h24).padStart(2, '0')}:${String(m).padStart(2, '0')}` };
+    const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    for (const [name, info] of Object.entries(AVAILABLE_CITIES)) {
+      if (info.tz === userTz) return name;
     }
-    const parts = new Intl.DateTimeFormat('en-US', { timeZone: timezone, hour: 'numeric', minute: '2-digit', hour12: true }).formatToParts(now);
-    const h12 = parseInt(parts.find(p => p.type === 'hour')?.value || '12');
-    const period = parts.find(p => p.type === 'dayPeriod')?.value || '';
-    return { hours: h24, minutes: m, text: `${h12}:${String(m).padStart(2, '0')} ${period}` };
-  } catch { return { hours: 0, minutes: 0, text: '' }; }
+  } catch {}
+  return 'London';
 }
 
-/** Tiny analog clock SVG */
-function MiniClock({ hours, minutes, size = 20 }: { hours: number; minutes: number; size?: number }) {
-  const r = size / 2;
-  const hAngle = ((hours % 12) + minutes / 60) * 30 - 90;
-  const mAngle = minutes * 6 - 90;
-  const hRad = (hAngle * Math.PI) / 180;
-  const mRad = (mAngle * Math.PI) / 180;
-  const hLen = r * 0.5;
-  const mLen = r * 0.7;
+function loadCity(): string {
+  const v = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
+  if (v && AVAILABLE_CITIES[v]) return v;
+  try {
+    const arr = JSON.parse(localStorage.getItem(LEGACY_KEY) || '');
+    if (Array.isArray(arr) && arr[0] && AVAILABLE_CITIES[arr[0]]) {
+      localStorage.setItem(STORAGE_KEY, arr[0]);
+      return arr[0];
+    }
+  } catch {}
+  return detectLocalCity();
+}
+
+const toF = toFahrenheit;
+
+function getTimeInTz(timezone: string, use24Hour = false): string {
+  try {
+    if (use24Hour) {
+      const parts = new Intl.DateTimeFormat('en-US', { timeZone: timezone, hour: 'numeric', minute: '2-digit', hour12: false }).formatToParts(new Date());
+      const h = parseInt(parts.find(p => p.type === 'hour')?.value || '0');
+      const m = parseInt(parts.find(p => p.type === 'minute')?.value || '0');
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: timezone, hour: 'numeric', minute: '2-digit', hour12: true }).formatToParts(new Date());
+    const h = parseInt(parts.find(p => p.type === 'hour')?.value || '12');
+    const m = parseInt(parts.find(p => p.type === 'minute')?.value || '0');
+    const period = parts.find(p => p.type === 'dayPeriod')?.value || '';
+    return `${h}:${String(m).padStart(2, '0')} ${period}`;
+  } catch { return ''; }
+}
+
+/**
+ * Effect keyframes — tuned for a ~110 px-tall card so drops/flakes fall
+ * across the full height before recycling. Multiple snow/rain variants
+ * give the impression of independent particles instead of a hypnotic
+ * lock-step pattern.
+ */
+const WX_KEYFRAMES = `
+@keyframes wx-rain-a { 0% { transform: translate(0,-20px); opacity: 0; } 10% { opacity: 0.95; } 100% { transform: translate(8px,140px); opacity: 0; } }
+@keyframes wx-rain-b { 0% { transform: translate(0,-20px); opacity: 0; } 12% { opacity: 0.85; } 100% { transform: translate(12px,140px); opacity: 0; } }
+@keyframes wx-rain-c { 0% { transform: translate(0,-20px); opacity: 0; } 10% { opacity: 1; } 100% { transform: translate(5px,140px); opacity: 0; } }
+@keyframes wx-snow-a { 0% { transform: translate(0,-12px) rotate(0deg); opacity: 0; } 10% { opacity: 0.9; } 50% { transform: translate(10px,55px) rotate(180deg); } 100% { transform: translate(-4px,140px) rotate(360deg); opacity: 0; } }
+@keyframes wx-snow-b { 0% { transform: translate(0,-12px) rotate(0deg); opacity: 0; } 10% { opacity: 0.85; } 50% { transform: translate(-12px,55px) rotate(-180deg); } 100% { transform: translate(6px,140px) rotate(-360deg); opacity: 0; } }
+@keyframes wx-snow-c { 0% { transform: translate(0,-12px); opacity: 0; } 10% { opacity: 0.7; } 100% { transform: translate(2px,140px); opacity: 0; } }
+@keyframes wx-drift-cloud { 0% { transform: translateX(-40%); } 100% { transform: translateX(140%); } }
+@keyframes wx-twinkle { 0%, 100% { opacity: 0.25; transform: scale(1); } 50% { opacity: 1; transform: scale(1.6); } }
+@keyframes wx-flash { 0%, 86%, 100% { opacity: 0; } 87% { opacity: 0.95; } 88% { opacity: 0.15; } 89% { opacity: 0.85; } 90% { opacity: 0; } }
+@keyframes wx-bolt { 0%, 86%, 90%, 100% { opacity: 0; } 87% { opacity: 1; } 89% { opacity: 0.85; } }
+@keyframes wx-sun-pulse { 0%, 100% { transform: scale(1); opacity: 0.65; } 50% { transform: scale(1.12); opacity: 0.95; } }
+@keyframes wx-sun-rays { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+@keyframes wx-fog-drift { 0% { transform: translateX(-25%); opacity: 0.3; } 50% { opacity: 0.65; } 100% { transform: translateX(25%); opacity: 0.3; } }
+@keyframes wx-shooting-star { 0%, 95% { opacity: 0; transform: translate(0,0) scale(0); } 96% { opacity: 1; transform: translate(0,0) scale(1); } 100% { opacity: 0; transform: translate(40px,30px) scale(1); } }
+`;
+
+function SunEffect() {
+  // Defined yellow-orange disc with halo + slowly-rotating ray sprite.
   return (
-    <svg width={size} height={size} className="shrink-0">
-      <circle cx={r} cy={r} r={r - 1} fill="rgba(255,255,255,0.15)" stroke="rgba(255,255,255,0.4)" strokeWidth={1} />
-      {/* Hour hand */}
-      <line x1={r} y1={r} x2={r + Math.cos(hRad) * hLen} y2={r + Math.sin(hRad) * hLen}
-        stroke="white" strokeWidth={1.5} strokeLinecap="round" />
-      {/* Minute hand */}
-      <line x1={r} y1={r} x2={r + Math.cos(mRad) * mLen} y2={r + Math.sin(mRad) * mLen}
-        stroke="white" strokeWidth={1} strokeLinecap="round" />
-      {/* Center dot */}
-      <circle cx={r} cy={r} r={1} fill="white" />
-    </svg>
+    <div className="absolute inset-0 overflow-hidden pointer-events-none">
+      <div className="absolute -top-5 -right-5 w-24 h-24" style={{ animation: 'wx-sun-rays 70s linear infinite' }}>
+        <svg viewBox="0 0 100 100" className="w-full h-full">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <rect key={i} x={49} y={3} width={2} height={14} rx={1}
+              fill="rgba(255, 232, 130, 0.55)"
+              transform={`rotate(${i * 30} 50 50)`} />
+          ))}
+        </svg>
+      </div>
+      <div className="absolute top-1 right-1 w-10 h-10 rounded-full"
+        style={{
+          background: 'radial-gradient(circle at 35% 35%, #fff8cc 0%, #ffd84a 55%, #ff9e2a 100%)',
+          boxShadow: '0 0 18px 5px rgba(255, 200, 80, 0.55)',
+          animation: 'wx-sun-pulse 4.5s ease-in-out infinite',
+        }} />
+    </div>
   );
 }
 
+function NightStarsEffect() {
+  // Crescent moon (outer warm circle + offset dark circle to carve out the
+  // bite) and a sparse scatter of stars twinkling at independent rates.
+  // One slow-cycle shooting star adds a moment of motion without
+  // distracting.
+  const stars = Array.from({ length: 16 }).map((_, i) => ({
+    left: `${(i * 53 + 11) % 95}%`,
+    top: `${(i * 37 + 9) % 78}%`,
+    size: 1 + ((i * 13) % 3),
+    delay: `${(i * 0.41) % 4}s`,
+    duration: `${2.5 + ((i * 7) % 5) * 0.6}s`,
+  }));
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none">
+      {/* Crescent moon */}
+      <div className="absolute top-1 right-1">
+        <svg viewBox="0 0 40 40" className="w-9 h-9" style={{ filter: 'drop-shadow(0 0 6px rgba(255,250,220,0.4))' }}>
+          <defs>
+            <radialGradient id="wx-moon-grad" cx="35%" cy="35%">
+              <stop offset="0" stopColor="#fffae0" />
+              <stop offset="1" stopColor="#d4c98a" />
+            </radialGradient>
+          </defs>
+          <circle cx={20} cy={20} r={13} fill="url(#wx-moon-grad)" />
+          <circle cx={26} cy={16} r={11} fill="rgba(15,23,42,1)" />
+        </svg>
+      </div>
+      {stars.map((s, i) => (
+        <div key={i} className="absolute rounded-full bg-white"
+          style={{
+            left: s.left, top: s.top, width: s.size, height: s.size,
+            animation: `wx-twinkle ${s.duration} ease-in-out ${s.delay} infinite`,
+          }} />
+      ))}
+      {/* Shooting star — appears once every ~12s */}
+      <div className="absolute" style={{ left: '15%', top: '20%', animation: 'wx-shooting-star 12s ease-out infinite' }}>
+        <div className="w-12 h-px"
+          style={{ background: 'linear-gradient(to right, transparent, rgba(255,255,255,0.95))', boxShadow: '0 0 4px rgba(255,255,255,0.8)' }} />
+      </div>
+    </div>
+  );
+}
+
+function CloudsEffect({ tone = 'light' as 'light' | 'dark' }) {
+  const fill = tone === 'light' ? 'rgba(255,255,255,0.78)' : 'rgba(220,228,240,0.45)';
+  const Cloud = ({ scale = 1 }) => (
+    <svg viewBox="0 0 120 50" className="w-32 h-12" style={{ transform: `scale(${scale})`, filter: 'blur(0.6px)' }}>
+      <ellipse cx={28} cy={36} rx={18} ry={11} fill={fill} />
+      <ellipse cx={50} cy={28} rx={22} ry={15} fill={fill} />
+      <ellipse cx={75} cy={32} rx={20} ry={12} fill={fill} />
+      <ellipse cx={95} cy={38} rx={15} ry={9} fill={fill} />
+    </svg>
+  );
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none">
+      <div className="absolute" style={{ top: '8%', animation: 'wx-drift-cloud 42s linear infinite' }}><Cloud scale={0.9} /></div>
+      <div className="absolute" style={{ top: '40%', animation: 'wx-drift-cloud 60s linear -22s infinite', opacity: 0.85 }}><Cloud scale={1.25} /></div>
+      <div className="absolute" style={{ top: '68%', animation: 'wx-drift-cloud 78s linear -45s infinite', opacity: 0.7 }}><Cloud scale={0.75} /></div>
+    </div>
+  );
+}
+
+function RainEffect({ heavy = false }: { heavy?: boolean }) {
+  const count = heavy ? 26 : 16;
+  const variants = ['wx-rain-a', 'wx-rain-b', 'wx-rain-c'];
+  const drops = Array.from({ length: count }).map((_, i) => ({
+    left: `${(i * 100 / count + (i * 11) % 7) % 100}%`,
+    delay: `${(i * 0.087) % 1.3}s`,
+    height: `${12 + (i % 4) * 5}px`,
+    duration: `${0.7 + (i % 3) * 0.18}s`,
+    variant: variants[i % variants.length],
+  }));
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none">
+      {drops.map((d, i) => (
+        <div key={i} className="absolute"
+          style={{
+            left: d.left, top: '-20px',
+            width: '1px', height: d.height,
+            background: 'linear-gradient(180deg, rgba(180,210,255,0) 0%, rgba(220,235,255,0.85) 90%, rgba(255,255,255,0.95) 100%)',
+            transform: 'rotate(8deg)',
+            animation: `${d.variant} ${d.duration} linear ${d.delay} infinite`,
+            transformOrigin: 'top',
+          }} />
+      ))}
+    </div>
+  );
+}
+
+function SnowEffect() {
+  const variants = ['wx-snow-a', 'wx-snow-b', 'wx-snow-c'];
+  const flakes = Array.from({ length: 16 }).map((_, i) => ({
+    left: `${(i * 100 / 16 + (i * 13) % 5) % 100}%`,
+    delay: `${(i * 0.43) % 5}s`,
+    duration: `${4.5 + (i % 5)}s`,
+    size: 3 + (i % 4) * 1.4,
+    opacity: 0.65 + ((i * 7) % 4) * 0.08,
+    variant: variants[i % variants.length],
+  }));
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none">
+      {flakes.map((f, i) => (
+        <div key={i} className="absolute rounded-full bg-white"
+          style={{
+            left: f.left, top: '-12px',
+            width: f.size, height: f.size,
+            opacity: f.opacity,
+            boxShadow: '0 0 4px rgba(255,255,255,0.65)',
+            animation: `${f.variant} ${f.duration} linear ${f.delay} infinite`,
+          }} />
+      ))}
+    </div>
+  );
+}
+
+function ThunderEffect() {
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none">
+      <RainEffect heavy />
+      {/* Sharp double-flash overlay */}
+      <div className="absolute inset-0 bg-white" style={{ animation: 'wx-flash 6s ease-out infinite' }} />
+      {/* Lightning bolt — visible only during the flash peaks */}
+      <div className="absolute inset-y-0 right-1/3 flex items-center justify-center pointer-events-none"
+        style={{ animation: 'wx-bolt 6s ease-out infinite' }}>
+        <svg viewBox="0 0 18 60" className="h-4/5"
+          style={{ filter: 'drop-shadow(0 0 6px rgba(255, 240, 150, 0.95)) drop-shadow(0 0 14px rgba(255, 220, 90, 0.7))' }}>
+          <path d="M11 0 L2 28 L8 30 L4 60 L16 24 L9 22 Z"
+            fill="rgba(255, 250, 200, 0.98)"
+            stroke="rgba(255, 255, 255, 0.9)" strokeWidth={0.3} />
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+function FogEffect() {
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i} className="absolute left-0 right-0"
+          style={{
+            top: `${10 + i * 22}%`,
+            height: '14px',
+            background: 'linear-gradient(to right, rgba(255,255,255,0) 0%, rgba(255,255,255,0.55) 50%, rgba(255,255,255,0) 100%)',
+            filter: 'blur(2px)',
+            animation: `wx-fog-drift ${10 + i * 3}s ease-in-out ${i * 0.7}s infinite alternate`,
+          }} />
+      ))}
+    </div>
+  );
+}
+
+function WeatherEffect({ code, isDay }: { code: number; isDay: boolean }) {
+  if (code === 0 || code === 1) return isDay ? <SunEffect /> : <NightStarsEffect />;
+  if (code === 2) return (
+    <>
+      {isDay ? <SunEffect /> : <NightStarsEffect />}
+      <CloudsEffect tone={isDay ? 'light' : 'dark'} />
+    </>
+  );
+  if (code === 3) return <CloudsEffect tone={isDay ? 'light' : 'dark'} />;
+  if (code === 45 || code === 48) return <FogEffect />;
+  if ([51, 53, 61, 80, 81].includes(code)) return <RainEffect />;
+  if ([55, 63, 65, 82].includes(code)) return <RainEffect heavy />;
+  if ([71, 73, 75].includes(code)) return <SnowEffect />;
+  if ([95, 96, 99].includes(code)) return <ThunderEffect />;
+  return null;
+}
+
 export default function Weather() {
-  const [cities, setCities] = useState(loadCities);
+  const [city, setCity] = useState(loadCity);
   const [appearance, setAppearance] = useState(() => loadAppearance(SETTINGS_KEY));
-  const [data, setData] = useState<CityWeather[]>([]);
+  const [data, setData] = useState<CityWeather | null>(null);
   const [loading, setLoading] = useState(true);
-  // Tick every minute so clocks update
   const [, setTick] = useState(0);
   useEffect(() => { const t = setInterval(() => setTick(n => n + 1), 60000); return () => clearInterval(t); }, []);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [configCities, setConfigCities] = useState<string[]>([]);
+  const [configCity, setConfigCity] = useState(city);
   const [configAppearance, setConfigAppearance] = useState<WidgetAppearance>(appearance);
-  // Prefs live in the consumer-supplied prefs adapter so they persist
-  // reliably across re-mounts without the local useState/localStorage dance.
+
   const { prefs: shellPrefs, save: saveShellPrefs } = useShellPrefs();
   const prefs: WeatherPrefs = { ...DEFAULT_PREFS, ...(shellPrefs.weather_prefs as WeatherPrefs | undefined ?? {}) };
   const [configPrefs, setConfigPrefs] = useState<WeatherPrefs>(prefs);
 
   useWidgetSettings(useCallback(() => {
-    setConfigCities([...cities]);
+    setConfigCity(city);
     setConfigAppearance({ ...appearance });
     setConfigPrefs({ ...prefs });
     setSettingsOpen(true);
-  }, [cities, appearance, prefs]));
+  }, [city, appearance, prefs]));
 
-  const fetchAll = useCallback(async (cityList: string[], force = false) => {
-    if (!force) {
-      try {
-        const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
-        const key = cityList.join(',');
-        if (cached[key] && Date.now() - cached[key].ts < CACHE_TTL) {
-          setData(cached[key].data); setLoading(false); return;
-        }
-      } catch {}
-    }
+  useEffect(() => {
+    let cancelled = false;
     setLoading(true);
-    const results: CityWeather[] = [];
-    for (const city of cityList) {
-      const coords = AVAILABLE_CITIES[city];
-      if (!coords) continue;
-      try {
-        const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${coords.lat}&longitude=${coords.lon}&current=temperature_2m,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min&forecast_days=1&timezone=auto`);
-        const w = await res.json();
-        results.push({ city, temp: Math.round(w.current.temperature_2m), code: w.current.weather_code, high: Math.round(w.daily.temperature_2m_max[0]), low: Math.round(w.daily.temperature_2m_min[0]), isDay: w.current.is_day === 1, timezone: w.timezone || 'UTC' });
-      } catch {}
-    }
-    setData(results); setLoading(false);
-    try { const c = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}'); c[cityList.join(',')] = { data: results, ts: Date.now() }; localStorage.setItem(CACHE_KEY, JSON.stringify(c)); } catch {}
-  }, []);
-
-  useEffect(() => { fetchAll(cities); }, [cities, fetchAll]);
+    fetchCityWeather(city).then(w => {
+      if (cancelled) return;
+      setData(w);
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [city]);
 
   const saveSettings = () => {
-    if (configCities.length === 0) return;
-    setCities(configCities);
+    setCity(configCity);
     setAppearance(configAppearance);
     saveShellPrefs({ weather_prefs: configPrefs });
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(configCities));
+    localStorage.setItem(STORAGE_KEY, configCity);
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(configAppearance));
     setSettingsOpen(false);
   };
 
   const t = (c: number) => prefs.useFahrenheit ? `${toF(c)}°F` : `${c}°`;
 
-  if (loading && data.length === 0) {
-    return <div className="flex items-center justify-center h-full bg-gradient-to-b from-sky-400 to-blue-500 rounded-lg text-white/70 text-sm">Loading...</div>;
+  // Half-height — tile is now ~110 px tall. Effect keyframes are tuned for
+  // this so drops/flakes traverse the full height before recycling.
+  const TILE_HEIGHT = 110;
+
+  if (loading && !data) {
+    return <div className="flex items-center justify-center h-full bg-gradient-to-b from-sky-400 to-blue-500 rounded-lg text-white/80 text-xs" style={{ minHeight: TILE_HEIGHT }}>Loading…</div>;
+  }
+  if (!data) {
+    return <div className="flex items-center justify-center h-full bg-slate-700 rounded-lg text-white/80 text-xs" style={{ minHeight: TILE_HEIGHT }}>Couldn't load weather</div>;
   }
 
-  // Cards are ~88 px tall (px-4 py-3 + 2 stacked text rows) + 8 px gap. Add
-  // 16 px for the panel's own p-2 padding so the widget never collapses below
-  // its rendered height.
-  const dynamicHeight = data.length * 96 + 16;
+  const [condition, emoji, gradient] = getCondition(data.code, data.isDay);
 
   return (
     <>
-      {/* Outer panel sets the user-tunable translucency via background alpha
-       *  (NOT `opacity`, which would also fade the row colors into gray) and
-       *  carries the rounded clip. Rows fill the panel edge-to-edge so each
-       *  city's day/night gradient reads at full saturation. */}
-      <div className="flex flex-col rounded-lg text-white overflow-hidden"
+      <style>{WX_KEYFRAMES}</style>
+      <div className="rounded-lg overflow-hidden"
         style={{
-          minHeight: dynamicHeight,
-          backgroundColor: `rgba(15, 23, 42, ${appearance.activeOpacity / 100})`, // slate-900 with alpha
+          backgroundColor: `rgba(15, 23, 42, ${appearance.activeOpacity / 100})`,
           backdropFilter: appearance.activeBlur > 0 ? `blur(${appearance.activeBlur}px)` : undefined,
         }}>
-        {/* iOS-style city cards — each its own rounded tile sitting on the
-         *  panel's slate backdrop so the day/night gradient pops. Layout:
-         *  city + time on top-left, large temperature on top-right,
-         *  condition + H/L on the bottom row. */}
-        <div className="flex-1 flex flex-col gap-2 p-2">
-          {data.map(d => {
-            const [condition] = getCondition(d.code, d.isDay);
-            const rowBg = d.isDay
-              ? 'bg-gradient-to-br from-sky-400 via-sky-300 to-sky-500'
-              : 'bg-gradient-to-br from-slate-800 via-blue-950 to-slate-900';
-            return (
-              <div key={d.city} className={`rounded-2xl px-4 py-3 flex flex-col justify-between gap-3 ${rowBg}`}>
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-lg font-semibold leading-tight truncate">{d.city}</div>
-                    {prefs.showLocalTime && (
-                      <div className="text-xs opacity-90 mt-0.5 tabular-nums">
-                        {getTimeInTz(d.timezone, prefs.use24Hour).text}
-                      </div>
-                    )}
+        <div className={`relative rounded-lg overflow-hidden text-white bg-gradient-to-br ${gradient}`} style={{ height: TILE_HEIGHT }}>
+          {/* Animated effects */}
+          <WeatherEffect code={data.code} isDay={data.isDay} />
+
+          {/* Compact two-row content */}
+          <div className="relative z-10 px-3 py-2.5 flex flex-col h-full justify-between">
+            {/* Top: city + time | temp */}
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="text-base font-semibold leading-tight truncate drop-shadow-sm">{data.city}</div>
+                {prefs.showLocalTime && (
+                  <div className="text-[10px] opacity-90 leading-tight tabular-nums drop-shadow-sm">
+                    {getTimeInTz(data.timezone, prefs.use24Hour)}
                   </div>
-                  <div className="text-4xl font-extralight leading-none tracking-tight tabular-nums shrink-0">
-                    {t(d.temp)}
-                  </div>
-                </div>
-                <div className="flex items-end justify-between text-[11px]">
-                  <span className="opacity-95">{condition}</span>
-                  <span className="opacity-90 tabular-nums">H:{t(d.high)} L:{t(d.low)}</span>
-                </div>
+                )}
               </div>
-            );
-          })}
+              <div className="text-3xl font-extralight leading-none tracking-tight tabular-nums shrink-0 drop-shadow-sm">
+                {t(data.temp)}
+              </div>
+            </div>
+
+            {/* Bottom: condition | H/L */}
+            <div className="flex items-end justify-between gap-2">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-lg leading-none drop-shadow-sm">{emoji}</span>
+                <span className="text-[11px] font-medium drop-shadow-sm truncate">{condition}</span>
+              </div>
+              <span className="text-[10px] opacity-90 tabular-nums drop-shadow-sm shrink-0">H:{t(data.high)} L:{t(data.low)}</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -264,17 +400,14 @@ export default function Weather() {
           </div>
         </div>
         <div>
-          <h3 className="text-sm font-semibold text-gray-700 mb-2">Cities</h3>
-          <div className="grid grid-cols-2 gap-1 max-h-48 overflow-y-auto">
-            {Object.keys(AVAILABLE_CITIES).map(city => (
-              <label key={city} className="flex items-center gap-2 text-sm py-1 cursor-pointer hover:bg-gray-50 rounded px-2">
-                <input type="checkbox" checked={configCities.includes(city)}
-                  onChange={() => setConfigCities(prev => prev.includes(city) ? prev.filter(c => c !== city) : [...prev, city])}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5" />
-                {city}
-              </label>
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">City</h3>
+          <select value={configCity} onChange={e => setConfigCity(e.target.value)}
+            className="w-full bg-gray-50 border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
+            {Object.keys(AVAILABLE_CITIES).map(name => (
+              <option key={name} value={name}>{name}</option>
             ))}
-          </div>
+          </select>
+          <p className="mt-1 text-[10px] text-gray-400">Auto-detected from your timezone; change if needed.</p>
         </div>
       </WidgetSettingsModal>
     </>

@@ -168,6 +168,21 @@ function _savePositionsDebounced() {
   }, 500);
 }
 
+/**
+ * Seed an initial position for a window — applied only when no saved
+ * position already exists for the given key. Use this from the consumer
+ * to lay out the first-run desktop without overwriting whatever the user
+ * has subsequently dragged the windows to.
+ *
+ * The key matches the window's `windowKey` — for `openPage('/weather')`
+ * that's `'page:/weather'`.
+ */
+export function setWindowDefaultPosition(key: string, pos: { x: number; y: number; w: number; h: number }) {
+  if (_windowPositions[key]) return;
+  _windowPositions[key] = pos;
+  _savePositionsDebounced();
+}
+
 interface ModalProps {
   open: boolean;
   onClose: () => void;

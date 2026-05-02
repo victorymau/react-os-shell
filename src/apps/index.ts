@@ -57,7 +57,7 @@ export const utilityApps: WindowRegistry = {
   '/notepad': { component: Notepad, label: 'Notepad', size: 'lg', allowPinOnTop: true },
   '/weather': { component: Weather, label: 'Weather', size: 'sm', utility: true, widget: true, autoHeight: true, dimensions: [320, 400] },
   '/currency': { component: CurrencyConverter, label: 'Currency Converter', size: 'sm', utility: true, widget: true, autoHeight: true, dimensions: [320, 480] },
-  '/pomodoro': { component: PomodoroTimer, label: 'Pomodoro Timer', size: 'sm', utility: true, widget: true, autoHeight: true, dimensions: [320, 420] },
+  '/pomodoro': { component: PomodoroTimer, label: 'Pomodoro Timer', size: 'sm', utility: true, widget: true, autoHeight: true, dimensions: [320, 600] },
   '/world-clock': { component: WorldClock, label: 'World Clock', size: 'sm', utility: true, widget: true, autoHeight: true, dimensions: [320, 480] },
 };
 
