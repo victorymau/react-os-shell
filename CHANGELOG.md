@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.2.43] — 2026-05-03
+
+### Changed
+- **World Clock: per-card day/night gradients.** Each city is now its own iOS-style rounded card sitting on the panel's slate backdrop, and the gradient flips based on the local hour at that city — bright sky-blue (`from-sky-400 via-sky-300 to-sky-500`) when 06–18, deep navy (`from-slate-800 via-blue-950 to-slate-900`) otherwise. Same palette as the Weather widget so the two read as a set when stacked. The local-time card sits at the top (with its own day/night colour and a larger time face). Translucency moved to background-color alpha (slate-900 base) so the card gradients keep their saturation at lower opacity.
+
 ## [0.2.42] — 2026-05-02
 
 ### Fixed
