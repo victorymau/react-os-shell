@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useBugReport, type BugReport } from './BugReportDialog';
 import { formatDate } from '../utils/date';
 import Modal from './Modal';
+import { confirm } from './ConfirmDialog';
 import { useWindowManager } from './WindowManager';
 import { setPdfPreview } from '../apps/Preview';
 
@@ -16,19 +17,24 @@ function StatePill({ resolved }: { resolved: boolean }) {
 
 interface Props {
   report: BugReport;
+  /** Called after a successful delete so the parent window can close itself. */
   onClose?: () => void;
 }
 
-export default function BugReportDetail({ report }: Props) {
+export default function BugReportDetail({ report, onClose }: Props) {
   const qc = useQueryClient();
   const config = useBugReport();
   const { openPage } = useWindowManager();
   const [resolveOpen, setResolveOpen] = useState(false);
   const [note, setNote] = useState('');
 
+  // Neutral noun across the dialog — a record may be a Bug or a Suggestion.
+  const kind = report.report_type === 'suggestion' ? 'suggestion' : 'bug';
+  const Kind = kind === 'suggestion' ? 'Suggestion' : 'Bug';
+
   const openScreenshot = () => {
     if (!report.screenshot_url) return;
-    const filename = `bug-report-${report.id}-screenshot.png`;
+    const filename = `${kind}-${report.id}-screenshot.png`;
     setPdfPreview({ url: report.screenshot_url, filename, kind: 'image' });
     openPage('/preview');
   };
@@ -36,7 +42,7 @@ export default function BugReportDetail({ report }: Props) {
   const resolve = useMutation({
     mutationFn: ({ is_resolved, resolution_note }: { is_resolved: boolean; resolution_note?: string }) => {
       if (!config?.resolve) {
-        return Promise.reject(new Error('Bug report resolve is not configured.'));
+        return Promise.reject(new Error('Resolve is not configured.'));
       }
       return config.resolve(report.id, is_resolved, resolution_note);
     },
@@ -46,8 +52,33 @@ export default function BugReportDetail({ report }: Props) {
       setResolveOpen(false);
       setNote('');
     },
-    meta: { success: (d: BugReport) => d.is_resolved ? 'Bug report marked resolved.' : 'Bug report reopened.' },
+    meta: { success: (d: BugReport) => d.is_resolved ? `${Kind} marked resolved.` : `${Kind} reopened.` },
   });
+
+  const del = useMutation({
+    mutationFn: () => {
+      if (!config?.delete) return Promise.reject(new Error('Delete is not configured.'));
+      return config.delete(report.id);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['bug-reports'] });
+      qc.removeQueries({ queryKey: ['entity', 'bug_report', report.id] });
+      onClose?.();
+    },
+    meta: { success: () => `${Kind} deleted.` },
+  });
+
+  const handleDelete = async () => {
+    const ok = await confirm({
+      title: `Delete this ${kind}?`,
+      message: 'This is permanent and cannot be undone.',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Keep',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    del.mutate();
+  };
 
   const handleAction = () => {
     if (report.is_resolved) {
@@ -104,16 +135,24 @@ export default function BugReportDetail({ report }: Props) {
         </div>
       )}
 
-      {config?.resolve && (
-        <div className="flex justify-end pt-2 border-t border-gray-200">
-          <button onClick={handleAction} disabled={resolve.isPending}
-            className={`px-3 py-1.5 text-sm rounded-lg font-medium transition-colors ${report.is_resolved ? 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
-            {resolve.isPending ? '...' : report.is_resolved ? 'Reopen' : 'Mark Resolved'}
-          </button>
+      {(config?.resolve || config?.delete) && (
+        <div className="flex justify-end items-center gap-2 pt-2 border-t border-gray-200">
+          {config?.delete && (
+            <button onClick={handleDelete} disabled={del.isPending || resolve.isPending}
+              className="px-3 py-1.5 text-sm rounded-lg font-medium transition-colors bg-white border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-50 mr-auto">
+              {del.isPending ? 'Deleting…' : 'Delete'}
+            </button>
+          )}
+          {config?.resolve && (
+            <button onClick={handleAction} disabled={resolve.isPending || del.isPending}
+              className={`px-3 py-1.5 text-sm rounded-lg font-medium transition-colors ${report.is_resolved ? 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
+              {resolve.isPending ? '...' : report.is_resolved ? 'Reopen' : 'Mark Resolved'}
+            </button>
+          )}
         </div>
       )}
 
-      <Modal open={resolveOpen} onClose={() => !resolve.isPending && setResolveOpen(false)} title={`Resolve ${report.report_code}`} size="md" compact>
+      <Modal open={resolveOpen} onClose={() => !resolve.isPending && setResolveOpen(false)} title={`Resolve ${report.report_code ?? Kind}`} size="md" compact>
         <div className="space-y-3">
           <p className="text-sm text-gray-600">
             Add a short note for {report.reporter_name || 'the reporter'} (optional).

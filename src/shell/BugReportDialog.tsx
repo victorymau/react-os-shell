@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, createContext, useContext, type ReactNode } from 'react';
+import { useState, useRef, useEffect, useCallback, createContext, useContext, lazy, Suspense, type ReactNode } from 'react';
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react';
 
 /**
@@ -54,6 +54,10 @@ export interface BugReportConfig {
   list?: (params?: Record<string, string>) => Promise<{ results: BugReport[]; count?: number; next?: string | null; previous?: string | null }>;
   /** Mark a report resolved or reopened, with an optional admin note. */
   resolve?: (id: string, is_resolved: boolean, resolution_note?: string) => Promise<BugReport>;
+  /** Permanently delete a report. When omitted the Delete button in
+   *  `<BugReportDetail>` is hidden — the consumer's permission system
+   *  decides whether to expose the capability at all. */
+  delete?: (id: string) => Promise<void>;
 }
 
 const BugReportContext = createContext<BugReportConfig | null>(null);
@@ -79,6 +83,10 @@ export function BugReportProvider({ children }: { children: React.ReactNode }) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [description, setDescription] = useState('');
   const [reportType, setReportType] = useState<ReportType>('bug');
+  // Annotator overlay state — opens on top of the dialog. Lazy-loaded so
+  // the annotator (and its SVG/canvas weight) only enters the bundle when
+  // the user actually opens it.
+  const [annotating, setAnnotating] = useState(false);
   const resolveRef = useRef<(value: BugReportSubmission | null) => void>();
 
   const openFn: OpenFn = useCallback((s) => {
@@ -135,8 +143,22 @@ export function BugReportProvider({ children }: { children: React.ReactNode }) {
             </div>
 
             {previewUrl && (
-              <div className="mt-4 rounded-md border border-gray-200 overflow-hidden bg-gray-50 max-h-64">
-                <img src={previewUrl} alt="Screenshot preview" className="w-full h-auto max-h-64 object-contain" />
+              <div className="mt-4">
+                <div className="relative rounded-md border border-gray-200 overflow-hidden bg-gray-50 max-h-64">
+                  <img src={previewUrl} alt="Screenshot preview" className="w-full h-auto max-h-64 object-contain" />
+                  <button
+                    type="button"
+                    onClick={() => setAnnotating(true)}
+                    className="absolute top-2 right-2 inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-white/95 backdrop-blur border border-gray-200 shadow-sm text-xs font-medium text-gray-700 hover:bg-white"
+                    title="Mark up the screenshot — circle, arrow, mosaic, text…"
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
+                    </svg>
+                    Annotate
+                  </button>
+                </div>
+                <p className="mt-1 text-[11px] text-gray-400">Click Annotate to mark up the screenshot before sending.</p>
               </div>
             )}
             {!previewUrl && (
@@ -176,6 +198,33 @@ export function BugReportProvider({ children }: { children: React.ReactNode }) {
           </DialogPanel>
         </div>
       </Dialog>
+
+      {annotating && previewUrl && (
+        <BugReportAnnotator
+          src={previewUrl}
+          onApply={(blob) => { setScreenshot(blob); setAnnotating(false); }}
+          onCancel={() => setAnnotating(false)}
+        />
+      )}
     </>
+  );
+}
+
+// Lazy-import the annotator so its SVG / canvas weight only enters the bundle
+// when the user actually opens the markup overlay. Wrapped in our own Suspense
+// boundary with a lightweight loader so it doesn't fall through to the app's.
+const LazyImageAnnotator = lazy(() => import('../apps/ImageAnnotator'));
+
+function BugReportAnnotator({
+  src, onApply, onCancel,
+}: { src: string; onApply: (blob: Blob) => void; onCancel: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[10000] bg-black/60 backdrop-blur-sm flex flex-col">
+      <Suspense fallback={<div className="flex-1 flex items-center justify-center text-sm text-white/80">Loading editor…</div>}>
+        <div className="flex-1 m-4 rounded-lg overflow-hidden bg-white shadow-2xl">
+          <LazyImageAnnotator src={src} filename="screenshot.png" onApply={onApply} onCancel={onCancel} />
+        </div>
+      </Suspense>
+    </div>
   );
 }

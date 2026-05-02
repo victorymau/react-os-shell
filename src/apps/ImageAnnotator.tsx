@@ -59,10 +59,18 @@ export interface ImageAnnotatorHandle {
 interface ImageAnnotatorProps {
   src: string;
   filename: string;
+  /** Standalone-mode: when provided, an Apply pill is rendered in the
+   *  annotator's toolbar that composites the current canvas + SVG into a PNG
+   *  blob and hands it back. Used by callers like the bug-report dialog that
+   *  embed the annotator outside the Preview app and want the result. */
+  onApply?: (blob: Blob) => void;
+  /** Standalone-mode companion to `onApply` — Cancel pill that lets the
+   *  consumer dismiss the annotator without applying. */
+  onCancel?: () => void;
 }
 
 const ImageAnnotator = forwardRef<ImageAnnotatorHandle, ImageAnnotatorProps>(function ImageAnnotator(
-  { src, filename }, ref,
+  { src, filename, onApply, onCancel }, ref,
 ) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -622,6 +630,26 @@ const ImageAnnotator = forwardRef<ImageAnnotatorHandle, ImageAnnotatorProps>(fun
             <>
               <button onClick={applyCrop} className="px-2 py-1 rounded bg-blue-500 text-white hover:bg-blue-600">Apply Crop</button>
               <button onClick={cancelCrop} className="px-2 py-1 rounded hover:bg-gray-200 text-gray-700">Cancel</button>
+            </>
+          )}
+          {onApply && !pendingCrop && (
+            <>
+              {onCancel && (
+                <button onClick={onCancel} className="px-3 py-1 rounded hover:bg-gray-200 text-gray-700 text-xs font-medium">Cancel</button>
+              )}
+              <button
+                onClick={async () => {
+                  const out = await compositeToCanvas();
+                  if (!out) { toast.error('Failed to export'); return; }
+                  out.toBlob(blob => {
+                    if (!blob) { toast.error('Failed to export'); return; }
+                    onApply(blob);
+                  }, 'image/png');
+                }}
+                className="px-3 py-1 rounded bg-blue-500 text-white hover:bg-blue-600 text-xs font-medium"
+              >
+                Apply
+              </button>
             </>
           )}
         </div>
