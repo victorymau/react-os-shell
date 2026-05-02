@@ -14,6 +14,11 @@ export type ReportType = 'bug' | 'suggestion';
 export interface BugReportSubmission {
   description: string;
   reportType: ReportType;
+  /** The screenshot the user actually wants to send. Reflects any in-dialog
+   *  annotation: callers should upload THIS blob, not the original capture
+   *  they passed into `openBugReportDialog`. May be null if the original
+   *  capture failed and the user submitted without uploading a fallback. */
+  screenshot: Blob | null;
 }
 
 /** Generic bug-report record shape consumed by the shell's list/detail UI. */
@@ -115,7 +120,10 @@ export function BugReportProvider({ children }: { children: React.ReactNode }) {
   const handleSubmit = () => {
     setAnnotating(false);
     setOpen(false);
-    resolveRef.current?.({ description: description.trim(), reportType });
+    // Pass the current screenshot (which may be the annotated blob if the
+    // user marked it up before sending) rather than relying on the caller
+    // to remember what they captured.
+    resolveRef.current?.({ description: description.trim(), reportType, screenshot });
   };
 
   const handleCancel = () => {
