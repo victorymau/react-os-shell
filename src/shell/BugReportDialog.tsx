@@ -162,9 +162,7 @@ export function BugReportProvider({ children }: { children: React.ReactNode }) {
               </div>
             )}
             {!previewUrl && (
-              <div className="mt-4 rounded-md border border-dashed border-gray-300 px-4 py-6 text-center text-sm text-gray-500">
-                Screenshot capture failed — your description will still be sent.
-              </div>
+              <UploadDropZone onSelect={(blob) => setScreenshot(blob)} />
             )}
 
             <label className="mt-4 block text-sm font-medium text-gray-700">
@@ -214,6 +212,50 @@ export function BugReportProvider({ children }: { children: React.ReactNode }) {
 // when the user actually opens the markup overlay. Wrapped in our own Suspense
 // boundary with a lightweight loader so it doesn't fall through to the app's.
 const LazyImageAnnotator = lazy(() => import('../apps/ImageAnnotator'));
+
+/** Fallback when automatic screenshot capture fails (user denies the
+ *  Screen Capture permission, or it's unsupported). The user can drop or
+ *  pick an image file — the bytes are passed to the parent as a Blob via
+ *  `onSelect`, which behaves identically to a captured screenshot
+ *  downstream (annotate / send). */
+function UploadDropZone({ onSelect }: { onSelect: (blob: Blob) => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [hover, setHover] = useState(false);
+
+  const accept = (file: File | undefined) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) return;
+    onSelect(file);
+  };
+
+  return (
+    <div
+      onClick={() => inputRef.current?.click()}
+      onDragOver={(e) => { e.preventDefault(); setHover(true); }}
+      onDragLeave={() => setHover(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setHover(false);
+        accept(e.dataTransfer.files?.[0]);
+      }}
+      className={`mt-4 rounded-md border border-dashed px-4 py-6 text-center text-sm cursor-pointer transition-colors ${
+        hover ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-gray-300 text-gray-500 hover:border-gray-400 hover:bg-gray-50'
+      }`}
+    >
+      <p className="text-gray-700 font-medium">Screenshot capture failed</p>
+      <p className="mt-1 text-xs text-gray-500">
+        Drop an image here, or <span className="text-blue-600 underline">click to upload</span>. Your description will be sent either way.
+      </p>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        onChange={(e) => accept(e.target.files?.[0])}
+        className="hidden"
+      />
+    </div>
+  );
+}
 
 function BugReportAnnotator({
   src, onApply, onCancel,

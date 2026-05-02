@@ -177,36 +177,51 @@ export default function Weather() {
     return <div className="flex items-center justify-center h-full bg-gradient-to-b from-sky-400 to-blue-500 rounded-lg text-white/70 text-sm">Loading...</div>;
   }
 
-  // Use the first city's condition + day/night for the background gradient
-  const firstIsDay = data.length > 0 ? data[0].isDay : true;
-  const [, , gradient] = data.length > 0 ? getCondition(data[0].code, firstIsDay) : ['', '', 'from-sky-400 to-blue-500'];
-  const dynamicHeight = data.length * 48 + 16;
+  // Cards are ~88 px tall (px-4 py-3 + 2 stacked text rows) + 8 px gap. Add
+  // 16 px for the panel's own p-2 padding so the widget never collapses below
+  // its rendered height.
+  const dynamicHeight = data.length * 96 + 16;
 
   return (
     <>
-      <div className={`flex flex-col bg-gradient-to-b ${gradient} rounded-lg text-white overflow-hidden`}
-        style={{ minHeight: dynamicHeight, opacity: appearance.activeOpacity / 100, backdropFilter: appearance.activeBlur > 0 ? `blur(${appearance.activeBlur}px)` : undefined }}>
-        <div className="flex-1 flex flex-col justify-between px-3 py-3">
+      {/* Outer panel sets the user-tunable translucency via background alpha
+       *  (NOT `opacity`, which would also fade the row colors into gray) and
+       *  carries the rounded clip. Rows fill the panel edge-to-edge so each
+       *  city's day/night gradient reads at full saturation. */}
+      <div className="flex flex-col rounded-lg text-white overflow-hidden"
+        style={{
+          minHeight: dynamicHeight,
+          backgroundColor: `rgba(15, 23, 42, ${appearance.activeOpacity / 100})`, // slate-900 with alpha
+          backdropFilter: appearance.activeBlur > 0 ? `blur(${appearance.activeBlur}px)` : undefined,
+        }}>
+        {/* iOS-style city cards — each its own rounded tile sitting on the
+         *  panel's slate backdrop so the day/night gradient pops. Layout:
+         *  city + time on top-left, large temperature on top-right,
+         *  condition + H/L on the bottom row. */}
+        <div className="flex-1 flex flex-col gap-2 p-2">
           {data.map(d => {
-            const [condition, emoji] = getCondition(d.code, d.isDay);
+            const [condition] = getCondition(d.code, d.isDay);
+            const rowBg = d.isDay
+              ? 'bg-gradient-to-br from-sky-400 via-sky-300 to-sky-500'
+              : 'bg-gradient-to-br from-slate-800 via-blue-950 to-slate-900';
             return (
-              <div key={d.city} className={`flex items-center gap-2 rounded-lg px-2 py-1 -mx-1 ${d.isDay ? '' : 'bg-black/15'}`}>
-                {prefs.showLocalTime && (() => {
-                  const time = getTimeInTz(d.timezone, prefs.use24Hour);
-                  return <MiniClock hours={time.hours} minutes={time.minutes} size={24} />;
-                })()}
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold leading-tight">{d.city}</div>
-                  <div className="text-[10px] opacity-70">
-                    {prefs.showLocalTime ? getTimeInTz(d.timezone, prefs.use24Hour).text : condition}
+              <div key={d.city} className={`rounded-2xl px-4 py-3 flex flex-col justify-between gap-3 ${rowBg}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-lg font-semibold leading-tight truncate">{d.city}</div>
+                    {prefs.showLocalTime && (
+                      <div className="text-xs opacity-90 mt-0.5 tabular-nums">
+                        {getTimeInTz(d.timezone, prefs.use24Hour).text}
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-4xl font-extralight leading-none tracking-tight tabular-nums shrink-0">
+                    {t(d.temp)}
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-lg">{emoji}</span>
-                  <div className="text-right">
-                    <div className="text-2xl font-light leading-none">{t(d.temp)}</div>
-                    <div className="text-[9px] opacity-60">H:{t(d.high)} L:{t(d.low)}</div>
-                  </div>
+                <div className="flex items-end justify-between text-[11px]">
+                  <span className="opacity-95">{condition}</span>
+                  <span className="opacity-90 tabular-nums">H:{t(d.high)} L:{t(d.low)}</span>
                 </div>
               </div>
             );

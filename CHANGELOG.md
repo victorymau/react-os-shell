@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.2.35] — 2026-05-02
+
+### Changed
+- **Weather widget: iOS-style city cards.** Each city is now its own rounded-2xl card sitting on the panel's slate backdrop with `gap-2` between cards (separated, not edge-to-edge). Layout matches Apple Weather: city name + local time on the top-left, large `text-4xl` extralight temperature on the top-right, condition + H/L on the bottom row. Day cards use `from-sky-400 via-sky-300 to-sky-500`, night cards use `from-slate-800 via-blue-950 to-slate-900`. Reverts the edge-to-edge experiment from 0.2.33.
+
+## [0.2.34] — 2026-05-02
+
+### Added
+- **Bug-report fallback: upload an image when capture fails.** When automatic screenshot capture is unavailable (user denied the Screen Capture permission, or the API isn't supported), the dialog used to show a flat message and only let the user send text. It now shows a drag-and-drop zone — drop an image file, or click to pick one with the file picker. The selected image flows through the same path as a captured screenshot (annotate / send), so the user can still mark it up before submitting.
+
+## [0.2.33] — 2026-05-02
+
+### Changed
+- **Weather widget: per-row day/night background.** Each city row now sits on a bright-blue gradient (`from-sky-400 to-blue-500`) when the sun is up at that city, and a dark-blue one (`from-blue-950 to-slate-900`) when it isn't. Rows fill the panel edge-to-edge — no padding, no gap — so the gradients butt against each other and the panel rounded-clip. The user's translucency preference (`appearance.activeOpacity`) is applied as the panel's background-alpha (slate-900 base) instead of CSS `opacity` so it doesn't wash the row colors into gray. Replaces the old single-gradient panel + faint `bg-black/15` overlay on night rows — a panel with cities split between day and night now reads at a glance.
+
 ## [0.2.32] — 2026-05-02
 
 ### Added
