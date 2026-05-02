@@ -472,10 +472,27 @@ function computeExposeTile(modalId: string): ExposeTile | null {
  * Singleton backdrop that's shown while exposé mode is on. Click anywhere
  * (outside a window thumbnail) to exit exposé. Should be mounted exactly
  * once, near the root — typically by WindowManager.
+ *
+ * Fades in when exposé opens and out over the same window the panels use
+ * to settle back, so the user sees a single coordinated transition rather
+ * than the dim disappearing the instant a tile is clicked.
  */
 export function ExposeBackdrop() {
   const on = useSyncExternalStore(subscribeExpose, getExposeState);
-  if (!on || typeof document === 'undefined') return null;
+  const [mounted, setMounted] = useState(on);
+  const [visible, setVisible] = useState(on);
+  useEffect(() => {
+    if (on) {
+      setMounted(true);
+      // Next frame so the opacity:0 → opacity:1 transition kicks in.
+      const id = requestAnimationFrame(() => setVisible(true));
+      return () => cancelAnimationFrame(id);
+    }
+    setVisible(false);
+    const t = setTimeout(() => setMounted(false), 280);
+    return () => clearTimeout(t);
+  }, [on]);
+  if (!mounted || typeof document === 'undefined') return null;
   return createPortal(
     <div
       onMouseDown={(e) => { e.stopPropagation(); setExposeState(false); }}
@@ -486,7 +503,9 @@ export function ExposeBackdrop() {
         WebkitBackdropFilter: 'blur(2px)',
         zIndex: 2000,
         cursor: 'pointer',
-        animation: 'expose-fade-in 220ms ease-out',
+        opacity: visible ? 1 : 0,
+        transition: 'opacity 260ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+        pointerEvents: visible ? 'auto' : 'none',
       }}
     />,
     document.body
@@ -642,6 +661,26 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   const exposeOn = useSyncExternalStore(subscribeExpose, getExposeState);
   const isExposeTileable = !allowPinOnTop && !widget;
   const exposeActive = exposeOn && isExposeTileable;
+  // Hover highlight for the thumbnail while in exposé.
+  const [exposeHovered, setExposeHovered] = useState(false);
+  // Exit-animation window: keep `transition: transform` on the panel for ~320ms
+  // after exposé closes so the panel slides smoothly back to its real box
+  // instead of snapping. Without this, removing `exposeStyle` drops the transition
+  // prop instantly and the browser sees no animatable change.
+  const [exposeExiting, setExposeExiting] = useState(false);
+  const prevExposeActiveRef = useRef(exposeActive);
+  useEffect(() => {
+    if (prevExposeActiveRef.current && !exposeActive) {
+      setExposeExiting(true);
+      const t = setTimeout(() => setExposeExiting(false), 320);
+      prevExposeActiveRef.current = exposeActive;
+      return () => clearTimeout(t);
+    }
+    prevExposeActiveRef.current = exposeActive;
+  }, [exposeActive]);
+  // Reset hover whenever exposé toggles off so the highlight ring doesn't
+  // linger past the transition.
+  useEffect(() => { if (!exposeActive) setExposeHovered(false); }, [exposeActive]);
 
 
   // Track whether ModalActions portal has content (either left or right)
@@ -1138,21 +1177,35 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   // ── Full window — render via portal when nested to escape parent overflow:hidden ──
   const exposeTile = exposeActive ? computeExposeTile(modalId) : null;
   const exposeStyle = (() => {
-    if (!exposeActive || !exposeTile) return null;
-    const scale = Math.min(exposeTile.w / box.w, exposeTile.h / box.h);
-    const scaledW = box.w * scale;
-    const scaledH = box.h * scale;
-    const tx = exposeTile.x + (exposeTile.w - scaledW) / 2 - box.x;
-    const ty = exposeTile.y + (exposeTile.h - scaledH) / 2 - box.y;
-    return {
-      transform: `translate(${tx}px, ${ty}px) scale(${scale})`,
-      transformOrigin: 'top left' as const,
-      transition: 'transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 280ms',
-      cursor: 'pointer',
-      zIndex: 2010,
-      boxShadow: '0 16px 48px rgba(0,0,0,0.55)',
-      pointerEvents: 'auto' as const,
-    };
+    if (exposeActive && exposeTile) {
+      const scale = Math.min(exposeTile.w / box.w, exposeTile.h / box.h);
+      const scaledW = box.w * scale;
+      const scaledH = box.h * scale;
+      const tx = exposeTile.x + (exposeTile.w - scaledW) / 2 - box.x;
+      const ty = exposeTile.y + (exposeTile.h - scaledH) / 2 - box.y;
+      return {
+        transform: `translate(${tx}px, ${ty}px) scale(${scale})`,
+        transformOrigin: 'top left' as const,
+        transition: 'transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 280ms',
+        cursor: 'pointer',
+        // Hovered tile lifts above its neighbours so the hover ring isn't
+        // clipped by adjacent panels.
+        zIndex: exposeHovered ? 2020 : 2010,
+        boxShadow: exposeHovered
+          ? '0 20px 56px rgba(0,0,0,0.6), 0 0 0 4px rgba(96,165,250,0.95)'
+          : '0 16px 48px rgba(0,0,0,0.55)',
+        pointerEvents: 'auto' as const,
+      };
+    }
+    if (exposeExiting && isExposeTileable) {
+      // While the panel is settling back to its real position, keep the
+      // transition rule applied so the browser animates `transform`
+      // disappearing rather than snapping instantly.
+      return {
+        transition: 'transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 280ms',
+      };
+    }
+    return null;
   })();
 
   const content = (
@@ -1372,12 +1425,24 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
           <div
             className="absolute inset-0"
             style={{ zIndex: 9999, cursor: 'pointer', background: 'transparent' }}
-            onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); setExposeState(false); activateModal(modalId); }}
+            onMouseEnter={() => setExposeHovered(true)}
+            onMouseLeave={() => setExposeHovered(false)}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              // Activate the picked window first so its z-index lifts it
+              // above the others while every panel animates back to its
+              // real position. setExposeState(false) starts that exit
+              // animation; the panel keeps `transition: transform` for
+              // ~320ms via exposeExiting.
+              activateModal(modalId);
+              setExposeState(false);
+            }}
             onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
           />
         )}
       </div>
-      {/* EXPOSÉ label — title under the thumbnail */}
+      {/* EXPOSÉ label — title under the thumbnail. Highlighted on hover. */}
       {exposeActive && exposeTile && (
         <div
           className="fixed pointer-events-none select-none truncate text-center"
@@ -1385,11 +1450,16 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
             left: exposeTile.x,
             top: exposeTile.y + exposeTile.h + 4,
             width: exposeTile.w,
-            zIndex: 2011,
+            zIndex: exposeHovered ? 2021 : 2011,
             color: 'white',
             fontSize: 12,
             fontWeight: 500,
             textShadow: '0 1px 2px rgba(0,0,0,0.6)',
+            padding: '2px 8px',
+            borderRadius: 6,
+            background: exposeHovered ? 'rgba(59,130,246,0.85)' : 'transparent',
+            transition: 'background 120ms',
+            boxSizing: 'border-box',
           }}
         >
           {displayTitle}
