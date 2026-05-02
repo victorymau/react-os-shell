@@ -53,10 +53,15 @@ export async function reportBug(submit: BugReportConfig['submit']): Promise<void
   const submission = await openBugReportDialog(screenshot);
   if (submission === null) return; // user cancelled
 
+  // Use the screenshot the dialog returns — that's the annotated version
+  // when the user marked up the capture before sending. Falls back to the
+  // original capture for safety.
+  const finalScreenshot = submission.screenshot ?? screenshot;
+
   try {
     await submit({
       description: submission.description || undefined,
-      screenshot: screenshot ?? undefined,
+      screenshot: finalScreenshot ?? undefined,
       url: window.location.href,
       userAgent: navigator.userAgent,
       viewport: `${window.innerWidth}x${window.innerHeight}`,
