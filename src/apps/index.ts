@@ -29,6 +29,7 @@ const CurrencyConverter = lazy(() => import('./CurrencyConverter'));
 const PomodoroTimer = lazy(() => import('./PomodoroTimer'));
 const Notepad = lazy(() => import('./Notepad'));
 const WorldClock = lazy(() => import('./WorldClock'));
+const TodoList = lazy(() => import('./TodoList'));
 
 // ── Games ──
 const Chess = lazy(() => import('./Chess'));
@@ -59,6 +60,7 @@ export const utilityApps: WindowRegistry = {
   '/currency': { component: CurrencyConverter, label: 'Currency Converter', size: 'sm', utility: true, widget: true, autoHeight: true, dimensions: [320, 480] },
   '/pomodoro': { component: PomodoroTimer, label: 'Pomodoro Timer', size: 'sm', utility: true, widget: true, autoHeight: true, dimensions: [320, 600] },
   '/world-clock': { component: WorldClock, label: 'World Clock', size: 'sm', utility: true, widget: true, autoHeight: true, dimensions: [320, 480] },
+  '/todo': { component: TodoList, label: 'Todo List', size: 'md', dimensions: [560, 640] },
 };
 
 export const gameApps: WindowRegistry = {
@@ -102,6 +104,7 @@ export {
   CurrencyConverter,
   PomodoroTimer,
   WorldClock,
+  TodoList,
   Chess,
   Checkers,
   Sudoku,

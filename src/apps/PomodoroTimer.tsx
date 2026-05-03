@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useSyncExternalStore, useRef } from 'react';
+import { useEffect, useState, useCallback, useSyncExternalStore, useRef, useMemo } from 'react';
 import { useWidgetSettings } from '../shell/Modal';
 import WidgetSettingsModal, { loadAppearance, type WidgetAppearance } from '../shell/WidgetSettingsModal';
 import { useShellPrefs } from '../shell/ShellPrefs';
@@ -10,9 +10,10 @@ import {
   playAlarm, previewFocusSound,
   type AlarmSound, type FocusSound, type Mode,
 } from '../shell/pomodoroStore';
+import { useTodoTasks, migratePomodoroTasksOnce } from './_todoStore';
+import type { TodoTask } from './_todoTypes';
 
 const POMO_SETTINGS_KEY = 'pomodoro_appearance';
-const TASKS_KEY = 'pomodoro_tasks';
 const ACTIVE_TASK_KEY = 'pomodoro_active_task_id';
 
 const MODE_LABELS: Record<Mode, string> = { focus: 'Pomodoro', short: 'Short Break', long: 'Long Break' };
@@ -86,29 +87,23 @@ function readPrefs(raw: unknown): PomoPrefs {
   };
 }
 
-interface PomoTask {
-  id: string;
-  name: string;
-  estimated: number;
-  completed: number;
-  done: boolean;
-}
-
-function loadTasks(): PomoTask[] {
-  try {
-    const raw = JSON.parse(localStorage.getItem(TASKS_KEY) || '[]');
-    if (Array.isArray(raw)) return raw;
-  } catch {}
-  return [];
-}
-function uid() { return Math.random().toString(36).slice(2, 9); }
-
-const sortDoneToBottom = (arr: PomoTask[]): PomoTask[] => {
-  const undone: PomoTask[] = [];
-  const done: PomoTask[] = [];
+// The Pomodoro widget treats each TodoTask as if it has the four
+// fields it cares about (name / estimated / completed / done). Tasks
+// without `estimated` show as `?` slots; tasks without `completed`
+// start at 0 and increment when their pomos finish.
+const sortDoneToBottom = (arr: TodoTask[]): TodoTask[] => {
+  const undone: TodoTask[] = [];
+  const done: TodoTask[] = [];
   for (const t of arr) (t.done ? done : undone).push(t);
   return [...undone, ...done];
 };
+
+function useMemoSortedTasks(rawTasks: TodoTask[], checkToBottom: boolean): TodoTask[] {
+  return useMemo(
+    () => checkToBottom ? sortDoneToBottom(rawTasks) : rawTasks,
+    [rawTasks, checkToBottom],
+  );
+}
 
 export default function PomodoroTimer() {
   const snap = useSyncExternalStore(subscribePomo, getPomoSnapshot, getPomoSnapshot);
@@ -150,13 +145,46 @@ export default function PomodoroTimer() {
     }
   }, []);
 
-  // ── Tasks ──
-  const [tasks, setTasks] = useState<PomoTask[]>(loadTasks);
+  // ── Tasks (shared store) ──
+  // Tasks now live in `shellPrefs.todo_tasks` so the Todo List app and
+  // Calendar app see the same data. The Pomodoro widget keeps a
+  // per-instance `activeTaskId` in localStorage so the user's selection
+  // doesn't leak across windows.
+  //
+  // The Pomodoro list is intentionally narrow — it only shows tasks
+  // that are *actionable today*: anything due today (pending or just-
+  // completed) plus anything overdue and still pending. Far-future
+  // tasks live in the Todo List app; completed tasks from earlier days
+  // roll off automatically. Tasks added via the Pomodoro's `+ Add Task`
+  // button default to today's `dueDate` so they appear immediately in
+  // this filtered view.
+  const todo = useTodoTasks();
+  const rawTasks = todo.tasks;
+  const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const visibleRawTasks = useMemo(
+    () => rawTasks.filter(t => {
+      if (!t.dueDate) return false;
+      if (t.dueDate === todayStr) return true;       // due today — show even when done
+      if (t.dueDate < todayStr && !t.done) return true; // overdue and still pending
+      return false;
+    }),
+    [rawTasks, todayStr],
+  );
+  const tasks = useMemoSortedTasks(visibleRawTasks, userPrefs.checkToBottom);
+
   const [activeTaskId, setActiveTaskId] = useState<string | null>(() => localStorage.getItem(ACTIVE_TASK_KEY));
   const [adding, setAdding] = useState(false);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
 
-  useEffect(() => { try { localStorage.setItem(TASKS_KEY, JSON.stringify(tasks)); } catch {} }, [tasks]);
+  // One-shot migration from the legacy localStorage `pomodoro_tasks` key.
+  const migratedRef = useRef(false);
+  useEffect(() => {
+    if (migratedRef.current) return;
+    migratedRef.current = true;
+    migratePomodoroTasksOnce(rawTasks, todo.setAllTasks);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     try {
       if (activeTaskId) localStorage.setItem(ACTIVE_TASK_KEY, activeTaskId);
@@ -174,55 +202,56 @@ export default function PomodoroTimer() {
 
   // When a focus block completes (`streak` increments), bump the active
   // task's completed count. If `autoCheckTasks` is on and it hits the
-  // estimate, mark it done. If `checkToBottom` is on, reorder.
+  // estimate, mark it done. (`checkToBottom` is honoured by the
+  // sortedTasks view; the underlying store doesn't reorder.)
   const lastStreakRef = useRef(snap.streak);
   useEffect(() => {
-    if (snap.streak > lastStreakRef.current) {
-      setTasks(prev => {
-        const next = prev.map(t => {
-          if (t.id !== activeTaskId) return t;
-          const completed = t.completed + 1;
-          const shouldAutoCheck = userPrefs.autoCheckTasks && completed >= t.estimated;
-          return { ...t, completed, done: t.done || shouldAutoCheck };
-        });
-        return userPrefs.checkToBottom ? sortDoneToBottom(next) : next;
-      });
+    if (snap.streak > lastStreakRef.current && activeTaskId) {
+      const t = rawTasks.find(x => x.id === activeTaskId);
+      if (t) {
+        const completed = (t.completed ?? 0) + 1;
+        const estimated = t.estimated ?? 0;
+        const shouldAutoCheck = userPrefs.autoCheckTasks && estimated > 0 && completed >= estimated;
+        todo.updateTask(activeTaskId, { completed, done: t.done || shouldAutoCheck });
+      }
     }
     lastStreakRef.current = snap.streak;
-  }, [snap.streak, activeTaskId, userPrefs.autoCheckTasks, userPrefs.checkToBottom]);
+  }, [snap.streak, activeTaskId, userPrefs.autoCheckTasks, rawTasks, todo]);
 
   const addTask = (name: string, estimated: number) => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    const t: PomoTask = { id: uid(), name: trimmed, estimated, completed: 0, done: false };
-    setTasks(prev => [...prev, t]);
-    if (!activeTaskId) setActiveTaskId(t.id);
+    // Default the deadline to today so the new task immediately appears
+    // in the Pomodoro's today/overdue list. The user can change the
+    // due date later from the Todo List app's edit drawer.
+    const id = todo.addTask({ name: trimmed, estimated, completed: 0, dueDate: todayStr });
+    if (!activeTaskId) setActiveTaskId(id);
     setAdding(false);
   };
   const removeTask = (id: string) => {
-    setTasks(prev => prev.filter(t => t.id !== id));
+    todo.removeTask(id);
     if (activeTaskId === id) setActiveTaskId(null);
     setMenuOpenId(null);
   };
   const toggleDone = (id: string) => {
-    setTasks(prev => {
-      const next = prev.map(t => t.id === id ? { ...t, done: !t.done } : t);
-      return userPrefs.checkToBottom ? sortDoneToBottom(next) : next;
-    });
+    todo.toggleDone(id);
   };
 
   // ── Stats ──
-  const totalCompleted = tasks.reduce((acc, t) => acc + t.completed, 0);
-  const totalEstimated = tasks.reduce((acc, t) => acc + Math.max(t.estimated, t.completed), 0);
-  const remainingPomos = tasks.reduce((acc, t) => t.done ? acc : acc + Math.max(0, t.estimated - t.completed), 0);
+  const totalCompleted = tasks.reduce((acc, t) => acc + (t.completed ?? 0), 0);
+  const totalEstimated = tasks.reduce((acc, t) => acc + Math.max(t.estimated ?? 0, t.completed ?? 0), 0);
+  const remainingPomos = tasks.reduce((acc, t) => t.done ? acc : acc + Math.max(0, (t.estimated ?? 0) - (t.completed ?? 0)), 0);
   const remainingSecsFromTimer = (snap.running && snap.mode === 'focus') ? snap.remaining : 0;
   const remainingSecs = remainingPomos * userPrefs.focusMinutes * 60 + remainingSecsFromTimer;
   const finishAt = new Date(Date.now() + remainingSecs * 1000);
   const finishAtStr = finishAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
   const totalHours = (remainingSecs / 3600).toFixed(1);
 
-  const activeIdx = activeTaskId ? tasks.findIndex(t => t.id === activeTaskId) : -1;
-  const activeTask = activeIdx >= 0 ? tasks[activeIdx] : null;
+  // Look the active task up in the *full* `rawTasks` list, not the
+  // filtered `tasks`. That way the indicator above the list still shows
+  // the active task name even if the user moved its due date out of
+  // today/overdue range from the Todo List app.
+  const activeTask = activeTaskId ? rawTasks.find(t => t.id === activeTaskId) ?? null : null;
 
   const mm = String(Math.floor(snap.remaining / 60)).padStart(2, '0');
   const ss = String(snap.remaining % 60).padStart(2, '0');
@@ -276,7 +305,7 @@ export default function PomodoroTimer() {
 
   return (
     <>
-      <div className={`flex flex-col h-full select-none rounded-2xl overflow-hidden transition-colors duration-300 ${tx.primary}`}
+      <div className={`flex flex-col h-full select-none transition-colors duration-300 ${tx.primary}`}
         style={{
           backgroundColor: panelBg,
           backdropFilter: appearance.activeBlur > 0 ? `blur(${appearance.activeBlur}px)` : undefined,
@@ -310,7 +339,7 @@ export default function PomodoroTimer() {
         <div className="px-3 py-3 text-center">
           {activeTask ? (
             <>
-              <div className={`text-xs leading-tight ${tx.muted}`}>#{activeTask.completed + 1}</div>
+              <div className={`text-xs leading-tight ${tx.muted}`}>#{(activeTask.completed ?? 0) + 1}</div>
               <div className={`text-[15px] font-medium leading-tight truncate mt-0.5 ${tx.primary}`}>{activeTask.name}</div>
             </>
           ) : (
@@ -353,9 +382,9 @@ export default function PomodoroTimer() {
                   {task.name}
                 </span>
                 <span className="text-sm tabular-nums mr-1.5 shrink-0">
-                  <span className="font-bold text-gray-500">{task.completed}</span>
+                  <span className="font-bold text-gray-500">{task.completed ?? 0}</span>
                   <span className="text-gray-400"> / </span>
-                  <span className="text-gray-400">{task.estimated}</span>
+                  <span className="text-gray-400">{task.estimated ?? '–'}</span>
                 </span>
                 <div className="relative">
                   <button onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === task.id ? null : task.id); }}

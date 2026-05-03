@@ -92,7 +92,7 @@ export default function CurrencyConverter() {
        *  (gray-100-ish on light, Catppuccin mantle in dark). Tailwind
        *  gray-* text/border classes auto-invert in dark via the existing
        *  `[data-theme="dark"]` overrides in styles.css. */}
-      <div className="flex flex-col h-full rounded-2xl overflow-hidden"
+      <div className="flex flex-col h-full"
         style={{ backgroundColor: `rgb(var(--taskbar-bg-rgb, 243 244 246) / ${appearance.activeOpacity / 100})`, backdropFilter: appearance.activeBlur > 0 ? `blur(${appearance.activeBlur}px)` : undefined }}>
         <div className="px-4 py-3 space-y-1 flex-1">
           {loading && <div className="text-xs text-gray-400 text-center py-4">Loading rates...</div>}

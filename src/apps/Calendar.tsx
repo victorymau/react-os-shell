@@ -4,6 +4,7 @@ import toast from '../shell/toast';
 import useGoogleAuth, { getGoogleAccessToken } from '../hooks/useGoogleAuth';
 import { isDemoMode, getDemoCalendarEvents } from './google-demo-fixtures';
 import { useShellPrefs } from '../shell/ShellPrefs';
+import { useTodoTasks } from './_todoStore';
 
 // ── Types ──
 interface CalendarEvent {
@@ -17,7 +18,7 @@ interface CalendarEvent {
   all_day?: boolean;
 }
 
-type ViewMode = 'month' | 'week';
+type ViewMode = 'year' | 'month' | 'week';
 
 const COLORS = [
   { key: 'blue', bg: 'bg-blue-500', light: 'bg-blue-100 text-blue-800', dot: 'bg-blue-500' },
@@ -89,9 +90,31 @@ export default function Calendar() {
     () => (isDemoMode() && !google.isConnected ? getDemoCalendarEvents() : []),
     [google.isConnected],
   );
+  // Pull Todo List tasks that have a due date — render them as a
+  // checkbox badge on the matching day. Toggling the checkbox flips
+  // `done` in the shared store, which the Todo and Pomodoro apps both
+  // see immediately.
+  const { tasks: todoTasks, toggleDone: toggleTodoDone } = useTodoTasks();
+  const todoEvents = useMemo<CalendarEvent[]>(
+    () => todoTasks
+      .filter(t => !!t.dueDate)
+      .map(t => ({
+        id: `todo-${t.id}`,
+        title: t.name,
+        date: t.dueDate!,
+        color: 'gray',
+        // Marker fields consumed by MonthView / WeekView to render a
+        // checkbox affordance instead of the regular event button.
+        _todo: true,
+        _todoId: t.id,
+        _done: t.done,
+      } as CalendarEvent & { _todo: true; _todoId: string; _done: boolean })),
+    [todoTasks],
+  );
+
   const events = useMemo(
-    () => [...localEvents, ...googleEvents, ...demoEvents],
-    [localEvents, googleEvents, demoEvents],
+    () => [...localEvents, ...googleEvents, ...demoEvents, ...todoEvents],
+    [localEvents, googleEvents, demoEvents, todoEvents],
   );
   const today = new Date();
   const [currentDate, setCurrentDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
@@ -158,7 +181,8 @@ export default function Calendar() {
   // ── Navigation ──
   const goToday = () => setCurrentDate(new Date(today.getFullYear(), today.getMonth(), 1));
   const goPrev = () => {
-    if (view === 'month') setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
+    if (view === 'year') setCurrentDate(new Date(currentDate.getFullYear() - 1, currentDate.getMonth(), 1));
+    else if (view === 'month') setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
     else {
       const d = new Date(currentDate);
       d.setDate(d.getDate() - 7);
@@ -166,7 +190,8 @@ export default function Calendar() {
     }
   };
   const goNext = () => {
-    if (view === 'month') setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
+    if (view === 'year') setCurrentDate(new Date(currentDate.getFullYear() + 1, currentDate.getMonth(), 1));
+    else if (view === 'month') setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
     else {
       const d = new Date(currentDate);
       d.setDate(d.getDate() + 7);
@@ -174,7 +199,10 @@ export default function Calendar() {
     }
   };
 
-  const monthLabel = currentDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  // Header label switches to just the year when the year view is active.
+  const monthLabel = view === 'year'
+    ? String(currentDate.getFullYear())
+    : currentDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 
   // Events by date
   const eventsByDate = useMemo(() => {
@@ -257,7 +285,7 @@ export default function Calendar() {
 
           <div className="w-px h-4 bg-gray-200" />
           <div className="flex gap-1">
-            {(['month', 'week'] as const).map(v => (
+            {(['year', 'month', 'week'] as const).map(v => (
               <button key={v} onClick={() => setView(v)}
                 className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${view === v ? 'bg-blue-600 text-white' : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
                 {v.charAt(0).toUpperCase() + v.slice(1)}
@@ -269,7 +297,15 @@ export default function Calendar() {
 
       {/* Calendar grid */}
       <div className="flex-1 overflow-hidden">
-        {view === 'month' ? (
+        {view === 'year' ? (
+          <YearView
+            year={currentDate.getFullYear()}
+            eventsByDate={eventsByDate}
+            today={toDateStr(today)}
+            onPickMonth={(m) => { setCurrentDate(new Date(currentDate.getFullYear(), m, 1)); setView('month'); }}
+            onDayClick={handleDayClick}
+          />
+        ) : view === 'month' ? (
           <MonthView
             year={currentDate.getFullYear()}
             month={currentDate.getMonth()}
@@ -277,6 +313,7 @@ export default function Calendar() {
             today={toDateStr(today)}
             onDayClick={handleDayClick}
             onEventClick={setEditingEvent}
+            onToggleTodo={toggleTodoDone}
           />
         ) : (
           <WeekView
@@ -285,6 +322,7 @@ export default function Calendar() {
             today={toDateStr(today)}
             onDayClick={handleDayClick}
             onEventClick={setEditingEvent}
+            onToggleTodo={toggleTodoDone}
           />
         )}
       </div>
@@ -303,10 +341,57 @@ export default function Calendar() {
   );
 }
 
+// ── Shared event/todo badge — used by MonthView and WeekView ──
+// Todo events (recognised by the `_todo` marker on the event object)
+// render as a checkbox + name affordance instead of the regular event
+// pill. Toggling the checkbox flips `done` in the shared todo store.
+function DayEventBadge({ evt, onEventClick, onToggleTodo, compact = false }: {
+  evt: CalendarEvent;
+  onEventClick: (e: CalendarEvent) => void;
+  onToggleTodo: (id: string) => void;
+  compact?: boolean;
+}) {
+  const e = evt as CalendarEvent & { _todo?: true; _todoId?: string; _done?: boolean };
+  if (e._todo && e._todoId) {
+    return compact ? (
+      <button onClick={(ev) => { ev.stopPropagation(); onToggleTodo(e._todoId!); }}
+        title={e.title}
+        className={`w-full text-left flex items-center gap-1 truncate rounded px-1 py-0.5 text-[10px] leading-tight font-medium hover:bg-gray-100 transition-colors ${e._done ? 'text-gray-400' : 'text-gray-700'}`}>
+        <span className="shrink-0">{e._done ? '☑' : '☐'}</span>
+        <span className={`truncate ${e._done ? 'line-through' : ''}`}>{e.title || 'Task'}</span>
+      </button>
+    ) : (
+      <button onClick={(ev) => { ev.stopPropagation(); onToggleTodo(e._todoId!); }}
+        className={`w-full text-left flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-gray-100 transition-colors ${e._done ? 'text-gray-400' : 'text-gray-700'}`}>
+        <span className="shrink-0 text-base leading-none">{e._done ? '☑' : '☐'}</span>
+        <span className={`text-xs font-medium truncate ${e._done ? 'line-through' : ''}`}>{e.title || 'Task'}</span>
+      </button>
+    );
+  }
+  // Regular event — same rendering as before.
+  const c = getColor(evt.color);
+  return compact ? (
+    <button onClick={(ev) => { ev.stopPropagation(); onEventClick(evt); }}
+      className={`w-full text-left truncate rounded px-1 py-0.5 text-[10px] leading-tight font-medium ${c.light} hover:opacity-80 transition-opacity`}>
+      {!evt.all_day && evt.start_time && <span className="text-[9px] opacity-70 mr-0.5">{evt.start_time}</span>}
+      {evt.title || 'Untitled'}
+    </button>
+  ) : (
+    <button onClick={(ev) => { ev.stopPropagation(); onEventClick(evt); }}
+      className={`w-full text-left rounded-md px-2 py-1.5 ${c.light} hover:opacity-80 transition-opacity`}>
+      <p className="text-xs font-medium truncate">{evt.title || 'Untitled'}</p>
+      {!evt.all_day && evt.start_time && (
+        <p className="text-[10px] opacity-70">{evt.start_time}{evt.end_time ? ` - ${evt.end_time}` : ''}</p>
+      )}
+    </button>
+  );
+}
+
 // ── Month View ──
-function MonthView({ year, month, eventsByDate, today, onDayClick, onEventClick }: {
+function MonthView({ year, month, eventsByDate, today, onDayClick, onEventClick, onToggleTodo }: {
   year: number; month: number; eventsByDate: Record<string, CalendarEvent[]>;
   today: string; onDayClick: (d: string) => void; onEventClick: (e: CalendarEvent) => void;
+  onToggleTodo: (id: string) => void;
 }) {
   const cells = useMemo(() => getMonthDays(year, month), [year, month]);
 
@@ -333,16 +418,7 @@ function MonthView({ year, month, eventsByDate, today, onDayClick, onEventClick 
                 {cell.date.getDate()}
               </div>
               <div className="space-y-0.5">
-                {dayEvents.slice(0, 3).map(evt => {
-                  const c = getColor(evt.color);
-                  return (
-                    <button key={evt.id} onClick={e => { e.stopPropagation(); onEventClick(evt); }}
-                      className={`w-full text-left truncate rounded px-1 py-0.5 text-[10px] leading-tight font-medium ${c.light} hover:opacity-80 transition-opacity`}>
-                      {!evt.all_day && evt.start_time && <span className="text-[9px] opacity-70 mr-0.5">{evt.start_time}</span>}
-                      {evt.title || 'Untitled'}
-                    </button>
-                  );
-                })}
+                {dayEvents.slice(0, 3).map(evt => <DayEventBadge key={evt.id} evt={evt} onEventClick={onEventClick} onToggleTodo={onToggleTodo} compact />)}
                 {dayEvents.length > 3 && (
                   <p className="text-[9px] text-gray-400 pl-1">+{dayEvents.length - 3} more</p>
                 )}
@@ -355,10 +431,84 @@ function MonthView({ year, month, eventsByDate, today, onDayClick, onEventClick 
   );
 }
 
+// ── Year View ──
+// Apple-Calendar-style 4×3 grid of compact mini-month cards. The month
+// names are abbreviated (Jan / Feb / …) so the title hierarchy stays
+// "year on the left of the toolbar, month above each grid". Today is
+// highlighted with a filled blue circle; days with events get a tiny
+// dot under the number. Clicking the month label jumps to Month view;
+// clicking a day jumps to Month view AND opens the event editor for
+// that day.
+function YearView({ year, eventsByDate, today, onPickMonth, onDayClick }: {
+  year: number;
+  eventsByDate: Record<string, CalendarEvent[]>;
+  today: string;
+  onPickMonth: (month: number) => void;
+  onDayClick: (dateStr: string) => void;
+}) {
+  const monthShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const dowShort = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+  return (
+    <div className="h-full overflow-y-auto p-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-5 max-w-5xl mx-auto">
+        {monthShort.map((label, m) => {
+          const cells = getMonthDays(year, m);
+          return (
+            <div key={m} className="flex flex-col">
+              {/* Compact title: month abbrev as a small button that jumps
+                  to that month in Month view. */}
+              <button onClick={() => onPickMonth(m)}
+                className="self-start text-[13px] font-semibold text-blue-600 hover:text-blue-800 mb-1 px-1 -ml-1 rounded transition-colors">
+                {label}
+              </button>
+
+              {/* Day-of-week labels */}
+              <div className="grid grid-cols-7 mb-0.5">
+                {dowShort.map((d, i) => (
+                  <div key={i} className="text-[9px] font-medium text-gray-400 text-center">{d}</div>
+                ))}
+              </div>
+
+              {/* Date grid */}
+              <div className="grid grid-cols-7">
+                {cells.map((cell, i) => {
+                  const dateStr = toDateStr(cell.date);
+                  const isToday = dateStr === today;
+                  const hasEvents = !!eventsByDate[dateStr]?.length;
+                  return (
+                    <button key={i}
+                      onClick={(e) => { e.stopPropagation(); onDayClick(dateStr); }}
+                      className="relative h-6 flex items-center justify-center group"
+                      tabIndex={cell.isCurrentMonth ? 0 : -1}>
+                      <span className={`text-[10px] tabular-nums leading-none flex items-center justify-center w-5 h-5 rounded-full transition-colors
+                        ${isToday
+                          ? 'bg-blue-600 text-white font-semibold'
+                          : cell.isCurrentMonth
+                            ? 'text-gray-700 group-hover:bg-blue-100'
+                            : 'text-gray-300'}`}>
+                        {cell.date.getDate()}
+                      </span>
+                      {hasEvents && cell.isCurrentMonth && !isToday && (
+                        <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-blue-500" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Week View ──
-function WeekView({ currentDate, eventsByDate, today, onDayClick, onEventClick }: {
+function WeekView({ currentDate, eventsByDate, today, onDayClick, onEventClick, onToggleTodo }: {
   currentDate: Date; eventsByDate: Record<string, CalendarEvent[]>;
   today: string; onDayClick: (d: string) => void; onEventClick: (e: CalendarEvent) => void;
+  onToggleTodo: (id: string) => void;
 }) {
   const days = useMemo(() => getWeekDays(currentDate), [currentDate]);
 
@@ -387,18 +537,7 @@ function WeekView({ currentDate, eventsByDate, today, onDayClick, onEventClick }
               onClick={() => onDayClick(dateStr)}
               className="border-r border-gray-100 px-1.5 py-2 cursor-pointer hover:bg-blue-50/30 transition-colors min-h-[200px]">
               <div className="space-y-1">
-                {dayEvents.map(evt => {
-                  const c = getColor(evt.color);
-                  return (
-                    <button key={evt.id} onClick={e => { e.stopPropagation(); onEventClick(evt); }}
-                      className={`w-full text-left rounded-md px-2 py-1.5 ${c.light} hover:opacity-80 transition-opacity`}>
-                      <p className="text-xs font-medium truncate">{evt.title || 'Untitled'}</p>
-                      {!evt.all_day && evt.start_time && (
-                        <p className="text-[10px] opacity-70">{evt.start_time}{evt.end_time ? ` - ${evt.end_time}` : ''}</p>
-                      )}
-                    </button>
-                  );
-                })}
+                {dayEvents.map(evt => <DayEventBadge key={evt.id} evt={evt} onEventClick={onEventClick} onToggleTodo={onToggleTodo} />)}
               </div>
             </div>
           );

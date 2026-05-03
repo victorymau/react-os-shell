@@ -1,5 +1,5 @@
 /**
- * Google OAuth2 hook for Gmail, Calendar, and Gemini access.
+ * Google OAuth2 hook for Gmail, Calendar, Tasks, and Gemini access.
  *
  * Uses Google Identity Services (GIS) to get an access token with combined scopes.
  * Requires a Google Cloud OAuth2 Client ID configured in System Settings.
@@ -7,6 +7,7 @@
  * Scopes requested:
  *  - Gmail: read, compose, send, modify
  *  - Calendar: read, write events
+ *  - Tasks: read/write (Todo List app)
  *  - Gemini: generative language (via Vertex AI or Google AI)
  */
 
@@ -19,6 +20,7 @@ const SCOPES = [
   'https://www.googleapis.com/auth/gmail.modify',
   'https://www.googleapis.com/auth/calendar.readonly',
   'https://www.googleapis.com/auth/calendar.events',
+  'https://www.googleapis.com/auth/tasks',
   'https://www.googleapis.com/auth/generative-language.retriever',
 ].join(' ');
 

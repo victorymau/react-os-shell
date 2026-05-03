@@ -140,10 +140,12 @@
 [data-theme="dark"] .border-blue-400\/60 { border-color: rgba(96, 165, 250, 0.45) !important; }
 [data-theme="dark"] .hover\:bg-gray-200\/40:hover { background-color: rgba(49, 50, 68, 0.4) !important; }
 
-/* Inputs */
-[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]),
-[data-theme="dark"] select,
-[data-theme="dark"] textarea {
+/* Inputs — apply the form-input dark styling, but skip elements that
+   explicitly opt into a transparent background (e.g. the start-menu
+   search) so they keep their parent's frosted-glass tile. */
+[data-theme="dark"] input:not(.bg-transparent):not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]),
+[data-theme="dark"] select:not(.bg-transparent),
+[data-theme="dark"] textarea:not(.bg-transparent) {
   background-color: #181825 !important;
   border-color: #45475a !important;
   color: #cdd6f4 !important;

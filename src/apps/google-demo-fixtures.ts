@@ -29,6 +29,20 @@ export interface DemoCalendarEvent {
   description?: string;
 }
 
+// Shape matches TodoTask in `_todoTypes.ts` — used by the Todo List app's
+// demo-mode fallback when the user hasn't connected Google.
+export interface DemoTodoTask {
+  id: string;
+  name: string;
+  done: boolean;
+  dueDate?: string;       // YYYY-MM-DD
+  estimated?: number;
+  completed?: number;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export function getDemoEmails(): DemoEmail[] {
   const now = Date.now();
   const m = (mins: number) => new Date(now - mins * 60_000).toISOString();
@@ -115,4 +129,25 @@ export function getDemoCalendarEvents(): DemoCalendarEvent[] {
 
 export function isDemoMode(): boolean {
   return typeof window !== 'undefined' && (window as any).__REACT_OS_SHELL_DEMO_MODE__ === true;
+}
+
+// Demo Todo tasks. Mix of completed / pending / due-today items so the
+// Todo List app, the Pomodoro widget, and the Calendar deadline badge
+// all have something to render in demo mode without a Google sign-in.
+export function getDemoTasks(): DemoTodoTask[] {
+  const now = new Date();
+  const ts = now.toISOString();
+  const dateAt = (dayOffset: number) => {
+    const d = new Date(now);
+    d.setDate(now.getDate() + dayOffset);
+    return d.toISOString().split('T')[0];
+  };
+  return [
+    { id: 'demo-todo-1', name: 'Review pull request',           done: false, dueDate: dateAt(0), estimated: 2, completed: 1, createdAt: ts, updatedAt: ts },
+    { id: 'demo-todo-2', name: 'Draft the Q2 retrospective',    done: false, dueDate: dateAt(0), estimated: 3, completed: 0, createdAt: ts, updatedAt: ts },
+    { id: 'demo-todo-3', name: 'Buy birthday card for Maya',    done: false, dueDate: dateAt(2),                              createdAt: ts, updatedAt: ts },
+    { id: 'demo-todo-4', name: 'Update onboarding doc',         done: false, dueDate: dateAt(5), estimated: 4, completed: 0, createdAt: ts, updatedAt: ts },
+    { id: 'demo-todo-5', name: 'Reply to investor email',       done: true,                       estimated: 1, completed: 1, createdAt: ts, updatedAt: ts },
+    { id: 'demo-todo-6', name: 'Read "Working in Public"',      done: false,                                                  createdAt: ts, updatedAt: ts },
+  ];
 }

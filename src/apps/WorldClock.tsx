@@ -10,55 +10,19 @@ const DEFAULT_CITIES = ['London', 'Shanghai', 'New York'];
 interface WeatherPrefs { useFahrenheit: boolean }
 
 /**
- * Minimalist analogue clock face — no numerals, just four small dots at
- * the cardinal hours and two thin white hands. Returns both the SVG and
- * the AM/PM marker so the row can stack them vertically with consistent
- * spacing.
+ * Resolve the local time for the supplied IANA timezone into a digital
+ * `12:34` + `AM` / `PM` pair. Used by the World Clock rows.
  */
-function AnalogClockWithMeridiem({ tz, now, size = 30 }: { tz: string; now: Date; size?: number }) {
-  let h24 = 0, m = 0;
+function digitalTime(tz: string, now: Date): { time: string; ampm: string } {
   try {
     const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: tz, hour: 'numeric', minute: '2-digit', hour12: false,
+      timeZone: tz, hour: 'numeric', minute: '2-digit', hour12: true,
     }).formatToParts(now);
-    h24 = parseInt(parts.find(p => p.type === 'hour')?.value || '0', 10);
-    if (h24 === 24) h24 = 0;
-    m = parseInt(parts.find(p => p.type === 'minute')?.value || '0', 10);
-  } catch {}
-
-  const ampm = h24 >= 12 ? 'PM' : 'AM';
-  const hourAngle = ((h24 % 12) + m / 60) * 30 - 90;
-  const minuteAngle = m * 6 - 90;
-  const r = size / 2;
-  const hLen = r * 0.52;
-  const mLen = r * 0.78;
-  const hRad = (hourAngle * Math.PI) / 180;
-  const mRad = (minuteAngle * Math.PI) / 180;
-
-  // Use currentColor + opacity so the clock face inherits the panel's
-  // text colour — black-ish in light themes, light-grey in dark mode.
-  return (
-    <div className="flex flex-col items-center gap-0.5 shrink-0 text-gray-700">
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ color: 'currentColor' }}>
-        <circle cx={r} cy={r} r={r - 0.6} fill="currentColor" fillOpacity={0.05}
-          stroke="currentColor" strokeOpacity={0.4} strokeWidth={0.8} />
-        {[0, 90, 180, 270].map(deg => {
-          const a = (deg - 90) * Math.PI / 180;
-          const dx = r + Math.cos(a) * (r * 0.83);
-          const dy = r + Math.sin(a) * (r * 0.83);
-          return <circle key={deg} cx={dx} cy={dy} r={0.85} fill="currentColor" fillOpacity={0.55} />;
-        })}
-        <line x1={r} y1={r}
-          x2={r + Math.cos(hRad) * hLen} y2={r + Math.sin(hRad) * hLen}
-          stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" />
-        <line x1={r} y1={r}
-          x2={r + Math.cos(mRad) * mLen} y2={r + Math.sin(mRad) * mLen}
-          stroke="currentColor" strokeWidth={1.1} strokeLinecap="round" />
-        <circle cx={r} cy={r} r={1.3} fill="currentColor" />
-      </svg>
-      <span className="text-[8.5px] font-medium tracking-[0.12em] text-gray-500">{ampm}</span>
-    </div>
-  );
+    const h = parts.find(p => p.type === 'hour')?.value || '12';
+    const m = parts.find(p => p.type === 'minute')?.value || '00';
+    const ampm = (parts.find(p => p.type === 'dayPeriod')?.value || '').toUpperCase();
+    return { time: `${h}:${m}`, ampm };
+  } catch { return { time: '', ampm: '' }; }
 }
 
 /**
@@ -146,44 +110,55 @@ export default function WorldClock() {
   return (
     <>
       {/* Theme-aware panel — same colour as the taskbar so all dashboard
-       *  widgets read as a coordinated set across light and dark themes. */}
-      <div className="rounded-2xl overflow-hidden"
+       *  widgets read as a coordinated set across light and dark themes.
+       *  Rows use `divide-y` rather than per-row border classes so the
+       *  last row never paints a stray separator line at the panel's
+       *  bottom edge. */}
+      <div className="h-full"
         style={{
           backgroundColor: `rgb(var(--taskbar-bg-rgb, 243 244 246) / ${appearance.activeOpacity / 100})`,
           backdropFilter: appearance.activeBlur > 0 ? `blur(${appearance.activeBlur}px)` : undefined,
         }}>
-        <div className="px-1 py-1">
+        <div className="divide-y divide-gray-200">
           {loading && cities.every(c => !data[c]) && (
             <div className="px-3 py-6 text-center text-xs text-gray-500">Loading…</div>
           )}
-          {cities.map((cityName, i) => {
+          {cities.map((cityName) => {
             const w = data[cityName];
             const tz = AVAILABLE_CITIES[cityName]?.tz ?? 'UTC';
-            const last = i === cities.length - 1;
+            const { time, ampm } = digitalTime(tz, now);
             if (!w) {
               return (
-                <div key={cityName} className={`flex items-center gap-3 px-3 py-3 ${last ? '' : 'border-b border-gray-200'}`}>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[15px] font-semibold tracking-tight leading-tight truncate text-gray-900">{cityName}</div>
-                    <div className="text-[11px] text-gray-500 leading-tight">…</div>
+                <div key={cityName} className="px-4 py-3">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-[15px] font-semibold tracking-tight text-gray-900 truncate">{cityName}</span>
+                    <span className="tabular-nums text-[13px] font-medium text-gray-500">{time}<span className="text-[9px] ml-0.5 opacity-70">{ampm}</span></span>
                   </div>
-                  <AnalogClockWithMeridiem tz={tz} now={now} />
+                  <div className="text-[11px] text-gray-400 mt-1">Loading weather…</div>
                 </div>
               );
             }
             const [condition, emoji] = getCondition(w.code, w.isDay);
             return (
-              <div key={cityName}
-                className={`flex items-center gap-3 px-3 py-3 ${last ? '' : 'border-b border-gray-200'}`}>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[15px] font-semibold tracking-tight leading-tight truncate text-gray-900">{cityName}</div>
-                  <div className="text-[11px] text-gray-500 leading-tight truncate mt-0.5">{condition}</div>
+              <div key={cityName} className="px-4 py-3">
+                {/* Top — city name on the left, big temperature on the right. */}
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-[15px] font-semibold tracking-tight text-gray-900 truncate">{cityName}</span>
+                  <span className="text-[26px] font-extralight leading-none tabular-nums tracking-tight text-gray-900 shrink-0">{formatTemp(w.temp)}</span>
                 </div>
-                <AnalogClockWithMeridiem tz={tz} now={now} />
-                <span className="text-[22px] leading-none shrink-0">{emoji}</span>
-                <div className="text-right shrink-0 min-w-[52px]">
-                  <div className="text-[22px] font-extralight leading-none tabular-nums tracking-tight text-gray-900">{formatTemp(w.temp)}</div>
-                  <div className="text-[10px] text-gray-500 tabular-nums mt-1">H:{formatTemp(w.high)} L:{formatTemp(w.low)}</div>
+
+                {/* Bottom — emoji · digital time · condition on the left;
+                    H/L on the right. */}
+                <div className="flex items-center justify-between gap-2 mt-1.5 text-[11px]">
+                  <div className="flex items-center gap-1.5 min-w-0 text-gray-500">
+                    <span className="text-base leading-none shrink-0">{emoji}</span>
+                    <span className="tabular-nums font-semibold text-gray-700 shrink-0">
+                      {time}<span className="text-[9px] font-medium ml-0.5 opacity-70">{ampm}</span>
+                    </span>
+                    <span className="text-gray-300 shrink-0">·</span>
+                    <span className="truncate">{condition}</span>
+                  </div>
+                  <span className="tabular-nums text-gray-500 shrink-0">H:{formatTemp(w.high)} L:{formatTemp(w.low)}</span>
                 </div>
               </div>
             );
