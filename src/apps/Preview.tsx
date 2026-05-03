@@ -825,6 +825,15 @@ function rgbToHex(c: { r?: number; g?: number; b?: number }) {
   return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
 }
 
+/** Format a 3D-space distance for the measurement label. STEP files are
+ *  conventionally in millimetres, so we surface mm with a sensible
+ *  precision and switch to metres for >= 1000 mm. */
+function formatMeasureDistance(mm: number): string {
+  if (mm >= 1000) return `${(mm / 1000).toFixed(2)} m`;
+  if (mm >= 10)   return `${mm.toFixed(1)} mm`;
+  return `${mm.toFixed(2)} mm`;
+}
+
 function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<any>(null);
@@ -847,14 +856,36 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
   // Floating panel visibility — default closed so the viewport is unobstructed.
   const [showMeshes, setShowMeshes] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  // Camera projection — perspective is the default (matches o3dv's own default).
-  const [perspective, setPerspective] = useState(true);
+  // Camera projection — orthographic by default. CAD users expect ortho
+  // when first opening a STEP file; perspective is one click away via
+  // the toolbar toggle.
+  const [perspective, setPerspective] = useState(false);
 
   // Section view (capped clipping plane).
   const [sectionEnabled, setSectionEnabled] = useState(false);
-  const [sectionAxis, setSectionAxis] = useState<'x' | 'y' | 'z'>('z');
+  const [sectionAxis, setSectionAxis] = useState<'x' | 'y' | 'z'>('x');
   const [sectionFlip, setSectionFlip] = useState(false);
   const [sectionPosition, setSectionPosition] = useState(0.5); // 0–1 within bbox
+  const [sectionAngle, setSectionAngle] = useState(0);         // degrees, 0–180 — rotates the cut plane around a perpendicular axis
+
+  // Measurement tool — point picker. Two modes:
+  //   - 'point': click two points on the model → straight-line distance.
+  //   - 'perp':  click two surfaces → perpendicular gap between the two
+  //             face planes (the typical CAD "wall thickness" measurement).
+  // Clicked points + visual artefacts (markers, line, label) live in the
+  // ref so the user can orbit the camera between picks without losing
+  // anything.
+  const [measureEnabled, setMeasureEnabled] = useState(false);
+  const [measureMode, setMeasureMode] = useState<'point' | 'perp'>('point');
+  const [measureDistance, setMeasureDistance] = useState<number | null>(null);
+  const measureRef = useRef<{
+    points: any[];           // THREE.Vector3[] — at most 2
+    normals: ({ x: number; y: number; z: number } | null)[]; // surface normal at each pick (null if pick missed a face)
+    markers: any[];          // small spheres at each point
+    line: any | null;        // line connecting them
+    label: HTMLDivElement | null;
+    rafId: number | null;    // requestAnimationFrame for label-follows-camera
+  } | null>(null);
 
   // Persistent section state — stencil helpers, cap mesh, original material
   // settings — held in a ref so we can mutate the plane in place on slider
@@ -871,6 +902,7 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
   useEffect(() => {
     let cancelled = false;
     let viewer: any = null;
+    let resizeObserver: ResizeObserver | null = null;
     setLoading(true);
     setError(null);
     setTree(null);
@@ -947,6 +979,23 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
 
         const inputFile = new OV.InputFile(filename, OV.FileSource.Url, url);
         viewer.LoadModelFromInputFiles([inputFile]);
+
+        // Re-size the WebGL canvas whenever the container's box changes —
+        // window resize, Modal drag-resize, taskbar repositioning, etc.
+        // The OV EmbeddedViewer ships its own `Resize()` that auto-detects
+        // the container size; we feature-detect the underlying inner
+        // viewer too in case OV's wrapper API changes.
+        if (containerRef.current && typeof ResizeObserver !== 'undefined') {
+          resizeObserver = new ResizeObserver(() => {
+            try {
+              const v = viewerRef.current as any;
+              if (v?.Resize)             v.Resize();
+              else if (v?.viewer?.Resize) v.viewer.Resize();
+              v?.viewer?.Render?.();
+            } catch {}
+          });
+          resizeObserver.observe(containerRef.current);
+        }
       } catch (e: any) {
         if (!cancelled) {
           setError(e?.message || 'Failed to load 3D model.');
@@ -957,6 +1006,7 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
 
     return () => {
       cancelled = true;
+      try { resizeObserver?.disconnect(); } catch {}
       try { viewer?.Destroy?.(); } catch {}
       viewerRef.current = null;
     };
@@ -1262,7 +1312,7 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
     v.viewer.Render?.();
   }, [sectionEnabled, loading, tree]);
 
-  // Section view — update plane orientation/position on axis/flip/slider change.
+  // Section view — update plane orientation/position on axis/flip/angle/slider change.
   useEffect(() => {
     const v = viewerRef.current;
     const s = sectionRef.current;
@@ -1272,25 +1322,44 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
       const axisIdx = sectionAxis === 'x' ? 0 : sectionAxis === 'y' ? 1 : 2;
       const min = [bbox.min.x, bbox.min.y, bbox.min.z][axisIdx];
       const max = [bbox.max.x, bbox.max.y, bbox.max.z][axisIdx];
-      const value = min + (max - min) * sectionPosition;
+      const t = min + (max - min) * sectionPosition;
 
-      // three.js clips fragments where (normal · p) + constant < 0.
-      // Default direction (not flipped): keep "axis < value", clip "axis > value".
-      const dir = sectionFlip ? 1 : -1;
-      const nx = sectionAxis === 'x' ? dir : 0;
-      const ny = sectionAxis === 'y' ? dir : 0;
-      const nz = sectionAxis === 'z' ? dir : 0;
+      // Cut-plane normal = chosen axis rotated through `sectionAngle` around a
+      // perpendicular reference axis. At θ=0 every axis matches the original
+      // axis-aligned behaviour; sweeping 0 → 360 spins the plane once around
+      // the model. `sectionFlip` continues to negate the whole normal.
+      const θ = (sectionAngle * Math.PI) / 180;
+      const cosθ = Math.cos(θ), sinθ = Math.sin(θ);
+      const sign = sectionFlip ? -1 : 1;
+      let nx = 0, ny = 0, nz = 0;
+      if (sectionAxis === 'x')      { nx = sign * cosθ; nz = sign * sinθ; }
+      else if (sectionAxis === 'y') { ny = sign * cosθ; nz = sign * sinθ; }
+      else                          { nx = sign * sinθ; nz = sign * cosθ; }
+
+      // The plane passes through point P on the chosen-axis line at
+      // `sectionPosition` of the bbox extent; the other two coordinates use
+      // the bbox centre so the plane stays anchored within the model when it
+      // rotates.
+      const center = {
+        x: (bbox.min.x + bbox.max.x) / 2,
+        y: (bbox.min.y + bbox.max.y) / 2,
+        z: (bbox.min.z + bbox.max.z) / 2,
+      };
+      const Px = sectionAxis === 'x' ? t : center.x;
+      const Py = sectionAxis === 'y' ? t : center.y;
+      const Pz = sectionAxis === 'z' ? t : center.z;
+
       s.plane.normal.x = nx;
       s.plane.normal.y = ny;
       s.plane.normal.z = nz;
-      s.plane.constant = -dir * value;
+      // three.js clips fragments where (normal · p) + constant < 0; the plane
+      // equation we want is normal · p = normal · P, so constant = -(normal·P).
+      s.plane.constant = -(nx * Px + ny * Py + nz * Pz);
 
       // Re-position the cap mesh on the plane and orient it so its visible
       // face points along the plane normal.
       if (s.capMesh) {
-        const cx = (bbox.min.x + bbox.max.x) / 2;
-        const cy = (bbox.min.y + bbox.max.y) / 2;
-        const cz = (bbox.min.z + bbox.max.z) / 2;
+        const cx = center.x, cy = center.y, cz = center.z;
         // Distance from bbox center to plane along the normal.
         const dist = nx * cx + ny * cy + nz * cz + s.plane.constant;
         const px = cx - nx * dist;
@@ -1305,7 +1374,513 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
       // eslint-disable-next-line no-console
       console.warn('[Preview] section update failed', err);
     }
-  }, [sectionEnabled, sectionAxis, sectionFlip, sectionPosition]);
+  }, [sectionEnabled, sectionAxis, sectionFlip, sectionPosition, sectionAngle]);
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Measurement tool
+  //
+  // Click two points on the model; we raycast from the camera, drop a small
+  // sphere marker at each hit, draw a line between them, and overlay an
+  // HTML distance label that re-projects every animation frame so it
+  // tracks as the user orbits the camera. A third click clears and starts
+  // a fresh measurement. ESC or toggling the toolbar button off cleans up
+  // all visuals.
+  //
+  // THREE constructors are plucked from a sample mesh in the loaded scene
+  // (same trick the section view uses) so we share the renderer's THREE
+  // instance. `THREE.Raycaster` doesn't naturally appear on any mesh, so
+  // we dynamically `import('three')` for it — Raycaster is duck-typed
+  // against `mesh.isMesh` / `geometry.isBufferGeometry` flags, not
+  // `instanceof`, so a different THREE instance is fine for that bit.
+  // ──────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const v = viewerRef.current;
+    if (!v?.viewer || loading || !containerRef.current) return;
+
+    const renderer = v.viewer.renderer;
+    const scene = v.viewer.scene;
+    const camera = v.viewer.camera;
+    const canvas: HTMLCanvasElement | undefined = renderer?.domElement;
+    if (!renderer || !scene || !camera || !canvas) return;
+
+    // Snapshot a sample mesh to pluck THREE constructors that share the
+    // renderer's THREE instance.
+    let sampleMesh: any = null;
+    v.viewer.mainModel?.EnumerateMeshes?.((m: any) => {
+      if (!sampleMesh && !m.userData?.__sectionHelper && !m.userData?.__measureHelper) sampleMesh = m;
+    });
+    if (!sampleMesh) return;
+
+    const Vector3Ctor = sampleMesh.position.constructor;
+    const MeshCtor = sampleMesh.constructor;
+    const MaterialCtor = (Array.isArray(sampleMesh.material) ? sampleMesh.material[0] : sampleMesh.material)?.constructor;
+    const GeometryCtor = sampleMesh.geometry.constructor;
+    const BufferAttrCtor = sampleMesh.geometry.attributes?.position?.constructor;
+    if (!Vector3Ctor || !MeshCtor || !MaterialCtor || !GeometryCtor || !BufferAttrCtor) return;
+
+    // Tear-down helper, used both on toggle-off and on next-mount cleanup.
+    const teardown = () => {
+      const s = measureRef.current;
+      if (!s) return;
+      if (s.rafId !== null) cancelAnimationFrame(s.rafId);
+      for (const m of s.markers) {
+        scene.remove(m);
+        m.geometry?.dispose?.();
+        m.material?.dispose?.();
+      }
+      if (s.line) {
+        scene.remove(s.line);
+        s.line.geometry?.dispose?.();
+        s.line.material?.dispose?.();
+      }
+      if (s.label && s.label.parentElement) s.label.parentElement.removeChild(s.label);
+      measureRef.current = null;
+      v.viewer.Render?.();
+    };
+
+    if (!measureEnabled) {
+      teardown();
+      setMeasureDistance(null);
+      return;
+    }
+
+    // Initial state for this session.
+    measureRef.current = { points: [], normals: [], markers: [], line: null, label: null, rafId: null };
+
+    // Try to load THREE for Raycaster. import('three') will likely resolve
+    // to a different copy than OV's bundle, but Raycaster works against
+    // duck-typed mesh.isMesh + geometry.isBufferGeometry flags, so this is
+    // safe in practice.
+    let THREE: any = null;
+    let raycaster: any = null;
+    (async () => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        THREE = await import(/* @vite-ignore */ 'three' as any);
+        raycaster = new THREE.Raycaster();
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn('[Preview] measure: failed to load three for raycaster', err);
+      }
+    })();
+
+    // Modest sphere size — scales with the model's bbox so it stays
+    // visible on tiny and huge models alike.
+    const bbox = v.viewer.GetBoundingBox?.(() => true);
+    const diag = bbox
+      ? Math.sqrt(
+          (bbox.max.x - bbox.min.x) ** 2 +
+          (bbox.max.y - bbox.min.y) ** 2 +
+          (bbox.max.z - bbox.min.z) ** 2,
+        )
+      : 100;
+    const markerRadius = Math.max(diag * 0.005, 0.2);
+
+    const ndcFromEvent = (ev: PointerEvent | MouseEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: ((ev.clientX - rect.left) / rect.width) * 2 - 1,
+        y: -(((ev.clientY - rect.top) / rect.height) * 2 - 1),
+      };
+    };
+
+    const collectTargets = (): any[] => {
+      const out: any[] = [];
+      v.viewer.mainModel?.EnumerateMeshes?.((m: any) => {
+        if (m.userData?.__sectionHelper || m.userData?.__measureHelper) return;
+        if (m.visible === false) return;
+        out.push(m);
+      });
+      return out;
+    };
+
+    const makeMarker = (point: any) => {
+      // Build a tiny sphere from a 12×8 lat-long mesh — cheap, no helper geom.
+      const widthSegs = 16, heightSegs = 12;
+      const positions: number[] = [];
+      const indices: number[] = [];
+      for (let iy = 0; iy <= heightSegs; iy++) {
+        const v = iy / heightSegs;
+        const phi = v * Math.PI;
+        for (let ix = 0; ix <= widthSegs; ix++) {
+          const u = ix / widthSegs;
+          const theta = u * Math.PI * 2;
+          positions.push(
+            markerRadius * Math.sin(phi) * Math.cos(theta),
+            markerRadius * Math.cos(phi),
+            markerRadius * Math.sin(phi) * Math.sin(theta),
+          );
+        }
+      }
+      for (let iy = 0; iy < heightSegs; iy++) {
+        for (let ix = 0; ix < widthSegs; ix++) {
+          const a = iy * (widthSegs + 1) + ix;
+          const b = a + widthSegs + 1;
+          indices.push(a, b, a + 1, b, b + 1, a + 1);
+        }
+      }
+      const geom = new GeometryCtor();
+      geom.setAttribute('position', new BufferAttrCtor(new Float32Array(positions), 3));
+      geom.setIndex(indices);
+      geom.computeVertexNormals?.();
+      const mat: any = new MaterialCtor();
+      mat.color?.setHex?.(0xff8800);
+      mat.depthTest = false;
+      mat.depthWrite = false;
+      mat.transparent = true;
+      mat.opacity = 0.95;
+      const mesh: any = new MeshCtor(geom, mat);
+      mesh.position.copy(point);
+      mesh.renderOrder = 9999;
+      mesh.userData.__measureHelper = true;
+      scene.add(mesh);
+      return mesh;
+    };
+
+    // Build a translucent overlay covering every triangle in the picked
+    // mesh that's coplanar with the picked face — i.e. the entire flat
+    // surface the user clicked. Used in ⊥ mode so the user sees which
+    // surface they selected rather than a single point.
+    //
+    // Two triangles count as part of the same face when:
+    //   1. their normals point the same way within ~1.8°, AND
+    //   2. their centroids lie within a small band of the picked plane.
+    //
+    // Returns null for curved surfaces or mis-fitted picks; the caller
+    // falls back to the sphere marker so the user always gets *some*
+    // visual feedback.
+    const buildFaceHighlight = (mesh: any, hit: any): any | null => {
+      const geom = mesh?.geometry;
+      const posAttr = geom?.attributes?.position;
+      if (!geom || !posAttr || !hit?.face?.normal) return null;
+      const positions: ArrayLike<number> = posAttr.array;
+      const indices: ArrayLike<number> | null = geom.index ? geom.index.array : null;
+
+      // Local-space hit data.
+      const localPoint = new Vector3Ctor(hit.point.x, hit.point.y, hit.point.z);
+      mesh.worldToLocal?.(localPoint);
+      const ln = hit.face.normal;
+      // Plane equation in local space: ln · X + planeC = 0 (passes through localPoint).
+      const planeC = -(ln.x * localPoint.x + ln.y * localPoint.y + ln.z * localPoint.z);
+
+      // Tolerance scales with the bbox so tiny parts and huge parts both
+      // pick up the same face cleanly.
+      geom.computeBoundingBox?.();
+      const bb = geom.boundingBox;
+      const diag = bb
+        ? Math.sqrt((bb.max.x - bb.min.x) ** 2 + (bb.max.y - bb.min.y) ** 2 + (bb.max.z - bb.min.z) ** 2)
+        : 100;
+      const PLANE_TOL = Math.max(diag * 0.001, 0.005);
+      const NORMAL_TOL = 0.9995; // ~1.8°
+
+      const triCount = indices ? indices.length / 3 : posAttr.count / 3;
+      const matched: number[] = [];
+
+      // Bake the world transform into the highlight geometry so we can
+      // attach it to the scene directly with no parent-tracking — it
+      // stays in place even if the source mesh is later transformed.
+      const tmpV = new Vector3Ctor();
+
+      for (let t = 0; t < triCount; t++) {
+        const ia = indices ? indices[t * 3]     : t * 3;
+        const ib = indices ? indices[t * 3 + 1] : t * 3 + 1;
+        const ic = indices ? indices[t * 3 + 2] : t * 3 + 2;
+        const ax = positions[ia * 3],     ay = positions[ia * 3 + 1], az = positions[ia * 3 + 2];
+        const bx = positions[ib * 3],     by = positions[ib * 3 + 1], bz = positions[ib * 3 + 2];
+        const cx = positions[ic * 3],     cy = positions[ic * 3 + 1], cz = positions[ic * 3 + 2];
+
+        const ux = bx - ax, uy = by - ay, uz = bz - az;
+        const vx = cx - ax, vy = cy - ay, vz = cz - az;
+        let nx = uy * vz - uz * vy;
+        let ny = uz * vx - ux * vz;
+        let nz = ux * vy - uy * vx;
+        const nlen = Math.sqrt(nx * nx + ny * ny + nz * nz);
+        if (nlen === 0) continue;
+        nx /= nlen; ny /= nlen; nz /= nlen;
+
+        // Triangle's normal must align with the picked face normal (front side).
+        const ndot = nx * ln.x + ny * ln.y + nz * ln.z;
+        if (ndot < NORMAL_TOL) continue;
+
+        // Triangle centroid must lie on the picked plane.
+        const ccx = (ax + bx + cx) / 3, ccy = (ay + by + cy) / 3, ccz = (az + bz + cz) / 3;
+        const dist = Math.abs(ln.x * ccx + ln.y * ccy + ln.z * ccz + planeC);
+        if (dist > PLANE_TOL) continue;
+
+        // Push all three vertices in world space.
+        for (const [vx_, vy_, vz_] of [[ax, ay, az], [bx, by, bz], [cx, cy, cz]]) {
+          tmpV.set?.(vx_, vy_, vz_);
+          mesh.localToWorld?.(tmpV);
+          matched.push(tmpV.x, tmpV.y, tmpV.z);
+        }
+      }
+
+      if (matched.length === 0) return null;
+
+      const hgeom = new GeometryCtor();
+      hgeom.setAttribute('position', new BufferAttrCtor(new Float32Array(matched), 3));
+      hgeom.computeVertexNormals?.();
+
+      const hmat: any = new MaterialCtor();
+      hmat.color?.setHex?.(0xff8800);
+      hmat.transparent = true;
+      hmat.opacity = 0.45;
+      hmat.depthWrite = false;
+      // Pull the overlay slightly toward the camera so it doesn't z-fight
+      // with the source surface. Negative offset = closer to viewer in
+      // depth.
+      hmat.polygonOffset = true;
+      hmat.polygonOffsetFactor = -2;
+      hmat.polygonOffsetUnits = -2;
+      // Render after the model so the see-through colour blends on top.
+      const highlight: any = new MeshCtor(hgeom, hmat);
+      highlight.renderOrder = 9998;
+      highlight.userData.__measureHelper = true;
+      scene.add(highlight);
+      return highlight;
+    };
+
+    const drawLine = (a: any, b: any) => {
+      const geom = new GeometryCtor();
+      geom.setAttribute('position', new BufferAttrCtor(new Float32Array([a.x, a.y, a.z, b.x, b.y, b.z]), 3));
+      // Use the same material constructor — it'll render as a line because
+      // we use the line-flavour mesh below if THREE has it; otherwise we
+      // settle for a thin-mesh approximation. Cleanest: import THREE.Line
+      // via the dynamic THREE import we already started.
+      const LineCtor = THREE?.Line ?? MeshCtor; // fallback
+      const LineMatCtor = THREE?.LineBasicMaterial ?? MaterialCtor;
+      const mat: any = new LineMatCtor({ color: 0xff8800, depthTest: false, depthWrite: false, transparent: true, opacity: 0.95 });
+      const line: any = new LineCtor(geom, mat);
+      line.renderOrder = 9998;
+      line.userData.__measureHelper = true;
+      scene.add(line);
+      return line;
+    };
+
+    const ensureLabel = () => {
+      const s = measureRef.current!;
+      if (s.label) return s.label;
+      const el = document.createElement('div');
+      el.style.position = 'absolute';
+      el.style.transform = 'translate(-50%, -50%)';
+      el.style.padding = '2px 6px';
+      el.style.fontSize = '11px';
+      el.style.fontWeight = '600';
+      el.style.fontFamily = 'system-ui, -apple-system, sans-serif';
+      el.style.background = 'rgba(255, 136, 0, 0.95)';
+      el.style.color = '#fff';
+      el.style.borderRadius = '4px';
+      el.style.pointerEvents = 'none';
+      el.style.whiteSpace = 'nowrap';
+      el.style.boxShadow = '0 1px 4px rgba(0,0,0,0.25)';
+      el.style.zIndex = '5';
+      containerRef.current!.appendChild(el);
+      s.label = el;
+      return el;
+    };
+
+    const updateLabel = () => {
+      const s = measureRef.current;
+      if (!s || s.points.length < 2 || !s.label) return;
+      const a = s.points[0], b = s.points[1];
+      const mid = new Vector3Ctor((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
+      // Project midpoint to screen.
+      const projected = mid.clone();
+      projected.project?.(camera);
+      const rect = canvas.getBoundingClientRect();
+      const x = ((projected.x + 1) / 2) * rect.width;
+      const y = ((-projected.y + 1) / 2) * rect.height;
+      s.label.style.left = `${x}px`;
+      s.label.style.top = `${y}px`;
+      // Hide if behind the camera (z > 1).
+      s.label.style.opacity = projected.z > 1 ? '0' : '1';
+    };
+
+    // Continuous re-projection so the label tracks orbit/pan/zoom — RAF is
+    // cheap when the only work is one Vector3.project() and two style
+    // assignments.
+    const tick = () => {
+      const s = measureRef.current;
+      if (!s) return;
+      updateLabel();
+      s.rafId = requestAnimationFrame(tick);
+    };
+    measureRef.current.rafId = requestAnimationFrame(tick);
+
+    // ── Click-vs-drag gating ──
+    // We can't simply `stopPropagation()` on pointerdown — that would
+    // block OV's orbit controls and pin the camera. Instead, we track
+    // each pointer gesture: only treat it as a measurement pick when
+    // the pointer barely moved (≤ DRAG_TOL px) between down and up
+    // *and* the press was short. Anything longer is a camera drag and
+    // we hand it off to OV unmodified.
+    const DRAG_TOL = 4;     // px of cumulative movement that still counts as a click
+    const DRAG_TIME = 350;  // ms; longer presses count as a drag even if pointer stayed still
+    let downX = 0, downY = 0, downTime = 0, dragging = false, downActive = false;
+
+    // Compute the world-space normal at the picked surface. Useful for
+    // surface-to-surface distance: if the user picks two roughly-parallel
+    // faces, we report the perpendicular distance instead of the raw
+    // point-to-point distance.
+    const worldNormalFromHit = (hit: any): { x: number; y: number; z: number } | null => {
+      const fn = hit?.face?.normal;
+      const obj = hit?.object;
+      if (!fn || !obj) return null;
+      try {
+        const local = new Vector3Ctor(fn.x, fn.y, fn.z);
+        // `transformDirection` is on three's Vector3 — applies the
+        // upper-3x3 of `matrixWorld` and re-normalises.
+        local.transformDirection?.(obj.matrixWorld);
+        return { x: local.x, y: local.y, z: local.z };
+      } catch {
+        return { x: fn.x, y: fn.y, z: fn.z };
+      }
+    };
+
+    const doMeasurePick = (ev: PointerEvent) => {
+      const targets = collectTargets();
+      if (!targets.length || !raycaster) return;
+      const ndc = ndcFromEvent(ev);
+      raycaster.setFromCamera(ndc, camera);
+      const hits = raycaster.intersectObjects(targets, false);
+      if (!hits.length) return;
+
+      const s = measureRef.current!;
+      const point = new Vector3Ctor(hits[0].point.x, hits[0].point.y, hits[0].point.z);
+      const normal = worldNormalFromHit(hits[0]);
+
+      // Third click → start over.
+      if (s.points.length === 2) {
+        for (const m of s.markers) {
+          scene.remove(m);
+          m.geometry?.dispose?.();
+          m.material?.dispose?.();
+        }
+        if (s.line) {
+          scene.remove(s.line);
+          s.line.geometry?.dispose?.();
+          s.line.material?.dispose?.();
+        }
+        if (s.label) s.label.style.opacity = '0';
+        s.points = []; s.markers = []; s.line = null;
+        s.normals = [];
+        setMeasureDistance(null);
+      }
+
+      s.points.push(point);
+      s.normals.push(normal);
+      // In ⊥ mode the user is selecting a *surface*, so paint a
+      // translucent overlay on the entire coplanar face instead of the
+      // single-point sphere marker. Falls back to the sphere if face
+      // detection fails (e.g. the user picked a curved surface where no
+      // coplanar triangles exist).
+      if (measureMode === 'perp') {
+        const highlight = buildFaceHighlight(hits[0].object, hits[0]);
+        s.markers.push(highlight ?? makeMarker(point));
+      } else {
+        s.markers.push(makeMarker(point));
+      }
+
+      if (s.points.length === 2) {
+        const a = s.points[0];
+        let b = s.points[1];
+
+        let dist: number;
+        let suffix = '';
+
+        if (measureMode === 'perp') {
+          // Perpendicular mode: draw the line *along the surface normal*
+          // (i.e. at 90° to surface A), ending on the plane parallel to
+          // A passing through B's click point. The endpoint may land
+          // inside or outside face B's highlight depending on where the
+          // user clicked, but the line itself is unambiguously the
+          // perpendicular gap — never the diagonal between two arbitrary
+          // click points. Falls back to point-to-point if the first pick
+          // missed a face.
+          const refN = s.normals[0] ?? s.normals[1];
+          if (refN) {
+            const len = Math.sqrt(refN.x * refN.x + refN.y * refN.y + refN.z * refN.z) || 1;
+            const nx = refN.x / len, ny = refN.y / len, nz = refN.z / len;
+            const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+            // Signed projection of (b − a) onto n. Sign keeps the
+            // perpendicular endpoint on the same side as the second
+            // click, so the line visually crosses the gap rather than
+            // drawing into the source body.
+            const proj = dx * nx + dy * ny + dz * nz;
+            const projectedB = new Vector3Ctor(a.x + nx * proj, a.y + ny * proj, a.z + nz * proj);
+            // Re-anchor the second endpoint to the perpendicular foot —
+            // both the rendered line and the label midpoint follow.
+            s.points[1] = projectedB;
+            b = projectedB;
+            dist = Math.abs(proj);
+            suffix = ' ⊥';
+          } else {
+            const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+            dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          }
+        } else {
+          const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+          dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        }
+
+        s.line = drawLine(a, b);
+        setMeasureDistance(dist);
+        const label = ensureLabel();
+        label.textContent = `${formatMeasureDistance(dist)}${suffix}`;
+      }
+
+      v.viewer.Render?.();
+    };
+
+    const onPointerDown = (ev: PointerEvent) => {
+      // Left-button only. Right-click and middle-click are camera-pan/orbit
+      // gestures we don't want to interfere with.
+      if (ev.button !== 0) return;
+      downX = ev.clientX;
+      downY = ev.clientY;
+      downTime = performance.now();
+      dragging = false;
+      downActive = true;
+      // *No* stopPropagation here — OV needs the event for orbit drag.
+    };
+    const onPointerMove = (ev: PointerEvent) => {
+      if (!downActive) return;
+      const dx = ev.clientX - downX, dy = ev.clientY - downY;
+      if (dx * dx + dy * dy > DRAG_TOL * DRAG_TOL) dragging = true;
+    };
+    const onPointerUp = (ev: PointerEvent) => {
+      if (ev.button !== 0 || !downActive) return;
+      const elapsed = performance.now() - downTime;
+      const wasClick = !dragging && elapsed < DRAG_TIME;
+      downActive = false;
+      if (!wasClick) return;            // it was a camera gesture, hand off
+      doMeasurePick(ev);
+    };
+
+    const onKeyDown = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') setMeasureEnabled(false);
+    };
+
+    canvas.style.cursor = 'crosshair';
+    // Bubble phase — OV's orbit-control listeners are also bubble; we
+    // don't preempt them since we never call stopPropagation.
+    canvas.addEventListener('pointerdown', onPointerDown);
+    canvas.addEventListener('pointermove', onPointerMove);
+    canvas.addEventListener('pointerup', onPointerUp);
+    canvas.addEventListener('pointercancel', onPointerUp);
+    window.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      canvas.style.cursor = '';
+      canvas.removeEventListener('pointerdown', onPointerDown);
+      canvas.removeEventListener('pointermove', onPointerMove);
+      canvas.removeEventListener('pointerup', onPointerUp);
+      canvas.removeEventListener('pointercancel', onPointerUp);
+      window.removeEventListener('keydown', onKeyDown);
+      teardown();
+      setMeasureDistance(null);
+    };
+  }, [measureEnabled, measureMode, loading, tree]);
 
   // Hint timer.
   useEffect(() => {
@@ -1413,9 +1988,10 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
     setEdgeColor('#000000');
     setEdgeThreshold(1);
     setSectionEnabled(false);
-    setSectionAxis('z');
+    setSectionAxis('x');     // matches the new default
     setSectionFlip(false);
     setSectionPosition(0.5);
+    setSectionAngle(0);
   };
 
   const handleDefaultDownload = () => {
@@ -1489,6 +2065,11 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
 
   const tBtn = 'h-8 w-8 shrink-0 flex items-center justify-center rounded text-gray-600 hover:bg-gray-200 hover:text-gray-900 transition-colors';
   const tBtnActive = 'h-8 w-8 shrink-0 flex items-center justify-center rounded bg-gray-200 text-gray-900';
+  // Wide variant — used for text-labelled buttons (e.g. Perspective /
+  // Orthographic) so the label has room to render without being clipped
+  // by the fixed 32 px square of `tBtn`.
+  const tBtnWide = 'h-8 shrink-0 flex items-center justify-center px-2 rounded text-gray-600 hover:bg-gray-200 hover:text-gray-900 transition-colors';
+  const tBtnWideActive = 'h-8 shrink-0 flex items-center justify-center px-2 rounded bg-gray-200 text-gray-900';
   const tBtnSep = 'h-5 w-px bg-gray-300 mx-1';
 
   return (
@@ -1512,6 +2093,13 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
         <button onClick={() => setCameraPreset('side')} className={tBtn} title="Side view">
           <span className="text-[10px] font-semibold">SDE</span>
         </button>
+        <button
+          onClick={() => setPerspective(p => !p)}
+          className={perspective ? tBtnWideActive : tBtnWide}
+          title={perspective ? 'Switch to orthographic view' : 'Switch to perspective view'}
+        >
+          <span className="text-[11px] font-semibold whitespace-nowrap">{perspective ? 'Perspective' : 'Orthographic'}</span>
+        </button>
         <div className={tBtnSep} />
         <button onClick={handleSnapshot} className={tBtn} title="Save snapshot as PNG">
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -1525,12 +2113,39 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
           </svg>
         </button>
         <button
-          onClick={() => setPerspective(p => !p)}
-          className={perspective ? tBtnActive : tBtn}
-          title={perspective ? 'Switch to orthographic view' : 'Switch to perspective view'}
+          onClick={() => setMeasureEnabled(m => !m)}
+          className={measureEnabled ? tBtnActive : tBtn}
+          title={measureEnabled ? 'Stop measuring (Esc)' : 'Measure distance — click two points on the model'}
         >
-          <span className="text-[10px] font-semibold">{perspective ? 'PSP' : 'ORT'}</span>
+          {/* Ruler icon */}
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 14.25l6-6 6 6 4.5-4.5M9.75 8.25v3M12.75 11.25v3M15.75 14.25v3" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75h19.5" />
+          </svg>
         </button>
+        {measureEnabled && (
+          <div className="flex items-stretch h-8 rounded border border-gray-200 overflow-hidden">
+            <button
+              onClick={() => setMeasureMode('point')}
+              className={`px-2 text-[11px] font-semibold transition-colors ${measureMode === 'point' ? 'bg-orange-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+              title="Point — measure straight-line distance between two picked points"
+            >
+              Point
+            </button>
+            <button
+              onClick={() => setMeasureMode('perp')}
+              className={`px-2 text-[12px] font-semibold transition-colors ${measureMode === 'perp' ? 'bg-orange-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+              title="Perpendicular — pick two surfaces and measure the perpendicular gap between them"
+            >
+              ⊥
+            </button>
+          </div>
+        )}
+        {measureEnabled && measureDistance !== null && (
+          <div className="px-2 py-1 text-[11px] font-mono font-semibold text-orange-600 bg-orange-50 border border-orange-200 rounded whitespace-nowrap" title={measureMode === 'perp' ? 'Perpendicular distance between the two picked surfaces' : 'Straight-line distance between the two picked points'}>
+            {formatMeasureDistance(measureDistance)}{measureMode === 'perp' ? ' ⊥' : ''}
+          </div>
+        )}
         <div className={tBtnSep} />
         <button onClick={() => setShowMeshes(s => !s)} className={showMeshes ? tBtnActive : tBtn} title="Toggle meshes panel">
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -1669,6 +2284,26 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
                   </label>
 
                   <div className={sectionEnabled ? 'mt-2 space-y-2' : 'mt-2 space-y-2 opacity-40 pointer-events-none'}>
+                    {/* Angle — rotates the cut plane around a perpendicular
+                        reference axis (full 0–360° sweep). Sits above
+                        Axis + Position because changing it visibly affects
+                        both, so users find it first. */}
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span>Angle</span>
+                        <span className="text-gray-500 tabular-nums">{sectionAngle}°</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={180}
+                        step={1}
+                        value={sectionAngle}
+                        onChange={(e) => setSectionAngle(Number(e.target.value))}
+                        className="w-full accent-blue-500"
+                      />
+                    </div>
+
                     <div>
                       <div className="flex items-center justify-between gap-2 mb-1">
                         <span>Axis</span>
