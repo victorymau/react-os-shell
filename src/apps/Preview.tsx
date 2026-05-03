@@ -531,6 +531,43 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
   const [showLayers, setShowLayers] = useState(false);
   const [showHint, setShowHint] = useState(true);
 
+  // Measurement tool — DXF (2D) edition.
+  //
+  // Two modes (toggled via a Point | ⊥ pill that appears next to the
+  // Measure button):
+  //   - Point: straight-line distance between two picks.
+  //   - ⊥:     the first pick must snap to a line; the second pick can
+  //            be anywhere; we report the perpendicular distance from the
+  //            second pick to the first line.
+  //
+  // All visuals (markers, line, distance label, snap indicator) are HTML/
+  // SVG overlays positioned via camera projection — fixed pixel size, so
+  // they don't grow into giant orange blobs when the user zooms in.
+  // Snap-to-endpoint and snap-to-nearest-on-line are computed in screen
+  // space against a cached list of every line segment in the scene
+  // (built once on viewer load).
+  const [measureEnabled, setMeasureEnabled] = useState(false);
+  const [measureMode, setMeasureMode] = useState<'point' | 'perp'>('point');
+  const [measureDistance, setMeasureDistance] = useState<number | null>(null);
+  const measureRef = useRef<{
+    /** Picked scene points, at most two. */
+    picks: { x: number; y: number }[];
+    /** Direction vector of the first picked line in ⊥ mode (unit-length, scene-space). */
+    lineDir: { dx: number; dy: number } | null;
+    /** Imperative DOM nodes — recreated on each enable. */
+    overlay: HTMLDivElement | null;
+    svg: SVGSVGElement | null;
+    line: SVGLineElement | null;
+    /** Dashed extension of the captured reference line (⊥ mode only). */
+    refLine: SVGLineElement | null;
+    markers: HTMLDivElement[];
+    label: HTMLDivElement | null;
+    snap: HTMLDivElement | null;
+    /** Cached scene-space segment endpoints — built once after the dxf
+     *  scene is loaded; used for snap detection on pointer move. */
+    segments: { ax: number; ay: number; bx: number; by: number }[];
+  } | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     let viewer: any = null;
@@ -640,6 +677,422 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
     return () => clearTimeout(t);
   }, [showHint, loading]);
 
+  // ──────────────────────────────────────────────────────────────────────
+  // Measurement tool — DXF (2D) edition.
+  //
+  // All visuals (markers, line, label, snap indicator) are HTML / SVG
+  // overlays positioned via camera projection — they stay constant size
+  // in pixels regardless of zoom, so they never balloon into giant
+  // orange blobs as the user zooms in.
+  //
+  // Snap-to-line / snap-to-endpoint is computed in *screen space* against
+  // a cached list of every line segment in the dxf-viewer scene (built
+  // once from `scene.traverse(LineSegments)`). On hover, the closest
+  // endpoint or the closest point on a segment within 12 px snaps the
+  // cursor — clicks then use that snapped position.
+  //
+  // Two modes via a Point | ⊥ pill that appears next to Measure:
+  //   - Point: straight-line distance between two picks.
+  //   - ⊥:     first pick must snap to a line (we capture that line's
+  //            unit direction); second pick can be any point. The
+  //            reported distance is the perpendicular from the second
+  //            point to the first line.
+  // ──────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const v = viewerRef.current;
+    if (loading || error || !v) return;
+
+    const scene: any = v.GetScene?.();
+    const camera: any = v.GetCamera?.();
+    const canvas: HTMLCanvasElement | undefined = v.GetCanvas?.();
+    if (!scene || !camera || !canvas || !containerRef.current) return;
+
+    const teardown = () => {
+      const s = measureRef.current;
+      if (!s) return;
+      if (s.overlay && s.overlay.parentElement) s.overlay.parentElement.removeChild(s.overlay);
+      measureRef.current = null;
+    };
+
+    if (!measureEnabled) {
+      teardown();
+      setMeasureDistance(null);
+      return;
+    }
+
+    // ── HTML overlay scaffold ──────────────────────────────────────
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:5;';
+    containerRef.current.appendChild(overlay);
+
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('style', 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;');
+    overlay.appendChild(svg);
+
+    // Dashed extension of the captured ⊥ reference line — drawn first so
+    // the solid measurement line renders on top of it.
+    const refLineEl = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    refLineEl.setAttribute('stroke', '#ff8800');
+    refLineEl.setAttribute('stroke-width', '1');
+    refLineEl.setAttribute('stroke-dasharray', '6,4');
+    refLineEl.setAttribute('opacity', '0.55');
+    refLineEl.style.display = 'none';
+    svg.appendChild(refLineEl);
+
+    const lineEl = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    lineEl.setAttribute('stroke', '#ff8800');
+    lineEl.setAttribute('stroke-width', '1.5');
+    lineEl.setAttribute('stroke-linecap', 'round');
+    lineEl.style.display = 'none';
+    svg.appendChild(lineEl);
+
+    const snapEl = document.createElement('div');
+    snapEl.style.cssText = `position:absolute;width:14px;height:14px;border:2px solid #ff8800;background:rgba(255,255,255,0.7);transform:translate(-50%,-50%) rotate(45deg);box-sizing:border-box;display:none;`;
+    overlay.appendChild(snapEl);
+
+    measureRef.current = {
+      picks: [],
+      lineDir: null,
+      overlay, svg, line: lineEl, refLine: refLineEl,
+      markers: [], label: null, snap: snapEl,
+      segments: [],
+    };
+
+    // ── THREE — needed for projection math ────────────────────────
+    let THREE: any = null;
+    let ready = false;
+
+    // Unproject canvas (CSS) px → scene coords (matches dxf-viewer's
+    // private _CanvasToSceneCoord).
+    const sceneFromPx = (cx: number, cy: number) => {
+      if (!THREE) return null;
+      const w = canvas.clientWidth, h = canvas.clientHeight;
+      const v3 = new THREE.Vector3(cx * 2 / w - 1, -cy * 2 / h + 1, 1).unproject(camera);
+      return { x: v3.x, y: v3.y };
+    };
+    // Project scene coords → canvas (CSS) px.
+    const pxFromScene = (sx: number, sy: number) => {
+      if (!THREE) return { x: 0, y: 0 };
+      const v3 = new THREE.Vector3(sx, sy, 0).project(camera);
+      const w = canvas.clientWidth, h = canvas.clientHeight;
+      return { x: (v3.x + 1) / 2 * w, y: (-v3.y + 1) / 2 * h };
+    };
+
+    // Load THREE and build the snap-segment cache. dxf-viewer batches
+    // its line entities into a small number of LineSegments objects;
+    // we walk every one and collect the world-space endpoint pairs.
+    (async () => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        THREE = await import(/* @vite-ignore */ 'three' as any);
+        const segs = measureRef.current?.segments;
+        if (!segs) return;
+        const va = new THREE.Vector3(), vb = new THREE.Vector3();
+        scene.traverse((obj: any) => {
+          if (!obj?.isLineSegments) return;
+          const pos = obj.geometry?.attributes?.position;
+          if (!pos) return;
+          const arr: ArrayLike<number> = pos.array;
+          obj.updateMatrixWorld?.();
+          const m = obj.matrixWorld;
+          // LineSegments draws disjoint line pairs — vertices come in
+          // adjacent pairs (a, b), (c, d), ...
+          for (let i = 0; i < arr.length; i += 6) {
+            va.set(arr[i],     arr[i + 1], arr[i + 2]).applyMatrix4(m);
+            vb.set(arr[i + 3], arr[i + 4], arr[i + 5]).applyMatrix4(m);
+            segs.push({ ax: va.x, ay: va.y, bx: vb.x, by: vb.y });
+          }
+        });
+        ready = true;
+      } catch {}
+    })();
+
+    // ── Snap detection in screen space ────────────────────────────
+    const SNAP_PX = 12;
+    const findSnap = (cx: number, cy: number) => {
+      const s = measureRef.current;
+      if (!s || !ready) return null;
+      let best: {
+        sx: number; sy: number;
+        type: 'endpoint' | 'line';
+        dir?: { dx: number; dy: number };
+      } | null = null;
+      let bestD2 = SNAP_PX * SNAP_PX;
+      for (const seg of s.segments) {
+        const ap = pxFromScene(seg.ax, seg.ay);
+        const bp = pxFromScene(seg.bx, seg.by);
+        // Endpoint snaps still carry the parent segment's direction so that
+        // ⊥ mode can use a corner pick as the reference line — corners are
+        // exactly where users want to anchor a perpendicular measurement.
+        const ldx = seg.bx - seg.ax, ldy = seg.by - seg.ay;
+        const llen = Math.sqrt(ldx * ldx + ldy * ldy) || 1;
+        const segDir = { dx: ldx / llen, dy: ldy / llen };
+        // Endpoint A
+        let dx = cx - ap.x, dy = cy - ap.y;
+        let d2 = dx * dx + dy * dy;
+        if (d2 < bestD2) { best = { sx: seg.ax, sy: seg.ay, type: 'endpoint', dir: segDir }; bestD2 = d2; }
+        // Endpoint B
+        dx = cx - bp.x; dy = cy - bp.y;
+        d2 = dx * dx + dy * dy;
+        if (d2 < bestD2) { best = { sx: seg.bx, sy: seg.by, type: 'endpoint', dir: segDir }; bestD2 = d2; }
+        // Nearest point on segment (in screen space).
+        const sdx = bp.x - ap.x, sdy = bp.y - ap.y;
+        const len2 = sdx * sdx + sdy * sdy;
+        if (len2 > 0) {
+          const t = ((cx - ap.x) * sdx + (cy - ap.y) * sdy) / len2;
+          if (t > 0 && t < 1) {
+            const px = ap.x + t * sdx, py = ap.y + t * sdy;
+            dx = cx - px; dy = cy - py;
+            d2 = dx * dx + dy * dy;
+            if (d2 < bestD2) {
+              const sx = seg.ax + t * (seg.bx - seg.ax);
+              const sy = seg.ay + t * (seg.by - seg.ay);
+              best = { sx, sy, type: 'line', dir: segDir };
+              bestD2 = d2;
+            }
+          }
+        }
+      }
+      return best;
+    };
+
+    // ── Marker / label / line rendering (HTML/SVG, fixed-pixel) ──
+    const makeMarker = (): HTMLDivElement => {
+      const el = document.createElement('div');
+      el.style.cssText = `position:absolute;width:10px;height:10px;border-radius:50%;background:#ff8800;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,0.25);transform:translate(-50%,-50%);pointer-events:none;`;
+      overlay.appendChild(el);
+      return el;
+    };
+    const ensureLabel = () => {
+      const s = measureRef.current!;
+      if (s.label) return s.label;
+      const el = document.createElement('div');
+      el.style.cssText = `position:absolute;transform:translate(-50%,-50%);padding:2px 6px;font-size:11px;font-weight:600;font-family:system-ui,-apple-system,sans-serif;background:rgba(255,136,0,0.95);color:#fff;border-radius:4px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.25);pointer-events:none;`;
+      overlay.appendChild(el);
+      s.label = el;
+      return el;
+    };
+
+    const positionMarker = (el: HTMLDivElement, x: number, y: number) => {
+      const p = pxFromScene(x, y);
+      el.style.left = `${p.x}px`;
+      el.style.top = `${p.y}px`;
+    };
+
+    // For ⊥ mode, the rendered line goes from the second pick perpendicular
+    // to the first line — exactly the same idea as the STP version.
+    const computeRenderedEnds = () => {
+      const s = measureRef.current!;
+      const a = s.picks[0];
+      let b = s.picks[1];
+      if (measureMode === 'perp' && s.lineDir) {
+        // P_perp is the foot of the perpendicular from b onto the line
+        // through a with direction s.lineDir.
+        const d = s.lineDir;
+        const ax = a.x, ay = a.y;
+        const t = (b.x - ax) * d.dx + (b.y - ay) * d.dy;
+        const fx = ax + d.dx * t;
+        const fy = ay + d.dy * t;
+        // The visible perpendicular line goes between b and that foot.
+        return { from: { x: fx, y: fy }, to: { x: b.x, y: b.y } };
+      }
+      return { from: a, to: b };
+    };
+
+    const updateOverlay = () => {
+      const s = measureRef.current;
+      if (!s) return;
+      // Markers
+      if (s.markers[0]) positionMarker(s.markers[0], s.picks[0].x, s.picks[0].y);
+      if (s.markers[1]) positionMarker(s.markers[1], s.picks[1].x, s.picks[1].y);
+      // ⊥ reference line — dashed extension across the canvas, drawn from
+      // the first pick along the captured segment direction. Lets the user
+      // see exactly which line was captured (catches bad snaps).
+      if (measureMode === 'perp' && s.picks.length >= 1 && s.lineDir && s.refLine) {
+        const a = s.picks[0];
+        const w = canvas.clientWidth, h = canvas.clientHeight;
+        const screenSpan = Math.hypot(w, h) * 4; // generous extension in px
+        // Scene-per-pixel along the direction so the dashed line stretches
+        // beyond the visible canvas (visible portion gets clipped by SVG).
+        const ap = pxFromScene(a.x, a.y);
+        const probe = pxFromScene(a.x + s.lineDir.dx, a.y + s.lineDir.dy);
+        const pxLen = Math.hypot(probe.x - ap.x, probe.y - ap.y) || 1;
+        const sceneStep = screenSpan / pxLen;
+        const x0 = a.x - s.lineDir.dx * sceneStep;
+        const y0 = a.y - s.lineDir.dy * sceneStep;
+        const x1 = a.x + s.lineDir.dx * sceneStep;
+        const y1 = a.y + s.lineDir.dy * sceneStep;
+        const p0 = pxFromScene(x0, y0);
+        const p1 = pxFromScene(x1, y1);
+        s.refLine.setAttribute('x1', String(p0.x));
+        s.refLine.setAttribute('y1', String(p0.y));
+        s.refLine.setAttribute('x2', String(p1.x));
+        s.refLine.setAttribute('y2', String(p1.y));
+        s.refLine.style.display = '';
+      } else if (s.refLine) {
+        s.refLine.style.display = 'none';
+      }
+      // Line + label
+      if (s.picks.length === 2) {
+        const ends = computeRenderedEnds();
+        const fp = pxFromScene(ends.from.x, ends.from.y);
+        const tp = pxFromScene(ends.to.x, ends.to.y);
+        s.line!.setAttribute('x1', String(fp.x));
+        s.line!.setAttribute('y1', String(fp.y));
+        s.line!.setAttribute('x2', String(tp.x));
+        s.line!.setAttribute('y2', String(tp.y));
+        s.line!.style.display = '';
+        if (s.label) {
+          s.label.style.left = `${(fp.x + tp.x) / 2}px`;
+          s.label.style.top = `${(fp.y + tp.y) / 2}px`;
+        }
+      } else {
+        s.line!.style.display = 'none';
+      }
+    };
+
+    // ── Click-vs-drag + snap on hover ─────────────────────────────
+    const DRAG_TOL = 4;
+    const DRAG_TIME = 350;
+    let downX = 0, downY = 0, downTime = 0, downActive = false, dragging = false;
+    let lastSnap: ReturnType<typeof findSnap> = null;
+
+    const handlePointerDown = (ev: any) => {
+      const d = ev?.detail;
+      if (!d || d.domEvent?.button !== 0) return;
+      downX = d.canvasCoord.x;
+      downY = d.canvasCoord.y;
+      downTime = performance.now();
+      dragging = false;
+      downActive = true;
+    };
+
+    const handlePointerMove = (ev: PointerEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      const cx = ev.clientX - rect.left;
+      const cy = ev.clientY - rect.top;
+      // Drag detection (only matters when a button is down).
+      if (downActive) {
+        if ((cx - downX) ** 2 + (cy - downY) ** 2 > DRAG_TOL * DRAG_TOL) dragging = true;
+      }
+      // Snap indicator update — only when the user isn't actively
+      // dragging (avoid flicker mid-pan).
+      const s = measureRef.current;
+      if (!s || !s.snap) return;
+      if (downActive && dragging) {
+        s.snap.style.display = 'none';
+        return;
+      }
+      lastSnap = findSnap(cx, cy);
+      if (lastSnap) {
+        const p = pxFromScene(lastSnap.sx, lastSnap.sy);
+        s.snap.style.left = `${p.x}px`;
+        s.snap.style.top = `${p.y}px`;
+        s.snap.style.display = '';
+      } else {
+        s.snap.style.display = 'none';
+      }
+    };
+
+    const handlePointerUp = (ev: any) => {
+      if (!downActive) return;
+      downActive = false;
+      const elapsed = performance.now() - downTime;
+      if (dragging || elapsed > DRAG_TIME) return;
+      // Use the snapped position if we have one, otherwise the raw
+      // pointer position from dxf-viewer's event.
+      const raw = ev?.detail?.position;
+      if (!raw) return;
+      const useSnap = lastSnap && Math.hypot(downX - (canvas.getBoundingClientRect().width), 0) >= 0; // always prefer snap when present
+      const picked = useSnap && lastSnap
+        ? { x: lastSnap.sx, y: lastSnap.sy, snapType: lastSnap.type, lineDir: lastSnap.dir }
+        : { x: raw.x, y: raw.y, snapType: undefined, lineDir: undefined };
+      doPick(picked);
+    };
+
+    const doPick = (p: { x: number; y: number; snapType?: string; lineDir?: { dx: number; dy: number } }) => {
+      const s = measureRef.current;
+      if (!s) return;
+
+      // Third click → start fresh.
+      if (s.picks.length === 2) {
+        for (const m of s.markers) m.parentElement?.removeChild(m);
+        s.markers = [];
+        s.picks = [];
+        s.lineDir = null;
+        s.line!.style.display = 'none';
+        if (s.refLine) s.refLine.style.display = 'none';
+        if (s.label) s.label.style.opacity = '0';
+        setMeasureDistance(null);
+      }
+
+      // ⊥ mode: the FIRST pick must land on (or at the endpoint of) a line —
+      // we need a reference direction for the perpendicular. A snap of either
+      // 'line' or 'endpoint' type carries that direction.
+      if (measureMode === 'perp' && s.picks.length === 0) {
+        if (!p.lineDir) {
+          // Quick visual cue — flash a hint label and bail.
+          const label = ensureLabel();
+          label.style.opacity = '1';
+          label.style.left = `${pxFromScene(p.x, p.y).x}px`;
+          label.style.top = `${pxFromScene(p.x, p.y).y - 18}px`;
+          label.textContent = '⊥: snap to a line or corner first';
+          setTimeout(() => { if (s.label && s.picks.length === 0) s.label.style.opacity = '0'; }, 1500);
+          return;
+        }
+        s.lineDir = p.lineDir;
+      }
+
+      s.picks.push({ x: p.x, y: p.y });
+      s.markers.push(makeMarker());
+
+      if (s.picks.length === 2) {
+        const a = s.picks[0], b = s.picks[1];
+        let dist: number;
+        let suffix = '';
+        if (measureMode === 'perp' && s.lineDir) {
+          // Perpendicular distance from b to the line through a with
+          // direction lineDir.
+          const dx = b.x - a.x, dy = b.y - a.y;
+          // Cross product magnitude with unit direction = perpendicular distance.
+          dist = Math.abs(dx * s.lineDir.dy - dy * s.lineDir.dx);
+          suffix = ' ⊥';
+        } else {
+          const dx = b.x - a.x, dy = b.y - a.y;
+          dist = Math.sqrt(dx * dx + dy * dy);
+        }
+        setMeasureDistance(dist);
+        const label = ensureLabel();
+        label.style.opacity = '1';
+        label.textContent = `${formatMeasureDistance(dist)}${suffix}`;
+      }
+      updateOverlay();
+    };
+
+    const onKeyDown = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') setMeasureEnabled(false);
+    };
+
+    // ── Wire it up ────────────────────────────────────────────────
+    canvas.style.cursor = 'crosshair';
+    try { v.Subscribe?.('pointerdown', handlePointerDown); } catch {}
+    try { v.Subscribe?.('pointerup', handlePointerUp); } catch {}
+    try { v.Subscribe?.('viewChanged', updateOverlay); } catch {}
+    canvas.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      canvas.style.cursor = '';
+      try { v.Unsubscribe?.('pointerdown', handlePointerDown); } catch {}
+      try { v.Unsubscribe?.('pointerup', handlePointerUp); } catch {}
+      try { v.Unsubscribe?.('viewChanged', updateOverlay); } catch {}
+      canvas.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('keydown', onKeyDown);
+      teardown();
+      setMeasureDistance(null);
+    };
+  }, [measureEnabled, measureMode, loading, error]);
+
   const toggleLayer = (name: string) => {
     setLayers(prev => prev.map(l => {
       if (l.name !== name) return l;
@@ -702,6 +1155,40 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
         <button onClick={() => setShowHint(s => !s)} className={btn} title="How to navigate">
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" /></svg>
         </button>
+        <button
+          onClick={() => setMeasureEnabled(m => !m)}
+          className={btn + (measureEnabled ? ' bg-gray-200' : '')}
+          title={measureEnabled ? 'Stop measuring (Esc)' : 'Measure distance — click two points on the drawing'}
+        >
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 14.25l6-6 6 6 4.5-4.5M9.75 8.25v3M12.75 11.25v3M15.75 14.25v3" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75h19.5" />
+          </svg>
+          Measure
+        </button>
+        {measureEnabled && (
+          <div className="flex items-stretch h-7 rounded border border-gray-200 overflow-hidden text-[11px] font-semibold">
+            <button
+              onClick={() => setMeasureMode('point')}
+              className={`px-2 transition-colors ${measureMode === 'point' ? 'bg-orange-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+              title="Point — straight-line distance between two picks"
+            >
+              Point
+            </button>
+            <button
+              onClick={() => setMeasureMode('perp')}
+              className={`px-2 transition-colors ${measureMode === 'perp' ? 'bg-orange-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+              title="Perpendicular — click on a line first, then pick a point. Reports the perpendicular distance."
+            >
+              ⊥
+            </button>
+          </div>
+        )}
+        {measureEnabled && measureDistance !== null && (
+          <div className="px-2 py-1 text-[11px] font-mono font-semibold text-orange-600 bg-orange-50 border border-orange-200 rounded whitespace-nowrap" title={measureMode === 'perp' ? 'Perpendicular distance from second pick to first line' : 'Straight-line distance between the two picked points'}>
+            {formatMeasureDistance(measureDistance)}{measureMode === 'perp' ? ' ⊥' : ''}
+          </div>
+        )}
         <button onClick={handleResetView} className={btn} title="Fit drawing to view">Fit</button>
         <button onClick={onDownload ?? handleDefaultDownload} className={btn}>
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
