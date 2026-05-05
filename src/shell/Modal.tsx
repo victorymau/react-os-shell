@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef, useState, createContext, useContext, useSyncExternalStore, cloneElement, isValidElement } from 'react';
+import { useEffect, useCallback, useRef, useState, createContext, useContext, useSyncExternalStore, cloneElement, isValidElement, type ReactNode, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { confirm } from './ConfirmDialog';
@@ -10,6 +10,31 @@ import { getSwipingParentKey, setSwipingParentKey, subscribeSwipingParentKey } f
 
 /** Context that passes the modal's unique ID to children */
 const ModalIdContext = createContext<string>('');
+
+/**
+ * Extract just the text from a title ReactNode for non-interactive
+ * contexts like the expose-mode tile header — strips buttons, inputs,
+ * kbd hints, and SVG decorations so only the document/page name shows.
+ *
+ * The title can be anything from a plain string to a flex row with an
+ * inline edit button and a copy icon. Tiles in expose mode are scaled
+ * down and not interactive (clicking focuses the window), so rendering
+ * the whole tree is at best ugly and at worst clipped.
+ */
+const TITLE_STRIP_TYPES = new Set(['button', 'input', 'textarea', 'select', 'kbd', 'svg']);
+function extractTitleText(node: ReactNode): string {
+  if (node == null || typeof node === 'boolean') return '';
+  if (typeof node === 'string') return node;
+  if (typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(extractTitleText).join('');
+  if (isValidElement(node)) {
+    const el = node as ReactElement<{ children?: ReactNode }>;
+    const tag = typeof el.type === 'string' ? el.type : '';
+    if (TITLE_STRIP_TYPES.has(tag)) return '';
+    return extractTitleText(el.props?.children);
+  }
+  return '';
+}
 
 /** Hook for widget components to register a settings handler for the right-click menu. */
 export function useWidgetSettings(handler: () => void) {
@@ -1394,20 +1419,22 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
             className={`flex items-center justify-between px-3 py-1.5 border-b border-gray-200 shrink-0 cursor-move select-none rounded-t-lg ${isActive ? 'backdrop-blur-sm' : ''}`}
             style={{ touchAction: 'none', backgroundColor: isActive ? `rgb(var(--window-header-rgb) / var(--active-header-opacity, 0.8))` : `rgb(var(--window-header-rgb) / var(--inactive-header-opacity, 0.7))` }}>
             <div className="text-sm font-medium min-w-0 flex-1 truncate flex items-center gap-1.5" style={{ color: isActive ? 'rgb(17 24 39)' : 'rgb(156 163 175)' }}>
-              {renderIconButton()}
-              <span className="truncate">{displayTitle}</span>
+              {!exposeActive && renderIconButton()}
+              <span className="truncate">{exposeActive ? extractTitleText(displayTitle) : displayTitle}</span>
             </div>
-            <div className="flex items-center gap-1 shrink-0 ml-2">
-              {allowPinOnTop && (
-                <button onClick={() => setPinnedOnTop(p => !p)} title={pinnedOnTop ? 'Unpin from top' : 'Pin on top'}
-                  className={`p-0.5 rounded hover:bg-gray-200 ${pinnedOnTop ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>
-                  <svg className="h-3 w-3" fill={pinnedOnTop ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 3.75V16.5L12 14.25 7.5 16.5V3.75m9 0H18A2.25 2.25 0 0120.25 6v12A2.25 2.25 0 0118 20.25H6A2.25 2.25 0 013.75 18V6A2.25 2.25 0 016 3.75h1.5m9 0h-9" /></svg>
+            {!exposeActive && (
+              <div className="flex items-center gap-1 shrink-0 ml-2">
+                {allowPinOnTop && (
+                  <button onClick={() => setPinnedOnTop(p => !p)} title={pinnedOnTop ? 'Unpin from top' : 'Pin on top'}
+                    className={`p-0.5 rounded hover:bg-gray-200 ${pinnedOnTop ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>
+                    <svg className="h-3 w-3" fill={pinnedOnTop ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 3.75V16.5L12 14.25 7.5 16.5V3.75m9 0H18A2.25 2.25 0 0120.25 6v12A2.25 2.25 0 0118 20.25H6A2.25 2.25 0 013.75 18V6A2.25 2.25 0 016 3.75h1.5m9 0h-9" /></svg>
+                  </button>
+                )}
+                <button type="button" onClick={guardedClose} className="rounded p-0.5 text-gray-400 hover:text-gray-600 hover:bg-gray-200">
+                  <XMarkIcon className="h-4 w-4" />
                 </button>
-              )}
-              <button type="button" onClick={guardedClose} className="rounded p-0.5 text-gray-400 hover:text-gray-600 hover:bg-gray-200">
-                <XMarkIcon className="h-4 w-4" />
-              </button>
-            </div>
+              </div>
+            )}
           </div>
         ) : appStyle ? (
           /* App style: small title bar like compact, but keeps minimize/maximize for full window control. */
@@ -1415,51 +1442,55 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
             className={`flex items-center justify-between px-3 py-1.5 border-b border-gray-200 shrink-0 cursor-move select-none rounded-t-lg ${isActive ? 'backdrop-blur-sm' : ''}`}
             style={{ touchAction: 'none', backgroundColor: isActive ? `rgb(var(--window-header-rgb) / var(--active-header-opacity, 0.8))` : `rgb(var(--window-header-rgb) / var(--inactive-header-opacity, 0.7))` }}>
             <div className="text-sm font-medium min-w-0 flex-1 truncate flex items-center gap-1.5" style={{ color: isActive ? 'rgb(17 24 39)' : 'rgb(156 163 175)' }}>
-              {renderIconButton()}
-              <span className="truncate">{displayTitle}</span>
+              {!exposeActive && renderIconButton()}
+              <span className="truncate">{exposeActive ? extractTitleText(displayTitle) : displayTitle}</span>
             </div>
-            <div className="flex items-center gap-0.5 shrink-0 ml-2">
-              {allowPinOnTop && (
-                <button onClick={() => setPinnedOnTop(p => !p)} title={pinnedOnTop ? 'Unpin from top' : 'Pin on top'}
-                  className={`p-0.5 rounded hover:bg-gray-200 ${pinnedOnTop ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>
-                  <svg className="h-3 w-3" fill={pinnedOnTop ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 3.75V16.5L12 14.25 7.5 16.5V3.75m9 0H18A2.25 2.25 0 0120.25 6v12A2.25 2.25 0 0118 20.25H6A2.25 2.25 0 013.75 18V6A2.25 2.25 0 016 3.75h1.5m9 0h-9" /></svg>
+            {!exposeActive && (
+              <div className="flex items-center gap-0.5 shrink-0 ml-2">
+                {allowPinOnTop && (
+                  <button onClick={() => setPinnedOnTop(p => !p)} title={pinnedOnTop ? 'Unpin from top' : 'Pin on top'}
+                    className={`p-0.5 rounded hover:bg-gray-200 ${pinnedOnTop ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>
+                    <svg className="h-3 w-3" fill={pinnedOnTop ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 3.75V16.5L12 14.25 7.5 16.5V3.75m9 0H18A2.25 2.25 0 0120.25 6v12A2.25 2.25 0 0118 20.25H6A2.25 2.25 0 013.75 18V6A2.25 2.25 0 016 3.75h1.5m9 0h-9" /></svg>
+                  </button>
+                )}
+                <button onClick={() => { const idx = activationOrder.indexOf(modalId); if (idx !== -1) activationOrder.splice(idx, 1); activeListeners.forEach(fn => fn()); window.dispatchEvent(new CustomEvent('modal-reorder')); }} title="Minimize" className="text-gray-400 hover:text-gray-600 px-1 py-0.5 rounded hover:bg-gray-200 text-xs leading-none">─</button>
+                <button onClick={() => { if (maximized) { setMaximized(false); setBox(calcWindowed()); } else { reset(); } }} title={maximized ? 'Windowed' : 'Maximize'} className="text-gray-400 hover:text-gray-600 px-1 py-0.5 rounded hover:bg-gray-200 text-xs leading-none">{maximized ? '❐' : '⤢'}</button>
+                <button type="button" onClick={guardedClose} className="rounded p-0.5 text-gray-400 hover:text-gray-600 hover:bg-gray-200">
+                  <XMarkIcon className="h-4 w-4" />
                 </button>
-              )}
-              <button onClick={() => { const idx = activationOrder.indexOf(modalId); if (idx !== -1) activationOrder.splice(idx, 1); activeListeners.forEach(fn => fn()); window.dispatchEvent(new CustomEvent('modal-reorder')); }} title="Minimize" className="text-gray-400 hover:text-gray-600 px-1 py-0.5 rounded hover:bg-gray-200 text-xs leading-none">─</button>
-              <button onClick={() => { if (maximized) { setMaximized(false); setBox(calcWindowed()); } else { reset(); } }} title={maximized ? 'Windowed' : 'Maximize'} className="text-gray-400 hover:text-gray-600 px-1 py-0.5 rounded hover:bg-gray-200 text-xs leading-none">{maximized ? '❐' : '⤢'}</button>
-              <button type="button" onClick={guardedClose} className="rounded p-0.5 text-gray-400 hover:text-gray-600 hover:bg-gray-200">
-                <XMarkIcon className="h-4 w-4" />
-              </button>
-            </div>
+              </div>
+            )}
           </div>
         ) : (
         <div onPointerDown={startDrag}
           className={`flex items-center justify-between px-4 py-2.5 border-b border-gray-200 shrink-0 cursor-move select-none rounded-t-lg ${isActive ? 'backdrop-blur-sm' : ''}`}
           style={{ touchAction: 'none', backgroundColor: isActive ? `rgb(var(--window-header-rgb) / var(--active-header-opacity, 0.8))` : `rgb(var(--window-header-rgb) / var(--inactive-header-opacity, 0.7))` }}>
           <div className="text-lg font-semibold min-w-0 flex-1 truncate flex items-center gap-2" style={{ color: isActive ? 'var(--window-title-active, rgb(17 24 39))' : 'var(--window-title-inactive, rgb(156 163 175))' }}>
-            {renderIconButton()}
-            <span className="truncate">{displayTitle}</span>
+            {!exposeActive && renderIconButton()}
+            <span className="truncate">{exposeActive ? extractTitleText(displayTitle) : displayTitle}</span>
           </div>
-          <div className="flex items-center gap-1.5 shrink-0 ml-4">
-            {hasNav && (
-              <span className="flex items-center gap-1 mr-1 text-[10px] text-gray-400">
-                <kbd className="rounded border border-gray-300 bg-gray-200 px-1.5 py-0.5 font-medium text-gray-500">K</kbd><span>Prev</span>
-                <kbd className="rounded border border-gray-300 bg-gray-200 px-1.5 py-0.5 font-medium ml-1 text-gray-500">J</kbd><span>Next</span>
-              </span>
-            )}
-            {allowPinOnTop && (
-              <button onClick={() => setPinnedOnTop(p => !p)} title={pinnedOnTop ? 'Unpin from top' : 'Pin on top'}
-                className={`text-xs px-2 py-1 rounded hover:bg-gray-200 ${pinnedOnTop ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>
-                <svg className="h-3.5 w-3.5" fill={pinnedOnTop ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 3.75V16.5L12 14.25 7.5 16.5V3.75m9 0H18A2.25 2.25 0 0120.25 6v12A2.25 2.25 0 0118 20.25H6A2.25 2.25 0 013.75 18V6A2.25 2.25 0 016 3.75h1.5m9 0h-9" /></svg>
+          {!exposeActive && (
+            <div className="flex items-center gap-1.5 shrink-0 ml-4">
+              {hasNav && (
+                <span className="flex items-center gap-1 mr-1 text-[10px] text-gray-400">
+                  <kbd className="rounded border border-gray-300 bg-gray-200 px-1.5 py-0.5 font-medium text-gray-500">K</kbd><span>Prev</span>
+                  <kbd className="rounded border border-gray-300 bg-gray-200 px-1.5 py-0.5 font-medium ml-1 text-gray-500">J</kbd><span>Next</span>
+                </span>
+              )}
+              {allowPinOnTop && (
+                <button onClick={() => setPinnedOnTop(p => !p)} title={pinnedOnTop ? 'Unpin from top' : 'Pin on top'}
+                  className={`text-xs px-2 py-1 rounded hover:bg-gray-200 ${pinnedOnTop ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>
+                  <svg className="h-3.5 w-3.5" fill={pinnedOnTop ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 3.75V16.5L12 14.25 7.5 16.5V3.75m9 0H18A2.25 2.25 0 0120.25 6v12A2.25 2.25 0 0118 20.25H6A2.25 2.25 0 013.75 18V6A2.25 2.25 0 016 3.75h1.5m9 0h-9" /></svg>
+                </button>
+              )}
+              <button onClick={() => { const idx = activationOrder.indexOf(modalId); if (idx !== -1) activationOrder.splice(idx, 1); activeListeners.forEach(fn => fn()); window.dispatchEvent(new CustomEvent('modal-reorder')); }} title="Minimize" className="text-gray-400 hover:text-gray-600 text-xs px-2 py-1 rounded hover:bg-gray-200">─</button>
+              <button onClick={() => { if (maximized) { setMaximized(false); setBox(calcWindowed()); } else { reset(); } }} title={maximized ? 'Windowed' : 'Maximize'} className="text-gray-400 hover:text-gray-600 text-xs px-2 py-1 rounded hover:bg-gray-200">{maximized ? '❐' : '⤢'}</button>
+              <kbd className="rounded border border-gray-300 bg-gray-200 px-1.5 py-0.5 text-[10px] font-medium text-gray-400">ESC</kbd>
+              <button type="button" onClick={guardedClose} className="rounded-md text-gray-400 hover:text-gray-600">
+                <XMarkIcon className="h-5 w-5" />
               </button>
-            )}
-            <button onClick={() => { const idx = activationOrder.indexOf(modalId); if (idx !== -1) activationOrder.splice(idx, 1); activeListeners.forEach(fn => fn()); window.dispatchEvent(new CustomEvent('modal-reorder')); }} title="Minimize" className="text-gray-400 hover:text-gray-600 text-xs px-2 py-1 rounded hover:bg-gray-200">─</button>
-            <button onClick={() => { if (maximized) { setMaximized(false); setBox(calcWindowed()); } else { reset(); } }} title={maximized ? 'Windowed' : 'Maximize'} className="text-gray-400 hover:text-gray-600 text-xs px-2 py-1 rounded hover:bg-gray-200">{maximized ? '❐' : '⤢'}</button>
-            <kbd className="rounded border border-gray-300 bg-gray-200 px-1.5 py-0.5 text-[10px] font-medium text-gray-400">ESC</kbd>
-            <button type="button" onClick={guardedClose} className="rounded-md text-gray-400 hover:text-gray-600">
-              <XMarkIcon className="h-5 w-5" />
-            </button>
-          </div>
+            </div>
+          )}
         </div>
         )}
 
