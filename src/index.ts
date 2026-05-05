@@ -58,6 +58,7 @@ export {
   WindowManagerProvider,
   useWindowManager,
   DocFavStar,
+  getActiveWindowRoute,
 } from './shell/WindowManager';
 
 // ── Desktop host config (sticky resolver, persistence) ──

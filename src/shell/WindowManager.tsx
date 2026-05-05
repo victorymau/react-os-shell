@@ -331,6 +331,27 @@ function currentlyActiveWindowKey(): string | undefined {
   return panel?.getAttribute('data-window-key') ?? undefined;
 }
 
+/** Module-level mirror of windowKey → route for the currently-open
+ *  windows. Kept in sync by the Provider's effect (see below). Lets
+ *  non-React code (e.g. a bug-report submit callback) ask "which app
+ *  window is the user currently looking at" without grabbing context.
+ *  Bug-report and similar HeadlessUI dialogs don't go through the
+ *  shell's Modal store, so the active window key keeps pointing at
+ *  the underlying app window even while such a dialog is open. */
+const routeByWindowKey = new Map<string, string>();
+
+/** Public, framework-free helper: route ('/orders', '/qc-reports', …)
+ *  of the window the user is currently focused on. Returns undefined
+ *  when no app window is active (start menu / dashboard with nothing
+ *  open). Useful for code paths that fire outside React render — the
+ *  shell consumer can stamp metadata on a payload (e.g. "which module
+ *  is this bug report against?") without needing to lift state. */
+export function getActiveWindowRoute(): string | undefined {
+  const key = currentlyActiveWindowKey();
+  if (!key) return undefined;
+  return routeByWindowKey.get(key);
+}
+
 /** Find a modal panel whose title text contains `label`. Used as a fallback
  *  when no window key is available (legacy code paths). */
 function findPanelByLabel(label: string): HTMLElement | null {
@@ -682,6 +703,14 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (openWindows.length > 0) hasUserActed.current = true;
     if (hasUserActed.current) saveWindowState(openWindows);
+
+    // Mirror windowKey → route into the module-level map exported as
+    // `getActiveWindowRoute()`. Snapshot semantics: we rebuild from
+    // scratch on every change so closed windows drop out cleanly.
+    routeByWindowKey.clear();
+    for (const w of openWindows) {
+      if (w.route) routeByWindowKey.set(w.id, w.route);
+    }
   }, [openWindows]);
 
   const closeEntity = useCallback((id: string) => {
