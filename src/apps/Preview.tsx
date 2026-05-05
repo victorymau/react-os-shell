@@ -2863,11 +2863,39 @@ function ImagePanel({ url, filename, onDownload, onEmail }: ImagePanelProps) {
   const [annotating, setAnnotating] = useState(false);
   const annotatorRef = useRef<ImageAnnotatorHandle>(null);
 
-  const handleDefaultDownload = () => {
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
+  // Fetch into a blob URL before triggering the anchor download.
+  // The bare-anchor approach (`a.href = url; a.download = …; a.click()`)
+  // can fall through to navigation when the server's response headers
+  // don't cleanly opt into the download — the browser then loads the
+  // image URL into the SPA frame, which clears the Preview state and
+  // leaves the user with the empty "Drop a file here…" placeholder.
+  // Going through fetch → Blob → object URL means the anchor target
+  // is always a controlled blob: URL the browser will always save.
+  const handleDefaultDownload = async () => {
+    // For same-document blob: URLs we can skip the round-trip entirely.
+    if (url.startsWith('blob:') || url.startsWith('data:')) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      return;
+    }
+    try {
+      const res = await fetch(url, { credentials: 'include' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      a.click();
+      // Defer revoke so the browser has a tick to start the download.
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+    } catch (err) {
+      // Last-resort fallback — open in a new tab so the user can
+      // right-click → Save As. Doesn't clobber the Preview state.
+      window.open(url, '_blank', 'noopener');
+    }
   };
 
   const btn = 'px-2 py-1 rounded hover:bg-gray-200 transition-colors text-gray-600 flex items-center gap-1';
