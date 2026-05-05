@@ -68,6 +68,12 @@ export interface LayoutProps {
   /** Universal search config — when omitted, Cmd-K opens the picker but no
    *  results ever come back. */
   search?: SearchConfig;
+  /** Custom node rendered in the system tray to the LEFT of the
+   *  notification bell (or above it on a vertical taskbar). Lets a host
+   *  app drop in icons like a server-status indicator without forking
+   *  the shell. The shell renders the node as-is — keep it small (a
+   *  single icon-sized button) so it fits the existing tray rhythm. */
+  taskbarTrayLeft?: ReactNode;
 }
 
 
@@ -566,6 +572,7 @@ export default function Layout({
   categories = defaultCategories,
   notifications,
   search,
+  taskbarTrayLeft,
 }: LayoutProps = {}) {
   const bugReport = useBugReport();
   const { user, logout, hasAnyPerm } = useAuth();
@@ -878,6 +885,10 @@ export default function Layout({
                 </svg>
               </button>
               <TaskbarPomodoro />
+              {/* Host-supplied tray content (e.g. server-status icon).
+                  Sits next to the notification bell on the bell's
+                  outer edge. */}
+              {taskbarTrayLeft}
               {notifications && <NotificationBell {...notifications} popDirection={taskbarPosition === 'right' ? 'left' : 'right'} />}
             </div>
           </div>
@@ -885,6 +896,7 @@ export default function Layout({
           /* Horizontal: icons then clock */
           <>
             <TaskbarPomodoro />
+            {taskbarTrayLeft}
             {notifications && <NotificationBell {...notifications} />}
             <button onClick={() => setGoogleConnectOpen(true)} title={googleConnected ? 'Google Connected' : 'Connect Google'}
               className={`shrink-0 rounded-md p-2 transition-colors ${googleConnected ? 'hover:bg-green-50' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-200'}`}>
