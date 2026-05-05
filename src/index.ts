@@ -26,6 +26,8 @@ export type { SearchResult, SearchProvider, SearchConfig } from './shell/GlobalS
 export { default as ShortcutHelp } from './shell/ShortcutHelp';
 export { ALT_SHIFT_E, ALT_SHIFT_D, ALT_SHIFT_N, CMD_ENTER, CMD_S, CMD_K, CMD_DOT, CMD_A, MOD, ALT, SHIFT, ENTER, isMac } from './shell/Kbd';
 export { default as toast } from './shell/toast';
+export { default as EditableGrid } from './shell/EditableGrid';
+export type { GridColumn, CellStyle, EditableGridProps } from './shell/EditableGrid';
 
 // ── Notification system ──
 export { default as NotificationBell } from './shell/NotificationBell';
