@@ -352,7 +352,11 @@ function PdfPanel({ url, filename, onDownload, onEmail }: PdfPanelProps) {
   const [pdf, setPdf] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
-  const [scale, setScale] = useState(1.5);
+  const [scale, setScale] = useState(1);
+  // Fit mode is the default — scale stays auto-tracking the container width
+  // until the user picks a manual zoom (− / + / dropdown). Re-armed by the
+  // Fit toolbar button.
+  const [fitMode, setFitMode] = useState(true);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -369,15 +373,26 @@ function PdfPanel({ url, filename, onDownload, onEmail }: PdfPanelProps) {
     return () => { cancelled = true; };
   }, [url]);
 
+  // Auto-fit: re-compute scale from container width whenever fit mode is on,
+  // the document changes, the page changes, or the container resizes. Window
+  // resize and Modal drag-resize both trigger ResizeObserver. Manual zoom
+  // turns this off until the user clicks Fit again.
   useEffect(() => {
-    if (!pdf || !containerRef.current) return;
-    pdf.getPage(1).then(p => {
-      const containerW = containerRef.current?.clientWidth || 800;
-      const viewport = p.getViewport({ scale: 1 });
-      const fitScale = (containerW - 40) / viewport.width;
-      setScale(Math.min(Math.max(fitScale, 0.5), 3));
-    });
-  }, [pdf]);
+    if (!pdf || !fitMode || !containerRef.current) return;
+    const fit = () => {
+      if (!containerRef.current) return;
+      pdf.getPage(page).then(p => {
+        const containerW = containerRef.current?.clientWidth || 800;
+        const viewport = p.getViewport({ scale: 1 });
+        const next = Math.min(Math.max((containerW - 40) / viewport.width, 0.3), 4);
+        setScale(prev => (Math.abs(prev - next) < 0.005 ? prev : next));
+      });
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, [pdf, page, fitMode]);
 
   useEffect(() => {
     if (!pdf || !canvasRef.current) return;
@@ -429,13 +444,49 @@ function PdfPanel({ url, filename, onDownload, onEmail }: PdfPanelProps) {
     a.click();
   };
 
-  const fitWidth = () => {
-    if (!pdf || !containerRef.current) return;
-    pdf.getPage(page).then(p => {
-      const containerW = containerRef.current?.clientWidth || 800;
-      const viewport = p.getViewport({ scale: 1 });
-      setScale(Math.min(Math.max((containerW - 40) / viewport.width, 0.5), 3));
-    });
+  // Re-arm fit mode. The auto-fit effect picks the new scale on its next
+  // tick once `fitMode` flips to true.
+  const fitWidth = () => setFitMode(true);
+
+  // Wheel and keyboard page navigation. Only takes the wheel event when
+  // the container is at the top/bottom edge — otherwise normal scroll
+  // moves through a tall page first, matching native PDF readers.
+  const onWheelPage = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (!pdf) return;
+    if (e.ctrlKey || e.metaKey) return; // browser-zoom shortcut, leave alone
+    const el = containerRef.current;
+    if (!el) return;
+    const atTop = el.scrollTop <= 0;
+    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+    if (e.deltaY > 0 && atBottom && page < totalPages) {
+      e.preventDefault();
+      setPage(p => Math.min(totalPages, p + 1));
+      // Land at the top of the next page so wheel-down keeps reading
+      // forward. requestAnimationFrame so the canvas has a tick to
+      // resize before we scroll.
+      requestAnimationFrame(() => { if (containerRef.current) containerRef.current.scrollTop = 0; });
+    } else if (e.deltaY < 0 && atTop && page > 1) {
+      e.preventDefault();
+      setPage(p => Math.max(1, p - 1));
+      requestAnimationFrame(() => {
+        if (containerRef.current) containerRef.current.scrollTop = containerRef.current.scrollHeight;
+      });
+    }
+  };
+  const onKeyPage = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!pdf) return;
+    // Ignore keyboard nav when an input/textarea has focus.
+    const tag = (document.activeElement?.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || (document.activeElement as HTMLElement)?.isContentEditable) return;
+    if (e.key === 'PageDown' || e.key === 'ArrowRight') {
+      if (page < totalPages) { e.preventDefault(); setPage(p => Math.min(totalPages, p + 1)); }
+    } else if (e.key === 'PageUp' || e.key === 'ArrowLeft') {
+      if (page > 1) { e.preventDefault(); setPage(p => Math.max(1, p - 1)); }
+    } else if (e.key === 'Home') {
+      e.preventDefault(); setPage(1);
+    } else if (e.key === 'End') {
+      e.preventDefault(); setPage(totalPages);
+    }
   };
 
   const btn = 'px-2 py-1 rounded hover:bg-gray-200 transition-colors text-gray-600 flex items-center gap-1';
@@ -451,23 +502,35 @@ function PdfPanel({ url, filename, onDownload, onEmail }: PdfPanelProps) {
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
         </button>
         <div className="h-4 w-px bg-gray-300 mx-1" />
-        <button onClick={() => setScale(s => Math.max(0.3, Math.round((s - 0.25) * 100) / 100))} className={btn}>−</button>
+        <button
+          onClick={() => { setFitMode(false); setScale(s => Math.max(0.3, Math.round((s - 0.25) * 100) / 100)); }}
+          className={btn}
+        >−</button>
         <select
-          value={ZOOM_PRESETS.includes(Math.round(scale * 100)) ? Math.round(scale * 100) : 'custom'}
+          value={fitMode ? 'fit' : (ZOOM_PRESETS.includes(Math.round(scale * 100)) ? Math.round(scale * 100) : 'custom')}
           onChange={e => {
             const v = e.target.value;
-            if (v !== 'custom') setScale(Number(v) / 100);
+            if (v === 'fit') { setFitMode(true); return; }
+            if (v !== 'custom') { setFitMode(false); setScale(Number(v) / 100); }
           }}
           className="bg-transparent hover:bg-gray-200 rounded px-1 py-1 text-gray-600 tabular-nums cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-400"
           title="Zoom"
         >
-          {!ZOOM_PRESETS.includes(Math.round(scale * 100)) && (
+          <option value="fit">Fit</option>
+          {!fitMode && !ZOOM_PRESETS.includes(Math.round(scale * 100)) && (
             <option value="custom">{Math.round(scale * 100)}%</option>
           )}
           {ZOOM_PRESETS.map(p => <option key={p} value={p}>{p}%</option>)}
         </select>
-        <button onClick={() => setScale(s => Math.min(4, Math.round((s + 0.25) * 100) / 100))} className={btn}>+</button>
-        <button onClick={fitWidth} className={btn}>Fit</button>
+        <button
+          onClick={() => { setFitMode(false); setScale(s => Math.min(4, Math.round((s + 0.25) * 100) / 100)); }}
+          className={btn}
+        >+</button>
+        <button
+          onClick={fitWidth}
+          className={btn + (fitMode ? ' bg-gray-200 text-gray-900' : '')}
+          title="Fit page width — auto-tracks the window size until you zoom manually"
+        >Fit</button>
         <div className="h-4 w-px bg-gray-300 mx-1" />
         <button onClick={handlePrint} className={btn}>
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z" /></svg>
@@ -485,7 +548,17 @@ function PdfPanel({ url, filename, onDownload, onEmail }: PdfPanelProps) {
         )}
       </PanelActions>
 
-      <div ref={containerRef} className="flex-1 overflow-auto bg-gray-100">
+      <div
+        ref={containerRef}
+        className="flex-1 overflow-auto bg-gray-100 outline-none"
+        // tabIndex makes the scroll container itself focusable so PageUp /
+        // PageDown / Arrow keys are captured even when no inner element
+        // has focus (e.g. right after the panel mounts). Wheel handler
+        // page-flips when the user reaches the top/bottom of a long page.
+        tabIndex={0}
+        onWheel={onWheelPage}
+        onKeyDown={onKeyPage}
+      >
         {loading ? (
           <div className="flex items-center justify-center h-full text-gray-400 text-sm">Loading PDF...</div>
         ) : (
@@ -1819,9 +1892,16 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
       const cosθ = Math.cos(θ), sinθ = Math.sin(θ);
       const sign = sectionFlip ? -1 : 1;
       let nx = 0, ny = 0, nz = 0;
+      // Each axis sweeps in a DIFFERENT plane so the three axis options give
+      // genuinely different families of cut planes:
+      //   X  →  rotates around Y, sweeping in the X-Z plane
+      //   Y  →  rotates around X, sweeping in the Y-Z plane
+      //   Z  →  rotates around X, sweeping in the Z-Y plane (distinct from X)
+      // Earlier the Z case rotated in X-Z too, which made X and Z visually
+      // identical except for a 90° offset in the angle slider.
       if (sectionAxis === 'x')      { nx = sign * cosθ; nz = sign * sinθ; }
       else if (sectionAxis === 'y') { ny = sign * cosθ; nz = sign * sinθ; }
-      else                          { nx = sign * sinθ; nz = sign * cosθ; }
+      else                          { nz = sign * cosθ; ny = sign * sinθ; }
 
       // The plane passes through point P on the chosen-axis line at
       // `sectionPosition` of the bbox extent; the other two coordinates use
@@ -1886,9 +1966,13 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
 
     const renderer = v.viewer.renderer;
     const scene = v.viewer.scene;
-    const camera = v.viewer.camera;
+    // NB: don't cache `v.viewer.camera` here. SetProjectionMode (orthographic
+    // toggle, called from the projection-default effect right after load)
+    // rebuilds the THREE camera and replaces v.viewer.camera with a fresh
+    // instance. A captured reference goes stale and the raycaster picks
+    // ghost positions. We re-read v.viewer.camera inside doMeasurePick.
     const canvas: HTMLCanvasElement | undefined = renderer?.domElement;
-    if (!renderer || !scene || !camera || !canvas) return;
+    if (!renderer || !scene || !canvas) return;
 
     // Snapshot a sample mesh to pluck THREE constructors that share the
     // renderer's THREE instance.
@@ -2169,6 +2253,9 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
     const updateLabel = () => {
       const s = measureRef.current;
       if (!s || s.points.length < 2 || !s.label) return;
+      // Read camera fresh — see comment in doMeasurePick.
+      const camera = v.viewer.camera;
+      if (!camera) return;
       const a = s.points[0], b = s.points[1];
       const mid = new Vector3Ctor((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
       // Project midpoint to screen.
@@ -2227,6 +2314,10 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
     const doMeasurePick = (ev: PointerEvent) => {
       const targets = collectTargets();
       if (!targets.length || !raycaster) return;
+      // Read camera fresh — SetProjectionMode rebuilds it under the hood,
+      // see the comment near the start of this effect.
+      const camera = v.viewer.camera;
+      if (!camera) return;
       const ndc = ndcFromEvent(ev);
       raycaster.setFromCamera(ndc, camera);
       const hits = raycaster.intersectObjects(targets, false);
