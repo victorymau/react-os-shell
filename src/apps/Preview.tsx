@@ -2964,10 +2964,20 @@ function ImagePanel({ url, filename, onDownload, onEmail }: ImagePanelProps) {
       a.click();
       return;
     }
-    try {
-      const res = await fetch(url, { credentials: 'include' });
+    const tryFetch = async (init: RequestInit) => {
+      const res = await fetch(url, init);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const blob = await res.blob();
+      return res.blob();
+    };
+    try {
+      let blob: Blob;
+      try {
+        blob = await tryFetch({ credentials: 'include' });
+      } catch {
+        // Some media servers reject credentialed requests with an opaque
+        // network failure — retry once without cookies before giving up.
+        blob = await tryFetch({ credentials: 'omit' });
+      }
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = blobUrl;
@@ -2975,10 +2985,8 @@ function ImagePanel({ url, filename, onDownload, onEmail }: ImagePanelProps) {
       a.click();
       // Defer revoke so the browser has a tick to start the download.
       setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
-    } catch (err) {
-      // Last-resort fallback — open in a new tab so the user can
-      // right-click → Save As. Doesn't clobber the Preview state.
-      window.open(url, '_blank', 'noopener');
+    } catch {
+      toast.error("Download failed — couldn't reach the file.");
     }
   };
 
