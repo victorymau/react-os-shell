@@ -397,6 +397,7 @@ function PdfPanel({ url, filename, onDownload, onEmail }: PdfPanelProps) {
   useEffect(() => {
     if (!pdf || !canvasRef.current) return;
     let cancelled = false;
+    let task: { cancel: () => void; promise: Promise<void> } | null = null;
     pdf.getPage(page).then(p => {
       if (cancelled || !canvasRef.current) return;
       const viewport = p.getViewport({ scale });
@@ -410,9 +411,13 @@ function PdfPanel({ url, filename, onDownload, onEmail }: PdfPanelProps) {
       canvas.style.width = `${viewport.width}px`;
       canvas.style.height = `${viewport.height}px`;
       const ctx = canvas.getContext('2d')!;
-      p.render({ canvas, canvasContext: ctx, viewport }).promise.catch(() => {});
+      task = p.render({ canvas, canvasContext: ctx, viewport });
+      task.promise.catch(() => {});
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      task?.cancel();
+    };
   }, [pdf, page, scale]);
 
   const handlePrint = () => {
@@ -1956,10 +1961,12 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
   //
   // THREE constructors are plucked from a sample mesh in the loaded scene
   // (same trick the section view uses) so we share the renderer's THREE
-  // instance. `THREE.Raycaster` doesn't naturally appear on any mesh, so
-  // we dynamically `import('three')` for it — Raycaster is duck-typed
-  // against `mesh.isMesh` / `geometry.isBufferGeometry` flags, not
-  // `instanceof`, so a different THREE instance is fine for that bit.
+  // instance. For raycasting we go through OV's own
+  // `viewer.GetMeshIntersectionUnderMouse` rather than constructing our
+  // own `THREE.Raycaster` from `import('three')` — the top-level `three`
+  // hoisted in node_modules is a different version than the one OV
+  // bundles, and a Raycaster from one bundle silently fails to intersect
+  // meshes from the other.
   // ──────────────────────────────────────────────────────────────────────
   useEffect(() => {
     const v = viewerRef.current;
@@ -1990,6 +1997,19 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
     const BufferAttrCtor = sampleMesh.geometry.attributes?.position?.constructor;
     if (!Vector3Ctor || !MeshCtor || !MaterialCtor || !GeometryCtor || !BufferAttrCtor) return;
 
+    // OV renders edges as THREE.LineSegments; pluck its constructor + a
+    // line material from the scene so our measurement line uses the same
+    // bundled THREE that built the rest of the scene.
+    let LineSegmentsCtor: any = null;
+    let LineBasicMaterialCtor: any = null;
+    scene.traverse((obj: any) => {
+      if (LineSegmentsCtor && LineBasicMaterialCtor) return;
+      if (!obj?.isLineSegments) return;
+      LineSegmentsCtor = obj.constructor;
+      const mat = Array.isArray(obj.material) ? obj.material[0] : obj.material;
+      if (mat?.constructor) LineBasicMaterialCtor = mat.constructor;
+    });
+
     // Tear-down helper, used both on toggle-off and on next-mount cleanup.
     const teardown = () => {
       const s = measureRef.current;
@@ -2019,22 +2039,12 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
     // Initial state for this session.
     measureRef.current = { points: [], normals: [], markers: [], line: null, label: null, rafId: null };
 
-    // Try to load THREE for Raycaster. import('three') will likely resolve
-    // to a different copy than OV's bundle, but Raycaster works against
-    // duck-typed mesh.isMesh + geometry.isBufferGeometry flags, so this is
-    // safe in practice.
-    let THREE: any = null;
-    let raycaster: any = null;
-    (async () => {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        THREE = await import(/* @vite-ignore */ 'three' as any);
-        raycaster = new THREE.Raycaster();
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.warn('[Preview] measure: failed to load three for raycaster', err);
-      }
-    })();
+    // OV exposes `IntersectionMode.MeshOnly` and a viewer-level
+    // `GetMeshIntersectionUnderMouse(mode, {x,y})` that runs the raycast
+    // through its bundled THREE — which is what we want, since the loaded
+    // model meshes were instantiated from that same bundle.
+    const OV = ovRef.current;
+    const intersectionMode = OV?.IntersectionMode?.MeshOnly ?? 1;
 
     // Modest sphere size — scales with the model's bbox so it stays
     // visible on tiny and huge models alike.
@@ -2047,24 +2057,6 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
         )
       : 100;
     const markerRadius = Math.max(diag * 0.005, 0.2);
-
-    const ndcFromEvent = (ev: PointerEvent | MouseEvent) => {
-      const rect = canvas.getBoundingClientRect();
-      return {
-        x: ((ev.clientX - rect.left) / rect.width) * 2 - 1,
-        y: -(((ev.clientY - rect.top) / rect.height) * 2 - 1),
-      };
-    };
-
-    const collectTargets = (): any[] => {
-      const out: any[] = [];
-      v.viewer.mainModel?.EnumerateMeshes?.((m: any) => {
-        if (m.userData?.__sectionHelper || m.userData?.__measureHelper) return;
-        if (m.visible === false) return;
-        out.push(m);
-      });
-      return out;
-    };
 
     const makeMarker = (point: any) => {
       // Build a tiny sphere from a 12×8 lat-long mesh — cheap, no helper geom.
@@ -2215,12 +2207,12 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
     const drawLine = (a: any, b: any) => {
       const geom = new GeometryCtor();
       geom.setAttribute('position', new BufferAttrCtor(new Float32Array([a.x, a.y, a.z, b.x, b.y, b.z]), 3));
-      // Use the same material constructor — it'll render as a line because
-      // we use the line-flavour mesh below if THREE has it; otherwise we
-      // settle for a thin-mesh approximation. Cleanest: import THREE.Line
-      // via the dynamic THREE import we already started.
-      const LineCtor = THREE?.Line ?? MeshCtor; // fallback
-      const LineMatCtor = THREE?.LineBasicMaterial ?? MaterialCtor;
+      // LineSegments draws one segment per pair of vertices — with two
+      // points that's exactly the line we want. Falls back to the mesh
+      // constructor if no edge meshes happened to be in the scene
+      // (extremely unlikely for STEP files, which always have edges).
+      const LineCtor = LineSegmentsCtor ?? MeshCtor;
+      const LineMatCtor = LineBasicMaterialCtor ?? MaterialCtor;
       const mat: any = new LineMatCtor({ color: 0xff8800, depthTest: false, depthWrite: false, transparent: true, opacity: 0.95 });
       const line: any = new LineCtor(geom, mat);
       line.renderOrder = 9998;
@@ -2313,20 +2305,20 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
     };
 
     const doMeasurePick = (ev: PointerEvent) => {
-      const targets = collectTargets();
-      if (!targets.length || !raycaster) return;
       // Read camera fresh — SetProjectionMode rebuilds it under the hood,
       // see the comment near the start of this effect.
-      const camera = v.viewer.camera;
-      if (!camera) return;
-      const ndc = ndcFromEvent(ev);
-      raycaster.setFromCamera(ndc, camera);
-      const hits = raycaster.intersectObjects(targets, false);
-      if (!hits.length) return;
+      if (!v.viewer.camera) return;
+      const rect = canvas.getBoundingClientRect();
+      const mouseCoords = {
+        x: ev.clientX - rect.left,
+        y: ev.clientY - rect.top,
+      };
+      const hit = v.viewer.GetMeshIntersectionUnderMouse?.(intersectionMode, mouseCoords);
+      if (!hit) return;
 
       const s = measureRef.current!;
-      const point = new Vector3Ctor(hits[0].point.x, hits[0].point.y, hits[0].point.z);
-      const normal = worldNormalFromHit(hits[0]);
+      const point = new Vector3Ctor(hit.point.x, hit.point.y, hit.point.z);
+      const normal = worldNormalFromHit(hit);
 
       // Third click → start over.
       if (s.points.length === 2) {
@@ -2354,7 +2346,7 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
       // detection fails (e.g. the user picked a curved surface where no
       // coplanar triangles exist).
       if (measureMode === 'perp') {
-        const highlight = buildFaceHighlight(hits[0].object, hits[0]);
+        const highlight = buildFaceHighlight(hit.object, hit);
         s.markers.push(highlight ?? makeMarker(point));
       } else {
         s.markers.push(makeMarker(point));
