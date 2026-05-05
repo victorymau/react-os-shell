@@ -425,6 +425,43 @@ function setExposeExitFocus(id: string | null) {
   _exposeExitListeners.forEach(fn => fn());
 }
 
+// Keyboard-driven cycling through expose tiles (e.g. an ⌥⇧W shortcut in
+// the host app). The highlight is purely visual feedback while the user
+// browses; only commitExposeHighlight() actually focuses a window. The
+// distinction matters because a host that pre-selects a window on every
+// keystroke would otherwise rapidly thrash window state.
+let _exposeHighlightId: string | null = null;
+const _exposeHighlightListeners = new Set<() => void>();
+function subscribeExposeHighlight(fn: () => void) {
+  _exposeHighlightListeners.add(fn);
+  return () => _exposeHighlightListeners.delete(fn);
+}
+function getExposeHighlight() { return _exposeHighlightId; }
+export function setExposeHighlight(id: string | null) {
+  if (_exposeHighlightId === id) return;
+  _exposeHighlightId = id;
+  _exposeHighlightListeners.forEach(fn => fn());
+}
+/**
+ * Commit the current keyboard highlight: focus the highlighted window
+ * and exit exposé with the standard "picked tile glides back" animation.
+ * No-op when no highlight is set.
+ */
+export function commitExposeHighlight() {
+  if (!_exposeHighlightId) {
+    setExposeState(false);
+    return;
+  }
+  const id = _exposeHighlightId;
+  // Set exit-focus BEFORE flipping expose off, so panels see the picked
+  // id on their first exit-render and pick the right role (matches the
+  // mouse-click path at the bottom of this file).
+  setExposeExitFocus(id);
+  setExposeHighlight(null);
+  setExposeState(false);
+}
+export { getExposeHighlight, subscribeExposeHighlight };
+
 // Backwards-compat — old taskbar wiring fires this event; treat it as a toggle.
 function triggerSplitView() {
   setExposeState(!_exposeOn);
@@ -432,9 +469,10 @@ function triggerSplitView() {
 }
 export { triggerSplitView };
 
-// Escape exits exposé.
+// Escape exits exposé. Also clear the highlight so a re-entry starts fresh.
 window.addEventListener('keydown', (e) => {
   if (_exposeOn && e.key === 'Escape') {
+    setExposeHighlight(null);
     setExposeState(false);
   }
 });
@@ -691,10 +729,14 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   // sit out — they keep their normal layout.
   const exposeOn = useSyncExternalStore(subscribeExpose, getExposeState);
   const exposeExitFocusId = useSyncExternalStore(subscribeExposeExitFocus, getExposeExitFocus);
+  const exposeHighlightId = useSyncExternalStore(subscribeExposeHighlight, getExposeHighlight);
   const isExposeTileable = !allowPinOnTop && !widget;
   const exposeActive = exposeOn && isExposeTileable;
   // Hover highlight for the thumbnail while in exposé.
   const [exposeHovered, setExposeHovered] = useState(false);
+  // Keyboard-driven highlight (set externally via setExposeHighlight). Same
+  // glow as hover so cycling visually matches what a mouse user sees.
+  const exposeKeyboardHighlight = exposeActive && exposeHighlightId === modalId;
   // Exit-animation window: keep `transition: transform` on the panel for ~320ms
   // after exposé closes so the panel slides smoothly back to its real box
   // instead of snapping. Without this, removing `exposeStyle` drops the
@@ -1229,15 +1271,20 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
       const scaledH = box.h * scale;
       const tx = exposeTile.x + (exposeTile.w - scaledW) / 2 - box.x;
       const ty = exposeTile.y + (exposeTile.h - scaledH) / 2 - box.y;
+      // Hover and keyboard-cycle both light the tile up. They share the
+      // same glow so a mouse user and a keyboard user are always looking
+      // at the same visual cue. When both apply (mouse hovering the
+      // currently-keyboard-highlighted tile), hover wins z-index-wise so
+      // the hover ring stays readable above neighbours.
+      const lit = exposeHovered || exposeKeyboardHighlight;
       return {
         transform: `translate(${tx}px, ${ty}px) scale(${scale})`,
         transformOrigin: 'top left' as const,
         transition: 'transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 280ms',
         cursor: 'pointer',
-        // Hovered tile lifts above its neighbours so the hover ring isn't
-        // clipped by adjacent panels.
-        zIndex: exposeHovered ? 2020 : 2010,
-        boxShadow: exposeHovered
+        // Lifted tile sits above its neighbours so the glow isn't clipped.
+        zIndex: lit ? 2020 : 2010,
+        boxShadow: lit
           ? '0 24px 72px rgba(0,0,0,0.6), 0 0 0 2px rgba(255,255,255,0.55), 0 0 36px 12px rgba(96,165,250,0.85), 0 0 96px 28px rgba(96,165,250,0.55)'
           : '0 16px 48px rgba(0,0,0,0.55)',
         pointerEvents: 'auto' as const,
