@@ -66,6 +66,7 @@ export async function reportBug(submit: BugReportConfig['submit']): Promise<void
       userAgent: navigator.userAgent,
       viewport: `${window.innerWidth}x${window.innerHeight}`,
       reportType: submission.reportType,
+      extras: submission.extras ?? {},
     });
     toast.success(submission.reportType === 'bug' ? 'Bug sent to admins.' : 'Suggestion sent to admins.');
   } catch (err: any) {

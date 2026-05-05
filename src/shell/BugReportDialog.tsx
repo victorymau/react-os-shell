@@ -11,6 +11,30 @@ import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/re
 
 export type ReportType = 'bug' | 'suggestion';
 
+/** Extra select-style field the consumer can inject into the bug-report
+ *  dialog (e.g. a "module" picker that the consumer's submit callback
+ *  forwards to its API). Rendered above the description textarea so
+ *  reporters confirm or override before submitting. The shell stays
+ *  generic — it knows nothing about what the field actually means. */
+export interface BugReportExtraSelectField {
+  /** Stable key — used as the form-field name and as the lookup key
+   *  in the submission payload's `extras` map. */
+  key: string;
+  /** Visible label above the select. */
+  label: string;
+  type: 'select';
+  /** Choices rendered in the dropdown, in order. */
+  options: { value: string; label: string }[];
+  /** Initial value. Either a literal or a function called with the
+   *  open-dialog context (current URL, the pending report type) so the
+   *  consumer can auto-detect from where the user is when the dialog
+   *  opens. */
+  defaultValue?: string | ((ctx: { url: string; reportType: ReportType }) => string);
+  /** Optional helper text shown beneath the select. */
+  hint?: string;
+}
+export type BugReportExtraField = BugReportExtraSelectField;
+
 export interface BugReportSubmission {
   description: string;
   reportType: ReportType;
@@ -19,6 +43,9 @@ export interface BugReportSubmission {
    *  they passed into `openBugReportDialog`. May be null if the original
    *  capture failed and the user submitted without uploading a fallback. */
   screenshot: Blob | null;
+  /** Map of consumer-supplied extra-field values keyed by field.key. Empty
+   *  object when no extras were declared. */
+  extras: Record<string, string>;
 }
 
 /** Generic bug-report record shape consumed by the shell's list/detail UI. */
@@ -47,12 +74,20 @@ export interface BugReportSubmitPayload {
   userAgent: string;
   viewport: string;
   reportType: ReportType;
+  /** Values for any consumer-declared `extraFields` (keyed by field.key).
+   *  Always present; empty object when no extras were declared. */
+  extras: Record<string, string>;
 }
 
 /** Config bundle for the bug-report subsystem. Consumer-supplied; the shell
  *  never calls a hardcoded URL. */
 export interface BugReportConfig {
   submit: (p: BugReportSubmitPayload) => Promise<unknown>;
+  /** Extra fields to render inside the bug-report dialog above the
+   *  description textarea. Keeps the consumer's domain-specific
+   *  metadata (e.g. "which module is this report about?") in the same
+   *  one-step submit flow without forking the shell dialog. */
+  extraFields?: BugReportExtraField[];
   /** Fetcher for the admin Bug Reports list. Receives query-string-shaped
    *  params (e.g. `is_resolved=false`); paginated response. When omitted the
    *  Bug Reports list page is unavailable. */
@@ -88,16 +123,43 @@ export function BugReportProvider({ children }: { children: React.ReactNode }) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [description, setDescription] = useState('');
   const [reportType, setReportType] = useState<ReportType>('bug');
+  // Values for consumer-declared extra fields, keyed by field.key. Re-
+  // initialised every time the dialog opens so a fresh report doesn't
+  // inherit the previous session's selection.
+  const [extras, setExtras] = useState<Record<string, string>>({});
   // Annotator overlay state — opens on top of the dialog. Lazy-loaded so
   // the annotator (and its SVG/canvas weight) only enters the bundle when
   // the user actually opens it.
   const [annotating, setAnnotating] = useState(false);
   const resolveRef = useRef<(value: BugReportSubmission | null) => void>();
+  // Pull the consumer-supplied extra-field config — dialog renders one
+  // labelled select per entry above the description textarea.
+  const config = useContext(BugReportContext);
+  const extraFields = config?.extraFields ?? [];
 
   const openFn: OpenFn = useCallback((s) => {
     setScreenshot(s);
     setDescription('');
     setReportType('bug');
+    // Seed extra-field values from each field's defaultValue. The
+    // function form receives { url, reportType } so a consumer can
+    // auto-detect from the page the user was on (e.g. derive
+    // module=clients from /orders/...). Plain string defaults pass
+    // through verbatim. New report defaults to `reportType: 'bug'`,
+    // matching setReportType above.
+    const seeded: Record<string, string> = {};
+    const ctx = { url: window.location.href, reportType: 'bug' as ReportType };
+    for (const f of extraFields) {
+      if (typeof f.defaultValue === 'function') {
+        try { seeded[f.key] = f.defaultValue(ctx) ?? ''; }
+        catch { seeded[f.key] = f.options[0]?.value ?? ''; }
+      } else if (typeof f.defaultValue === 'string') {
+        seeded[f.key] = f.defaultValue;
+      } else {
+        seeded[f.key] = f.options[0]?.value ?? '';
+      }
+    }
+    setExtras(seeded);
     // Defensive: ensure we never re-open straight into the annotator if a
     // previous session somehow exited with `annotating` left at true.
     setAnnotating(false);
@@ -105,7 +167,7 @@ export function BugReportProvider({ children }: { children: React.ReactNode }) {
     return new Promise<BugReportSubmission | null>(resolve => {
       resolveRef.current = resolve;
     });
-  }, []);
+  }, [extraFields]);
 
   useEffect(() => { globalOpen = openFn; }, [openFn]);
 
@@ -123,7 +185,7 @@ export function BugReportProvider({ children }: { children: React.ReactNode }) {
     // Pass the current screenshot (which may be the annotated blob if the
     // user marked it up before sending) rather than relying on the caller
     // to remember what they captured.
-    resolveRef.current?.({ description: description.trim(), reportType, screenshot });
+    resolveRef.current?.({ description: description.trim(), reportType, screenshot, extras });
   };
 
   const handleCancel = () => {
@@ -186,6 +248,33 @@ export function BugReportProvider({ children }: { children: React.ReactNode }) {
             )}
             {!previewUrl && (
               <UploadDropZone onSelect={(blob) => setScreenshot(blob)} />
+            )}
+
+            {/* Consumer-declared extra fields — rendered as labelled
+                selects between the screenshot and the description so
+                they're hard to miss but don't dominate the dialog.
+                Stack vertically; one row per field for readability. */}
+            {extraFields.length > 0 && (
+              <div className="mt-4 space-y-3">
+                {extraFields.map((f) => (
+                  <div key={f.key}>
+                    <label htmlFor={`bug-report-extra-${f.key}`} className="block text-sm font-medium text-gray-700">
+                      {f.label}
+                    </label>
+                    <select
+                      id={`bug-report-extra-${f.key}`}
+                      value={extras[f.key] ?? ''}
+                      onChange={(e) => setExtras((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                      className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                    >
+                      {f.options.map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                    {f.hint && <p className="mt-1 text-[11px] text-gray-500">{f.hint}</p>}
+                  </div>
+                ))}
+              </div>
             )}
 
             <label className="mt-4 block text-sm font-medium text-gray-700">

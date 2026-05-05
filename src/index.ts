@@ -43,6 +43,9 @@ export type {
   BugReportConfig,
   BugReportSubmitPayload,
   BugReportSubmission,
+  BugReportExtraField,
+  BugReportExtraSelectField,
+  ReportType,
 } from './shell/BugReportDialog';
 export { default as BugReportDetail } from './shell/BugReportDetail';
 
