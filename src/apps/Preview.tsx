@@ -1892,15 +1892,16 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
       const cosθ = Math.cos(θ), sinθ = Math.sin(θ);
       const sign = sectionFlip ? -1 : 1;
       let nx = 0, ny = 0, nz = 0;
-      // Each axis sweeps in a DIFFERENT plane so the three axis options give
-      // genuinely different families of cut planes:
+      // Each axis rotates around the NEXT axis cyclically (X→Y, Y→Z, Z→X)
+      // so all three options sweep in genuinely different planes:
       //   X  →  rotates around Y, sweeping in the X-Z plane
-      //   Y  →  rotates around X, sweeping in the Y-Z plane
-      //   Z  →  rotates around X, sweeping in the Z-Y plane (distinct from X)
-      // Earlier the Z case rotated in X-Z too, which made X and Z visually
-      // identical except for a 90° offset in the angle slider.
+      //   Y  →  rotates around Z, sweeping in the Y-X plane
+      //   Z  →  rotates around X, sweeping in the Z-Y plane
+      // Earlier attempts kept two axes in the same Y-Z plane (just swapped
+      // sin/cos), which collapsed two of the three options to a 90° offset
+      // of each other.
       if (sectionAxis === 'x')      { nx = sign * cosθ; nz = sign * sinθ; }
-      else if (sectionAxis === 'y') { ny = sign * cosθ; nz = sign * sinθ; }
+      else if (sectionAxis === 'y') { ny = sign * cosθ; nx = sign * sinθ; }
       else                          { nz = sign * cosθ; ny = sign * sinθ; }
 
       // The plane passes through point P on the chosen-axis line at
