@@ -179,6 +179,28 @@ export function BugReportProvider({ children }: { children: React.ReactNode }) {
     return () => URL.revokeObjectURL(url);
   }, [screenshot]);
 
+  // Paste-to-attach: while the dialog is open, pasting an image from the
+  // clipboard replaces the screenshot. Lets a user grab a system screenshot
+  // (Cmd+Shift+4 / Win+Shift+S) and drop it in without leaving the dialog.
+  // Listens at the document level so it works regardless of focus —
+  // including from the description textarea, where the image side of the
+  // clipboard would otherwise be silently dropped (textareas don't accept
+  // image paste). We deliberately DON'T preventDefault: if the clipboard
+  // also has text, the textarea's normal text paste still runs.
+  useEffect(() => {
+    if (!open) return;
+    const onPaste = (e: ClipboardEvent) => {
+      const items = Array.from(e.clipboardData?.items ?? []);
+      const imageItem = items.find((it) => it.kind === 'file' && it.type.startsWith('image/'));
+      if (!imageItem) return;
+      const blob = imageItem.getAsFile();
+      if (!blob) return;
+      setScreenshot(blob);
+    };
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+  }, [open]);
+
   const handleSubmit = () => {
     setAnnotating(false);
     setOpen(false);
@@ -243,7 +265,7 @@ export function BugReportProvider({ children }: { children: React.ReactNode }) {
                     Annotate
                   </button>
                 </div>
-                <p className="mt-1 text-[11px] text-gray-400">Click Annotate to mark up the screenshot before sending.</p>
+                <p className="mt-1 text-[11px] text-gray-400">Click Annotate to mark up the screenshot before sending. Or paste a different image from the clipboard to replace it.</p>
               </div>
             )}
             {!previewUrl && (
@@ -360,7 +382,7 @@ function UploadDropZone({ onSelect }: { onSelect: (blob: Blob) => void }) {
     >
       <p className="text-gray-700 font-medium">Screenshot capture failed</p>
       <p className="mt-1 text-xs text-gray-500">
-        Drop an image here, or <span className="text-blue-600 underline">click to upload</span>. Your description will be sent either way.
+        Drop an image here, paste one from the clipboard, or <span className="text-blue-600 underline">click to upload</span>. Your description will be sent either way.
       </p>
       <input
         ref={inputRef}

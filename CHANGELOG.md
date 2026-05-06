@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.2.59] — 2026-05-06
+
+### Added
+- **BugReportDialog: paste a clipboard image to attach.** While the dialog is open, pressing ⌘V / Ctrl+V (anywhere — including from inside the description textarea, where the browser would otherwise silently swallow the image half of the clipboard) replaces the screenshot with the pasted image. Lets users grab a system screenshot (Cmd+Shift+4 on macOS, Win+Shift+S on Windows) and drop it in without leaving the dialog. Listener attaches/detaches with `open` and explicitly does NOT `preventDefault`, so any text in the same clipboard payload still pastes into the textarea normally. The screenshot preview's hint text and the upload-fallback dropzone hint both surface the new affordance.
+
 ## [0.2.43] — 2026-05-03
 
 ### Changed
