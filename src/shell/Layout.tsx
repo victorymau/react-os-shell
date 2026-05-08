@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useSyncExternalStore, isValidElement, cloneElement, type ReactElement } from 'react';
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore, isValidElement, cloneElement, lazy, Suspense, type ReactElement } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../contexts/AuthContext';
@@ -22,7 +22,11 @@ import { useBugReport } from './BugReportDialog';
 import StartupAnimation from './StartupAnimation';
 import LogoutAnimation from './LogoutAnimation';
 import StartMenu from './StartMenu';
-import Sidebar from './Sidebar';
+// Sidebar is opt-in (`prefs.layout_mode === 'sidebar'`) and adds nothing
+// to the classic-mode bundle. lazy() also means consumers running a
+// stale source checkout where Sidebar.tsx hasn't been pulled yet won't
+// crash on module load — only when they actually flip into sidebar mode.
+const Sidebar = lazy(() => import('./Sidebar'));
 import MobileShell from './MobileShell';
 import { useIsMobile } from './useIsMobile';
 import { PopupMenu, PopupMenuItem, PopupMenuDivider } from './PopupMenu';
@@ -796,22 +800,27 @@ export default function Layout({
         />
       )}
 
-      {/* Sidebar — persistent left strip for sidebar layout mode. */}
+      {/* Sidebar — persistent left strip for sidebar layout mode.
+          Lazy-imported so a stale source checkout missing Sidebar.tsx
+          only blows up if the user flips into sidebar mode (vs. crashing
+          at module load), and so the chunk is only fetched when needed. */}
       {sidebarMode && (
-        <Sidebar
-          width={sidebarWidth}
-          openPage={(path) => openPage(path)}
-          profile={profile}
-          user={user}
-          onLogout={() => setShowLogout(true)}
-          onNavigate={(path) => openPage(path)}
-          navSections={navSections}
-          navIcons={navIcons}
-          sectionIcons={sectionIcons}
-          categories={categories}
-          productName={productName}
-          productIcon={productIcon}
-        />
+        <Suspense fallback={null}>
+          <Sidebar
+            width={sidebarWidth}
+            openPage={(path) => openPage(path)}
+            profile={profile}
+            user={user}
+            onLogout={() => setShowLogout(true)}
+            onNavigate={(path) => openPage(path)}
+            navSections={navSections}
+            navIcons={navIcons}
+            sectionIcons={sectionIcons}
+            categories={categories}
+            productName={productName}
+            productIcon={productIcon}
+          />
+        </Suspense>
       )}
 
       {(() => {
