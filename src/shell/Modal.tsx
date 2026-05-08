@@ -833,9 +833,12 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     const taskbarH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--taskbar-height')) || 0;
     const taskbarW = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--taskbar-width')) || 0;
     const tbPos = getComputedStyle(document.documentElement).getPropertyValue('--taskbar-position')?.trim() || 'bottom';
-    const x = tbPos === 'left' ? taskbarW : 0;
+    // Sidebar layout mode reserves a fixed strip on the left edge — windows
+    // that would otherwise hit x=0 must start at sidebar's right edge instead.
+    const sidebarW = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width')) || 0;
+    const x = (tbPos === 'left' ? taskbarW : 0) + sidebarW;
     const y = tbPos === 'top' ? taskbarH : 0;
-    const w = window.innerWidth - (tbPos === 'left' || tbPos === 'right' ? taskbarW : 0);
+    const w = window.innerWidth - (tbPos === 'left' || tbPos === 'right' ? taskbarW : 0) - sidebarW;
     const h = window.innerHeight - (tbPos === 'top' || tbPos === 'bottom' ? taskbarH : 0);
     return { x, y, w, h };
   }, []);
@@ -956,9 +959,37 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     }
     return initialBox ? { x: initialBox.x, y: initialBox.y, w: initialBox.w, h: initialBox.h } : calcWindowed();
   });
-  const [maximized, setMaximized] = useState(false);
+  // Always-maximized layout: when the Layout sets `--layout-mode: sidebar`
+  // on <html>, every non-widget Modal becomes immovable and locked to
+  // calcMaximized() — no windowed state, no drag-to-restore, no maximize
+  // toggle button. Layout dispatches a custom event whenever the pref
+  // flips so already-mounted windows refresh without needing to remount.
+  const readAlwaysMaximizedFlag = () => {
+    if (typeof document === 'undefined') return false;
+    const mode = getComputedStyle(document.documentElement).getPropertyValue('--layout-mode')?.trim();
+    return mode === 'sidebar';
+  };
+  const [alwaysMaximizedRaw, setAlwaysMaximizedRaw] = useState<boolean>(() => readAlwaysMaximizedFlag());
+  useEffect(() => {
+    const refresh = () => setAlwaysMaximizedRaw(readAlwaysMaximizedFlag());
+    window.addEventListener('react-os-shell:layout-mode-changed', refresh);
+    return () => window.removeEventListener('react-os-shell:layout-mode-changed', refresh);
+  }, []);
+  const alwaysMaximized = alwaysMaximizedRaw && !widget;
+  const [maximized, setMaximized] = useState(() => alwaysMaximized);
   const boxRef = useRef(box);
   boxRef.current = box;
+
+  // When sidebar mode is toggled at runtime, snap existing windows to the
+  // maximized box so they instantly fill the new work area. When it's
+  // turned off we leave the window where it is — the user can manually
+  // un-maximize if they want.
+  useEffect(() => {
+    if (alwaysMaximized) {
+      setMaximized(true);
+      setBox(calcMaximized());
+    }
+  }, [alwaysMaximized, calcMaximized]);
 
   // Persist box position on changes (debounced to localStorage)
   useEffect(() => {
@@ -1032,6 +1063,9 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     if ((e.target as HTMLElement).closest('button, input, a, kbd, select, textarea')) return;
     setWindowMenu(null);
     activateModal(modalId);
+    // In sidebar layout mode the window is locked to the work area —
+    // the title bar still activates the window but doesn't drag it.
+    if (alwaysMaximized) { e.preventDefault(); return; }
     e.preventDefault();
     const sx = e.clientX, sy = e.clientY;
     const panel = panelRef.current;
@@ -1454,7 +1488,9 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
                   </button>
                 )}
                 <button onClick={() => { const idx = activationOrder.indexOf(modalId); if (idx !== -1) activationOrder.splice(idx, 1); activeListeners.forEach(fn => fn()); window.dispatchEvent(new CustomEvent('modal-reorder')); }} title="Minimize" className="text-gray-400 hover:text-gray-600 px-1 py-0.5 rounded hover:bg-gray-200 text-xs leading-none">─</button>
-                <button onClick={() => { if (maximized) { setMaximized(false); setBox(calcWindowed()); } else { reset(); } }} title={maximized ? 'Windowed' : 'Maximize'} className="text-gray-400 hover:text-gray-600 px-1 py-0.5 rounded hover:bg-gray-200 text-xs leading-none">{maximized ? '❐' : '⤢'}</button>
+                {!alwaysMaximized && (
+                  <button onClick={() => { if (maximized) { setMaximized(false); setBox(calcWindowed()); } else { reset(); } }} title={maximized ? 'Windowed' : 'Maximize'} className="text-gray-400 hover:text-gray-600 px-1 py-0.5 rounded hover:bg-gray-200 text-xs leading-none">{maximized ? '❐' : '⤢'}</button>
+                )}
                 <button type="button" onClick={guardedClose} className="rounded p-0.5 text-gray-400 hover:text-gray-600 hover:bg-gray-200">
                   <XMarkIcon className="h-4 w-4" />
                 </button>
@@ -1484,7 +1520,9 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
                 </button>
               )}
               <button onClick={() => { const idx = activationOrder.indexOf(modalId); if (idx !== -1) activationOrder.splice(idx, 1); activeListeners.forEach(fn => fn()); window.dispatchEvent(new CustomEvent('modal-reorder')); }} title="Minimize" className="text-gray-400 hover:text-gray-600 text-xs px-2 py-1 rounded hover:bg-gray-200">─</button>
-              <button onClick={() => { if (maximized) { setMaximized(false); setBox(calcWindowed()); } else { reset(); } }} title={maximized ? 'Windowed' : 'Maximize'} className="text-gray-400 hover:text-gray-600 text-xs px-2 py-1 rounded hover:bg-gray-200">{maximized ? '❐' : '⤢'}</button>
+              {!alwaysMaximized && (
+                <button onClick={() => { if (maximized) { setMaximized(false); setBox(calcWindowed()); } else { reset(); } }} title={maximized ? 'Windowed' : 'Maximize'} className="text-gray-400 hover:text-gray-600 text-xs px-2 py-1 rounded hover:bg-gray-200">{maximized ? '❐' : '⤢'}</button>
+              )}
               <kbd className="rounded border border-gray-300 bg-gray-200 px-1.5 py-0.5 text-[10px] font-medium text-gray-400">ESC</kbd>
               <button type="button" onClick={guardedClose} className="rounded-md text-gray-400 hover:text-gray-600">
                 <XMarkIcon className="h-5 w-5" />
@@ -1614,7 +1652,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
           <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 12h-15" /></svg>
           Minimize
         </PopupMenuItem>
-        {maximized ? (
+        {!alwaysMaximized && (maximized ? (
           <PopupMenuItem onClick={() => { setMaximized(false); setBox(calcWindowed()); setWindowMenu(null); }}>
             <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 4.5v15m6-15v15M4.5 9h15M4.5 15h15" /></svg>
             Windowed
@@ -1624,7 +1662,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
             <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" /></svg>
             Maximize
           </PopupMenuItem>
-        )}
+        ))}
 
       </>)}
       {allowPinOnTop && (

@@ -121,5 +121,7 @@ export {
 };
 
 export { setPdfPreview } from './Preview';
+export { setSpreadsheetPreview } from './Spreadsheet';
 export { openFilesInTrashMode } from './Files';
 export type { PdfPreviewData } from './Preview';
+export type { SpreadsheetPreviewData } from './Spreadsheet';

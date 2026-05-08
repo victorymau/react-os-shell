@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.2.62] — 2026-05-09
+
+### Added
+- **`setSpreadsheetPreview({ csv, filename })`.** New API that mirrors `setPdfPreview` for the Spreadsheet app — consumers stage CSV/TSV text and call `openPage('/spreadsheet')`; the window mounts with the data parsed into Sheet 1 and the title set to the filename (extension stripped). If the Spreadsheet window is already open, the call swaps in the new content via a custom event. Exported from `react-os-shell/apps` alongside `SpreadsheetPreviewData`. Unlocks "preview a list export in the spreadsheet" flows for consumers.
+
 ## [0.2.59] — 2026-05-06
 
 ### Added

@@ -64,9 +64,48 @@ function parseCSV(text: string): string[][] {
   }).filter(r => r.some(c => c.trim()));
 }
 
+/** Build a single padded sheet from CSV/TSV text. Shared by file import and
+ *  the `setSpreadsheetPreview` external-load path. */
+function sheetFromCSV(text: string, sheetName: string): Sheet | null {
+  const parsed = parseCSV(text);
+  if (parsed.length === 0) return null;
+  const maxCols = Math.max(DEFAULT_COLS, parsed.reduce((m, r) => Math.max(m, r.length), 0));
+  const padded = parsed.map(r => { while (r.length < maxCols) r.push(''); return r; });
+  while (padded.length < DEFAULT_ROWS) padded.push(Array(maxCols).fill(''));
+  return { id: crypto.randomUUID(), name: sheetName, columns: makeColumns(maxCols), data: padded, cellStyles: {} };
+}
+
+export interface SpreadsheetPreviewData {
+  /** CSV text (comma- or tab-separated). */
+  csv: string;
+  /** Display name; the title strips a trailing `.csv`/`.tsv`/`.txt`. */
+  filename: string;
+}
+
+const SPREADSHEET_EVENT_NAME = 'react-os-shell:spreadsheet-preview';
+let pendingSpreadsheet: SpreadsheetPreviewData | null = null;
+
+/** Stage CSV content for the next Spreadsheet window mount, or swap into an open one. */
+export function setSpreadsheetPreview(data: SpreadsheetPreviewData) {
+  pendingSpreadsheet = data;
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(SPREADSHEET_EVENT_NAME, { detail: data }));
+  }
+}
+
 export default function Spreadsheet() {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [sheets, setSheets] = useState<Sheet[]>([newSheet('Sheet 1')]);
+  // Drain any CSV staged via setSpreadsheetPreview before the window mounted.
+  const initialPreview = (() => {
+    const p = pendingSpreadsheet;
+    pendingSpreadsheet = null;
+    if (!p) return null;
+    const sheet = sheetFromCSV(p.csv, 'Sheet 1');
+    if (!sheet) return null;
+    const titleName = p.filename.replace(/\.(csv|tsv|txt)$/i, '');
+    return { sheet, title: titleName };
+  })();
+  const [sheets, setSheets] = useState<Sheet[]>(initialPreview ? [initialPreview.sheet] : [newSheet('Sheet 1')]);
   const [activeIdx, setActiveIdx] = useState(0);
 
   // Undo history — push a snapshot whenever sheets change, except when the
@@ -101,7 +140,21 @@ export default function Spreadsheet() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [undo]);
-  const [title, setTitle] = useState('Untitled');
+  const [title, setTitle] = useState(initialPreview?.title ?? 'Untitled');
+
+  // Swap to new CSV if `setSpreadsheetPreview` is called while the window is open.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const next = (e as CustomEvent<SpreadsheetPreviewData>).detail;
+      const sheet = sheetFromCSV(next.csv, 'Sheet 1');
+      if (!sheet) return;
+      setSheets([sheet]);
+      setActiveIdx(0);
+      setTitle(next.filename.replace(/\.(csv|tsv|txt)$/i, ''));
+    };
+    window.addEventListener(SPREADSHEET_EVENT_NAME, handler);
+    return () => window.removeEventListener(SPREADSHEET_EVENT_NAME, handler);
+  }, []);
   const [editingTitle, setEditingTitle] = useState(false);
   const [editingTab, setEditingTab] = useState<number | null>(null);
   const [tabName, setTabName] = useState('');

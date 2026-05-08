@@ -316,6 +316,40 @@ export default function Customization() {
         </div>
       </div>
 
+      {/* ── Layout Mode ── */}
+      <div>
+        <h3 className="text-sm font-semibold text-gray-900 mb-3">Layout Mode</h3>
+        <p className="text-xs text-gray-500 mb-3">
+          Sidebar mode is designed for small screens — windows always run maximized
+          and the start menu lives in a persistent left sidebar (sections expand inline
+          instead of opening flyouts).
+        </p>
+        <div className="flex gap-2">
+          {([
+            { key: 'classic', label: 'Classic' },
+            { key: 'sidebar', label: 'Sidebar' },
+          ] as const).map(m => (
+            <button
+              key={m.key}
+              onClick={() => {
+                savePref('layout_mode', m.key);
+                // Stay consistent if the user later switches back to classic —
+                // sidebar implies maximized, so set the default-window-size pref
+                // to match.
+                if (m.key === 'sidebar') savePref('default_window_size', 'maximized');
+              }}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                (prefs.layout_mode || 'classic') === m.key
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* ── Taskbar ── */}
       <div>
         <h3 className="text-sm font-semibold text-gray-900 mb-3">Taskbar</h3>
@@ -325,7 +359,9 @@ export default function Customization() {
             <div className="flex gap-2">
               {(['bottom', 'top', 'left', 'right'] as const).map(pos => (
                 <button key={pos} onClick={() => savePref('taskbar_position', pos)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                  disabled={prefs.layout_mode === 'sidebar'}
+                  title={prefs.layout_mode === 'sidebar' ? 'Sidebar mode forces a horizontal taskbar.' : undefined}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                     (prefs.taskbar_position || 'bottom') === pos ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
                   }`}>{pos.charAt(0).toUpperCase() + pos.slice(1)}</button>
               ))}

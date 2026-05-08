@@ -22,6 +22,7 @@ import { useBugReport } from './BugReportDialog';
 import StartupAnimation from './StartupAnimation';
 import LogoutAnimation from './LogoutAnimation';
 import StartMenu from './StartMenu';
+import Sidebar from './Sidebar';
 import MobileShell from './MobileShell';
 import { useIsMobile } from './useIsMobile';
 import { PopupMenu, PopupMenuItem, PopupMenuDivider } from './PopupMenu';
@@ -589,8 +590,18 @@ export default function Layout({
 
   const { prefs, save: savePrefs } = useShellPrefs();
 
-  // Taskbar layout
-  const taskbarPosition: string = prefs.taskbar_position || 'bottom';
+  // Layout mode — 'sidebar' opt-in for small-screen users. Forces a
+  // persistent left strip, horizontal taskbar starting at the sidebar's
+  // right edge, and always-maximized non-widget windows.
+  const layoutMode: 'classic' | 'sidebar' = prefs.layout_mode === 'sidebar' ? 'sidebar' : 'classic';
+  const sidebarMode = layoutMode === 'sidebar';
+  const sidebarWidth = sidebarMode ? 280 : 0;
+
+  // Taskbar layout — when sidebar mode is active we force the taskbar
+  // horizontal across the bottom; the design doesn't support a vertical
+  // taskbar living next to the sidebar.
+  const taskbarPositionRaw: string = prefs.taskbar_position || 'bottom';
+  const taskbarPosition: string = sidebarMode ? 'bottom' : taskbarPositionRaw;
   const taskbarSize: string = prefs.taskbar_size || 'medium';
   const desktopDblClick: string = prefs.desktop_dblclick || 'deactivate';
 
@@ -616,6 +627,15 @@ export default function Layout({
     root.style.setProperty('--taskbar-height', String(taskbarH));
     root.style.setProperty('--taskbar-width', String(taskbarW));
     root.style.setProperty('--taskbar-position', taskbarPosition);
+    // Sidebar mode: width of the persistent left strip + a layout-mode
+    // marker. Modal reads both — sidebar-width to offset its calcMaximized
+    // box, layout-mode to switch into "always maximized" behaviour.
+    root.style.setProperty('--sidebar-width', String(sidebarWidth));
+    root.style.setProperty('--layout-mode', layoutMode);
+    // Tell already-mounted Modals to refresh their alwaysMaximized flag
+    // (they don't have access to ShellPrefs context — they listen for
+    // this event so the toggle takes effect immediately).
+    window.dispatchEvent(new CustomEvent('react-os-shell:layout-mode-changed'));
     root.style.setProperty('--default-window-size', prefs.default_window_size || 'large');
     root.style.setProperty('--window-position', prefs.window_position || 'cascade');
     root.style.setProperty('--menu-density', prefs.menu_density || 'normal');
@@ -633,7 +653,7 @@ export default function Layout({
     root.style.setProperty('--menu-padding-y', sv.py);
     root.style.setProperty('--window-tab-width', sv.tabW);
     root.style.setProperty('--window-tab-font-size', sv.tabFont);
-  }, [inactiveHeaderOpacity, inactiveContentOpacity, activeHeaderOpacity, activeContentOpacity, taskbarH, taskbarPosition, prefs.default_window_size, prefs.window_position, prefs.menu_density, prefs.start_menu_size]);
+  }, [inactiveHeaderOpacity, inactiveContentOpacity, activeHeaderOpacity, activeContentOpacity, taskbarH, taskbarPosition, prefs.default_window_size, prefs.window_position, prefs.menu_density, prefs.start_menu_size, sidebarWidth, layoutMode]);
 
   // Mobile-only CSS var: bottom-nav reservation height. Modal reads this to
   // shrink fullscreen apps so they don't render under the nav. Zero on desktop
@@ -754,8 +774,8 @@ export default function Layout({
     <div className="flex flex-col h-screen">
       {showStartup && <StartupAnimation onComplete={() => setShowStartup(false)} ready={!!profile} productName={productName} />}
       {showLogout && <LogoutAnimation onComplete={() => { sessionStorage.removeItem('erp_startup_shown'); logout(); }} />}
-      {/* Start Menu */}
-      {(
+      {/* Start Menu — suppressed in sidebar mode (Sidebar replaces it). */}
+      {!sidebarMode && (
         <StartMenu
           open={menuOpen}
           onClose={() => setMenuOpen(false)}
@@ -773,6 +793,24 @@ export default function Layout({
           navIcons={navIcons}
           sectionIcons={sectionIcons}
           categories={categories}
+        />
+      )}
+
+      {/* Sidebar — persistent left strip for sidebar layout mode. */}
+      {sidebarMode && (
+        <Sidebar
+          width={sidebarWidth}
+          openPage={(path) => openPage(path)}
+          profile={profile}
+          user={user}
+          onLogout={() => setShowLogout(true)}
+          onNavigate={(path) => openPage(path)}
+          navSections={navSections}
+          navIcons={navIcons}
+          sectionIcons={sectionIcons}
+          categories={categories}
+          productName={productName}
+          productIcon={productIcon}
         />
       )}
 
@@ -826,16 +864,21 @@ export default function Layout({
       </main>
       </div>
 
-      {/* Taskbar — overlays content for transparency */}
+      {/* Taskbar — overlays content for transparency. In sidebar mode the
+          left edge starts at the sidebar's right edge instead of x=0. */}
       <div className={`flex backdrop-blur-sm border-gray-200 z-[250] fixed ${
         isVerticalTaskbar
           ? `flex-col items-center ${taskbarWClass} py-3 gap-2 top-0 bottom-0 ${taskbarPosition === 'left' ? 'left-0 border-r' : 'right-0 border-l'}`
-          : `items-center ${taskbarHClass} px-3 gap-2 left-0 right-0 ${taskbarPosition === 'top' ? 'top-0 border-b' : 'bottom-0 border-t'}`
+          : `items-center ${taskbarHClass} px-3 gap-2 right-0 ${taskbarPosition === 'top' ? 'top-0 border-b' : 'bottom-0 border-t'}`
       }`}
-        style={{ backgroundColor: `rgb(var(--taskbar-bg-rgb, 243 244 246) / ${taskbarOpacity})` }}
+        style={{
+          backgroundColor: `rgb(var(--taskbar-bg-rgb, 243 244 246) / ${taskbarOpacity})`,
+          ...(isVerticalTaskbar ? {} : { left: sidebarWidth }),
+        }}
         onContextMenu={e => { e.preventDefault(); setTaskbarMenu({ x: e.clientX, y: e.clientY }); }}>
-        {/* ERP button — toggles Start Menu */}
-        <div className="relative shrink-0">
+        {/* ERP button — toggles Start Menu. Hidden in sidebar mode where
+            the persistent left sidebar replaces the start-menu role. */}
+        {!sidebarMode && <div className="relative shrink-0">
           {openWindows.length === 0 && !menuOpen && !balloonDismissed && (
             <div className={`absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-white text-[10px] font-medium pl-3 pr-2 py-1 rounded-full shadow-lg animate-bounce flex items-center gap-1 ${taskbarPosition === 'top' ? 'top-full mt-2' : '-top-8'}`}
               style={{ backgroundColor: 'var(--accent-600, #7c3aed)' }}>
@@ -858,10 +901,10 @@ export default function Layout({
             {productIcon && <img src={productIcon} alt="" className="relative z-10 h-3.5 w-3.5 shrink-0 opacity-60" />}
             <span className="relative z-10 truncate">{productName}</span>
           </button>
-        </div>
+        </div>}
 
-        {/* Separator */}
-        <div className={isVerticalTaskbar ? 'h-px w-6 bg-gray-300 my-1' : 'w-px h-6 bg-gray-300 mx-1'} />
+        {/* Separator (only when the ERP button is also rendered) */}
+        {!sidebarMode && <div className={isVerticalTaskbar ? 'h-px w-6 bg-gray-300 my-1' : 'w-px h-6 bg-gray-300 mx-1'} />}
 
         {/* Window tabs rendered here by WindowManagerProvider */}
         <div id="taskbar-windows" className={`flex-1 flex ${isVerticalTaskbar ? 'flex-col items-center gap-1 min-h-0 overflow-y-auto w-full' : 'items-center gap-1.5 min-w-0 overflow-x-auto'}`} />
