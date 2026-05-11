@@ -15,7 +15,7 @@ import { WindowTitle } from '../shell/Modal';
 import { useWindowManager } from '../shell/WindowManager';
 import toast from '../shell/toast';
 import { confirm, prompt } from '../shell/ConfirmDialog';
-import { setPdfPreview } from './Preview';
+import { openPreviewFile } from '../utils/openPreviewFile';
 
 const DEFAULT_SERVER =
   (typeof window !== 'undefined' && (window as any).__REACT_OS_SHELL_FILE_SERVER__) ||
@@ -33,9 +33,10 @@ export function openFilesInTrashMode() {
   window.dispatchEvent(new CustomEvent(FILES_VIEW_EVENT));
 }
 
-const PREVIEW_EXTS: Record<string, 'pdf' | 'image' | 'dxf' | '3d'> = {
+const PREVIEW_EXTS: Record<string, 'pdf' | 'image' | 'dxf' | '3d' | 'csv'> = {
   pdf: 'pdf',
   dxf: 'dxf',
+  csv: 'csv',
   jpg: 'image', jpeg: 'image', png: 'image', gif: 'image',
   webp: 'image', svg: 'image', avif: 'image', bmp: 'image',
   stp: '3d', step: '3d', stl: '3d', obj: '3d',
@@ -239,7 +240,9 @@ export default function Files() {
     loadTrash();
   };
 
-  // Open a file: fetch as Blob, route to Preview if extension is supported.
+  // Open a file: route to Preview/Spreadsheet if extension is supported.
+  // Delegates fetch + staging to `openPreviewFile`, which also emits the
+  // event Desktop listens for to record a Documents-folder shortcut.
   const openFile = async (entry: FileEntry) => {
     const fullPath = joinPath(path, entry.name);
     const ext = (entry.name.split('.').pop() || '').toLowerCase();
@@ -248,18 +251,12 @@ export default function Files() {
       downloadFile(entry);
       return;
     }
-    try {
-      const res = await authedFetch(
-        `${server}/api/file?path=${encodeURIComponent(fullPath)}`,
-      );
-      if (!res.ok) { toast.error(`Download failed (${res.status})`); return; }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      setPdfPreview({ url, filename: entry.name, kind });
-      openPage('/preview');
-    } catch (e: any) {
-      toast.error(e?.message || 'Open failed');
-    }
+    await openPreviewFile({
+      filePath: fullPath,
+      filename: entry.name,
+      kind,
+      onStaged: route => openPage(route),
+    });
   };
 
   const downloadFile = async (entry: FileEntry) => {

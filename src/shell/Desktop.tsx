@@ -11,6 +11,12 @@ import { PopupMenu, PopupMenuItem, PopupMenuDivider } from './PopupMenu';
 import { reportBug } from '../utils/reportBug';
 import { useBugReport } from './BugReportDialog';
 import { formatDate } from '../utils/date';
+import {
+  openPreviewFile,
+  PREVIEW_OPENED_EVENT,
+  type PreviewFileKind,
+  type PreviewOpenedDetail,
+} from '../utils/openPreviewFile';
 
 // ── Entity icon config ──
 const ENTITY_ICON_COLORS: Record<string, string> = {
@@ -30,6 +36,18 @@ const ENTITY_ICONS: Record<string, string> = {
   vendor_price_sheet: 'VPS', proposal: 'PR', folder: 'FLD',
 };
 
+// Glyphs and colors for the auto-tracked preview shortcuts that live in the
+// Documents folder. Keyed by `fileKind`, not `entityType`.
+const PREVIEW_FILE_CODES: Record<PreviewFileKind, string> = {
+  pdf: 'PDF', dxf: 'DXF', '3d': 'STP', image: 'IMG', csv: 'CSV',
+};
+const PREVIEW_FILE_COLORS: Record<PreviewFileKind, string> = {
+  pdf: 'text-red-600', dxf: 'text-blue-600', '3d': 'text-purple-600',
+  image: 'text-emerald-600', csv: 'text-green-600',
+};
+const DOCUMENTS_FOLDER_ID = 'documents';
+const DOCUMENTS_FOLDER_NAME = 'Documents';
+
 interface DesktopItem {
   entityType: string;
   entityId: string;
@@ -37,6 +55,11 @@ interface DesktopItem {
   x?: number;
   y?: number;
   folderId?: string; // if inside a folder
+  // Set for `entityType: 'preview-file'` shortcuts auto-recorded when the
+  // user previews a file. `filePath` is the server-relative path passed
+  // back into `openPreviewFile` on shortcut click.
+  filePath?: string;
+  fileKind?: PreviewFileKind;
 }
 
 interface DesktopFolder {
@@ -117,7 +140,14 @@ export function useDesktopHost(): DesktopHostConfig {
   return useContext(DesktopHostContext);
 }
 
-interface FolderItemRef { entityType: string; entityId: string; label: string; folderId?: string; }
+interface FolderItemRef {
+  entityType: string;
+  entityId: string;
+  label: string;
+  folderId?: string;
+  filePath?: string;
+  fileKind?: PreviewFileKind;
+}
 
 /** Folder content window — visually distinct from regular windows
  *  (manilla-paper background, folder glyph in title) and supports
@@ -283,8 +313,14 @@ function FolderWindow({ folder, items, onClose, onOpen, onMoveOut, onReorder }: 
                   >
                     <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" /></svg>
                   </button>
-                  <div className={`w-12 h-12 rounded-lg bg-white shadow flex items-center justify-center text-xs font-bold ${ENTITY_ICON_COLORS[item.entityType] || 'text-gray-600'}`}>
-                    {ENTITY_ICONS[item.entityType] || item.entityType.slice(0, 3).toUpperCase()}
+                  <div className={`w-12 h-12 rounded-lg bg-white shadow flex items-center justify-center text-xs font-bold ${
+                    item.entityType === 'preview-file' && item.fileKind
+                      ? PREVIEW_FILE_COLORS[item.fileKind]
+                      : (ENTITY_ICON_COLORS[item.entityType] || 'text-gray-600')
+                  }`}>
+                    {item.entityType === 'preview-file' && item.fileKind
+                      ? PREVIEW_FILE_CODES[item.fileKind]
+                      : (ENTITY_ICONS[item.entityType] || item.entityType.slice(0, 3).toUpperCase())}
                   </div>
                   <span className={`text-[10px] font-medium text-center leading-tight truncate w-full ${isSelected ? 'text-blue-900' : 'text-gray-700'}`}>
                     {item.label}
@@ -448,6 +484,41 @@ export default function Desktop({ profile }: { profile: any }) {
     if (host.saveSnap) host.saveSnap(v);
     else saveShellPrefs({ desktop_snap: v });
   }, [host, saveShellPrefs]);
+
+  // Latest-state refs so the preview-opened event handler (registered once)
+  // always reads the current folders / favDocs instead of stale closure
+  // values from initial mount.
+  const previewStateRef = useRef({ folders, favDocs, saveFolders, saveDocs });
+  previewStateRef.current = { folders, favDocs, saveFolders, saveDocs };
+
+  // When the user previews a file (via Files app or a Documents-folder
+  // shortcut), drop a dedup'd shortcut into the auto-created "Documents"
+  // folder. The folder is created on first preview and recreated if the
+  // user has deleted it since.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<PreviewOpenedDetail>).detail;
+      if (!detail?.filePath) return;
+      const { folders: fs, favDocs: docs, saveFolders: sf, saveDocs: sd } = previewStateRef.current;
+      if (!fs.some(f => f.id === DOCUMENTS_FOLDER_ID)) {
+        sf([...fs, { id: DOCUMENTS_FOLDER_ID, name: DOCUMENTS_FOLDER_NAME }]);
+      }
+      const deduped = docs.filter(d =>
+        !(d.entityType === 'preview-file' && d.filePath === detail.filePath),
+      );
+      const next: DesktopItem = {
+        entityType: 'preview-file',
+        entityId: detail.filePath,
+        label: detail.filename,
+        filePath: detail.filePath,
+        fileKind: detail.kind,
+        folderId: DOCUMENTS_FOLDER_ID,
+      };
+      sd([next, ...deduped]);
+    };
+    window.addEventListener(PREVIEW_OPENED_EVENT, handler);
+    return () => window.removeEventListener(PREVIEW_OPENED_EVENT, handler);
+  }, []);
 
   // Positions stored as { right, top } — distance from right/top edges
   // This keeps icons anchored to the top-right regardless of window size
@@ -673,6 +744,25 @@ export default function Desktop({ profile }: { profile: any }) {
 
   useEffect(() => {
     if (!rubberBand) return;
+    const computeSelection = (minX: number, maxX: number, minY: number, maxY: number) => {
+      const sel = new Set<string>();
+      const cw = containerRef.current?.clientWidth || 800;
+      desktopItems.forEach((item, i) => {
+        const pos = getItemPos(item, i);
+        const leftX = cw - pos.right - 80;
+        if (leftX + 40 > minX && leftX < maxX && pos.top + 40 > minY && pos.top < maxY) {
+          sel.add(`item-${i}`);
+        }
+      });
+      folders.forEach((f, i) => {
+        const pos = getFolderPos(f, i);
+        const leftX = cw - pos.right - 80;
+        if (leftX + 40 > minX && leftX < maxX && pos.top + 40 > minY && pos.top < maxY) {
+          sel.add(`folder-${i}`);
+        }
+      });
+      return sel;
+    };
     const move = (e: PointerEvent) => {
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return;
@@ -683,31 +773,15 @@ export default function Desktop({ profile }: { profile: any }) {
       const dy = y - rubberBand.startY;
       if (dx * dx + dy * dy > 16) didRubberBandDragRef.current = true;
       setRubberBand(prev => prev ? { ...prev, endX: x, endY: y } : null);
+      if (didRubberBandDragRef.current) {
+        const minX = Math.min(rubberBand.startX, x);
+        const maxX = Math.max(rubberBand.startX, x);
+        const minY = Math.min(rubberBand.startY, y);
+        const maxY = Math.max(rubberBand.startY, y);
+        setSelected(computeSelection(minX, maxX, minY, maxY));
+      }
     };
     const up = () => {
-      if (rubberBand) {
-        const minX = Math.min(rubberBand.startX, rubberBand.endX);
-        const maxX = Math.max(rubberBand.startX, rubberBand.endX);
-        const minY = Math.min(rubberBand.startY, rubberBand.endY);
-        const maxY = Math.max(rubberBand.startY, rubberBand.endY);
-        const sel = new Set<string>();
-        const cw = containerRef.current?.clientWidth || 800;
-        desktopItems.forEach((item, i) => {
-          const pos = getItemPos(item, i);
-          const leftX = cw - pos.right - 80;
-          if (leftX + 40 > minX && leftX < maxX && pos.top + 40 > minY && pos.top < maxY) {
-            sel.add(`item-${i}`);
-          }
-        });
-        folders.forEach((f, i) => {
-          const pos = getFolderPos(f, i);
-          const leftX = cw - pos.right - 80;
-          if (leftX + 40 > minX && leftX < maxX && pos.top + 40 > minY && pos.top < maxY) {
-            sel.add(`folder-${i}`);
-          }
-        });
-        setSelected(sel);
-      }
       setRubberBand(null);
     };
     window.addEventListener('pointermove', move);
@@ -910,7 +984,13 @@ export default function Desktop({ profile }: { profile: any }) {
   };
 
   // ── Render icon ──
-  const renderIcon = (entityType: string, label: string, isSelected: boolean, entityId?: string) => (
+  const renderIcon = (entityType: string, label: string, isSelected: boolean, entityId?: string, fileKind?: PreviewFileKind) => {
+    // Preview-file shortcuts share the document SVG but show a kind-specific
+    // code (PDF / DXF / STP / CSV / IMG) and color.
+    const isPreviewFile = entityType === 'preview-file' && fileKind;
+    const previewColor = isPreviewFile ? PREVIEW_FILE_COLORS[fileKind!] : null;
+    const previewCode = isPreviewFile ? PREVIEW_FILE_CODES[fileKind!] : null;
+    return (
     <div className="flex flex-col items-center gap-1 w-20 p-2">
       {entityType === 'folder' ? (
         <div className={`w-12 h-12 flex items-center justify-center ${isSelected ? 'rounded-lg bg-blue-400/30 ring-2 ring-blue-500' : ''}`}>
@@ -931,13 +1011,13 @@ export default function Desktop({ profile }: { profile: any }) {
         </div>
       ) : (
         <div className={`w-12 h-12 relative flex items-center justify-center ${isSelected ? 'rounded-lg bg-blue-400/30 ring-2 ring-blue-500' : ''}`}>
-          <svg className={`w-10 h-12 drop-shadow-[0_2px_3px_rgba(0,0,0,0.3)] ${ENTITY_ICON_COLORS[entityType] || 'text-gray-500'}`} viewBox="0 0 40 48" fill="none">
+          <svg className={`w-10 h-12 drop-shadow-[0_2px_3px_rgba(0,0,0,0.3)] ${previewColor ?? ENTITY_ICON_COLORS[entityType] ?? 'text-gray-500'}`} viewBox="0 0 40 48" fill="none">
             <path d="M4 0h22l10 10v34a4 4 0 01-4 4H4a4 4 0 01-4-4V4a4 4 0 014-4z" fill="white" fillOpacity="0.92" />
             <path d="M26 0l10 10H30a4 4 0 01-4-4V0z" fill="currentColor" fillOpacity="0.2" />
             <path d="M4 0h22l10 10v34a4 4 0 01-4 4H4a4 4 0 01-4-4V4a4 4 0 014-4z" stroke="currentColor" strokeWidth="1.5" strokeOpacity="0.5" />
           </svg>
-          <span className={`absolute inset-0 flex items-center justify-center text-[9px] font-bold pt-2 ${ENTITY_ICON_COLORS[entityType] || 'text-gray-600'}`}>
-            {ENTITY_ICONS[entityType] || entityType.slice(0, 3).toUpperCase()}
+          <span className={`absolute inset-0 flex items-center justify-center text-[9px] font-bold pt-2 ${previewColor ?? ENTITY_ICON_COLORS[entityType] ?? 'text-gray-600'}`}>
+            {previewCode ?? ENTITY_ICONS[entityType] ?? entityType.slice(0, 3).toUpperCase()}
           </span>
         </div>
       )}
@@ -945,7 +1025,8 @@ export default function Desktop({ profile }: { profile: any }) {
         {label}
       </span>
     </div>
-  );
+    );
+  };
 
   const menuStyle = (x: number, y: number): React.CSSProperties => ({
     ...(x + 180 > window.innerWidth ? { right: window.innerWidth - x } : { left: x }),
@@ -1077,10 +1158,24 @@ export default function Desktop({ profile }: { profile: any }) {
               }
             }}
             onContextMenu={e => handleItemContextMenu(e, i)}
-            onDoubleClick={e => { e.stopPropagation(); doc.entityType === 'page' ? openPage(doc.entityId) : openEntity(doc.entityType, doc.entityId, null, doc.label); }}
+            onDoubleClick={e => {
+              e.stopPropagation();
+              if (doc.entityType === 'preview-file' && doc.filePath && doc.fileKind) {
+                openPreviewFile({
+                  filePath: doc.filePath,
+                  filename: doc.label,
+                  kind: doc.fileKind,
+                  onStaged: route => openPage(route),
+                });
+              } else if (doc.entityType === 'page') {
+                openPage(doc.entityId);
+              } else {
+                openEntity(doc.entityType, doc.entityId, null, doc.label);
+              }
+            }}
             className="cursor-default select-none"
           >
-            {renderIcon(doc.entityType, doc.label, isSelected, doc.entityId)}
+            {renderIcon(doc.entityType, doc.label, isSelected, doc.entityId, doc.fileKind)}
           </div>
         );
       })}
@@ -1301,7 +1396,18 @@ export default function Desktop({ profile }: { profile: any }) {
             folder={folder}
             items={folderItems(openFolder)}
             onClose={() => setOpenFolder(null)}
-            onOpen={(item) => openEntity(item.entityType, item.entityId, null, item.label)}
+            onOpen={(item) => {
+              if (item.entityType === 'preview-file' && item.filePath && item.fileKind) {
+                openPreviewFile({
+                  filePath: item.filePath,
+                  filename: item.label,
+                  kind: item.fileKind,
+                  onStaged: route => openPage(route),
+                });
+              } else {
+                openEntity(item.entityType, item.entityId, null, item.label);
+              }
+            }}
             onMoveOut={(toMove) => {
               const ids = new Set(toMove.map(t => `${t.entityType}|${t.entityId}`));
               const updated = favDocs.map(d =>
