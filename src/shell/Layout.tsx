@@ -671,29 +671,6 @@ export default function Layout({
   const [mailConnectOpen, setMailConnectOpen] = useState(false);
   const { isConnected: mailConnected } = useMailAuth();
 
-  // One-time migration: clear Google localStorage keys from prior versions.
-  useEffect(() => {
-    const KEY = 'shell_migration_v2_mail';
-    if (typeof window === 'undefined' || localStorage.getItem(KEY) === 'done') return;
-    localStorage.removeItem('google_access_token');
-    localStorage.removeItem('google_token_expiry');
-    localStorage.removeItem('google_user_info');
-    localStorage.removeItem('google_oauth_client_id');
-    try {
-      const raw = localStorage.getItem('shell_todos');
-      if (raw) {
-        const parsed: Array<Record<string, unknown>> = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          const cleaned = parsed.map(t => {
-            const { gtaskId: _g, gtaskListId: _l, syncedAt: _s, ...rest } = t;
-            return rest;
-          });
-          localStorage.setItem('shell_todos', JSON.stringify(cleaned));
-        }
-      }
-    } catch { /* ignore malformed json */ }
-    localStorage.setItem(KEY, 'done');
-  }, []);
   const [showLogout, setShowLogout] = useState(false);
 
   // Allow child pages to open the Mail/Calendar connect modal

@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.3.5] — 2026-05-16
+
+### Fixed
+- **Modal body: `overscroll-contain` on scroll regions.** Mobile bounce-scroll inside a window no longer bleeds into the page behind the shell.
+
+## [0.3.4] — 2026-05-16
+
+### Changed
+- **Browser app: favicon service switched to DuckDuckGo** (`icons.duckduckgo.com/ip3/<host>.ico`). Removes the last `google.com` URL from the shell.
+- **Layout: dropped the one-time `shell_migration_v2_mail` localStorage migration.** It cleared `google_access_token` / `google_token_expiry` / `google_user_info` / `google_oauth_client_id` and stripped `gtaskId` / `gtaskListId` / `syncedAt` from stored todos. Anyone upgrading from 0.2.x has run it by now; keeping the code just bloats the bundle.
+
+## [0.3.3] — 2026-05-16
+
+### Fixed
+- **Dynamic axios import to break the chunk graph entirely.** `src/api/mailClient.ts` now does `await import('axios')` inside `getMailClient()` / `setShellMailServer()` instead of importing axios statically. With axios out of the shell's static module graph the rolldown/esbuild splitter cannot order it ahead of consumer code that expects to set up its own axios instance — the actual root cause of the `axios.create is not a function` surface reported against 0.3.0/0.3.1 (and only partially mitigated by 0.3.2's dead-import removal). `getMailClient()` keeps a synchronous signature by returning a Proxy that resolves axios on first method call, so existing callers awaiting `client.get(...)` keep working.
+
+### Breaking
+- **`setShellMailServer(url | axios)` is now async.** Consumers that call it once at app startup should `await` the call (or `.then(...)`) before mounting the shell. Passing an axios instance directly is still effectively synchronous (no axios import is triggered), but the signature is uniformly async.
+
 ## [0.3.2] — 2026-05-16
 
 ### Fixed

@@ -309,7 +309,7 @@ export default function Browser() {
             title={`${b.url}\n(right-click to remove)`}
           >
             <img
-              src={`https://www.google.com/s2/favicons?domain=${new URL(b.url).hostname}&sz=16`}
+              src={`https://icons.duckduckgo.com/ip3/${new URL(b.url).hostname}.ico`}
               alt=""
               className="h-3.5 w-3.5"
               onError={(e) => { (e.target as HTMLImageElement).style.visibility = 'hidden'; }}

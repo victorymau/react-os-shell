@@ -1615,7 +1615,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
         <ModalActionsContext.Provider value={{ rightRef: actionsRef as React.RefObject<HTMLDivElement | null>, leftRef: actionsLeftRef as React.RefObject<HTMLDivElement | null>, notify: () => setHasActions(true), active: isActive, isDirty }}>
         <div
           {...(widget ? { onPointerDown: startDrag, onContextMenu: (e: React.MouseEvent) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }); } } : {})}
-          className={`flex-1 min-h-0 flex flex-col ${widget ? 'p-0 cursor-move' : appStyle ? 'p-0' : compact ? 'p-2' : 'p-4'} ${widget ? '' : 'backdrop-blur-sm'} ${(bodyScroll === false || appStyle) ? 'overflow-hidden' : 'overflow-y-auto'} ${widget ? 'rounded-2xl select-none' : ''}`}
+          className={`flex-1 min-h-0 flex flex-col ${widget ? 'p-0 cursor-move' : appStyle ? 'p-0' : compact ? 'p-2' : 'p-4'} ${widget ? '' : 'backdrop-blur-sm'} ${(bodyScroll === false || appStyle) ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain'} ${widget ? 'rounded-2xl select-none' : ''}`}
           style={{ ...(widget ? { touchAction: 'none' } : {}), backgroundColor: widget ? 'transparent' : (isActive ? `rgb(var(--window-content-rgb) / var(--active-content-opacity, 0.9))` : `rgb(var(--window-content-rgb) / var(--inactive-content-opacity, 0.8))`) }}>
           {children}
         </div>
