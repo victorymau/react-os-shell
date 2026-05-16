@@ -13,3 +13,4 @@ examples/demo/dist/
 examples/demo/tsconfig.tsbuildinfo
 examples/demo/src/*.js
 *.tsbuildinfo
+.claude/

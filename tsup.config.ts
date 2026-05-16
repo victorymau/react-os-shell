@@ -32,5 +32,10 @@ export default defineConfig({
     'mammoth',
     'online-3d-viewer',
     'three',
+    // axios is a peer dep — the host app provides the instance. Inlining it
+    // here ships a duplicate copy that confuses dedup in consumers and
+    // surfaces as `axios.create is not a function` in their bundles (see
+    // 0.3.0 prod incident with admin-portal).
+    'axios',
   ],
 });

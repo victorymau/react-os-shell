@@ -9,7 +9,7 @@
  *
  *   const windows = createWindowRegistry(bundledApps, erpEntities);
  *
- * Subsets are also exported (`utilityApps`, `gameApps`, `googleApps`) so a
+ * Subsets are also exported (`utilityApps`, `gameApps`, `mailApps`) so a
  * consumer can pick-and-choose without importing every component.
  *
  * NOTE: 3 apps require consumer-supplied persistence (Calendar / Notepad for
@@ -39,9 +39,8 @@ const Tetris = lazy(() => import('./Tetris'));
 const Game2048 = lazy(() => import('./Game2048'));
 const Minesweeper = lazy(() => import('./Minesweeper'));
 
-// ── Google apps ──
+// ── Mail / Calendar (talk to the IMAP/SMTP/CalDAV bridge server) ──
 const Email = lazy(() => import('./Email'));
-const GeminiChat = lazy(() => import('./GeminiChat'));
 const Calendar = lazy(() => import('./Calendar'));
 
 // ── Document apps ──
@@ -72,9 +71,8 @@ export const gameApps: WindowRegistry = {
   '/minesweeper': { component: Minesweeper, label: 'Minesweeper', size: 'sm', compact: true },
 };
 
-export const googleApps: WindowRegistry = {
+export const mailApps: WindowRegistry = {
   '/email': { component: Email, label: 'Email', size: '2xl', appStyle: true },
-  '/gemini': { component: GeminiChat, label: 'Gemini AI', size: 'lg' },
   '/calendar': { component: Calendar, label: 'Calendar', size: 'xl' },
 };
 
@@ -91,7 +89,7 @@ export const webApps: WindowRegistry = {
 export const bundledApps: WindowRegistry = {
   ...utilityApps,
   ...gameApps,
-  ...googleApps,
+  ...mailApps,
   ...documentApps,
   ...webApps,
 };
@@ -112,7 +110,6 @@ export {
   Game2048,
   Minesweeper,
   Email,
-  GeminiChat,
   Calendar,
   Preview,
   Documents,

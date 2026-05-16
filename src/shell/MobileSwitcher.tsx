@@ -47,7 +47,7 @@ export default function MobileSwitcher({ windows, onActivate, onClose, onCloseAl
         <h1 className="text-white text-base font-semibold mb-3 px-1">Open apps · {windows.length}</h1>
         <div className="grid grid-cols-2 gap-3">
           {windows.map(w => (
-            <div key={w.id} className="flex flex-col items-stretch gap-1">
+            <div key={w.id} className="group flex flex-col items-stretch gap-1">
               <ThumbCard
                 id={w.id}
                 label={w.label}

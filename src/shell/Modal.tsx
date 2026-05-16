@@ -193,6 +193,22 @@ function _savePositionsDebounced() {
   }, 500);
 }
 
+// ── Window activation (z-order) persistence ──
+const AO_KEY = 'erp_activation_order';
+let _activationOrderKeys: string[] = [];
+try {
+  const stored = localStorage.getItem(AO_KEY);
+  const parsed = stored ? JSON.parse(stored) : null;
+  if (Array.isArray(parsed) && parsed.every(k => typeof k === 'string')) _activationOrderKeys = parsed;
+} catch {}
+let _saveOrderTimer: ReturnType<typeof setTimeout> | null = null;
+function _saveOrderDebounced() {
+  if (_saveOrderTimer) clearTimeout(_saveOrderTimer);
+  _saveOrderTimer = setTimeout(() => {
+    try { localStorage.setItem(AO_KEY, JSON.stringify(_activationOrderKeys)); } catch {}
+  }, 500);
+}
+
 /**
  * Seed an initial position for a window — applied only when no saved
  * position already exists for the given key. Use this from the consumer
@@ -277,22 +293,81 @@ export const modalDepthRef = { get: () => modalDepth, inc: () => ++modalDepth, d
 // Activation order — last element is the frontmost modal
 const activationOrder: string[] = [];
 const activeListeners = new Set<() => void>();
+// Bi-directional map between live (random per-mount) modalIds and stable
+// window keys (`windowKey || copyText`). Stable keys outlive page refreshes
+// and let us slot remounted modals back into their previous z-order.
+const _modalIdByKey = new Map<string, string>();
+const _keyByModalId = new Map<string, string>();
+
+function _insertModalIdForKey(modalId: string, key: string) {
+  const savedIdx = _activationOrderKeys.indexOf(key);
+  if (savedIdx === -1) { activationOrder.push(modalId); return; }
+  let insertAt = activationOrder.length;
+  for (let i = 0; i < activationOrder.length; i++) {
+    const otherKey = _keyByModalId.get(activationOrder[i]);
+    if (!otherKey) continue;
+    const otherIdx = _activationOrderKeys.indexOf(otherKey);
+    if (otherIdx > savedIdx) { insertAt = i; break; }
+  }
+  activationOrder.splice(insertAt, 0, modalId);
+}
+
+export function mountModal(modalId: string, key: string | null) {
+  if (!key) {
+    activationOrder.push(modalId);
+  } else {
+    _modalIdByKey.set(key, modalId);
+    _keyByModalId.set(modalId, key);
+    _insertModalIdForKey(modalId, key);
+    if (_activationOrderKeys.indexOf(key) === -1) {
+      _activationOrderKeys.push(key);
+      _saveOrderDebounced();
+    }
+  }
+  activeListeners.forEach(fn => fn());
+  window.dispatchEvent(new CustomEvent('modal-reorder'));
+}
+
 export function activateModal(id: string) {
   const idx = activationOrder.indexOf(id);
   if (idx !== -1) activationOrder.splice(idx, 1);
   activationOrder.push(id);
+  const key = _keyByModalId.get(id);
+  if (key) {
+    const kidx = _activationOrderKeys.indexOf(key);
+    if (kidx !== -1) _activationOrderKeys.splice(kidx, 1);
+    _activationOrderKeys.push(key);
+    _saveOrderDebounced();
+  }
   activeListeners.forEach(fn => fn());
   window.dispatchEvent(new CustomEvent('modal-reorder'));
 }
+
+function _minimizeModal(modalId: string) {
+  const idx = activationOrder.indexOf(modalId);
+  if (idx !== -1) activationOrder.splice(idx, 1);
+  const key = _keyByModalId.get(modalId);
+  if (key) {
+    const kidx = _activationOrderKeys.indexOf(key);
+    if (kidx !== -1) { _activationOrderKeys.splice(kidx, 1); _saveOrderDebounced(); }
+  }
+  activeListeners.forEach(fn => fn());
+  window.dispatchEvent(new CustomEvent('modal-reorder'));
+}
+
 // Track which modal IDs belong to widget windows; widgets stay visible when
 // the user double-clicks the desktop ("show desktop"), only regular windows
 // are hidden.
 const widgetIds = new Set<string>();
 export function deactivateAllModals() {
-  // Drop everything that is not a widget.
   for (let i = activationOrder.length - 1; i >= 0; i--) {
     if (!widgetIds.has(activationOrder[i])) activationOrder.splice(i, 1);
   }
+  _activationOrderKeys = _activationOrderKeys.filter(k => {
+    const mid = _modalIdByKey.get(k);
+    return mid != null && widgetIds.has(mid);
+  });
+  _saveOrderDebounced();
   activeListeners.forEach(fn => fn());
   window.dispatchEvent(new CustomEvent('modal-reorder'));
 }
@@ -879,11 +954,13 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   const interceptedRef = useRef(false);
   if (!open) interceptedRef.current = false;
 
+  const boxKey = windowKey || copyText || null;
+
   useEffect(() => {
     if (!open) return;
     modalDepthRef.inc();
     modalStack.push(modalId);
-    activateModal(modalId);
+    mountModal(modalId, boxKey);
     isNested.current = false; // All modals are independent top-level windows
     setZIndex(getZForModal(modalId));
     // Listen for reorder events to update z-index
@@ -901,7 +978,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     const onCenter = (e: Event) => {
       const label = (e as CustomEvent).detail?.label;
       if (!label) return;
-      const titleEl = panelRef.current?.querySelector('.text-lg, .text-sm');
+      const titleEl = panelRef.current?.querySelector('[data-window-title]');
       if (!titleEl?.textContent?.includes(label)) return;
       activateModal(modalId);
       const taskbarH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--taskbar-height')) || 0;
@@ -923,7 +1000,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     const onCtxMenu = (e: Event) => {
       const { label, x, y } = (e as CustomEvent).detail || {};
       if (!label) return;
-      const titleEl = panelRef.current?.querySelector('.text-lg, .text-sm');
+      const titleEl = panelRef.current?.querySelector('[data-window-title]');
       if (!titleEl?.textContent?.includes(label)) return;
       activateModal(modalId);
       setWindowMenu({ x, y });
@@ -939,6 +1016,8 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
       if (idx !== -1) modalStack.splice(idx, 1);
       const aidx = activationOrder.indexOf(modalId);
       if (aidx !== -1) { activationOrder.splice(aidx, 1); activeListeners.forEach(fn => fn()); }
+      const cleanupKey = _keyByModalId.get(modalId);
+      if (cleanupKey) { _keyByModalId.delete(modalId); _modalIdByKey.delete(cleanupKey); }
       window.removeEventListener('modal-reorder', onReorder);
       window.removeEventListener('modal-split-view', onSplitView);
       window.removeEventListener('modal-center', onCenter);
@@ -946,10 +1025,9 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
       // Notify remaining modals to recalc z-index
       window.dispatchEvent(new CustomEvent('modal-reorder'));
     };
-  }, [open, modalId, calcMaximized]);
+  }, [open, modalId, boxKey, calcMaximized]);
 
   // Restore saved position from window position store
-  const boxKey = windowKey || copyText || null;
   const [box, setBox] = useState(() => {
     if (boxKey && _windowPositions[boxKey]) {
       const saved = { ..._windowPositions[boxKey] };
@@ -1220,7 +1298,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     if (onMinimize) {
       onMinimize(saved);
     } else {
-      const label = typeof title === 'string' ? title : (panelRef.current?.querySelector('.text-lg')?.textContent || 'Window');
+      const label = typeof title === 'string' ? title : (panelRef.current?.querySelector('[data-window-title]')?.textContent || 'Window');
       const route = window.location.pathname;
       globalMinimize({
         id: copyText || label || modalId, type: 'modal', label, route, savedBox: saved,
@@ -1452,7 +1530,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
           <div onPointerDown={startDrag}
             className={`flex items-center justify-between px-3 py-1.5 border-b border-gray-200 shrink-0 cursor-move select-none rounded-t-2xl ${isActive ? 'backdrop-blur-sm' : ''}`}
             style={{ touchAction: 'none', backgroundColor: isActive ? `rgb(var(--window-header-rgb) / var(--active-header-opacity, 0.8))` : `rgb(var(--window-header-rgb) / var(--inactive-header-opacity, 0.7))` }}>
-            <div className="text-sm font-medium min-w-0 flex-1 truncate flex items-center gap-1.5" style={{ color: isActive ? 'rgb(17 24 39)' : 'rgb(156 163 175)' }}>
+            <div data-window-title className="text-sm font-medium min-w-0 flex-1 truncate flex items-center gap-1.5" style={{ color: isActive ? 'rgb(17 24 39)' : 'rgb(156 163 175)' }}>
               {!exposeActive && renderIconButton()}
               <span className="truncate">{exposeActive ? extractTitleText(displayTitle) : displayTitle}</span>
             </div>
@@ -1475,7 +1553,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
           <div onPointerDown={startDrag}
             className={`flex items-center justify-between px-3 py-1.5 border-b border-gray-200 shrink-0 cursor-move select-none rounded-t-2xl ${isActive ? 'backdrop-blur-sm' : ''}`}
             style={{ touchAction: 'none', backgroundColor: isActive ? `rgb(var(--window-header-rgb) / var(--active-header-opacity, 0.8))` : `rgb(var(--window-header-rgb) / var(--inactive-header-opacity, 0.7))` }}>
-            <div className="text-sm font-medium min-w-0 flex-1 truncate flex items-center gap-1.5" style={{ color: isActive ? 'rgb(17 24 39)' : 'rgb(156 163 175)' }}>
+            <div data-window-title className="text-sm font-medium min-w-0 flex-1 truncate flex items-center gap-1.5" style={{ color: isActive ? 'rgb(17 24 39)' : 'rgb(156 163 175)' }}>
               {!exposeActive && renderIconButton()}
               <span className="truncate">{exposeActive ? extractTitleText(displayTitle) : displayTitle}</span>
             </div>
@@ -1487,7 +1565,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
                     <svg className="h-3 w-3" fill={pinnedOnTop ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 3.75V16.5L12 14.25 7.5 16.5V3.75m9 0H18A2.25 2.25 0 0120.25 6v12A2.25 2.25 0 0118 20.25H6A2.25 2.25 0 013.75 18V6A2.25 2.25 0 016 3.75h1.5m9 0h-9" /></svg>
                   </button>
                 )}
-                <button onClick={() => { const idx = activationOrder.indexOf(modalId); if (idx !== -1) activationOrder.splice(idx, 1); activeListeners.forEach(fn => fn()); window.dispatchEvent(new CustomEvent('modal-reorder')); }} title="Minimize" className="text-gray-400 hover:text-gray-600 px-1 py-0.5 rounded hover:bg-gray-200 text-xs leading-none">─</button>
+                <button onClick={() => _minimizeModal(modalId)} title="Minimize" className="text-gray-400 hover:text-gray-600 px-1 py-0.5 rounded hover:bg-gray-200 text-xs leading-none">─</button>
                 {!alwaysMaximized && (
                   <button onClick={() => { if (maximized) { setMaximized(false); setBox(calcWindowed()); } else { reset(); } }} title={maximized ? 'Windowed' : 'Maximize'} className="text-gray-400 hover:text-gray-600 px-1 py-0.5 rounded hover:bg-gray-200 text-xs leading-none">{maximized ? '❐' : '⤢'}</button>
                 )}
@@ -1501,7 +1579,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
         <div onPointerDown={startDrag}
           className={`flex items-center justify-between px-4 py-2.5 border-b border-gray-200 shrink-0 cursor-move select-none rounded-t-2xl ${isActive ? 'backdrop-blur-sm' : ''}`}
           style={{ touchAction: 'none', backgroundColor: isActive ? `rgb(var(--window-header-rgb) / var(--active-header-opacity, 0.8))` : `rgb(var(--window-header-rgb) / var(--inactive-header-opacity, 0.7))` }}>
-          <div className="text-lg font-semibold min-w-0 flex-1 truncate flex items-center gap-2" style={{ color: isActive ? 'var(--window-title-active, rgb(17 24 39))' : 'var(--window-title-inactive, rgb(156 163 175))' }}>
+          <div data-window-title className="text-base font-medium min-w-0 flex-1 truncate flex items-center gap-2" style={{ color: isActive ? 'var(--window-title-active, rgb(17 24 39))' : 'var(--window-title-inactive, rgb(156 163 175))' }}>
             {!exposeActive && renderIconButton()}
             <span className="truncate">{exposeActive ? extractTitleText(displayTitle) : displayTitle}</span>
           </div>
@@ -1519,7 +1597,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
                   <svg className="h-3.5 w-3.5" fill={pinnedOnTop ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 3.75V16.5L12 14.25 7.5 16.5V3.75m9 0H18A2.25 2.25 0 0120.25 6v12A2.25 2.25 0 0118 20.25H6A2.25 2.25 0 013.75 18V6A2.25 2.25 0 016 3.75h1.5m9 0h-9" /></svg>
                 </button>
               )}
-              <button onClick={() => { const idx = activationOrder.indexOf(modalId); if (idx !== -1) activationOrder.splice(idx, 1); activeListeners.forEach(fn => fn()); window.dispatchEvent(new CustomEvent('modal-reorder')); }} title="Minimize" className="text-gray-400 hover:text-gray-600 text-xs px-2 py-1 rounded hover:bg-gray-200">─</button>
+              <button onClick={() => _minimizeModal(modalId)} title="Minimize" className="text-gray-400 hover:text-gray-600 text-xs px-2 py-1 rounded hover:bg-gray-200">─</button>
               {!alwaysMaximized && (
                 <button onClick={() => { if (maximized) { setMaximized(false); setBox(calcWindowed()); } else { reset(); } }} title={maximized ? 'Windowed' : 'Maximize'} className="text-gray-400 hover:text-gray-600 text-xs px-2 py-1 rounded hover:bg-gray-200">{maximized ? '❐' : '⤢'}</button>
               )}
@@ -1632,7 +1710,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
             textShadow: '0 1px 2px rgba(0,0,0,0.6)',
           }}
         >
-          {displayTitle}
+          {extractTitleText(displayTitle)}
         </div>
       )}
     </div>
@@ -1642,13 +1720,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   const windowMenuEl = windowMenu && (
     <PopupMenu style={{ left: windowMenu.x, top: windowMenu.y }} onClose={() => setWindowMenu(null)} minWidth={160}>
       {!widget && !compact && (<>
-        <PopupMenuItem onClick={() => {
-          const idx = activationOrder.indexOf(modalId);
-          if (idx !== -1) activationOrder.splice(idx, 1);
-          activeListeners.forEach(fn => fn());
-          window.dispatchEvent(new CustomEvent('modal-reorder'));
-          setWindowMenu(null);
-        }}>
+        <PopupMenuItem onClick={() => { _minimizeModal(modalId); setWindowMenu(null); }}>
           <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 12h-15" /></svg>
           Minimize
         </PopupMenuItem>

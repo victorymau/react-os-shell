@@ -1,10 +1,6 @@
-import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import { useMemo, useState } from 'react';
 import { useTodoTasks } from './_todoStore';
 import type { TodoTask } from './_todoTypes';
-import useGoogleAuth, { getGoogleAccessToken } from '../hooks/useGoogleAuth';
-import { fetchGoogleTasks, pushGoogleTask, deleteGoogleTask } from './_googleTasks';
-import { isDemoMode, getDemoTasks } from './google-demo-fixtures';
-import toast from '../shell/toast';
 import { confirm } from '../shell/ConfirmDialog';
 
 type Filter = 'today' | 'upcoming' | 'all' | 'done';
@@ -36,93 +32,10 @@ function isOverdue(t: TodoTask): boolean {
 }
 
 export default function TodoList() {
-  const { tasks, addTask, updateTask, removeTask, toggleDone, setAllTasks } = useTodoTasks();
-  const google = useGoogleAuth();
+  const { tasks, addTask, updateTask, removeTask, toggleDone } = useTodoTasks();
   const [filter, setFilter] = useState<Filter>('today');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [lastSync, setLastSync] = useState<string | null>(null);
-  const demoMode = isDemoMode();
-
-  // ── Demo-mode seed ──
-  // First mount in demo mode and the user has no tasks yet → seed with
-  // the canned `getDemoTasks()` list so the UI isn't empty when there's
-  // no Google connection.
-  const seededRef = useRef(false);
-  useEffect(() => {
-    if (seededRef.current) return;
-    seededRef.current = true;
-    if (demoMode && !google.isConnected && tasks.length === 0) {
-      setAllTasks(getDemoTasks());
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // ── Google Tasks pull (on mount + manual sync button) ──
-  const syncFromGoogle = useCallback(async () => {
-    const token = getGoogleAccessToken();
-    if (!token) { toast.info('Connect Google to sync tasks.'); return; }
-    setSyncing(true);
-    try {
-      const remote = await fetchGoogleTasks(token);
-      // Merge: keep local-only tasks (no gtaskId), replace synced ones
-      // by gtaskId with the remote version (last-write-wins on
-      // updatedAt vs Google's `updated`).
-      const remoteByGid = new Map(remote.map(t => [t.gtaskId!, t]));
-      const merged: TodoTask[] = [];
-      for (const local of tasks) {
-        if (!local.gtaskId) { merged.push(local); continue; }
-        const r = remoteByGid.get(local.gtaskId);
-        if (!r) {
-          // Existed remotely before — Google deleted it. Drop locally.
-          continue;
-        }
-        // Keep local id stable; absorb fresh fields.
-        merged.push({
-          ...local,
-          name: r.name,
-          done: r.done,
-          dueDate: r.dueDate,
-          notes: r.notes,
-          syncedAt: r.syncedAt,
-          updatedAt: r.updatedAt,
-        });
-        remoteByGid.delete(local.gtaskId);
-      }
-      // Anything left in the map is new from Google — append.
-      for (const r of remoteByGid.values()) merged.push(r);
-      setAllTasks(merged);
-      setLastSync(new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }));
-      toast.info(`Synced ${remote.length} tasks from Google`);
-    } catch (e: any) {
-      toast.info(`Sync failed: ${e?.message ?? 'unknown error'}`);
-    } finally {
-      setSyncing(false);
-    }
-  }, [tasks, setAllTasks]);
-
-  // Auto-pull on mount when connected.
-  useEffect(() => {
-    if (google.isConnected) syncFromGoogle();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [google.isConnected]);
-
-  // ── Push local changes to Google (fire-and-forget) ──
-  const pushIfConnected = useCallback(async (task: TodoTask) => {
-    const token = getGoogleAccessToken();
-    if (!token || !google.isConnected) return;
-    try {
-      const synced = await pushGoogleTask(token, task);
-      if (synced.gtaskId !== task.gtaskId || synced.gtaskListId !== task.gtaskListId) {
-        updateTask(task.id, { gtaskId: synced.gtaskId, gtaskListId: synced.gtaskListId, syncedAt: synced.syncedAt });
-      } else {
-        updateTask(task.id, { syncedAt: synced.syncedAt });
-      }
-    } catch (e: any) {
-      toast.info(`Couldn't push to Google: ${e?.message ?? 'unknown'}`);
-    }
-  }, [google.isConnected, updateTask]);
 
   // ── Filtered view ──
   const today = todayStr();
@@ -152,23 +65,16 @@ export default function TodoList() {
 
   // ── Action handlers ──
   const handleAdd = (input: { name: string; dueDate?: string; estimated?: number }) => {
-    const id = addTask(input);
+    addTask(input);
     setAdding(false);
-    const fresh = { ...input, id, done: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } as TodoTask;
-    pushIfConnected(fresh);
   };
 
   const handleToggle = (id: string) => {
-    const t = tasks.find(x => x.id === id);
-    if (!t) return;
     toggleDone(id);
-    pushIfConnected({ ...t, done: !t.done });
   };
 
   const handleEdit = (id: string, patch: Partial<TodoTask>) => {
     updateTask(id, patch);
-    const t = tasks.find(x => x.id === id);
-    if (t) pushIfConnected({ ...t, ...patch });
   };
 
   const handleDelete = async (id: string) => {
@@ -176,20 +82,13 @@ export default function TodoList() {
     if (!t) return;
     const ok = await confirm({
       title: 'Delete this task?',
-      message: `“${t.name}” will be removed from the Todo List, the Pomodoro widget, and Google Tasks (if synced). This can't be undone.`,
+      message: `“${t.name}” will be removed from the Todo List and the Pomodoro widget. This can't be undone.`,
       confirmLabel: 'Delete',
       variant: 'danger',
     });
     if (!ok) return;
     removeTask(id);
     setEditingId(null);
-    if (t.gtaskId) {
-      const token = getGoogleAccessToken();
-      if (token) {
-        try { await deleteGoogleTask(token, t.gtaskId, t.gtaskListId); }
-        catch (e: any) { toast.info(`Couldn't delete on Google: ${e?.message ?? 'unknown'}`); }
-      }
-    }
   };
 
   return (
@@ -210,22 +109,6 @@ export default function TodoList() {
           })}
         </div>
         <div className="flex items-center gap-2">
-          {google.isConnected ? (
-            <button onClick={syncFromGoogle} disabled={syncing}
-              title={lastSync ? `Last synced ${lastSync}` : 'Sync with Google Tasks'}
-              className="flex items-center gap-1.5 px-2 py-1 text-[11px] rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50">
-              <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-              <span>Google</span>
-              <svg className={`h-3 w-3 ${syncing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-            </button>
-          ) : (
-            <button onClick={() => window.dispatchEvent(new Event('open-google-connect'))}
-              className="flex items-center gap-1.5 px-2 py-1 text-[11px] rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50">
-              Connect Google Tasks
-            </button>
-          )}
           <button onClick={() => setAdding(a => !a)}
             className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700">
             <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
@@ -316,9 +199,6 @@ function TaskRow({ task, editing, onToggle, onClick, onSave, onDelete, onCancelE
         <span className={`shrink-0 text-[11px] font-medium px-1.5 py-0.5 rounded ${overdue ? 'bg-red-100 text-red-700' : task.dueDate === todayStr() ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
           {dueLabel}
         </span>
-      )}
-      {task.gtaskId && (
-        <span title="Synced with Google Tasks" className="h-1.5 w-1.5 rounded-full bg-green-500 shrink-0" />
       )}
     </div>
   );

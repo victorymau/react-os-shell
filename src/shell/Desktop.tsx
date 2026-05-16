@@ -55,11 +55,62 @@ interface DesktopItem {
   x?: number;
   y?: number;
   folderId?: string; // if inside a folder
+  // When the item lives inside a folder, these hold its free-form position
+  // (in pixels, relative to the folder body's top-left). Undefined → fall
+  // back to the default grid layout for that folder.
+  folderX?: number;
+  folderY?: number;
   // Set for `entityType: 'preview-file'` shortcuts auto-recorded when the
   // user previews a file. `filePath` is the server-relative path passed
   // back into `openPreviewFile` on shortcut click.
   filePath?: string;
   fileKind?: PreviewFileKind;
+}
+
+// Shared 48×48 tile used by both the desktop and folder-window icon
+// renderers, so the two surfaces never visually diverge.
+function FileIconTile({ entityType, isSelected, entityId, label, fileKind }: {
+  entityType: string;
+  isSelected: boolean;
+  entityId?: string;
+  label?: string;
+  fileKind?: PreviewFileKind;
+}) {
+  const isPreviewFile = entityType === 'preview-file' && fileKind;
+  const previewColor = isPreviewFile ? PREVIEW_FILE_COLORS[fileKind!] : null;
+  const previewCode = isPreviewFile ? PREVIEW_FILE_CODES[fileKind!] : null;
+  if (entityType === 'folder') {
+    return (
+      <div className={`w-12 h-12 flex items-center justify-center ${isSelected ? 'rounded-lg bg-blue-400/30 ring-2 ring-blue-500' : ''}`}>
+        <svg className="h-12 w-12 drop-shadow-[0_2px_3px_rgba(0,0,0,0.3)]" viewBox="0 0 48 48">
+          <path d="M6 12a4 4 0 014-4h10l4 4h14a4 4 0 014 4v20a4 4 0 01-4 4H10a4 4 0 01-4-4V12z" fill="white" stroke="#eab308" strokeWidth="2" strokeLinejoin="round" />
+          <path d="M6 18h36" stroke="#eab308" strokeWidth="1.5" />
+        </svg>
+      </div>
+    );
+  }
+  if (entityType === 'page') {
+    const icon = (label && navIcons[label]) || (entityId ? navIcons[entityId] : undefined);
+    return (
+      <div className={`w-12 h-12 flex items-center justify-center ${isSelected ? 'rounded-lg bg-blue-400/30 ring-2 ring-blue-500' : ''}`}>
+        {icon && isValidElement(icon)
+          ? cloneElement(icon as ReactElement, { className: 'h-10 w-10 text-white drop-shadow-[0_2px_3px_rgba(0,0,0,0.4)]' })
+          : <svg className="h-10 w-10 text-white drop-shadow-[0_2px_3px_rgba(0,0,0,0.4)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6z" /></svg>}
+      </div>
+    );
+  }
+  return (
+    <div className={`w-12 h-12 relative flex items-center justify-center ${isSelected ? 'rounded-lg bg-blue-400/30 ring-2 ring-blue-500' : ''}`}>
+      <svg className={`w-10 h-12 drop-shadow-[0_2px_3px_rgba(0,0,0,0.3)] ${previewColor ?? ENTITY_ICON_COLORS[entityType] ?? 'text-gray-500'}`} viewBox="0 0 40 48" fill="none">
+        <path d="M4 0h22l10 10v34a4 4 0 01-4 4H4a4 4 0 01-4-4V4a4 4 0 014-4z" fill="white" fillOpacity="0.92" />
+        <path d="M26 0l10 10H30a4 4 0 01-4-4V0z" fill="currentColor" fillOpacity="0.2" />
+        <path d="M4 0h22l10 10v34a4 4 0 01-4 4H4a4 4 0 01-4-4V4a4 4 0 014-4z" stroke="currentColor" strokeWidth="1.5" strokeOpacity="0.5" />
+      </svg>
+      <span className={`absolute inset-0 flex items-center justify-center text-[9px] font-bold pt-2 ${previewColor ?? ENTITY_ICON_COLORS[entityType] ?? 'text-gray-600'}`}>
+        {previewCode ?? ENTITY_ICONS[entityType] ?? entityType.slice(0, 3).toUpperCase()}
+      </span>
+    </div>
+  );
 }
 
 interface DesktopFolder {
@@ -140,50 +191,74 @@ export function useDesktopHost(): DesktopHostConfig {
   return useContext(DesktopHostContext);
 }
 
-interface FolderItemRef {
-  entityType: string;
-  entityId: string;
-  label: string;
-  folderId?: string;
-  filePath?: string;
-  fileKind?: PreviewFileKind;
-}
+const FOLDER_GRID = 90;
+const FOLDER_ITEM_W = 80;
+const FOLDER_ITEM_H = 80;
+const FOLDER_PAD = 12;
 
 /** Folder content window — visually distinct from regular windows
  *  (manilla-paper background, folder glyph in title) and supports
- *  rubber-band selection, shift / cmd / ctrl multi-select, and
- *  drag-reorder inside the folder. */
-function FolderWindow({ folder, items, onClose, onOpen, onMoveOut, onReorder }: {
+ *  rubber-band selection, shift / cmd / ctrl multi-select, free
+ *  positioning of items, and drag-to-desktop to move items out. */
+function FolderWindow({ folder, items, onClose, onOpen, onMoveOut, onSetFolderPosition, onDragOutToDesktop }: {
   folder: { id: string; name: string };
-  items: FolderItemRef[];
+  items: DesktopItem[];
   onClose: () => void;
-  onOpen: (item: FolderItemRef) => void;
-  onMoveOut: (items: FolderItemRef[]) => void;
-  onReorder: (nextItems: FolderItemRef[]) => void;
+  onOpen: (item: DesktopItem) => void;
+  onMoveOut: (items: DesktopItem[]) => void;
+  onSetFolderPosition: (updates: { item: DesktopItem; x: number; y: number }[]) => void;
+  onDragOutToDesktop: (drops: { item: DesktopItem; clientX: number; clientY: number }[]) => void;
 }) {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [rubber, setRubber] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const didDragRubber = useRef(false);
   const bodyRef = useRef<HTMLDivElement>(null);
-  // Drag-reorder state
-  const [dragIdx, setDragIdx] = useState<number | null>(null);
-  const [dropIdx, setDropIdx] = useState<number | null>(null);
+  const [bodyWidth, setBodyWidth] = useState(800);
+  // Drag-out indicator is updated via direct DOM manipulation rather than
+  // React state — otherwise the re-render at the boundary crossing would
+  // clobber the inline `style.left`/`top` overrides we apply to the
+  // dragged items, making them flicker back to their saved positions.
+  const setDragOutsideClass = (on: boolean) => {
+    const el = bodyRef.current;
+    if (!el) return;
+    el.style.outline = on ? '2px dashed rgb(96 165 250 / 0.6)' : '';
+    el.style.outlineOffset = on ? '-2px' : '';
+  };
+
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const update = () => setBodyWidth(el.clientWidth);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const cols = Math.max(1, Math.floor((bodyWidth - FOLDER_PAD) / FOLDER_GRID));
+  const getItemFolderPos = (item: DesktopItem, idx: number) => {
+    if (item.folderX != null && item.folderY != null) return { x: item.folderX, y: item.folderY };
+    return { x: FOLDER_PAD + (idx % cols) * FOLDER_GRID, y: FOLDER_PAD + Math.floor(idx / cols) * FOLDER_GRID };
+  };
 
   const toggleSelect = (i: number, e: React.MouseEvent) => {
     e.stopPropagation();
     if (e.shiftKey || e.metaKey || e.ctrlKey) {
       setSelected(prev => { const next = new Set(prev); next.has(i) ? next.delete(i) : next.add(i); return next; });
-    } else {
+    } else if (!selected.has(i)) {
       setSelected(new Set([i]));
     }
   };
 
-  // Rubber band on body
+  // ── Rubber band on body ─────────────────────────────────────────────────
+  // Coordinates are in the body's *scrolled content* space so the rectangle
+  // and the items it intersects stay in sync when the body is scrolled.
   const startRubber = (e: React.PointerEvent) => {
     if (e.button !== 0 || e.target !== bodyRef.current) return;
-    const r = bodyRef.current!.getBoundingClientRect();
-    const x = e.clientX - r.left;
-    const y = e.clientY - r.top;
+    const el = bodyRef.current!;
+    const r = el.getBoundingClientRect();
+    const x = e.clientX - r.left + el.scrollLeft;
+    const y = e.clientY - r.top + el.scrollTop;
     setRubber({ x1: x, y1: y, x2: x, y2: y });
     didDragRubber.current = false;
     setSelected(new Set());
@@ -191,62 +266,130 @@ function FolderWindow({ folder, items, onClose, onOpen, onMoveOut, onReorder }: 
 
   useEffect(() => {
     if (!rubber) return;
+    const computeSelection = (minX: number, maxX: number, minY: number, maxY: number) => {
+      const next = new Set<number>();
+      const r = bodyRef.current;
+      if (!r) return next;
+      const tiles = r.querySelectorAll<HTMLElement>('[data-folder-item]');
+      const containerRect = r.getBoundingClientRect();
+      tiles.forEach(t => {
+        const tr = t.getBoundingClientRect();
+        const tx = tr.left - containerRect.left + r.scrollLeft;
+        const ty = tr.top - containerRect.top + r.scrollTop;
+        if (tx + tr.width > minX && tx < maxX && ty + tr.height > minY && ty < maxY) {
+          const i = parseInt(t.getAttribute('data-folder-item') || '-1', 10);
+          if (i >= 0) next.add(i);
+        }
+      });
+      return next;
+    };
     const move = (e: PointerEvent) => {
-      const r = bodyRef.current?.getBoundingClientRect();
-      if (!r) return;
-      const x = e.clientX - r.left;
-      const y = e.clientY - r.top;
+      const el = bodyRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const x = e.clientX - r.left + el.scrollLeft;
+      const y = e.clientY - r.top + el.scrollTop;
       const dx = x - rubber.x1, dy = y - rubber.y1;
       if (dx * dx + dy * dy > 16) didDragRubber.current = true;
       setRubber(prev => prev ? { ...prev, x2: x, y2: y } : null);
-    };
-    const up = () => {
-      const next = new Set<number>();
-      const r = bodyRef.current;
-      if (r && rubber) {
-        const minX = Math.min(rubber.x1, rubber.x2);
-        const maxX = Math.max(rubber.x1, rubber.x2);
-        const minY = Math.min(rubber.y1, rubber.y2);
-        const maxY = Math.max(rubber.y1, rubber.y2);
-        const tiles = r.querySelectorAll<HTMLElement>('[data-folder-item]');
-        const containerRect = r.getBoundingClientRect();
-        tiles.forEach(t => {
-          const tr = t.getBoundingClientRect();
-          const tx = tr.left - containerRect.left;
-          const ty = tr.top - containerRect.top;
-          if (tx + tr.width > minX && tx < maxX && ty + tr.height > minY && ty < maxY) {
-            const i = parseInt(t.getAttribute('data-folder-item') || '-1', 10);
-            if (i >= 0) next.add(i);
-          }
-        });
+      if (didDragRubber.current) {
+        const minX = Math.min(rubber.x1, x);
+        const maxX = Math.max(rubber.x1, x);
+        const minY = Math.min(rubber.y1, y);
+        const maxY = Math.max(rubber.y1, y);
+        setSelected(computeSelection(minX, maxX, minY, maxY));
       }
-      if (didDragRubber.current) setSelected(next);
-      setRubber(null);
     };
+    const up = () => setRubber(null);
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
     return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
   }, [rubber]);
 
-  // Drag reorder
-  const onItemDragStart = (i: number) => (e: React.DragEvent) => {
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', String(i));
-    setDragIdx(i);
-  };
-  const onItemDragOver = (i: number) => (e: React.DragEvent) => {
+  // ── Item drag (move within folder OR drop out to desktop) ──────────────
+  // Mirrors Desktop's drag: if the grabbed icon is part of a multi-selection
+  // they all move together; otherwise it's a single-icon drag.
+  type FDragEntry = { idx: number; item: DesktopItem; origX: number; origY: number; el: HTMLElement | null };
+  const dragEntriesRef = useRef<FDragEntry[]>([]);
+  const dragStartRef = useRef<{ clientX: number; clientY: number } | null>(null);
+
+  const startItemDrag = (i: number, e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
     e.preventDefault();
-    if (dragIdx !== null && dragIdx !== i) setDropIdx(i);
-  };
-  const onItemDrop = (i: number) => (e: React.DragEvent) => {
-    e.preventDefault();
-    if (dragIdx === null || dragIdx === i) { setDragIdx(null); setDropIdx(null); return; }
-    const next = [...items];
-    const [moved] = next.splice(dragIdx, 1);
-    next.splice(i, 0, moved);
-    onReorder(next);
-    setDragIdx(null);
-    setDropIdx(null);
+    // Multi-drag if the grabbed item is already in a multi-selection.
+    const useMulti = selected.has(i) && selected.size > 1;
+    const idxs = useMulti ? Array.from(selected) : [i];
+    if (!useMulti) setSelected(new Set([i]));
+    const entries: FDragEntry[] = idxs.map(idx => {
+      const item = items[idx];
+      const pos = getItemFolderPos(item, idx);
+      const el = bodyRef.current?.querySelector<HTMLElement>(`[data-folder-item="${idx}"]`) ?? null;
+      return { idx, item, origX: pos.x, origY: pos.y, el };
+    }).filter(e => e.item);
+    dragEntriesRef.current = entries;
+    dragStartRef.current = { clientX: e.clientX, clientY: e.clientY };
+    setDragOutsideClass(false);
+
+    let moved = false;
+    const move = (ev: PointerEvent) => {
+      const start = dragStartRef.current;
+      if (!start) return;
+      const dx = ev.clientX - start.clientX;
+      const dy = ev.clientY - start.clientY;
+      if (!moved && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) moved = true;
+      if (!moved) return;
+      for (const entry of dragEntriesRef.current) {
+        if (!entry.el) continue;
+        entry.el.style.left = `${entry.origX + dx}px`;
+        entry.el.style.top = `${entry.origY + dy}px`;
+        entry.el.style.zIndex = '100';
+        entry.el.style.opacity = '0.85';
+      }
+      // Outside-folder hit-test for the "drop on desktop" affordance.
+      const r = bodyRef.current?.getBoundingClientRect();
+      const inside = !!r && ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
+      setDragOutsideClass(!inside);
+    };
+    const up = (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      const entries = dragEntriesRef.current;
+      dragEntriesRef.current = [];
+      dragStartRef.current = null;
+      // Reset transient visual overrides. zIndex / opacity aren't React-
+      // managed so they'd otherwise stick after the re-render.
+      for (const entry of entries) {
+        if (!entry.el) continue;
+        entry.el.style.zIndex = '';
+        entry.el.style.opacity = '';
+      }
+      setDragOutsideClass(false);
+      if (!moved) return;
+      const r = bodyRef.current?.getBoundingClientRect();
+      const inside = !!r && ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
+      if (!inside) {
+        const drops = entries.map(e => ({ item: e.item, clientX: ev.clientX, clientY: ev.clientY }));
+        // The items are about to leave this folder; clear the now-stale
+        // index-based selection so it doesn't carry over to a different row.
+        setSelected(new Set());
+        onDragOutToDesktop(drops);
+      } else {
+        // The new in-folder position is whatever we already wrote to
+        // `style.left`/`top` during the last move — read it back so React
+        // can persist it.
+        const updates = entries.map(e => {
+          const leftStr = e.el?.style.left || `${e.origX}px`;
+          const topStr = e.el?.style.top || `${e.origY}px`;
+          const x = Math.max(0, parseFloat(leftStr));
+          const y = Math.max(0, parseFloat(topStr));
+          return { item: e.item, x, y };
+        });
+        onSetFolderPosition(updates);
+      }
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
   };
 
   const moveSelectedOut = () => {
@@ -261,6 +404,14 @@ function FolderWindow({ folder, items, onClose, onOpen, onMoveOut, onReorder }: 
       <path d="M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
     </svg>
   );
+
+  // Body height: enough to hold the lowest item, with breathing room. So
+  // free-positioned items can sit anywhere and the body still scrolls when
+  // they're dragged below the visible region.
+  const contentHeight = items.reduce((max, item, i) => {
+    const pos = getItemFolderPos(item, i);
+    return Math.max(max, pos.y + FOLDER_ITEM_H + FOLDER_PAD);
+  }, 300);
 
   return (
     <Modal open onClose={onClose} title={folder.name} icon={folderIcon} size="lg">
@@ -277,7 +428,7 @@ function FolderWindow({ folder, items, onClose, onOpen, onMoveOut, onReorder }: 
         }}
       >
         {selected.size > 0 && (
-          <div className="sticky top-0 z-10 mb-2 flex items-center gap-2 px-2 py-1 rounded-md bg-white/80 backdrop-blur-sm shadow border border-gray-200 text-xs text-gray-700 w-fit">
+          <div className="sticky top-0 z-20 mb-2 flex items-center gap-2 px-2 py-1 rounded-md bg-white/80 backdrop-blur-sm shadow border border-gray-200 text-xs text-gray-700 w-fit">
             <span>{selected.size} selected</span>
             <button onClick={moveSelectedOut} className="px-2 py-0.5 rounded text-blue-600 hover:bg-blue-50">Move to desktop</button>
             <button onClick={() => setSelected(new Set())} className="px-2 py-0.5 rounded text-gray-500 hover:bg-gray-100">Clear</button>
@@ -287,44 +438,26 @@ function FolderWindow({ folder, items, onClose, onOpen, onMoveOut, onReorder }: 
         {items.length === 0 ? (
           <p className="text-sm text-gray-500 text-center py-8 italic">Folder is empty. Drag documents here.</p>
         ) : (
-          <div className="flex flex-wrap gap-3">
+          <div className="relative" style={{ height: contentHeight }}>
             {items.map((item, i) => {
               const isSelected = selected.has(i);
-              const isDropTarget = dropIdx === i && dragIdx !== i;
+              const pos = getItemFolderPos(item, i);
               return (
                 <div
                   key={`${item.entityType}-${item.entityId}-${i}`}
                   data-folder-item={i}
-                  draggable
-                  onDragStart={onItemDragStart(i)}
-                  onDragOver={onItemDragOver(i)}
-                  onDrop={onItemDrop(i)}
-                  onDragEnd={() => { setDragIdx(null); setDropIdx(null); }}
+                  onPointerDown={(e) => startItemDrag(i, e)}
                   onClick={(e) => toggleSelect(i, e)}
                   onDoubleClick={() => onOpen(item)}
-                  className={`group relative flex flex-col items-center gap-1 w-20 p-2 rounded-lg cursor-default transition-colors ${
-                    isSelected ? 'bg-blue-200/60 ring-2 ring-blue-400' : 'hover:bg-white/60'
-                  } ${isDropTarget ? 'ring-2 ring-blue-500 ring-dashed' : ''} ${dragIdx === i ? 'opacity-40' : ''}`}
+                  style={{ position: 'absolute', left: pos.x, top: pos.y }}
+                  className="cursor-default select-none"
                 >
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onMoveOut([item]); }}
-                    title="Move to desktop"
-                    className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-[10px] opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100 hover:text-red-600 shadow-sm z-10"
-                  >
-                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" /></svg>
-                  </button>
-                  <div className={`w-12 h-12 rounded-lg bg-white shadow flex items-center justify-center text-xs font-bold ${
-                    item.entityType === 'preview-file' && item.fileKind
-                      ? PREVIEW_FILE_COLORS[item.fileKind]
-                      : (ENTITY_ICON_COLORS[item.entityType] || 'text-gray-600')
-                  }`}>
-                    {item.entityType === 'preview-file' && item.fileKind
-                      ? PREVIEW_FILE_CODES[item.fileKind]
-                      : (ENTITY_ICONS[item.entityType] || item.entityType.slice(0, 3).toUpperCase())}
+                  <div className="flex flex-col items-center gap-1 w-20 p-2">
+                    <FileIconTile entityType={item.entityType} isSelected={isSelected} entityId={item.entityId} label={item.label} fileKind={item.fileKind} />
+                    <span className={`text-[10px] font-medium text-center leading-tight truncate w-full ${isSelected ? 'text-blue-900 bg-blue-200/60 rounded px-1' : 'text-gray-700'}`}>
+                      {item.label}
+                    </span>
                   </div>
-                  <span className={`text-[10px] font-medium text-center leading-tight truncate w-full ${isSelected ? 'text-blue-900' : 'text-gray-700'}`}>
-                    {item.label}
-                  </span>
                 </div>
               );
             })}
@@ -684,7 +817,7 @@ export default function Desktop({ profile }: { profile: any }) {
           const desktopIdx = favDocs.indexOf(desktopItems[move.entry.idx]);
           if (desktopIdx === -1) continue;
           if (droppedOnFolder) {
-            updated[desktopIdx] = { ...updated[desktopIdx], folderId: droppedOnFolder.id, x: undefined, y: undefined };
+            updated[desktopIdx] = { ...updated[desktopIdx], folderId: droppedOnFolder.id, x: undefined, y: undefined, folderX: undefined, folderY: undefined };
           } else {
             updated[desktopIdx] = { ...updated[desktopIdx], x: move.finalRight, y: move.finalTop, folderId: undefined };
             positionsPatch[`item-${desktopIdx}`] = { right: move.finalRight, top: move.finalTop };
@@ -984,49 +1117,14 @@ export default function Desktop({ profile }: { profile: any }) {
   };
 
   // ── Render icon ──
-  const renderIcon = (entityType: string, label: string, isSelected: boolean, entityId?: string, fileKind?: PreviewFileKind) => {
-    // Preview-file shortcuts share the document SVG but show a kind-specific
-    // code (PDF / DXF / STP / CSV / IMG) and color.
-    const isPreviewFile = entityType === 'preview-file' && fileKind;
-    const previewColor = isPreviewFile ? PREVIEW_FILE_COLORS[fileKind!] : null;
-    const previewCode = isPreviewFile ? PREVIEW_FILE_CODES[fileKind!] : null;
-    return (
+  const renderIcon = (entityType: string, label: string, isSelected: boolean, entityId?: string, fileKind?: PreviewFileKind) => (
     <div className="flex flex-col items-center gap-1 w-20 p-2">
-      {entityType === 'folder' ? (
-        <div className={`w-12 h-12 flex items-center justify-center ${isSelected ? 'rounded-lg bg-blue-400/30 ring-2 ring-blue-500' : ''}`}>
-          <svg className="h-12 w-12 drop-shadow-[0_2px_3px_rgba(0,0,0,0.3)]" viewBox="0 0 48 48">
-            <path d="M6 12a4 4 0 014-4h10l4 4h14a4 4 0 014 4v20a4 4 0 01-4 4H10a4 4 0 01-4-4V12z" fill="white" stroke="#eab308" strokeWidth="2" strokeLinejoin="round" />
-            <path d="M6 18h36" stroke="#eab308" strokeWidth="1.5" />
-          </svg>
-        </div>
-      ) : entityType === 'page' ? (
-        <div className={`w-12 h-12 flex items-center justify-center ${isSelected ? 'rounded-lg bg-blue-400/30 ring-2 ring-blue-500' : ''}`}>
-          {(() => {
-            const icon = navIcons[label] || (entityId ? navIcons[entityId] : undefined);
-            if (icon && isValidElement(icon)) {
-              return cloneElement(icon as ReactElement, { className: 'h-10 w-10 text-white drop-shadow-[0_2px_3px_rgba(0,0,0,0.4)]' });
-            }
-            return <svg className="h-10 w-10 text-white drop-shadow-[0_2px_3px_rgba(0,0,0,0.4)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6z" /></svg>;
-          })()}
-        </div>
-      ) : (
-        <div className={`w-12 h-12 relative flex items-center justify-center ${isSelected ? 'rounded-lg bg-blue-400/30 ring-2 ring-blue-500' : ''}`}>
-          <svg className={`w-10 h-12 drop-shadow-[0_2px_3px_rgba(0,0,0,0.3)] ${previewColor ?? ENTITY_ICON_COLORS[entityType] ?? 'text-gray-500'}`} viewBox="0 0 40 48" fill="none">
-            <path d="M4 0h22l10 10v34a4 4 0 01-4 4H4a4 4 0 01-4-4V4a4 4 0 014-4z" fill="white" fillOpacity="0.92" />
-            <path d="M26 0l10 10H30a4 4 0 01-4-4V0z" fill="currentColor" fillOpacity="0.2" />
-            <path d="M4 0h22l10 10v34a4 4 0 01-4 4H4a4 4 0 01-4-4V4a4 4 0 014-4z" stroke="currentColor" strokeWidth="1.5" strokeOpacity="0.5" />
-          </svg>
-          <span className={`absolute inset-0 flex items-center justify-center text-[9px] font-bold pt-2 ${previewColor ?? ENTITY_ICON_COLORS[entityType] ?? 'text-gray-600'}`}>
-            {previewCode ?? ENTITY_ICONS[entityType] ?? entityType.slice(0, 3).toUpperCase()}
-          </span>
-        </div>
-      )}
+      <FileIconTile entityType={entityType} isSelected={isSelected} entityId={entityId} label={label} fileKind={fileKind} />
       <span className={`text-[10px] font-medium text-center leading-tight w-full drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] ${isSelected ? 'text-blue-200 bg-blue-600/60 rounded px-1' : 'text-white'}`}>
         {label}
       </span>
     </div>
-    );
-  };
+  );
 
   const menuStyle = (x: number, y: number): React.CSSProperties => ({
     ...(x + 180 > window.innerWidth ? { right: window.innerWidth - x } : { left: x }),
@@ -1412,16 +1510,46 @@ export default function Desktop({ profile }: { profile: any }) {
               const ids = new Set(toMove.map(t => `${t.entityType}|${t.entityId}`));
               const updated = favDocs.map(d =>
                 d.folderId === openFolder && ids.has(`${d.entityType}|${d.entityId}`)
-                  ? { ...d, folderId: undefined }
+                  ? { ...d, folderId: undefined, folderX: undefined, folderY: undefined }
                   : d,
               );
               saveDocs(updated);
             }}
-            onReorder={(nextItems) => {
-              // Replace the slice of favDocs that lives in this folder with the
-              // re-ordered nextItems, keeping out-of-folder items in place.
-              const others = favDocs.filter(d => d.folderId !== openFolder);
-              saveDocs([...others, ...nextItems]);
+            onSetFolderPosition={(updates) => {
+              // Patch folderX/folderY on each affected item. Items are
+              // matched by entityType+entityId so the patch survives any
+              // concurrent reordering.
+              const patch = new Map(updates.map(u => [`${u.item.entityType}|${u.item.entityId}`, u]));
+              const updated = favDocs.map(d => {
+                const u = patch.get(`${d.entityType}|${d.entityId}`);
+                return u ? { ...d, folderX: u.x, folderY: u.y } : d;
+              });
+              saveDocs(updated);
+            }}
+            onDragOutToDesktop={(drops) => {
+              // Convert cursor coords to desktop right/top (icons are
+              // right-anchored on the desktop, same convention used for
+              // desktop→folder drops). Container ref gives us the offset.
+              const containerRect = containerRef.current?.getBoundingClientRect();
+              const cw = containerRef.current?.clientWidth ?? window.innerWidth;
+              const patch = new Map<string, { right: number; top: number }>();
+              for (const d of drops) {
+                const offX = containerRect ? d.clientX - containerRect.left : d.clientX;
+                const offY = containerRect ? d.clientY - containerRect.top : d.clientY;
+                // Center the 80×80 icon on the cursor.
+                let right = cw - offX - 40;
+                let top = Math.max(0, offY - 40);
+                if (snapEnabled) { const s = snapToGrid(right, top); right = s.x; top = s.y; }
+                right = Math.max(0, right);
+                patch.set(`${d.item.entityType}|${d.item.entityId}`, { right, top });
+              }
+              const updated = favDocs.map(d => {
+                const p = patch.get(`${d.entityType}|${d.entityId}`);
+                return p
+                  ? { ...d, folderId: undefined, folderX: undefined, folderY: undefined, x: p.right, y: p.top }
+                  : d;
+              });
+              saveDocs(updated);
             }}
           />
         );

@@ -102,16 +102,18 @@ export {
 } from './shell/ShellEntityFetcher';
 export type { EntityFetcher } from './shell/ShellEntityFetcher';
 export { setShellApiClient } from './api/client';
+export { setShellMailServer } from './api/mailClient';
 export { setShellAuthBridge } from './contexts/AuthContext';
+export { default as useMailAuth } from './hooks/useMailAuth';
+export type { MailUser, MailCapabilities, LoginPayload } from './hooks/useMailAuth';
+export { default as MailConnectModal } from './shell/MailConnectModal';
 
 // ── Utilities ──
 export { glassStyle, GLASS_DIVIDER, GLASS_INPUT_BG } from './utils/glass';
 export { reportBug } from './utils/reportBug';
 export { formatDate } from './utils/date';
 
-// ── Hooks (theming, hotkeys, modal nav, Google) ──
+// ── Hooks (theming, hotkeys, modal nav) ──
 export { default as useClickOutside } from './hooks/useClickOutside';
 export { default as useNewHotkey } from './hooks/useNewHotkey';
 export { default as useEditHotkey } from './hooks/useEditHotkey';
-// useTheme, useGoogleAuth, useEmailUnread are exported from their own files
-// and route through the consumer-supplied apiClient.

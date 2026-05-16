@@ -1,21 +1,54 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import Modal, { ModalActions } from '../shell/Modal';
 import toast from '../shell/toast';
-import useGoogleAuth, { getGoogleAccessToken } from '../hooks/useGoogleAuth';
-import { isDemoMode, getDemoCalendarEvents } from './google-demo-fixtures';
+import useMailAuth from '../hooks/useMailAuth';
+import { getMailClient } from '../api/mailClient';
 import { useShellPrefs } from '../shell/ShellPrefs';
 import { useTodoTasks } from './_todoStore';
 
 // ── Types ──
+interface CalDavMeta {
+  calendarId: string;
+  eventUid: string;
+  etag: string;
+}
+
 interface CalendarEvent {
   id: string;
   title: string;
   date: string; // YYYY-MM-DD
-  start_time?: string; // HH:MM
-  end_time?: string; // HH:MM
+  start_time?: string;
+  end_time?: string;
   color: string;
   description?: string;
   all_day?: boolean;
+  // Internal markers (not persisted in useShellPrefs for non-local events):
+  _caldav?: CalDavMeta;
+  _todo?: boolean;
+  _todoId?: string;
+  _done?: boolean;
+}
+
+interface DavCalendar {
+  id: string;
+  displayName: string;
+  color: string | null;
+  ctag: string;
+  readOnly: boolean;
+}
+
+interface DavEvent {
+  uid: string;
+  etag: string;
+  url: string;
+  summary: string;
+  description: string | null;
+  location: string | null;
+  start: string;
+  end: string;
+  allDay: boolean;
+  recurrence: string | null;
+  status: string;
 }
 
 type ViewMode = 'year' | 'month' | 'week';
@@ -38,10 +71,7 @@ function getColor(key: string) {
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 function pad(n: number) { return String(n).padStart(2, '0'); }
-
-function toDateStr(d: Date) {
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
+function toDateStr(d: Date) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
 
 function getMonthDays(year: number, month: number) {
   const first = new Date(year, month, 1);
@@ -50,15 +80,12 @@ function getMonthDays(year: number, month: number) {
   const prevDays = new Date(year, month, 0).getDate();
 
   const cells: { date: Date; isCurrentMonth: boolean }[] = [];
-  // Previous month padding
   for (let i = startDay - 1; i >= 0; i--) {
     cells.push({ date: new Date(year, month - 1, prevDays - i), isCurrentMonth: false });
   }
-  // Current month
   for (let d = 1; d <= daysInMonth; d++) {
     cells.push({ date: new Date(year, month, d), isCurrentMonth: true });
   }
-  // Next month padding
   const remaining = 42 - cells.length;
   for (let d = 1; d <= remaining; d++) {
     cells.push({ date: new Date(year, month + 1, d), isCurrentMonth: false });
@@ -78,22 +105,57 @@ function getWeekDays(date: Date) {
   return days;
 }
 
+function davToLocal(ev: DavEvent, calendarId: string): CalendarEvent {
+  const startIso = ev.start;
+  const endIso = ev.end;
+  const startDate = startIso.slice(0, 10);
+  const startTime = ev.allDay ? undefined : startIso.slice(11, 16);
+  const endTime = ev.allDay ? undefined : endIso.slice(11, 16);
+  return {
+    id: `caldav-${calendarId}-${ev.uid}`,
+    title: ev.summary || '(No title)',
+    date: startDate,
+    start_time: startTime,
+    end_time: endTime,
+    color: 'blue',
+    all_day: ev.allDay,
+    description: ev.description || undefined,
+    _caldav: { calendarId, eventUid: ev.uid, etag: ev.etag },
+  };
+}
+
+function toDavInput(evt: CalendarEvent): {
+  summary: string;
+  description?: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+} {
+  const start = evt.all_day
+    ? evt.date
+    : `${evt.date}T${evt.start_time || '09:00'}:00`;
+  const end = evt.all_day
+    ? evt.date
+    : `${evt.date}T${evt.end_time || '10:00'}:00`;
+  return {
+    summary: evt.title,
+    description: evt.description,
+    start: new Date(start).toISOString(),
+    end: new Date(end).toISOString(),
+    allDay: !!evt.all_day,
+  };
+}
+
 // ── Main Component ──
 export default function Calendar() {
   const { prefs, save } = useShellPrefs();
-  const google = useGoogleAuth();
+  const { isConnected, capabilities } = useMailAuth();
+  const caldavEnabled = isConnected && capabilities?.caldav === true;
   const localEvents: CalendarEvent[] = prefs.calendar_events || [];
-  const [googleEvents, setGoogleEvents] = useState<CalendarEvent[]>([]);
-  // Demo mode: when no Google account is connected, show bundled sample
-  // events so the public demo isn't an empty calendar.
-  const demoEvents = useMemo<CalendarEvent[]>(
-    () => (isDemoMode() && !google.isConnected ? getDemoCalendarEvents() : []),
-    [google.isConnected],
-  );
-  // Pull Todo List tasks that have a due date — render them as a
-  // checkbox badge on the matching day. Toggling the checkbox flips
-  // `done` in the shared store, which the Todo and Pomodoro apps both
-  // see immediately.
+
+  const [calendars, setCalendars] = useState<DavCalendar[]>([]);
+  const [caldavEvents, setCaldavEvents] = useState<CalendarEvent[]>([]);
+
   const { tasks: todoTasks, toggleDone: toggleTodoDone } = useTodoTasks();
   const todoEvents = useMemo<CalendarEvent[]>(
     () => todoTasks
@@ -103,78 +165,135 @@ export default function Calendar() {
         title: t.name,
         date: t.dueDate!,
         color: 'gray',
-        // Marker fields consumed by MonthView / WeekView to render a
-        // checkbox affordance instead of the regular event button.
         _todo: true,
         _todoId: t.id,
         _done: t.done,
-      } as CalendarEvent & { _todo: true; _todoId: string; _done: boolean })),
+      })),
     [todoTasks],
   );
 
   const events = useMemo(
-    () => [...localEvents, ...googleEvents, ...demoEvents, ...todoEvents],
-    [localEvents, googleEvents, demoEvents, todoEvents],
+    () => [...localEvents, ...caldavEvents, ...todoEvents],
+    [localEvents, caldavEvents, todoEvents],
   );
+
   const today = new Date();
   const [currentDate, setCurrentDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
-
-  // Fetch Google Calendar events
-  useEffect(() => {
-    const token = getGoogleAccessToken();
-    if (!token) { setGoogleEvents([]); return; }
-    const year = currentDate.getFullYear();
-    const month = currentDate.getMonth();
-    const timeMin = new Date(year, month - 1, 1).toISOString();
-    const timeMax = new Date(year, month + 2, 0).toISOString();
-    fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${timeMin}&timeMax=${timeMax}&maxResults=250&singleEvents=true&orderBy=startTime`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (!data?.items) return;
-        const mapped: CalendarEvent[] = data.items.map((item: any) => {
-          const isAllDay = !!item.start?.date;
-          const startDate = isAllDay ? item.start.date : item.start?.dateTime?.split('T')[0];
-          const startTime = isAllDay ? undefined : item.start?.dateTime?.split('T')[1]?.slice(0, 5);
-          const endTime = isAllDay ? undefined : item.end?.dateTime?.split('T')[1]?.slice(0, 5);
-          return {
-            id: `gcal-${item.id}`,
-            title: item.summary || '(No title)',
-            date: startDate,
-            start_time: startTime,
-            end_time: endTime,
-            color: 'blue',
-            all_day: isAllDay,
-            description: item.description,
-            _google: true,
-          } as CalendarEvent;
-        });
-        setGoogleEvents(mapped);
-      })
-      .catch(() => setGoogleEvents([]));
-  }, [currentDate]);
   const [view, setView] = useState<ViewMode>('month');
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
   const [newEventDate, setNewEventDate] = useState<string | null>(null);
+
+  // Fetch calendars once when CalDAV becomes available
+  useEffect(() => {
+    if (!caldavEnabled) { setCalendars([]); return; }
+    getMailClient()
+      .get<{ calendars: DavCalendar[] }>('/api/calendar/calendars')
+      .then(r => setCalendars(r.data.calendars))
+      .catch(() => setCalendars([]));
+  }, [caldavEnabled]);
+
+  // Fetch events when current date changes (a 3-month window for prefetch)
+  useEffect(() => {
+    if (!caldavEnabled || calendars.length === 0) { setCaldavEvents([]); return; }
+    const y = currentDate.getFullYear();
+    const m = currentDate.getMonth();
+    const start = new Date(y, m - 1, 1).toISOString();
+    const end = new Date(y, m + 2, 0).toISOString();
+
+    let cancelled = false;
+    Promise.all(
+      calendars.map(cal =>
+        getMailClient()
+          .get<{ events: DavEvent[] }>(`/api/calendar/calendars/${encodeURIComponent(cal.id)}/events`, {
+            params: { start, end },
+          })
+          .then(r => r.data.events.map(e => davToLocal(e, cal.id)))
+          .catch(() => [] as CalendarEvent[]),
+      ),
+    ).then(perCalendar => {
+      if (cancelled) return;
+      setCaldavEvents(perCalendar.flat());
+    });
+    return () => { cancelled = true; };
+  }, [caldavEnabled, calendars, currentDate]);
 
   const saveLocalEvents = useCallback((updated: CalendarEvent[]) => {
     save({ calendar_events: updated });
   }, [save]);
 
-  const saveEvent = (evt: CalendarEvent) => {
-    const existing = localEvents.find(e => e.id === evt.id);
-    if (existing) {
-      saveLocalEvents(localEvents.map(e => e.id === evt.id ? evt : e));
+  const saveEvent = async (evt: CalendarEvent, targetCalendarId?: string) => {
+    // Editing an existing CalDAV event
+    if (evt._caldav) {
+      try {
+        const input = toDavInput(evt);
+        const res = await getMailClient().put<{ uid: string; etag: string }>(
+          `/api/calendar/calendars/${encodeURIComponent(evt._caldav.calendarId)}/events/${encodeURIComponent(evt._caldav.eventUid)}`,
+          input,
+          { headers: { 'If-Match': evt._caldav.etag } },
+        );
+        setCaldavEvents(prev => prev.map(e =>
+          e.id === evt.id
+            ? { ...evt, _caldav: { ...evt._caldav!, etag: res.data.etag } }
+            : e
+        ));
+        toast.success('Event updated');
+      } catch (err) {
+        const status = (err as { response?: { status?: number } })?.response?.status;
+        if (status === 409) {
+          toast.error('Event was modified elsewhere — refresh to see latest');
+        } else {
+          toast.error(extractError(err));
+        }
+        return;
+      }
+    } else if (targetCalendarId) {
+      // New CalDAV event
+      try {
+        const input = toDavInput(evt);
+        const res = await getMailClient().post<{ uid: string; etag: string; url: string }>(
+          `/api/calendar/calendars/${encodeURIComponent(targetCalendarId)}/events`,
+          input,
+        );
+        const newEvt: CalendarEvent = {
+          ...evt,
+          id: `caldav-${targetCalendarId}-${res.data.uid}`,
+          _caldav: { calendarId: targetCalendarId, eventUid: res.data.uid, etag: res.data.etag },
+        };
+        setCaldavEvents(prev => [...prev, newEvt]);
+        toast.success('Event created');
+      } catch (err) {
+        toast.error(extractError(err));
+        return;
+      }
     } else {
-      saveLocalEvents([...localEvents, evt]);
+      // Local event
+      const existing = localEvents.find(e => e.id === evt.id);
+      if (existing) {
+        saveLocalEvents(localEvents.map(e => e.id === evt.id ? evt : e));
+      } else {
+        saveLocalEvents([...localEvents, evt]);
+      }
     }
     setEditingEvent(null);
     setNewEventDate(null);
   };
 
-  const deleteEvent = (id: string) => {
-    saveLocalEvents(localEvents.filter(e => e.id !== id));
+  const deleteEvent = async (evt: CalendarEvent) => {
+    if (evt._caldav) {
+      try {
+        await getMailClient().delete(
+          `/api/calendar/calendars/${encodeURIComponent(evt._caldav.calendarId)}/events/${encodeURIComponent(evt._caldav.eventUid)}`,
+          { headers: { 'If-Match': evt._caldav.etag } },
+        );
+        setCaldavEvents(prev => prev.filter(e => e.id !== evt.id));
+        toast.success('Event deleted');
+      } catch (err) {
+        toast.error(extractError(err));
+        return;
+      }
+    } else {
+      saveLocalEvents(localEvents.filter(e => e.id !== evt.id));
+    }
     setEditingEvent(null);
   };
 
@@ -199,19 +318,16 @@ export default function Calendar() {
     }
   };
 
-  // Header label switches to just the year when the year view is active.
   const monthLabel = view === 'year'
     ? String(currentDate.getFullYear())
     : currentDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 
-  // Events by date
   const eventsByDate = useMemo(() => {
     const map: Record<string, CalendarEvent[]> = {};
     events.forEach(e => {
       if (!map[e.date]) map[e.date] = [];
       map[e.date].push(e);
     });
-    // Sort by start_time within each day
     for (const key of Object.keys(map)) {
       map[key].sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''));
     }
@@ -233,7 +349,6 @@ export default function Calendar() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 shrink-0">
         <div className="flex items-center gap-3">
           <button onClick={goToday} className="px-2.5 py-1 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50">Today</button>
@@ -248,41 +363,15 @@ export default function Calendar() {
           <h2 className="text-sm font-semibold text-gray-900">{monthLabel}</h2>
         </div>
         <div className="flex items-center gap-2">
-          {/* Google Calendar connection */}
-          {google.isConnected ? (
-            <button onClick={() => window.dispatchEvent(new Event('open-google-connect'))} title="Google Services"
-              className="flex items-center gap-2 hover:bg-gray-50 rounded-md px-1.5 py-1 transition-colors">
-              {google.user?.picture ? (
-                <img src={google.user.picture} alt="" className="h-6 w-6 rounded-full" />
-              ) : (
-                <div className="h-6 w-6 rounded-full bg-gray-200" />
-              )}
-              <div className="text-left">
-                <p className="text-[11px] font-medium text-gray-900">{google.user?.name}</p>
-                <p className="text-[10px] text-gray-500">{google.user?.email}</p>
-              </div>
-            </button>
-          ) : (
-            <button onClick={() => {
-              if (!google.hasClientId) {
-                const id = prompt('Enter your Google OAuth Client ID\n\nCreate one at console.cloud.google.com > APIs > Credentials > OAuth 2.0 Client ID (Web application)');
-                if (id?.trim()) google.setClientId(id.trim());
-                return;
-              }
-              google.connect();
-            }} disabled={google.loading}
-              className="inline-flex items-center gap-1.5 border border-gray-300 bg-white rounded-md px-2 py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50">
-              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24">
-                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
-                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-              </svg>
-              {google.loading ? 'Connecting...' : 'Connect Google Calendar'}
-            </button>
-          )}
-          {google.error && <span className="text-[10px] text-red-500">{google.error}</span>}
-
+          <span
+            onClick={() => window.dispatchEvent(new Event('open-mail-connect'))}
+            className="text-[11px] text-gray-600 cursor-pointer hover:text-gray-900"
+            title="Open mail & calendar settings"
+          >
+            {caldavEnabled
+              ? `CalDAV · ${calendars.length} calendar${calendars.length === 1 ? '' : 's'}`
+              : 'CalDAV not connected'}
+          </span>
           <div className="w-px h-4 bg-gray-200" />
           <div className="flex gap-1">
             {(['year', 'month', 'week'] as const).map(v => (
@@ -295,7 +384,6 @@ export default function Calendar() {
         </div>
       </div>
 
-      {/* Calendar grid */}
       <div className="flex-1 overflow-hidden">
         {view === 'year' ? (
           <YearView
@@ -327,13 +415,13 @@ export default function Calendar() {
         )}
       </div>
 
-      {/* Event editor modal */}
       {editingEvent && (
         <EventEditor
           event={editingEvent}
           isNew={!!newEventDate}
+          calendars={calendars}
           onSave={saveEvent}
-          onDelete={deleteEvent}
+          onDelete={() => deleteEvent(editingEvent)}
           onClose={() => { setEditingEvent(null); setNewEventDate(null); }}
         />
       )}
@@ -341,34 +429,35 @@ export default function Calendar() {
   );
 }
 
-// ── Shared event/todo badge — used by MonthView and WeekView ──
-// Todo events (recognised by the `_todo` marker on the event object)
-// render as a checkbox + name affordance instead of the regular event
-// pill. Toggling the checkbox flips `done` in the shared todo store.
+function extractError(err: unknown): string {
+  const r = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+  if (r) return r;
+  if (err instanceof Error) return err.message;
+  return 'Unknown error';
+}
+
 function DayEventBadge({ evt, onEventClick, onToggleTodo, compact = false }: {
   evt: CalendarEvent;
   onEventClick: (e: CalendarEvent) => void;
   onToggleTodo: (id: string) => void;
   compact?: boolean;
 }) {
-  const e = evt as CalendarEvent & { _todo?: true; _todoId?: string; _done?: boolean };
-  if (e._todo && e._todoId) {
+  if (evt._todo && evt._todoId) {
     return compact ? (
-      <button onClick={(ev) => { ev.stopPropagation(); onToggleTodo(e._todoId!); }}
-        title={e.title}
-        className={`w-full text-left flex items-center gap-1 truncate rounded px-1 py-0.5 text-[10px] leading-tight font-medium hover:bg-gray-100 transition-colors ${e._done ? 'text-gray-400' : 'text-gray-700'}`}>
-        <span className="shrink-0">{e._done ? '☑' : '☐'}</span>
-        <span className={`truncate ${e._done ? 'line-through' : ''}`}>{e.title || 'Task'}</span>
+      <button onClick={(ev) => { ev.stopPropagation(); onToggleTodo(evt._todoId!); }}
+        title={evt.title}
+        className={`w-full text-left flex items-center gap-1 truncate rounded px-1 py-0.5 text-[10px] leading-tight font-medium hover:bg-gray-100 transition-colors ${evt._done ? 'text-gray-400' : 'text-gray-700'}`}>
+        <span className="shrink-0">{evt._done ? '☑' : '☐'}</span>
+        <span className={`truncate ${evt._done ? 'line-through' : ''}`}>{evt.title || 'Task'}</span>
       </button>
     ) : (
-      <button onClick={(ev) => { ev.stopPropagation(); onToggleTodo(e._todoId!); }}
-        className={`w-full text-left flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-gray-100 transition-colors ${e._done ? 'text-gray-400' : 'text-gray-700'}`}>
-        <span className="shrink-0 text-base leading-none">{e._done ? '☑' : '☐'}</span>
-        <span className={`text-xs font-medium truncate ${e._done ? 'line-through' : ''}`}>{e.title || 'Task'}</span>
+      <button onClick={(ev) => { ev.stopPropagation(); onToggleTodo(evt._todoId!); }}
+        className={`w-full text-left flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-gray-100 transition-colors ${evt._done ? 'text-gray-400' : 'text-gray-700'}`}>
+        <span className="shrink-0 text-base leading-none">{evt._done ? '☑' : '☐'}</span>
+        <span className={`text-xs font-medium truncate ${evt._done ? 'line-through' : ''}`}>{evt.title || 'Task'}</span>
       </button>
     );
   }
-  // Regular event — same rendering as before.
   const c = getColor(evt.color);
   return compact ? (
     <button onClick={(ev) => { ev.stopPropagation(); onEventClick(evt); }}
@@ -387,7 +476,6 @@ function DayEventBadge({ evt, onEventClick, onToggleTodo, compact = false }: {
   );
 }
 
-// ── Month View ──
 function MonthView({ year, month, eventsByDate, today, onDayClick, onEventClick, onToggleTodo }: {
   year: number; month: number; eventsByDate: Record<string, CalendarEvent[]>;
   today: string; onDayClick: (d: string) => void; onEventClick: (e: CalendarEvent) => void;
@@ -397,13 +485,11 @@ function MonthView({ year, month, eventsByDate, today, onDayClick, onEventClick,
 
   return (
     <div className="h-full flex flex-col">
-      {/* Day headers */}
       <div className="grid grid-cols-7 border-b border-gray-200">
         {DAYS.map(d => (
           <div key={d} className="px-2 py-1.5 text-[10px] font-semibold text-gray-500 uppercase text-center">{d}</div>
         ))}
       </div>
-      {/* Day cells */}
       <div className="grid grid-cols-7 flex-1 auto-rows-fr">
         {cells.map((cell, i) => {
           const dateStr = toDateStr(cell.date);
@@ -431,14 +517,6 @@ function MonthView({ year, month, eventsByDate, today, onDayClick, onEventClick,
   );
 }
 
-// ── Year View ──
-// Apple-Calendar-style 4×3 grid of compact mini-month cards. The month
-// names are abbreviated (Jan / Feb / …) so the title hierarchy stays
-// "year on the left of the toolbar, month above each grid". Today is
-// highlighted with a filled blue circle; days with events get a tiny
-// dot under the number. Clicking the month label jumps to Month view;
-// clicking a day jumps to Month view AND opens the event editor for
-// that day.
 function YearView({ year, eventsByDate, today, onPickMonth, onDayClick }: {
   year: number;
   eventsByDate: Record<string, CalendarEvent[]>;
@@ -456,21 +534,15 @@ function YearView({ year, eventsByDate, today, onPickMonth, onDayClick }: {
           const cells = getMonthDays(year, m);
           return (
             <div key={m} className="flex flex-col">
-              {/* Compact title: month abbrev as a small button that jumps
-                  to that month in Month view. */}
               <button onClick={() => onPickMonth(m)}
                 className="self-start text-[13px] font-semibold text-blue-600 hover:text-blue-800 mb-1 px-1 -ml-1 rounded transition-colors">
                 {label}
               </button>
-
-              {/* Day-of-week labels */}
               <div className="grid grid-cols-7 mb-0.5">
                 {dowShort.map((d, i) => (
                   <div key={i} className="text-[9px] font-medium text-gray-400 text-center">{d}</div>
                 ))}
               </div>
-
-              {/* Date grid */}
               <div className="grid grid-cols-7">
                 {cells.map((cell, i) => {
                   const dateStr = toDateStr(cell.date);
@@ -504,7 +576,6 @@ function YearView({ year, eventsByDate, today, onPickMonth, onDayClick }: {
   );
 }
 
-// ── Week View ──
 function WeekView({ currentDate, eventsByDate, today, onDayClick, onEventClick, onToggleTodo }: {
   currentDate: Date; eventsByDate: Record<string, CalendarEvent[]>;
   today: string; onDayClick: (d: string) => void; onEventClick: (e: CalendarEvent) => void;
@@ -514,7 +585,6 @@ function WeekView({ currentDate, eventsByDate, today, onDayClick, onEventClick, 
 
   return (
     <div className="h-full flex flex-col">
-      {/* Day headers */}
       <div className="grid grid-cols-7 border-b border-gray-200">
         {days.map(d => {
           const dateStr = toDateStr(d);
@@ -527,7 +597,6 @@ function WeekView({ currentDate, eventsByDate, today, onDayClick, onEventClick, 
           );
         })}
       </div>
-      {/* Day columns */}
       <div className="grid grid-cols-7 flex-1 overflow-y-auto">
         {days.map(d => {
           const dateStr = toDateStr(d);
@@ -547,10 +616,13 @@ function WeekView({ currentDate, eventsByDate, today, onDayClick, onEventClick, 
   );
 }
 
-// ── Event Editor ──
-function EventEditor({ event, isNew, onSave, onDelete, onClose }: {
-  event: CalendarEvent; isNew: boolean;
-  onSave: (e: CalendarEvent) => void; onDelete: (id: string) => void; onClose: () => void;
+function EventEditor({ event, isNew, calendars, onSave, onDelete, onClose }: {
+  event: CalendarEvent;
+  isNew: boolean;
+  calendars: DavCalendar[];
+  onSave: (e: CalendarEvent, targetCalendarId?: string) => void;
+  onDelete: () => void;
+  onClose: () => void;
 }) {
   const [title, setTitle] = useState(event.title);
   const [date, setDate] = useState(event.date);
@@ -559,10 +631,12 @@ function EventEditor({ event, isNew, onSave, onDelete, onClose }: {
   const [color, setColor] = useState(event.color);
   const [allDay, setAllDay] = useState(event.all_day ?? false);
   const [description, setDescription] = useState(event.description || '');
+  const isFromCaldav = !!event._caldav;
+  const [target, setTarget] = useState<string>(isFromCaldav ? event._caldav!.calendarId : 'local');
 
   const handleSave = () => {
     if (!title.trim()) { toast.error('Event title is required.'); return; }
-    onSave({
+    const updated: CalendarEvent = {
       ...event,
       title: title.trim(),
       date,
@@ -571,7 +645,9 @@ function EventEditor({ event, isNew, onSave, onDelete, onClose }: {
       color,
       all_day: allDay,
       description: description.trim() || undefined,
-    });
+    };
+    const targetCal = !isFromCaldav && target !== 'local' ? target : undefined;
+    onSave(updated, targetCal);
   };
 
   const inp = 'block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm';
@@ -603,6 +679,22 @@ function EventEditor({ event, isNew, onSave, onDelete, onClose }: {
             </div>
           </div>
         )}
+        {(isNew && calendars.length > 0) && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Save to</label>
+            <select value={target} onChange={e => setTarget(e.target.value)} className={inp}>
+              <option value="local">Local (this device only)</option>
+              {calendars.map(c => (
+                <option key={c.id} value={c.id}>{c.displayName}</option>
+              ))}
+            </select>
+          </div>
+        )}
+        {isFromCaldav && (
+          <p className="text-[11px] text-gray-500">
+            From {calendars.find(c => c.id === event._caldav?.calendarId)?.displayName || 'CalDAV'}
+          </p>
+        )}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
           <div className="flex gap-2">
@@ -620,7 +712,7 @@ function EventEditor({ event, isNew, onSave, onDelete, onClose }: {
 
       {!isNew && (
         <ModalActions position="left">
-          <button onClick={() => onDelete(event.id)} className="text-sm text-red-600 hover:text-red-800 font-medium">Delete</button>
+          <button onClick={onDelete} className="text-sm text-red-600 hover:text-red-800 font-medium">Delete</button>
         </ModalActions>
       )}
       <ModalActions>

@@ -1,7 +1,7 @@
 {
   "name": "react-os-shell",
-  "version": "0.2.64",
-  "description": "Desktop-style React UI shell — windows, taskbar, start menu, sticky notes, frosted glass theming, and 17 bundled apps including a PDF Preview viewer.",
+  "version": "0.3.0",
+  "description": "Desktop-style React UI shell — windows, taskbar, start menu, sticky notes, frosted glass theming, and bundled apps. Email + Calendar talk to your own IMAP/SMTP/CalDAV provider via a colocated Node bridge server.",
   "license": "MIT",
   "author": "Victor Y. Mau",
   "homepage": "https://github.com/victorymau/react-os-shell#readme",
@@ -37,6 +37,7 @@
     "@headlessui/react": ">=2",
     "@heroicons/react": ">=2",
     "@tanstack/react-query": ">=5",
+    "axios": ">=1.6",
     "dxf-viewer": "*",
     "mammoth": "*",
     "online-3d-viewer": "*",
@@ -48,12 +49,11 @@
     "tailwindcss": ">=4",
     "xlsx": "*"
   },
-  "dependencies": {
-    "axios": "^1.6.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
+    "concurrently": "^8.2.2",
     "dxf-viewer": "^1.0.47",
     "mammoth": "^1.8.0",
     "online-3d-viewer": "^0.18.0",
@@ -70,7 +70,13 @@
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
     "screenshot": "node scripts/screenshot.mjs",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "server:install": "cd server && npm install",
+    "server:dev": "cd server && npm run dev",
+    "server:build": "cd server && npm run build",
+    "server:start": "cd server && npm start",
+    "server:typecheck": "cd server && npm run typecheck",
+    "dev:all": "concurrently -n shell,server -c blue,green \"npm run dev\" \"npm run server:dev\""
   },
   "keywords": [
     "react",

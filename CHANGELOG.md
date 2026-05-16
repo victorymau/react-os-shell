@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-05-16
+
+### Removed
+- **All Google service integrations.** Deleted `useGoogleAuth`, `GoogleConnectModal`, `GeminiChat`, `_googleTasks`, `google-demo-fixtures`, the `googleApps` registry export, and every `gmail.googleapis.com` / `calendar.googleapis.com` / `tasks.googleapis.com` / `generativelanguage.googleapis.com` / `accounts.google.com/gsi/client` call site. The Email app no longer speaks Gmail, the Calendar app no longer speaks Google Calendar, the Todo List no longer syncs with Google Tasks, and the Gemini AI chat is gone.
+
+### Added
+- **`server/` — Node/Express bridge.** New top-level workspace (separate `package.json` so the library's published bundle stays unchanged). Speaks IMAP via `imapflow`, SMTP via `nodemailer`, CalDAV via `tsdav`, with `mailparser` for incoming RFC 822 and `sanitize-html` for inline HTML bodies. In-memory session map keyed by an `HttpOnly` cookie; per-session lazy connection pool (one persistent IMAP connection with NOOP keep-alive, one pooled SMTP transport, one CalDAV client). Routes under `/api/auth`, `/api/mail`, `/api/calendar`. Run with `npm run server:install && npm run server:dev`, or both at once with `npm run dev:all`.
+- **`MailConnectModal` + `useMailAuth`.** Replaces `GoogleConnectModal` and `useGoogleAuth`. Provider presets for Fastmail, iCloud, Yahoo, Gmail (app-password), Outlook (app-password). Stores no plaintext creds on the client; only a `mail_session_known` flag that triggers a `GET /api/auth/me` on reload.
+- **`setShellMailServer(url | axios)` + `mailClient`.** Dedicated axios instance with `withCredentials: true` so the cookie rides. Default `http://localhost:3001`; consumers override for production.
+- **Calendar CRUD via CalDAV.** Editor now offers a "Save to" picker listing each fetched calendar plus a local option (`useShellPrefs`). Existing CalDAV events round-trip with `If-Match: <etag>`; 409 from the server triggers a "modified elsewhere" toast instead of silently overwriting.
+- **One-time localStorage migration.** `Layout.tsx` mount effect clears `google_access_token`, `google_token_expiry`, `google_user_info`, `google_oauth_client_id`, and strips `gtaskId` / `gtaskListId` / `syncedAt` from any stored todos. Gated by a `shell_migration_v2_mail` sentinel so it runs exactly once.
+
+### Changed
+- **Email UI: folder tree + smart views** instead of Gmail labels. Sidebar lists Inbox / Starred / Unread / Drafts / Sent / Trash / Spam as smart views, then the IMAP folder hierarchy underneath. "Move to folder" replaces "apply label". Threading via server-supplied `threadId` (IMAP `THREAD=REFERENCES` when available, References-header walk otherwise). Unread counts polled every 30s from `/api/mail/unread-counts`.
+- **TodoList simplified to local-only.** Stripped sync state, conflict resolution, and the "Connect Google Tasks" header chip. The store still uses `useShellPrefs` so consumers can persist however they like.
+- **Public API surface.** Drops `useGoogleAuth`, `GoogleConnectModal`, `googleApps`, `GeminiChat`. Adds `useMailAuth`, `MailConnectModal`, `setShellMailServer`, `mailApps`. Renamed event `open-google-connect` → `open-mail-connect`.
+
+### Shell
+- **Folder windows: free-form item positions.** Items inside a folder remember `folderX` / `folderY` instead of snapping to a fixed grid. Drag any folder item back onto the desktop to pop it out; multi-select with rubber-band / shift / cmd works inside folders too, and dragging carries the whole selection.
+- **Shared `FileIconTile`.** Desktop and folder-window icon renderers now route through a single tile component so the two surfaces never visually diverge.
+- **Window z-order persists across reloads.** New `mountModal` registration uses stable per-window keys (persisted under the `erp_activation_order` localStorage key) to slot remounted modals back into their previous z-order.
+- **Internal: stable panel lookups.** DOM queries that used to grep class names (`.text-lg, .text-sm.font-medium`) now use a dedicated `[data-window-title]` attribute, fixing taskbar-tab and window-activation glitches when titles were styled differently.
+
 ## [0.2.62] — 2026-05-09
 
 ### Added

@@ -357,7 +357,7 @@ export function getActiveWindowRoute(): string | undefined {
 function findPanelByLabel(label: string): HTMLElement | null {
   const panels = document.querySelectorAll('[data-modal-panel]');
   for (const p of Array.from(panels)) {
-    const t = p.querySelector('.text-lg, .text-sm.font-medium');
+    const t = p.querySelector('[data-window-title]');
     if (t?.textContent?.includes(label)) return p as HTMLElement;
   }
   return null;
@@ -413,7 +413,7 @@ export function ThumbCard({ id, label, maxW, maxH, titleAbove = false, onClick, 
   return (
     <div
       style={{ width: size.w, height: size.h }}
-      className="relative rounded-md overflow-hidden bg-white/95 border border-gray-300 shadow-md cursor-pointer hover:ring-2 hover:ring-blue-400 transition shrink-0"
+      className="relative rounded-md overflow-hidden bg-white/95 border border-gray-300 shadow-md cursor-pointer ring-2 ring-transparent group-hover:ring-blue-400 transition shrink-0"
       onClick={onClick}
     >
       <div ref={previewRef} className="absolute inset-0 overflow-hidden" />
@@ -509,8 +509,8 @@ function TaskbarTabPreview({ items, anchorEl, onActivate, onClose, onMouseEnter,
       onMouseLeave={onMouseLeave}
     >
       {items.map(it => (
-        <div key={it.id} className="flex flex-col items-center">
-          <span className="mb-1 max-w-[240px] truncate text-[11px] font-medium text-gray-900 bg-white/80 px-2 py-0.5 rounded shadow-sm">
+        <div key={it.id} className="group flex flex-col items-center">
+          <span className="mb-1 max-w-[240px] truncate text-[11px] font-medium text-gray-900 bg-white/80 px-2 py-0.5 rounded shadow-sm ring-2 ring-transparent transition group-hover:ring-blue-400">
             {it.label}
           </span>
           <ThumbCard
@@ -553,7 +553,7 @@ function TaskbarWindows({ openWindows, onRemove, onCloseAll, onSplitView, onActi
   }, []);
   const liveTitle = (label: string): string => {
     const panel = findPanelByLabel(label);
-    const titleEl = panel?.querySelector('.text-lg, .text-sm.font-medium');
+    const titleEl = panel?.querySelector('[data-window-title]');
     return titleEl?.textContent?.trim() || label;
   };
 
@@ -603,7 +603,7 @@ function TaskbarWindows({ openWindows, onRemove, onCloseAll, onSplitView, onActi
         if (activeModalId) {
           const panel = document.querySelector(`[data-modal-id="${activeModalId}"]`);
           if (panel) {
-            const titleEl = panel.querySelector('.text-lg, .text-sm.font-medium');
+            const titleEl = panel.querySelector('[data-window-title]');
             const titleText = titleEl?.textContent ?? '';
             isActive = group.items.some(it => titleText.includes(it.label));
           }
@@ -729,7 +729,7 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
         setTimeout(() => {
           const panels = document.querySelectorAll('[data-modal-panel]');
           panels.forEach(p => {
-            const titleEl = p.querySelector('.text-lg, .text-sm.font-medium');
+            const titleEl = p.querySelector('[data-window-title]');
             if (titleEl?.textContent?.includes(existing.label)) {
               const mid = p.getAttribute('data-modal-id');
               if (mid) activateModal(mid);
@@ -774,7 +774,7 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
         setTimeout(() => {
           const panels = document.querySelectorAll('[data-modal-panel]');
           panels.forEach(p => {
-            const titleEl = p.querySelector('.text-lg, .text-sm.font-medium');
+            const titleEl = p.querySelector('[data-window-title]');
             if (titleEl?.textContent?.includes(existing.label)) {
               const mid = p.getAttribute('data-modal-id');
               if (mid) activateModal(mid);
@@ -810,7 +810,7 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
         onActivate={(label) => {
           const panels = document.querySelectorAll('[data-modal-panel]');
           panels.forEach(p => {
-            const titleEl = p.querySelector('.text-lg, .text-sm.font-medium');
+            const titleEl = p.querySelector('[data-window-title]');
             if (titleEl?.textContent?.includes(label)) {
               const mid = p.getAttribute('data-modal-id');
               if (mid) activateModal(mid);
