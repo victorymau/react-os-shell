@@ -15,7 +15,7 @@
  * Long-term this file is removed when each call site migrates to
  * `useShellPrefs()` directly.
  */
-import axios, { AxiosInstance } from 'axios';
+import type { AxiosInstance } from 'axios';
 
 let _apiClient: AxiosInstance | null = null;
 
@@ -53,5 +53,3 @@ const apiClient: AxiosInstance = new Proxy({} as AxiosInstance, {
 export default apiClient;
 // Re-export the axios type for legacy code that imports it.
 export type { AxiosInstance };
-// Provide a cheap axios stub for files that import it.
-export { axios };

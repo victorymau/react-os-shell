@@ -1,6 +1,6 @@
 {
   "name": "react-os-shell",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Desktop-style React UI shell — windows, taskbar, start menu, sticky notes, frosted glass theming, and bundled apps. Email + Calendar talk to your own IMAP/SMTP/CalDAV provider via a colocated Node bridge server.",
   "license": "MIT",
   "author": "Victor Y. Mau",

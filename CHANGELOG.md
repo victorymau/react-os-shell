@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-05-16
+
+### Fixed
+- **Chunk-graph: drop dead axios runtime import from `src/api/client.ts`.** The internal `apiClient` Proxy never actually called axios — only the `AxiosInstance` type was needed — but the file's `import axios, { AxiosInstance } from 'axios'` plus its dead `export { axios }` re-export forced tsup to emit a bare `import 'axios'` side-effect import in the chunk that hosts `apiClient`. In consumer bundles that re-inlined axios (despite the peer-dep + `external: ['axios']` rule added in 0.3.0), this gave the bundler two chunks each referencing axios with different module-init ordering requirements — surfacing as `axios.create is not a function` when one chunk's live-binding to the other's `axios` was undefined at eval time. After this fix the chunk graph has exactly one runtime axios importer (`src/api/mailClient.ts`); the apiClient chunk no longer mentions axios at all, so consumer dedup behaves as intended.
+
 ## [0.3.0] — 2026-05-16
 
 ### Removed
