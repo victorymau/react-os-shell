@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.3.6] — 2026-05-16
+
+### Changed
+- **Window initial-open heights: floor at 320 px, cap xl/2xl.** New windows previously had no upper bound for `size: 'xl'` or `size: '2xl'` — both fell through to `availH`, so on tall displays a freshly-opened Email / Spreadsheet / Browser / Calendar window filled the entire viewport. The ladder is now `sm: 500 / md: 600 / lg: 700 / xl: 800 / 2xl: 920`, every value still clamped to the available viewport. The open-time floor is unified at 320 px (was a 300/400 split by size); the existing CSS `minHeight: 240` at the panel stays as the manual-resize floor so users can still drag a window smaller than 320.
+
 ## [0.3.5] — 2026-05-16
 
 ### Fixed

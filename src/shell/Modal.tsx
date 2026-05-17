@@ -929,9 +929,15 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     const availW = window.innerWidth - sw - leftOffset - rightOffset - padding * 2;
     const availH = window.innerHeight - taskbarH - padding * 2;
     const w = Math.min(targetW, availW);
+    // Initial-open height ladder. 320 px is the open-time floor — the CSS
+    // minHeight (~240 px at line ~1500) stays in place as the manual-resize
+    // floor, so users can still drag a window smaller. xl/2xl previously had
+    // no cap and ballooned to fill the entire viewport on tall screens;
+    // they're now bounded at 800 / 920 px. All caps are further clamped to
+    // the available viewport, so small screens still get a window that fits.
     const h = dimensions
         ? Math.min(dimensions[1], availH)
-        : (() => { const minH = size === 'sm' ? 300 : 400; const maxH = size === 'sm' ? 500 : size === 'md' ? 600 : size === 'lg' ? 700 : availH; return Math.max(minH, Math.min(maxH, window.innerHeight - taskbarH - 80)); })();
+        : (() => { const minH = 320; const maxH = size === 'sm' ? 500 : size === 'md' ? 600 : size === 'lg' ? 700 : size === 'xl' ? 800 : 920; return Math.max(minH, Math.min(maxH, window.innerHeight - taskbarH - 80)); })();
     // Window position mode
     const posMode = getComputedStyle(document.documentElement).getPropertyValue('--window-position')?.trim() || 'cascade';
     const offset = posMode === 'cascade' ? (activationOrder.length - 1) * 30 : 0;
