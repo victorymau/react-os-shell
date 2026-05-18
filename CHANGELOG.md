@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.3.7] — 2026-05-18
+
+### Fixed
+- **Modal `autoHeight`: cap respects the window's top offset.** The CSS cap on auto-height windows was `calc(100vh - taskbar - 24px)` — the maximum window height, but the calc didn't subtract `box.y` (where the window's top edge sits). A cascaded `2xl` window opening at y ≈ 120 with tall content could therefore grow to `100vh - taskbar - 24` and end up extending past the bottom of the viewport. The cap is now `calc(100vh - box.y - taskbar - 24px)`, so the window always fits between its current top edge and the bottom of the usable area (body scrolls when content is taller).
+
 ## [0.3.6] — 2026-05-16
 
 ### Changed

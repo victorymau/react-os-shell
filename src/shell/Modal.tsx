@@ -1505,7 +1505,13 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
             // the 240 px floor only applies to non-widget app windows where
             // a near-empty body would look broken.
             minHeight: `${autoMinHeight ?? (widget ? 0 : 240)}px`,
-            maxHeight: `calc(100vh - var(--taskbar-height, 0px) - 24px)`,
+            // The cap must include `box.y` (the window's top offset). Before
+            // 0.3.7 the calc only subtracted the taskbar, so a 2xl window
+            // cascaded to y≈120 with content taller than the viewport could
+            // grow to `100vh - taskbar - 24` and end up extending past the
+            // bottom of the screen. Clamping `box.y` at 0 keeps the calc
+            // sane if a drag ever pushes the window above the top edge.
+            maxHeight: `calc(100vh - ${Math.max(0, box.y)}px - var(--taskbar-height, 0px) - 24px)`,
           } : {}),
           ...(widget && widgetAnchor === 'right' ? { right: window.innerWidth - box.x - box.w } : { left: box.x }),
           ...(zIndex < 0 && !pinnedOnTop ? { display: 'none' } : {}),
