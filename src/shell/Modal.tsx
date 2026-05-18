@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef, useState, createContext, useContext, useSyncExternalStore, cloneElement, isValidElement, type ReactNode, type ReactElement } from 'react';
+import { useEffect, useLayoutEffect, useCallback, useRef, useState, createContext, useContext, useSyncExternalStore, cloneElement, isValidElement, type ReactNode, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { confirm } from './ConfirmDialog';
@@ -1043,6 +1043,20 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     }
     return initialBox ? { x: initialBox.x, y: initialBox.y, w: initialBox.w, h: initialBox.h } : calcWindowed();
   });
+  // `autoHeight` is a *one-shot* "size to content at open time" hint, not a
+  // continuous CSS rule. We render with `height: auto` (plus the viewport-
+  // aware max-height cap) on the first paint, measure the actual rendered
+  // height in useLayoutEffect, freeze that into `box.h`, and then behave as
+  // a normal fixed-size window from there on. So dragging or resizing the
+  // browser doesn't re-shrink the window, and the user can manually resize
+  // smaller/larger like any other window. Persisted positions short-circuit
+  // the measurement step — if `boxKey` already maps to a saved h, we keep
+  // it.
+  const [autoHeightResolved, setAutoHeightResolved] = useState(() => {
+    if (!autoHeight) return true;
+    if (boxKey && _windowPositions[boxKey] && typeof _windowPositions[boxKey].h === 'number') return true;
+    return false;
+  });
   // Always-maximized layout: when the Layout sets `--layout-mode: sidebar`
   // on <html>, every non-widget Modal becomes immovable and locked to
   // calcMaximized() — no windowed state, no drag-to-restore, no maximize
@@ -1063,6 +1077,20 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   const [maximized, setMaximized] = useState(() => alwaysMaximized);
   const boxRef = useRef(box);
   boxRef.current = box;
+
+  // Measure-then-freeze autoHeight. After React commits the first paint with
+  // `height: auto` (capped by maxHeight), grab the rendered height from the
+  // panel and write it back into box.h. Subsequent renders use the fixed h
+  // — no more calc(), no more reactivity to box.y / viewport.
+  useLayoutEffect(() => {
+    if (autoHeightResolved) return;
+    const el = panelRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.height <= 0) return;
+    setBox(prev => ({ ...prev, h: rect.height }));
+    setAutoHeightResolved(true);
+  }, [autoHeightResolved]);
 
   // When sidebar mode is toggled at runtime, snap existing windows to the
   // maximized box so they instantly fill the new work area. When it's
@@ -1499,18 +1527,14 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
           ...(zIndex < 0 ? { display: 'none' } : {}),
           ...((!isActive && !pinnedOnTop && !(swipingParentKey && windowKey === swipingParentKey)) ? { display: 'none' } : {}),
         } : {
-          zIndex: pinnedOnTop ? 999 : zIndex + 1, width: box.w, height: autoHeight ? 'auto' : box.h, top: box.y,
-          ...(autoHeight ? {
-            // Widgets must fit content exactly (Weather, Currency, etc.) —
-            // the 240 px floor only applies to non-widget app windows where
-            // a near-empty body would look broken.
+          zIndex: pinnedOnTop ? 999 : zIndex + 1, width: box.w, height: (autoHeight && !autoHeightResolved) ? 'auto' : box.h, top: box.y,
+          ...((autoHeight && !autoHeightResolved) ? {
+            // First-paint-only: render the content at its natural height
+            // (clamped to viewport via maxHeight) so the layout effect below
+            // can measure it. After measurement the height is frozen into
+            // box.h and these constraints are dropped — the window stops
+            // reacting to viewport / drag changes from there on.
             minHeight: `${autoMinHeight ?? (widget ? 0 : 240)}px`,
-            // The cap must include `box.y` (the window's top offset). Before
-            // 0.3.7 the calc only subtracted the taskbar, so a 2xl window
-            // cascaded to y≈120 with content taller than the viewport could
-            // grow to `100vh - taskbar - 24` and end up extending past the
-            // bottom of the screen. Clamping `box.y` at 0 keeps the calc
-            // sane if a drag ever pushes the window above the top edge.
             maxHeight: `calc(100vh - ${Math.max(0, box.y)}px - var(--taskbar-height, 0px) - 24px)`,
           } : {}),
           ...(widget && widgetAnchor === 'right' ? { right: window.innerWidth - box.x - box.w } : { left: box.x }),

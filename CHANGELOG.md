@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.3.9] — 2026-05-19
+
+### Changed
+- **Modal `autoHeight`: measure-then-freeze on open.** Previously the auto-height window stayed in CSS `height: auto` mode for its whole lifetime, so its height would jiggle every time the user dragged it (since the cap depended on the window's top offset) or the browser resized. Now the algorithm is one-shot: render the content at its natural size on the first paint (clamped to the viewport via `max-height: calc(100vh - box.y - taskbar - 24px)`), measure the rendered height in `useLayoutEffect`, write it back into the window's `box.h`, and from then on render with a fixed pixel height like any other window. Dragging and viewport resizes no longer change the height; manual corner-resize and persisted-position restore both keep working as before.
+
 ## [0.3.8] — 2026-05-18
 
 ### Fixed
