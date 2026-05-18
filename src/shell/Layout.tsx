@@ -628,13 +628,18 @@ export default function Layout({
     root.style.setProperty('--active-header-opacity', String(activeHeaderOpacity));
     root.style.setProperty('--active-content-opacity', String(activeContentOpacity));
     root.style.setProperty('--menu-opacity', String(menuOpacity));
-    root.style.setProperty('--taskbar-height', String(taskbarH));
-    root.style.setProperty('--taskbar-width', String(taskbarW));
+    // Suffix `px` so consumers using these vars inside CSS calc() get a
+    // valid length. JS readers (parseInt(...)) handle either form. Without
+    // the unit, expressions like `calc(100vh - var(--taskbar-height) - 24px)`
+    // are invalid and the browser drops the whole property — which previously
+    // broke the Modal autoHeight cap for any consumer that wasn't a widget.
+    root.style.setProperty('--taskbar-height', `${taskbarH}px`);
+    root.style.setProperty('--taskbar-width', `${taskbarW}px`);
     root.style.setProperty('--taskbar-position', taskbarPosition);
     // Sidebar mode: width of the persistent left strip + a layout-mode
     // marker. Modal reads both — sidebar-width to offset its calcMaximized
     // box, layout-mode to switch into "always maximized" behaviour.
-    root.style.setProperty('--sidebar-width', String(sidebarWidth));
+    root.style.setProperty('--sidebar-width', `${sidebarWidth}px`);
     root.style.setProperty('--layout-mode', layoutMode);
     // Tell already-mounted Modals to refresh their alwaysMaximized flag
     // (they don't have access to ShellPrefs context — they listen for

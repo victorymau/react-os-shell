@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.3.8] — 2026-05-18
+
+### Fixed
+- **Layout: `--taskbar-height` / `--taskbar-width` / `--sidebar-width` now include `px` units.** Layout was setting these CSS custom properties as unitless numbers (`"56"` instead of `"56px"`). The shell's own JS readers used `parseInt(...)` so they didn't notice, but any CSS rule that did `calc(100vh - var(--taskbar-height) - 24px)` produced an invalid expression — and the browser silently drops invalid calc properties. That's why the 0.3.7 Modal autoHeight cap didn't actually clamp on hosts whose taskbar was visible (the calc just evaporated, leaving the window free to grow past the viewport). The values are now serialized with `px`, so calc consumers get a real length and parseInt-style consumers keep working unchanged.
+
 ## [0.3.7] — 2026-05-18
 
 ### Fixed
