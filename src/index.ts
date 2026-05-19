@@ -84,6 +84,17 @@ export { default as Desktop } from './shell/Desktop';
 // ── Built-in settings pages (consumer registers via window registry) ──
 export { default as Customization } from './settings/Customization';
 
+// ── Pageless data grid primitives ──
+export { default as EntityList } from './data/EntityList';
+export type { EntityListColumn, EntityListProps } from './data/EntityList';
+export { default as ResizableTable } from './data/ResizableTable';
+export { default as ListFooter } from './data/ListFooter';
+export { default as useTableNav } from './data/useTableNav';
+export { useColumnConfig } from './data/useColumnConfig';
+export { useInfiniteScroll } from './data/useInfiniteScroll';
+export { useSort } from './data/useSort';
+export type { ColumnDef, SortState, PaginatedResponse } from './data/types';
+
 // ── Package version (tsup-injected at build time) ──
 export { VERSION } from './version';
 

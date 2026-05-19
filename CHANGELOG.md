@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.3.12] — 2026-05-19
+
+### Added
+- **`react-os-shell/data` primitives officially documented.** The pageless data-grid surface — `EntityList`, `ResizableTable`, `ListFooter`, `useTableNav`, `useColumnConfig`, `useInfiniteScroll`, `useSort`, plus types `EntityListColumn`, `EntityListProps`, `ColumnDef`, `SortState`, `PaginatedResponse` — first landed in 0.3.10 and got iterated through 0.3.11 without CHANGELOG entries. `EntityList` composes the resizable table with infinite-scroll pagination, keyboard navigation, persistent column show/hide + widths, sort state, and a footer with total count. Modelled on the shape Django REST Framework's `PageNumberPagination` returns, but provider-agnostic. 0.3.12 picks up this morning's tweaks to `EntityList` / `ResizableTable` / `useSort` and commits the source (previously published without git tracking).
+
 ## [0.3.9] — 2026-05-19
 
 ### Changed
