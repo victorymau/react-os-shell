@@ -717,6 +717,18 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
     setOpenWindows(prev => prev.filter(m => m.id !== id));
   }, []);
 
+  // Bring the just-spawned window with `windowKey` to the front after React
+  // renders its panel. Without this, mountModal would slot the new modal into
+  // its previously-saved z-order (from localStorage), placing it behind the
+  // currently active window — wrong for user-initiated opens.
+  const activateAfterMount = (windowKey: string) => {
+    setTimeout(() => {
+      const panel = document.querySelector(`[data-modal-panel][data-window-key="${windowKey}"]`);
+      const mid = panel?.getAttribute('data-modal-id');
+      if (mid) activateModal(mid);
+    }, 50);
+  };
+
   const openEntity = useCallback((entityType: string, entityId: string, snapshot?: any, label?: string, route?: string) => {
     if (!WINDOW_REGISTRY[entityType] || !isEntityEntry(WINDOW_REGISTRY[entityType])) return;
     const id = label || entityId;
@@ -725,19 +737,10 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
     setOpenWindows(prev => {
       const existing = prev.find(m => m.entityId === entityId && m.entityType === entityType);
       if (existing) {
-        // Activate the existing window
-        setTimeout(() => {
-          const panels = document.querySelectorAll('[data-modal-panel]');
-          panels.forEach(p => {
-            const titleEl = p.querySelector('[data-window-title]');
-            if (titleEl?.textContent?.includes(existing.label)) {
-              const mid = p.getAttribute('data-modal-id');
-              if (mid) activateModal(mid);
-            }
-          });
-        }, 50);
+        activateAfterMount(existing.id);
         return prev;
       }
+      activateAfterMount(id);
       return [...prev, {
         id, type: 'modal' as const, label: label || entityId,
         route: route || window.location.pathname,
@@ -758,6 +761,7 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
         const instanceCount = prev.filter(m => m.type === 'page' && m.route === path).length;
         const nextNum = instanceCount + 1;
         const id = `page:${path}:${Math.random().toString(36).slice(2, 8)}`;
+        activateAfterMount(id);
         return [...prev, {
           id, type: 'page' as const,
           label: instanceCount === 0 ? entry.label : `${entry.label} ${nextNum}`,
@@ -771,20 +775,13 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
         if (entry.widget) {
           return prev.filter(m => m !== existing);
         }
-        setTimeout(() => {
-          const panels = document.querySelectorAll('[data-modal-panel]');
-          panels.forEach(p => {
-            const titleEl = p.querySelector('[data-window-title]');
-            if (titleEl?.textContent?.includes(existing.label)) {
-              const mid = p.getAttribute('data-modal-id');
-              if (mid) activateModal(mid);
-            }
-          });
-        }, 50);
+        activateAfterMount(existing.id);
         return prev;
       }
+      const id = `page:${path}`;
+      activateAfterMount(id);
       return [...prev, {
-        id: `page:${path}`, type: 'page' as const, label: entry.label,
+        id, type: 'page' as const, label: entry.label,
         route: path,
         openedFrom,
       }];

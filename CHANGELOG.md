@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.3.13] — 2026-05-20
+
+### Fixed
+- **Newly opened windows now come to the front.** Clicking a row in a list (e.g. opening DF#11654 from DFM Logs, or any detail popup from Sales Orders, Goods Issues, etc.) opened the detail window *behind* the list window if that detail had been opened before in this session. Root cause: `mountModal` slots a remounted modal back into its previously-saved z-order from localStorage — correct for restoring layout on page refresh, wrong for a user-initiated open. `openEntity` and `openPage` now explicitly activate the just-spawned window after React renders its panel.
+
 ## [0.3.12] — 2026-05-19
 
 ### Added
