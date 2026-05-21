@@ -82,27 +82,54 @@ export interface SpreadsheetPreviewData {
   filename: string;
 }
 
-const SPREADSHEET_EVENT_NAME = 'react-os-shell:spreadsheet-preview';
-let pendingSpreadsheet: SpreadsheetPreviewData | null = null;
+const SPREADSHEET_EVENT_NAME = 'react-os-shell:spreadsheet-preview-update';
 
-/** Stage CSV content for the next Spreadsheet window mount, or swap into an open one. */
-export function setSpreadsheetPreview(data: SpreadsheetPreviewData) {
-  pendingSpreadsheet = data;
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent(SPREADSHEET_EVENT_NAME, { detail: data }));
-  }
+/** Handle returned by `setSpreadsheetPreview`. Holds the identity of the
+ *  staged payload so a later `.update()` only targets the window that picked
+ *  it up — opening a second Spreadsheet never clobbers the first. */
+export interface SpreadsheetPreviewHandle {
+  /** Replace the data shown in the window that consumed this staging.
+   *  No-op if no window ever consumed it, or if that window has been closed. */
+  update(next: SpreadsheetPreviewData): void;
+}
+
+interface PendingSpreadsheetStage {
+  token: number;
+  data: SpreadsheetPreviewData;
+}
+
+let pendingSpreadsheet: PendingSpreadsheetStage | null = null;
+let nextSpreadsheetToken = 0;
+
+/** Stage CSV content for the next Spreadsheet window mount. The returned
+ *  handle's `update()` method swaps content in *that* specific window only. */
+export function setSpreadsheetPreview(data: SpreadsheetPreviewData): SpreadsheetPreviewHandle {
+  const token = ++nextSpreadsheetToken;
+  pendingSpreadsheet = { token, data };
+  return {
+    update(next: SpreadsheetPreviewData) {
+      if (typeof window === 'undefined') return;
+      window.dispatchEvent(new CustomEvent(SPREADSHEET_EVENT_NAME, { detail: { token, data: next } }));
+    },
+  };
 }
 
 export default function Spreadsheet() {
   const containerRef = useRef<HTMLDivElement>(null);
-  // Drain any CSV staged via setSpreadsheetPreview before the window mounted.
-  const initialPreview = (() => {
-    const p = pendingSpreadsheet;
+  // One-shot drain on first render: this instance claims whatever was staged
+  // and stores the token so it can recognise later `.update()` calls aimed
+  // at it. Subsequent mounts get nothing — they're independent windows.
+  const consumedRef = useRef<PendingSpreadsheetStage | null | undefined>(undefined);
+  if (consumedRef.current === undefined) {
+    consumedRef.current = pendingSpreadsheet;
     pendingSpreadsheet = null;
+  }
+  const initialPreview = (() => {
+    const p = consumedRef.current;
     if (!p) return null;
-    const sheet = sheetFromCSV(p.csv, 'Sheet 1');
+    const sheet = sheetFromCSV(p.data.csv, 'Sheet 1');
     if (!sheet) return null;
-    const titleName = p.filename.replace(/\.(csv|tsv|txt)$/i, '');
+    const titleName = p.data.filename.replace(/\.(csv|tsv|txt)$/i, '');
     return { sheet, title: titleName };
   })();
   const [sheets, setSheets] = useState<Sheet[]>(initialPreview ? [initialPreview.sheet] : [newSheet('Sheet 1')]);
@@ -142,15 +169,18 @@ export default function Spreadsheet() {
   }, [undo]);
   const [title, setTitle] = useState(initialPreview?.title ?? 'Untitled');
 
-  // Swap to new CSV if `setSpreadsheetPreview` is called while the window is open.
+  // Only respond to update events whose token matches our claim.
   useEffect(() => {
+    const myToken = consumedRef.current?.token;
+    if (myToken == null) return;
     const handler = (e: Event) => {
-      const next = (e as CustomEvent<SpreadsheetPreviewData>).detail;
-      const sheet = sheetFromCSV(next.csv, 'Sheet 1');
+      const detail = (e as CustomEvent<PendingSpreadsheetStage>).detail;
+      if (!detail || detail.token !== myToken) return;
+      const sheet = sheetFromCSV(detail.data.csv, 'Sheet 1');
       if (!sheet) return;
       setSheets([sheet]);
       setActiveIdx(0);
-      setTitle(next.filename.replace(/\.(csv|tsv|txt)$/i, ''));
+      setTitle(detail.data.filename.replace(/\.(csv|tsv|txt)$/i, ''));
     };
     window.addEventListener(SPREADSHEET_EVENT_NAME, handler);
     return () => window.removeEventListener(SPREADSHEET_EVENT_NAME, handler);

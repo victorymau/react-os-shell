@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.3.14] — 2026-05-21
+
+### Fixed
+- **Opening a second Preview / Spreadsheet no longer overwrites the first one's content.** `setPdfPreview` and `setSpreadsheetPreview` previously dispatched a global `CustomEvent` that *every* open Preview/Spreadsheet window listened to — so staging a second file before the new window mounted swapped the first window's content out from under it. Each window now drains the staged payload at mount and remembers its own token; the staging functions return a `PdfPreviewHandle` / `SpreadsheetPreviewHandle` whose `.update(next)` method targets only that window (use it for the documented `converting: true` placeholder → resolved-URL pattern). Existing callers that ignored the return value keep working unchanged.
+
 ## [0.3.13] — 2026-05-20
 
 ### Fixed

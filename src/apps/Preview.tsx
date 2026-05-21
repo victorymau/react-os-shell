@@ -2,8 +2,11 @@
  * Preview — windowed PDF viewer app.
  *
  * Consumers stage a PDF via `setPdfPreview({ url, filename, ... })` and then
- * call `openPage('/preview')`. If the window is already open, it swaps to the
- * new PDF in-place via a custom event.
+ * call `openPage('/preview')`. The next Preview window to mount drains the
+ * staged data — each window owns its own content, so opening a second Preview
+ * never disturbs the first. To swap content in an *already-open* window (e.g.
+ * a converting placeholder being replaced by the resolved file), keep the
+ * handle returned by `setPdfPreview` and call `.update(next)` on it.
  */
 import { useState, useEffect, useRef, createContext, useContext } from 'react';
 import { createPortal } from 'react-dom';
@@ -65,8 +68,8 @@ if (typeof window !== 'undefined' && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
 
 export interface PdfPreviewData {
   /** Object URL or remote URL of the PDF. Blob URLs are revoked when the window unmounts.
-   *  Leave blank when staging a `converting: true` placeholder; call `setPdfPreview` again
-   *  with the resolved URL once conversion finishes. */
+   *  Leave blank when staging a `converting: true` placeholder; call `handle.update({...})`
+   *  on the handle returned by `setPdfPreview` once conversion finishes. */
   url?: string;
   /** Display name (and download filename). */
   filename: string;
@@ -86,34 +89,62 @@ export interface PdfPreviewData {
   convertingMessage?: string;
 }
 
-const EVENT_NAME = 'react-os-shell:pdf-preview';
+const EVENT_NAME = 'react-os-shell:pdf-preview-update';
 
-let pendingData: PdfPreviewData | null = null;
+/** Handle returned by `setPdfPreview`. Holds the identity of the staged
+ *  payload so a later `.update()` only targets the window that picked it up
+ *  (not every open Preview, which would clobber unrelated windows). */
+export interface PdfPreviewHandle {
+  /** Replace the data shown in the window that consumed this staging.
+   *  No-op if no window ever consumed it, or if that window has been closed. */
+  update(next: PdfPreviewData): void;
+}
 
-/** Stage a PDF for the next Preview window mount, or swap into an open one. */
-export function setPdfPreview(data: PdfPreviewData) {
-  pendingData = data;
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: data }));
-  }
+interface PendingStage {
+  token: number;
+  data: PdfPreviewData;
+}
+
+let pending: PendingStage | null = null;
+let nextToken = 0;
+
+/** Stage a PDF for the next Preview window mount. The returned handle's
+ *  `update()` method swaps content in *that* specific window only — use it
+ *  to replace a `converting: true` placeholder with the resolved file. */
+export function setPdfPreview(data: PdfPreviewData): PdfPreviewHandle {
+  const token = ++nextToken;
+  pending = { token, data };
+  return {
+    update(next: PdfPreviewData) {
+      if (typeof window === 'undefined') return;
+      window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: { token, data: next } }));
+    },
+  };
 }
 
 export default function Preview() {
-  const [data, setData] = useState<PdfPreviewData | null>(() => {
-    const d = pendingData;
-    pendingData = null;
-    return d;
-  });
+  // One-shot drain on first render: this instance claims whatever was staged
+  // and stores the token so it can recognise later `.update()` calls aimed
+  // at it. Subsequent mounts get nothing — they're independent windows.
+  const consumedRef = useRef<PendingStage | null | undefined>(undefined);
+  if (consumedRef.current === undefined) {
+    consumedRef.current = pending;
+    pending = null;
+  }
+  const [data, setData] = useState<PdfPreviewData | null>(consumedRef.current?.data ?? null);
 
-  // Swap to a new PDF if `setPdfPreview` is called while the window is open.
+  // Only respond to update events whose token matches our claim.
   useEffect(() => {
+    const myToken = consumedRef.current?.token;
+    if (myToken == null) return;
     const handler = (e: Event) => {
-      const next = (e as CustomEvent<PdfPreviewData>).detail;
+      const detail = (e as CustomEvent<PendingStage>).detail;
+      if (!detail || detail.token !== myToken) return;
       setData(prev => {
-        if (prev?.url && prev.url !== next.url && prev.url.startsWith('blob:')) {
+        if (prev?.url && prev.url !== detail.data.url && prev.url.startsWith('blob:')) {
           URL.revokeObjectURL(prev.url);
         }
-        return next;
+        return detail.data;
       });
     };
     window.addEventListener(EVENT_NAME, handler);
@@ -185,10 +216,9 @@ export default function Preview() {
       return;
     }
     const url = URL.createObjectURL(file);
-    // Local-only update: do NOT route through setPdfPreview, which dispatches
-    // a global event that every other open Preview window also listens to —
-    // that would replace whatever those other windows are showing. Update
-    // only this instance's state.
+    // Local-only update: setPdfPreview stages content for the *next* window
+    // to mount — calling it from inside an open window would overwrite that
+    // slot and steal the payload from whoever opens next.
     setData(prev => {
       if (prev?.url?.startsWith('blob:') && prev.url !== url) {
         URL.revokeObjectURL(prev.url);
