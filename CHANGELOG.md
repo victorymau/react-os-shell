@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.3.17] — 2026-05-22
+
+### Added
+- **DXF Preview: Horizontal (H) and Vertical (V) measurement modes.** The measure tool's mode pill grows from `Point | ⊥` to `Point | ⊥ | H | V`. H reports the horizontal distance (Δx) between two picks, V reports the vertical distance (Δy) — equivalent to AutoCAD's `DIMLINEAR` with the H/V option. Unlike `⊥` mode neither requires snapping to a line first; the reference direction is the X or Y axis through the first pick, and the dashed reference-axis preview line draws horizontally / vertically so the user can confirm which axis the dimension is being taken on before the second pick.
+
 ## [0.3.16] — 2026-05-22
 
 ### Fixed

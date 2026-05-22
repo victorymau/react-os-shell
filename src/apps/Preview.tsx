@@ -655,12 +655,13 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
   // space against a cached list of every line segment in the scene
   // (built once on viewer load).
   const [measureEnabled, setMeasureEnabled] = useState(false);
-  const [measureMode, setMeasureMode] = useState<'point' | 'perp'>('point');
+  const [measureMode, setMeasureMode] = useState<'point' | 'perp' | 'horizontal' | 'vertical'>('point');
   const [measureDistance, setMeasureDistance] = useState<number | null>(null);
   const measureRef = useRef<{
     /** Picked scene points, at most two. */
     picks: { x: number; y: number }[];
-    /** Direction vector of the first picked line in ⊥ mode (unit-length, scene-space). */
+    /** Direction vector of the first picked line in ⊥ mode (unit-length, scene-space).
+     *  In H / V modes this is unused — the direction is implicit from `measureMode`. */
     lineDir: { dx: number; dy: number } | null;
     /** Imperative DOM nodes — recreated on each enable. */
     overlay: HTMLDivElement | null;
@@ -991,12 +992,17 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
       el.style.top = `${p.y}px`;
     };
 
-    // For ⊥ mode, the rendered line goes from the second pick perpendicular
-    // to the first line — exactly the same idea as the STP version.
+    // The rendered line depends on mode:
+    //   - point: straight line between a and b.
+    //   - ⊥:     perpendicular from b onto the captured reference line —
+    //            visible segment goes from b to its foot on that line.
+    //   - H / V: linear dimension along the X or Y axis (AutoCAD DIMLINEAR
+    //            style). Visible segment goes from a horizontally /
+    //            vertically to b's projection on that axis through a.
     const computeRenderedEnds = () => {
       const s = measureRef.current!;
       const a = s.picks[0];
-      let b = s.picks[1];
+      const b = s.picks[1];
       if (measureMode === 'perp' && s.lineDir) {
         // P_perp is the foot of the perpendicular from b onto the line
         // through a with direction s.lineDir.
@@ -1008,6 +1014,12 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
         // The visible perpendicular line goes between b and that foot.
         return { from: { x: fx, y: fy }, to: { x: b.x, y: b.y } };
       }
+      if (measureMode === 'horizontal') {
+        return { from: a, to: { x: b.x, y: a.y } };
+      }
+      if (measureMode === 'vertical') {
+        return { from: a, to: { x: a.x, y: b.y } };
+      }
       return { from: a, to: b };
     };
 
@@ -1017,23 +1029,29 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
       // Markers
       if (s.markers[0]) positionMarker(s.markers[0], s.picks[0].x, s.picks[0].y);
       if (s.markers[1]) positionMarker(s.markers[1], s.picks[1].x, s.picks[1].y);
-      // ⊥ reference line — dashed extension across the canvas, drawn from
-      // the first pick along the captured segment direction. Lets the user
-      // see exactly which line was captured (catches bad snaps).
-      if (measureMode === 'perp' && s.picks.length >= 1 && s.lineDir && s.refLine) {
+      // Reference-axis preview — dashed line across the canvas through the
+      // first pick along the active direction. In ⊥ mode the direction is
+      // captured from the snapped segment; in H/V it's the X/Y axis. Lets
+      // the user see exactly which axis the measurement is being taken on.
+      const refDir = measureMode === 'horizontal'
+        ? { dx: 1, dy: 0 }
+        : measureMode === 'vertical'
+          ? { dx: 0, dy: 1 }
+          : (measureMode === 'perp' ? s.lineDir : null);
+      if (refDir && s.picks.length >= 1 && s.refLine) {
         const a = s.picks[0];
         const w = canvas.clientWidth, h = canvas.clientHeight;
         const screenSpan = Math.hypot(w, h) * 4; // generous extension in px
         // Scene-per-pixel along the direction so the dashed line stretches
         // beyond the visible canvas (visible portion gets clipped by SVG).
         const ap = pxFromScene(a.x, a.y);
-        const probe = pxFromScene(a.x + s.lineDir.dx, a.y + s.lineDir.dy);
+        const probe = pxFromScene(a.x + refDir.dx, a.y + refDir.dy);
         const pxLen = Math.hypot(probe.x - ap.x, probe.y - ap.y) || 1;
         const sceneStep = screenSpan / pxLen;
-        const x0 = a.x - s.lineDir.dx * sceneStep;
-        const y0 = a.y - s.lineDir.dy * sceneStep;
-        const x1 = a.x + s.lineDir.dx * sceneStep;
-        const y1 = a.y + s.lineDir.dy * sceneStep;
+        const x0 = a.x - refDir.dx * sceneStep;
+        const y0 = a.y - refDir.dy * sceneStep;
+        const x1 = a.x + refDir.dx * sceneStep;
+        const y1 = a.y + refDir.dy * sceneStep;
         const p0 = pxFromScene(x0, y0);
         const p1 = pxFromScene(x1, y1);
         s.refLine.setAttribute('x1', String(p0.x));
@@ -1179,6 +1197,12 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
           // Cross product magnitude with unit direction = perpendicular distance.
           dist = Math.abs(dx * s.lineDir.dy - dy * s.lineDir.dx);
           suffix = ' ⊥';
+        } else if (measureMode === 'horizontal') {
+          dist = Math.abs(b.x - a.x);
+          suffix = ' ↔';
+        } else if (measureMode === 'vertical') {
+          dist = Math.abs(b.y - a.y);
+          suffix = ' ↕';
         } else {
           const dx = b.x - a.x, dy = b.y - a.y;
           dist = Math.sqrt(dx * dx + dy * dy);
@@ -1304,11 +1328,37 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
             >
               ⊥
             </button>
+            <button
+              onClick={() => setMeasureMode('horizontal')}
+              className={`px-2 transition-colors ${measureMode === 'horizontal' ? 'bg-orange-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+              title="Horizontal — distance along the X axis between two picks (AutoCAD DIMLINEAR horizontal)"
+            >
+              H
+            </button>
+            <button
+              onClick={() => setMeasureMode('vertical')}
+              className={`px-2 transition-colors ${measureMode === 'vertical' ? 'bg-orange-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+              title="Vertical — distance along the Y axis between two picks (AutoCAD DIMLINEAR vertical)"
+            >
+              V
+            </button>
           </div>
         )}
         {measureEnabled && measureDistance !== null && (
-          <div className="px-2 py-1 text-[11px] font-mono font-semibold text-orange-600 bg-orange-50 border border-orange-200 rounded whitespace-nowrap" title={measureMode === 'perp' ? 'Perpendicular distance from second pick to first line' : 'Straight-line distance between the two picked points'}>
-            {formatMeasureDistance(measureDistance)}{measureMode === 'perp' ? ' ⊥' : ''}
+          <div
+            className="px-2 py-1 text-[11px] font-mono font-semibold text-orange-600 bg-orange-50 border border-orange-200 rounded whitespace-nowrap"
+            title={
+              measureMode === 'perp' ? 'Perpendicular distance from second pick to first line'
+              : measureMode === 'horizontal' ? 'Horizontal distance (Δx) between the two picked points'
+              : measureMode === 'vertical' ? 'Vertical distance (Δy) between the two picked points'
+              : 'Straight-line distance between the two picked points'
+            }
+          >
+            {formatMeasureDistance(measureDistance)}
+            {measureMode === 'perp' ? ' ⊥'
+              : measureMode === 'horizontal' ? ' ↔'
+              : measureMode === 'vertical' ? ' ↕'
+              : ''}
           </div>
         )}
         <button onClick={handleResetView} className={btn} title="Fit drawing to view">Fit</button>
