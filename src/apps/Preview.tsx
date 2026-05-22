@@ -1011,47 +1011,98 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
 
     // ── Snap detection in screen space ────────────────────────────
     const SNAP_PX = 12;
+    // Segment ↔ segment intersection in scene space. Returns the
+    // crossing point if both parametric coords land inside [0, 1];
+    // otherwise null (parallel, collinear, or crossing extends past
+    // either segment).
+    const segSegIntersect = (A: { ax: number; ay: number; bx: number; by: number },
+                             B: { ax: number; ay: number; bx: number; by: number }) => {
+      const x1 = A.ax, y1 = A.ay, x2 = A.bx, y2 = A.by;
+      const x3 = B.ax, y3 = B.ay, x4 = B.bx, y4 = B.by;
+      const d = (x2 - x1) * (y4 - y3) - (y2 - y1) * (x4 - x3);
+      if (Math.abs(d) < 1e-12) return null;
+      const t = ((x3 - x1) * (y4 - y3) - (y3 - y1) * (x4 - x3)) / d;
+      const u = ((x3 - x1) * (y2 - y1) - (y3 - y1) * (x2 - x1)) / d;
+      // Slight tolerance on the [0, 1] check so floating-point error at
+      // shared endpoints doesn't reject valid intersections.
+      const eps = 1e-6;
+      if (t < -eps || t > 1 + eps || u < -eps || u > 1 + eps) return null;
+      return { x: x1 + t * (x2 - x1), y: y1 + t * (y2 - y1) };
+    };
+
     const findSnap = (cx: number, cy: number) => {
       const s = measureRef.current;
       if (!s || !ready) return null;
       let best: {
         sx: number; sy: number;
-        type: 'endpoint' | 'line';
+        type: 'endpoint' | 'line' | 'intersection';
         dir?: { dx: number; dy: number };
       } | null = null;
       let bestD2 = SNAP_PX * SNAP_PX;
+
+      // Pass 1: endpoint + nearest-point-on-line per segment. Also
+      // collect segments whose nearest part is within ~3× snap distance
+      // of the cursor — these are the candidates for the pairwise
+      // intersection pass below. Using a wider radius here catches
+      // intersections that sit just outside the per-segment snap zone
+      // but well inside the cursor's snap tolerance.
+      const NEARBY_PX = SNAP_PX * 3;
+      const nearbyD2 = NEARBY_PX * NEARBY_PX;
+      const nearby: typeof s.segments = [];
       for (const seg of s.segments) {
         const ap = pxFromScene(seg.ax, seg.ay);
         const bp = pxFromScene(seg.bx, seg.by);
-        // Endpoint snaps still carry the parent segment's direction so that
-        // ⊥ mode can use a corner pick as the reference line — corners are
-        // exactly where users want to anchor a perpendicular measurement.
         const ldx = seg.bx - seg.ax, ldy = seg.by - seg.ay;
         const llen = Math.sqrt(ldx * ldx + ldy * ldy) || 1;
         const segDir = { dx: ldx / llen, dy: ldy / llen };
         // Endpoint A
         let dx = cx - ap.x, dy = cy - ap.y;
-        let d2 = dx * dx + dy * dy;
-        if (d2 < bestD2) { best = { sx: seg.ax, sy: seg.ay, type: 'endpoint', dir: segDir }; bestD2 = d2; }
+        let dEpA2 = dx * dx + dy * dy;
+        if (dEpA2 < bestD2) { best = { sx: seg.ax, sy: seg.ay, type: 'endpoint', dir: segDir }; bestD2 = dEpA2; }
         // Endpoint B
         dx = cx - bp.x; dy = cy - bp.y;
-        d2 = dx * dx + dy * dy;
-        if (d2 < bestD2) { best = { sx: seg.bx, sy: seg.by, type: 'endpoint', dir: segDir }; bestD2 = d2; }
+        let dEpB2 = dx * dx + dy * dy;
+        if (dEpB2 < bestD2) { best = { sx: seg.bx, sy: seg.by, type: 'endpoint', dir: segDir }; bestD2 = dEpB2; }
         // Nearest point on segment (in screen space).
         const sdx = bp.x - ap.x, sdy = bp.y - ap.y;
         const len2 = sdx * sdx + sdy * sdy;
+        let dLine2 = Infinity;
         if (len2 > 0) {
           const t = ((cx - ap.x) * sdx + (cy - ap.y) * sdy) / len2;
           if (t > 0 && t < 1) {
             const px = ap.x + t * sdx, py = ap.y + t * sdy;
             dx = cx - px; dy = cy - py;
-            d2 = dx * dx + dy * dy;
-            if (d2 < bestD2) {
+            dLine2 = dx * dx + dy * dy;
+            if (dLine2 < bestD2) {
               const sx = seg.ax + t * (seg.bx - seg.ax);
               const sy = seg.ay + t * (seg.by - seg.ay);
               best = { sx, sy, type: 'line', dir: segDir };
-              bestD2 = d2;
+              bestD2 = dLine2;
             }
+          }
+        }
+        if (dEpA2 < nearbyD2 || dEpB2 < nearbyD2 || dLine2 < nearbyD2) {
+          nearby.push(seg);
+        }
+      }
+
+      // Pass 2: intersection snap. An intersection of two nearby segments
+      // takes priority over endpoint and line snaps — that's what the
+      // user is looking for when they hover near a crossing. If multiple
+      // intersections sit within the snap tolerance, prefer the closest.
+      for (let i = 0; i < nearby.length; i++) {
+        for (let j = i + 1; j < nearby.length; j++) {
+          const ix = segSegIntersect(nearby[i], nearby[j]);
+          if (!ix) continue;
+          const p = pxFromScene(ix.x, ix.y);
+          const dx = cx - p.x, dy = cy - p.y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 >= SNAP_PX * SNAP_PX) continue;
+          // Override endpoint/line snaps unconditionally; among
+          // intersections, keep the closest one.
+          if (!best || best.type !== 'intersection' || d2 < bestD2) {
+            best = { sx: ix.x, sy: ix.y, type: 'intersection' };
+            bestD2 = d2;
           }
         }
       }

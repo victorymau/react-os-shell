@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.3.20] — 2026-05-23
+
+### Added
+- **DXF Preview measure tool: intersection snap.** When the cursor hovers near where two line segments cross, the snap indicator now lands on the crossing point itself — even though no vertex exists there in the source DXF. Intersection snaps take priority over plain "nearest point on a line" snaps within the same 12 px tolerance, so picks land on real geometric crossings rather than approximate line surfaces. T-junctions (one segment's endpoint touching another mid-segment) snap to the touch point, and corners where two segments meet at shared endpoints behave the same as before. Implementation: after the existing endpoint/line pass, the finder collects every segment within ~3× snap radius of the cursor and runs a pairwise segment-segment intersection check on that small set — typically only a handful of segments are that close, so cost stays well under 1 ms per mouse move even on dense drawings.
+
 ## [0.3.19] — 2026-05-23
 
 ### Changed
