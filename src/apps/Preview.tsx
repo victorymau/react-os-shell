@@ -1011,23 +1011,24 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
 
     // ── Snap detection in screen space ────────────────────────────
     const SNAP_PX = 12;
-    // Segment ↔ segment intersection in scene space. Returns the
-    // crossing point if both parametric coords land inside [0, 1];
-    // otherwise null (parallel, collinear, or crossing extends past
-    // either segment).
-    const segSegIntersect = (A: { ax: number; ay: number; bx: number; by: number },
-                             B: { ax: number; ay: number; bx: number; by: number }) => {
-      const x1 = A.ax, y1 = A.ay, x2 = A.bx, y2 = A.by;
-      const x3 = B.ax, y3 = B.ay, x4 = B.bx, y4 = B.by;
-      const d = (x2 - x1) * (y4 - y3) - (y2 - y1) * (x4 - x3);
-      if (Math.abs(d) < 1e-12) return null;
-      const t = ((x3 - x1) * (y4 - y3) - (y3 - y1) * (x4 - x3)) / d;
-      const u = ((x3 - x1) * (y2 - y1) - (y3 - y1) * (x2 - x1)) / d;
-      // Slight tolerance on the [0, 1] check so floating-point error at
-      // shared endpoints doesn't reject valid intersections.
-      const eps = 1e-6;
+    // Screen-space segment ↔ segment intersection. Operates directly on
+    // the projected endpoints (which dxf-viewer's orthographic camera
+    // turns into a linear scene→screen map), so the returned point is
+    // already in pixel coords — no extra pxFromScene needed in the hot
+    // pairwise loop. Returns the screen-space crossing AND the
+    // parametric t along segment A, which we use to recover the
+    // scene-space intersection by linear interp on A's scene endpoints.
+    const segSegIntersectPx = (
+      apx: number, apy: number, bpx: number, bpy: number,
+      cpx: number, cpy: number, dpx: number, dpy: number,
+    ) => {
+      const d = (bpx - apx) * (dpy - cpy) - (bpy - apy) * (dpx - cpx);
+      if (Math.abs(d) < 1e-9) return null;
+      const t = ((cpx - apx) * (dpy - cpy) - (cpy - apy) * (dpx - cpx)) / d;
+      const u = ((cpx - apx) * (bpy - apy) - (cpy - apy) * (bpx - apx)) / d;
+      const eps = 1e-4;
       if (t < -eps || t > 1 + eps || u < -eps || u > 1 + eps) return null;
-      return { x: x1 + t * (x2 - x1), y: y1 + t * (y2 - y1) };
+      return { px: apx + t * (bpx - apx), py: apy + t * (bpy - apy), t };
     };
 
     const findSnap = (cx: number, cy: number) => {
@@ -1040,37 +1041,49 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
       } | null = null;
       let bestD2 = SNAP_PX * SNAP_PX;
 
-      // Pass 1: endpoint + nearest-point-on-line per segment. Also
-      // collect segments whose nearest part is within ~3× snap distance
-      // of the cursor — these are the candidates for the pairwise
-      // intersection pass below. Using a wider radius here catches
-      // intersections that sit just outside the per-segment snap zone
-      // but well inside the cursor's snap tolerance.
-      const NEARBY_PX = SNAP_PX * 3;
-      const nearbyD2 = NEARBY_PX * NEARBY_PX;
-      const nearby: typeof s.segments = [];
+      // Pass 1: endpoint + nearest-point-on-line per segment. While
+      // walking, accumulate any segment whose nearest part falls inside
+      // the snap-tolerance radius around the cursor — those are the
+      // candidates for the pairwise intersection pass below. Storing the
+      // projected endpoints (ap.x/y, bp.x/y) avoids re-running
+      // pxFromScene per intersection candidate, which was the source of
+      // the lag.
+      //
+      // The candidate radius is the snap tolerance itself (12 px), not a
+      // larger value. Reasoning: if an intersection sits within SNAP_PX
+      // of the cursor, both contributing segments necessarily pass
+      // within SNAP_PX of the cursor too — so they will appear here.
+      const candidateD2 = SNAP_PX * SNAP_PX;
+      const cand: { seg: typeof s.segments[number]; apx: number; apy: number; bpx: number; bpy: number }[] = [];
       for (const seg of s.segments) {
         const ap = pxFromScene(seg.ax, seg.ay);
         const bp = pxFromScene(seg.bx, seg.by);
+        const apx = ap.x, apy = ap.y, bpx = bp.x, bpy = bp.y;
+        // Cheap reject: if BOTH endpoints are far outside cursor's snap
+        // radius AND on the same side of the cursor along each axis,
+        // the segment can't be near the cursor.
+        const rejectX = (apx < cx - SNAP_PX && bpx < cx - SNAP_PX) || (apx > cx + SNAP_PX && bpx > cx + SNAP_PX);
+        const rejectY = (apy < cy - SNAP_PX && bpy < cy - SNAP_PX) || (apy > cy + SNAP_PX && bpy > cy + SNAP_PX);
+        if (rejectX || rejectY) continue;
         const ldx = seg.bx - seg.ax, ldy = seg.by - seg.ay;
         const llen = Math.sqrt(ldx * ldx + ldy * ldy) || 1;
         const segDir = { dx: ldx / llen, dy: ldy / llen };
         // Endpoint A
-        let dx = cx - ap.x, dy = cy - ap.y;
-        let dEpA2 = dx * dx + dy * dy;
+        let dx = cx - apx, dy = cy - apy;
+        const dEpA2 = dx * dx + dy * dy;
         if (dEpA2 < bestD2) { best = { sx: seg.ax, sy: seg.ay, type: 'endpoint', dir: segDir }; bestD2 = dEpA2; }
         // Endpoint B
-        dx = cx - bp.x; dy = cy - bp.y;
-        let dEpB2 = dx * dx + dy * dy;
+        dx = cx - bpx; dy = cy - bpy;
+        const dEpB2 = dx * dx + dy * dy;
         if (dEpB2 < bestD2) { best = { sx: seg.bx, sy: seg.by, type: 'endpoint', dir: segDir }; bestD2 = dEpB2; }
         // Nearest point on segment (in screen space).
-        const sdx = bp.x - ap.x, sdy = bp.y - ap.y;
+        const sdx = bpx - apx, sdy = bpy - apy;
         const len2 = sdx * sdx + sdy * sdy;
         let dLine2 = Infinity;
         if (len2 > 0) {
-          const t = ((cx - ap.x) * sdx + (cy - ap.y) * sdy) / len2;
+          const t = ((cx - apx) * sdx + (cy - apy) * sdy) / len2;
           if (t > 0 && t < 1) {
-            const px = ap.x + t * sdx, py = ap.y + t * sdy;
+            const px = apx + t * sdx, py = apy + t * sdy;
             dx = cx - px; dy = cy - py;
             dLine2 = dx * dx + dy * dy;
             if (dLine2 < bestD2) {
@@ -1081,27 +1094,32 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
             }
           }
         }
-        if (dEpA2 < nearbyD2 || dEpB2 < nearbyD2 || dLine2 < nearbyD2) {
-          nearby.push(seg);
+        if (dEpA2 < candidateD2 || dEpB2 < candidateD2 || dLine2 < candidateD2) {
+          cand.push({ seg, apx, apy, bpx, bpy });
         }
       }
 
-      // Pass 2: intersection snap. An intersection of two nearby segments
-      // takes priority over endpoint and line snaps — that's what the
-      // user is looking for when they hover near a crossing. If multiple
-      // intersections sit within the snap tolerance, prefer the closest.
-      for (let i = 0; i < nearby.length; i++) {
-        for (let j = i + 1; j < nearby.length; j++) {
-          const ix = segSegIntersect(nearby[i], nearby[j]);
+      // Pass 2: pairwise intersection among candidates. Both endpoints
+      // and the intersection point are checked entirely in screen space
+      // (no pxFromScene), so this is just a few multiplies and adds per
+      // pair — fast even with a couple of dozen candidates.
+      for (let i = 0; i < cand.length; i++) {
+        const A = cand[i];
+        for (let j = i + 1; j < cand.length; j++) {
+          const B = cand[j];
+          const ix = segSegIntersectPx(A.apx, A.apy, A.bpx, A.bpy, B.apx, B.apy, B.bpx, B.bpy);
           if (!ix) continue;
-          const p = pxFromScene(ix.x, ix.y);
-          const dx = cx - p.x, dy = cy - p.y;
+          const dx = cx - ix.px, dy = cy - ix.py;
           const d2 = dx * dx + dy * dy;
           if (d2 >= SNAP_PX * SNAP_PX) continue;
-          // Override endpoint/line snaps unconditionally; among
-          // intersections, keep the closest one.
+          // Override endpoint/line snaps unconditionally — intersection
+          // takes priority. Among intersections, keep the closest.
           if (!best || best.type !== 'intersection' || d2 < bestD2) {
-            best = { sx: ix.x, sy: ix.y, type: 'intersection' };
+            // Recover scene-space intersection by linear interp on A's
+            // scene endpoints (the projection is affine for ortho).
+            const sx = A.seg.ax + ix.t * (A.seg.bx - A.seg.ax);
+            const sy = A.seg.ay + ix.t * (A.seg.by - A.seg.ay);
+            best = { sx, sy, type: 'intersection' };
             bestD2 = d2;
           }
         }

@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.3.21] — 2026-05-23
+
+### Fixed
+- **DXF Preview measure tool: snap lag on dense drawings.** 0.3.20's intersection-snap pass was calling `pxFromScene` (Vector3 + matrix-multiply) for every candidate pair, which added ~k² projections per mouse move and stalled the cursor on busy drawings. The pairwise check now runs entirely in screen space against the projected endpoints we'd already computed for the per-segment endpoint/line snap, and recovers the scene-space intersection by linear interpolation on the segment (exact for the orthographic camera dxf-viewer uses). Also added a cheap bounding-box reject up front — segments with both endpoints clearly off one side of the cursor's snap radius skip the rest of the loop entirely.
+
 ## [0.3.20] — 2026-05-23
 
 ### Added
