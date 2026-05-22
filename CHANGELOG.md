@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.3.19] — 2026-05-23
+
+### Changed
+- **DXF Preview measure tool: drop the ⊥ style toggle; AutoCAD DIMLINEAR rendering is now always on.** Arrow heads at both dim-line ends + extension line from the second pick are part of every H/V measurement now — the visual is no longer behind a separate switch.
+
+### Added
+- **DXF Preview measure tool: fixed-distance input for H/V.** A small numeric input appears next to the mode pill whenever H or V is active. Typing a value (e.g. `30`) locks the second pick's axis-aligned coordinate to `first_pick + 30` (signed by which side of A the user clicks). The dim now renders as a *chain*: an A→R leg labelled with the fixed value, and an R→B perpendicular leg showing the actual measurement, which becomes the orthogonal distance (Δy in H, Δx in V). Editing or clearing the fixed value re-locks the second pick on the fly without losing it — useful for "this feature is 30mm horizontal from A; how far is it vertically?" workflows.
+
 ## [0.3.18] — 2026-05-23
 
 ### Changed

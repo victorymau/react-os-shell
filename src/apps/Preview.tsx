@@ -656,28 +656,45 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
   // (built once on viewer load).
   const [measureEnabled, setMeasureEnabled] = useState(false);
   const [measureMode, setMeasureMode] = useState<'point' | 'horizontal' | 'vertical'>('horizontal');
-  /** When on, dimensions render AutoCAD-style: extension lines from each
-   *  pick + dim line with arrow heads at both ends. When off, just a plain
-   *  line. Toggled by the ⊥ button. Defaults on. */
-  const [measureAutocad, setMeasureAutocad] = useState(true);
   const [measureDistance, setMeasureDistance] = useState<number | null>(null);
+  /** When set in H or V mode, the second pick's X (H) or Y (V) snaps to
+   *  the first pick's coord + this value, sign-matched to whichever side
+   *  of A the user clicked on. The displayed measurement then becomes
+   *  the perpendicular distance (Δy in H, Δx in V) — useful for "feature
+   *  is 30mm horizontal from A; how far is it vertically?" workflows. */
+  const [measureFixedDist, setMeasureFixedDist] = useState<number | null>(null);
+  /** Raw text in the fixed-distance input — kept separate so partial
+   *  edits (e.g. just "-") don't clobber the parsed value with NaN. */
+  const [measureFixedInput, setMeasureFixedInput] = useState('');
   // Refs that mirror the React state so the main measure effect can read
   // the current values without rebuilding when the user switches mode or
-  // style — picks are preserved across these changes.
+  // changes the fixed distance — picks are preserved across these
+  // changes.
   const measureModeRef = useRef(measureMode);
-  const measureAutocadRef = useRef(measureAutocad);
+  const measureFixedDistRef = useRef(measureFixedDist);
   useEffect(() => { measureModeRef.current = measureMode; }, [measureMode]);
-  useEffect(() => { measureAutocadRef.current = measureAutocad; }, [measureAutocad]);
+  useEffect(() => { measureFixedDistRef.current = measureFixedDist; }, [measureFixedDist]);
   /** Exposed by the measure effect so other effects can ask it to redraw
-   *  using the current refs (e.g. after mode/style change). */
+   *  using the current refs (e.g. after mode / fixed-distance change). */
   const measureRedrawRef = useRef<(() => void) | null>(null);
   const measureRef = useRef<{
-    /** Picked scene points, at most two. */
+    /** Effective scene points used for the measurement, at most two.
+     *  In a fixed-distance scenario, picks[1] is the *locked* position
+     *  (axis-snapped to A + fixed), not the raw click. */
     picks: { x: number; y: number }[];
+    /** Raw second-pick click position, kept separately so we can
+     *  re-derive picks[1] when measureFixedDist changes without
+     *  forcing the user to re-pick. */
+    rawSecondClick: { x: number; y: number } | null;
     /** Imperative DOM nodes — recreated on each enable. */
     overlay: HTMLDivElement | null;
     svg: SVGSVGElement | null;
+    /** Main dim line (B-leg in fixed-distance mode). */
     line: SVGLineElement | null;
+    /** Fixed-axis leg (A → R) shown only when measureFixedDist is set. */
+    fixedLine: SVGLineElement | null;
+    /** Label for the fixed-axis leg. */
+    fixedLabel: HTMLDivElement | null;
     /** Dashed extension of the dim-axis through the first pick. */
     refLine: SVGLineElement | null;
     /** AutoCAD-style extension lines from each pick to the dim line. */
@@ -821,15 +838,22 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
   //   - V:     distance along the Y axis (|Δy|). Dim line drawn through
   //            pick A vertically, ending at pick B's projected Y.
   //
-  // A separate ⊥ toggle controls *style* (independent of mode): when on,
-  // the dim line gets arrow heads at both ends and (for H/V) an
-  // extension line from the second pick to the dim line — the classic
-  // AutoCAD DIMLINEAR look. When off, just a plain line.
+  // All dimensions render AutoCAD DIMLINEAR-style — arrow heads at both
+  // ends, plus an extension line dropping from the second pick to the
+  // dim line in H/V mode.
   //
-  // Switching mode or style preserves the two picks — the overlay just
-  // re-renders. The main setup effect therefore intentionally does not
-  // depend on measureMode / measureAutocad; a smaller effect calls
-  // measureRedrawRef.current() on those changes instead.
+  // H/V also accept a *fixed-distance* input. When set, the second pick's
+  // X (in H) or Y (in V) snaps to the first pick's coord plus that value
+  // (signed by which side of A the user clicked), and the displayed
+  // measurement becomes the *perpendicular* component — i.e. "this
+  // feature is 30mm horizontally from A; how far is it vertically?". The
+  // chain dim renders both legs: a fixed-value leg from A → R, and the
+  // perpendicular measurement leg from R → B.
+  //
+  // Switching mode or editing the fixed distance preserves the two picks
+  // — the overlay just re-renders. The main setup effect therefore
+  // intentionally does not depend on measureMode / measureFixedDist; a
+  // smaller effect calls measureRedrawRef.current() on those changes.
   // ──────────────────────────────────────────────────────────────────────
   useEffect(() => {
     const v = viewerRef.current;
@@ -913,13 +937,24 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
     lineEl.style.display = 'none';
     svg.appendChild(lineEl);
 
+    // Second dim line — only used in fixed-distance mode, drawing the
+    // A→R "locked" segment. Visually identical to lineEl so they read as
+    // one continuous AutoCAD chain dim.
+    const fixedLineEl = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    fixedLineEl.setAttribute('stroke', '#ff8800');
+    fixedLineEl.setAttribute('stroke-width', '1.5');
+    fixedLineEl.setAttribute('stroke-linecap', 'round');
+    fixedLineEl.style.display = 'none';
+    svg.appendChild(fixedLineEl);
+
     const snapEl = document.createElement('div');
     snapEl.style.cssText = `position:absolute;width:14px;height:14px;border:2px solid #ff8800;background:rgba(255,255,255,0.7);transform:translate(-50%,-50%) rotate(45deg);box-sizing:border-box;display:none;`;
     overlay.appendChild(snapEl);
 
     measureRef.current = {
       picks: [],
-      overlay, svg, line: lineEl, refLine: refLineEl,
+      rawSecondClick: null,
+      overlay, svg, line: lineEl, fixedLine: fixedLineEl, fixedLabel: null, refLine: refLineEl,
       extLineA, extLineB,
       markers: [], label: null, snap: snapEl,
       segments: [],
@@ -1050,38 +1085,66 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
       el.style.top = `${p.y}px`;
     };
 
-    // The dim line endpoints depend on the current mode:
-    //   - point: straight diagonal line between a and b.
-    //   - H:     horizontal line through a's Y, ending at b's X.
-    //   - V:     vertical line through a's X, ending at b's Y.
-    //
-    // Reads mode from the ref so it always reflects the current React
-    // state — that's how mode switches re-render without losing picks.
-    const computeRenderedEnds = () => {
+    // Resolve picks[1] from the raw click + active fixedDist. In a
+    // fixed-distance H/V scenario the X (or Y) is snapped to A's coord +
+    // fixedDist, sign-matched to which side of A the user clicked, so
+    // the marker visually sits at the *locked* position even though the
+    // click landed elsewhere. Mutates s.picks[1] in place.
+    const reconcileLockedPick = () => {
+      const s = measureRef.current;
+      if (!s || !s.rawSecondClick || s.picks.length < 2) return;
+      const a = s.picks[0];
+      const raw = s.rawSecondClick;
+      const fixed = measureFixedDistRef.current;
+      const mode = measureModeRef.current;
+      if (fixed !== null && Number.isFinite(fixed) && (mode === 'horizontal' || mode === 'vertical')) {
+        if (mode === 'horizontal') {
+          const sign = raw.x >= a.x ? 1 : -1;
+          s.picks[1] = { x: a.x + sign * Math.abs(fixed), y: raw.y };
+        } else {
+          const sign = raw.y >= a.y ? 1 : -1;
+          s.picks[1] = { x: raw.x, y: a.y + sign * Math.abs(fixed) };
+        }
+      } else {
+        s.picks[1] = { x: raw.x, y: raw.y };
+      }
+    };
+
+    // Endpoints of the *main* dim line (always rendered when picks=2).
+    // In fixed mode this is the leg from R to B (perpendicular to the
+    // fixed axis). Without a fixed distance it's the regular H / V / Point
+    // line.
+    const computeMainDimEnds = () => {
       const s = measureRef.current!;
       const a = s.picks[0];
       const b = s.picks[1];
       const mode = measureModeRef.current;
-      if (mode === 'horizontal') {
-        return { from: a, to: { x: b.x, y: a.y } };
+      const fixed = measureFixedDistRef.current;
+      if (fixed !== null && Number.isFinite(fixed) && mode === 'horizontal') {
+        // Fixed H: main leg is vertical at b.x, from a.y to b.y.
+        return { from: { x: b.x, y: a.y }, to: { x: b.x, y: b.y } };
       }
-      if (mode === 'vertical') {
-        return { from: a, to: { x: a.x, y: b.y } };
+      if (fixed !== null && Number.isFinite(fixed) && mode === 'vertical') {
+        // Fixed V: main leg is horizontal at b.y, from a.x to b.x.
+        return { from: { x: a.x, y: b.y }, to: { x: b.x, y: b.y } };
       }
+      if (mode === 'horizontal') return { from: a, to: { x: b.x, y: a.y } };
+      if (mode === 'vertical')   return { from: a, to: { x: a.x, y: b.y } };
       return { from: a, to: b };
     };
 
     const updateOverlay = () => {
       const s = measureRef.current;
       if (!s) return;
+      reconcileLockedPick();
       const mode = measureModeRef.current;
-      const autocad = measureAutocadRef.current;
+      const fixed = measureFixedDistRef.current;
+      const fixedActive = fixed !== null && Number.isFinite(fixed) && (mode === 'horizontal' || mode === 'vertical');
       // Markers
       if (s.markers[0]) positionMarker(s.markers[0], s.picks[0].x, s.picks[0].y);
       if (s.markers[1]) positionMarker(s.markers[1], s.picks[1].x, s.picks[1].y);
-      // Reference-axis preview — dashed line across the canvas through the
-      // first pick along the X or Y axis. Helps the user confirm which
-      // axis the dimension is being taken on before the second pick.
+      // Reference-axis preview — dashed line across the canvas through
+      // the first pick along the X or Y axis.
       const refDir = mode === 'horizontal'
         ? { dx: 1, dy: 0 }
         : mode === 'vertical'
@@ -1109,34 +1172,55 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
       } else if (s.refLine) {
         s.refLine.style.display = 'none';
       }
-      // Dim line + extension lines + label
+      // Dim line + chain dim (if fixed) + extension lines + label
       if (s.picks.length === 2) {
         const a = s.picks[0], b = s.picks[1];
-        const ends = computeRenderedEnds();
+        const ends = computeMainDimEnds();
         const fp = pxFromScene(ends.from.x, ends.from.y);
         const tp = pxFromScene(ends.to.x, ends.to.y);
         s.line!.setAttribute('x1', String(fp.x));
         s.line!.setAttribute('y1', String(fp.y));
         s.line!.setAttribute('x2', String(tp.x));
         s.line!.setAttribute('y2', String(tp.y));
-        s.line!.style.display = '';
-        // AutoCAD style: draw outward arrows at the dim line ends, and
-        // (for H/V) extension lines from each pick to the dim line so the
-        // user can see how each pick relates to the dimension.
-        if (autocad) {
-          s.line!.setAttribute('marker-start', 'url(#dxf-measure-arrow)');
-          s.line!.setAttribute('marker-end', 'url(#dxf-measure-arrow)');
+        s.line!.setAttribute('marker-start', 'url(#dxf-measure-arrow)');
+        s.line!.setAttribute('marker-end', 'url(#dxf-measure-arrow)');
+        // Hide the main dim line if it's degenerate (zero-length leg —
+        // happens e.g. when picks are collinear in fixed-distance mode).
+        const mainLen = Math.hypot(tp.x - fp.x, tp.y - fp.y);
+        s.line!.style.display = mainLen > 0.5 ? '' : 'none';
+
+        // Fixed-axis leg (A → R) — only in fixed mode.
+        if (fixedActive && s.fixedLine) {
+          const r = mode === 'horizontal' ? { x: b.x, y: a.y } : { x: a.x, y: b.y };
+          const ap = pxFromScene(a.x, a.y);
+          const rp = pxFromScene(r.x, r.y);
+          s.fixedLine.setAttribute('x1', String(ap.x));
+          s.fixedLine.setAttribute('y1', String(ap.y));
+          s.fixedLine.setAttribute('x2', String(rp.x));
+          s.fixedLine.setAttribute('y2', String(rp.y));
+          s.fixedLine.setAttribute('marker-start', 'url(#dxf-measure-arrow)');
+          s.fixedLine.setAttribute('marker-end', 'url(#dxf-measure-arrow)');
+          s.fixedLine.style.display = '';
+          // Fixed-leg label — show the user's entered fixed value.
+          const fLabel = ensureFixedLabel();
+          fLabel.textContent = formatMeasureDistance(Math.abs(fixed));
+          const fcx = (ap.x + rp.x) / 2;
+          const fcy = (ap.y + rp.y) / 2;
+          fLabel.style.left = `${fcx}px`;
+          fLabel.style.top  = `${fcy}px`;
+          const w = canvas.clientWidth, h = canvas.clientHeight;
+          fLabel.style.display = (fcx < 0 || fcy < 0 || fcx > w || fcy > h) ? 'none' : '';
         } else {
-          s.line!.removeAttribute('marker-start');
-          s.line!.removeAttribute('marker-end');
+          if (s.fixedLine) s.fixedLine.style.display = 'none';
+          if (s.fixedLabel) s.fixedLabel.style.display = 'none';
         }
-        // Extension lines — only meaningful for H / V. For H, the dim line
-        // sits on a's Y; extension line B drops vertically from b to that
-        // Y. (Extension line A is zero-length since a is already on the
-        // dim line — skip it.) Mirror for V.
+
+        // Extension line — drops from second pick to the dim line in
+        // free H/V (non-fixed) mode. In fixed mode the chain dim already
+        // visually closes the loop, so no extension is needed.
         const extA = s.extLineA!;
         const extB = s.extLineB!;
-        if (autocad && mode === 'horizontal' && Math.abs(b.y - a.y) > 1e-9) {
+        if (!fixedActive && mode === 'horizontal' && Math.abs(b.y - a.y) > 1e-9) {
           const p = pxFromScene(b.x, a.y);
           const q = pxFromScene(b.x, b.y);
           extB.setAttribute('x1', String(p.x));
@@ -1145,7 +1229,7 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
           extB.setAttribute('y2', String(q.y));
           extB.style.display = '';
           extA.style.display = 'none';
-        } else if (autocad && mode === 'vertical' && Math.abs(b.x - a.x) > 1e-9) {
+        } else if (!fixedActive && mode === 'vertical' && Math.abs(b.x - a.x) > 1e-9) {
           const p = pxFromScene(a.x, b.y);
           const q = pxFromScene(b.x, b.y);
           extB.setAttribute('x1', String(p.x));
@@ -1158,6 +1242,7 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
           extA.style.display = 'none';
           extB.style.display = 'none';
         }
+        // Main-leg label — at the midpoint of the main dim line.
         if (s.label) {
           const cx = (fp.x + tp.x) / 2;
           const cy = (fp.y + tp.y) / 2;
@@ -1165,12 +1250,27 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
           s.label.style.top = `${cy}px`;
           const w = canvas.clientWidth, h = canvas.clientHeight;
           s.label.style.display = (cx < 0 || cy < 0 || cx > w || cy > h) ? 'none' : '';
+          // Hide the main label too when the leg is degenerate (no
+          // perpendicular distance to display, so nothing meaningful).
+          if (mainLen <= 0.5) s.label.style.display = 'none';
         }
       } else {
         s.line!.style.display = 'none';
+        if (s.fixedLine) s.fixedLine.style.display = 'none';
+        if (s.fixedLabel) s.fixedLabel.style.display = 'none';
         if (s.extLineA) s.extLineA.style.display = 'none';
         if (s.extLineB) s.extLineB.style.display = 'none';
       }
+    };
+
+    const ensureFixedLabel = () => {
+      const s = measureRef.current!;
+      if (s.fixedLabel) return s.fixedLabel;
+      const el = document.createElement('div');
+      el.style.cssText = `position:absolute;left:-9999px;top:-9999px;transform:translate(-50%,-50%);padding:2px 6px;font-size:11px;font-weight:600;font-family:system-ui,-apple-system,sans-serif;background:rgba(255,136,0,0.75);color:#fff;border-radius:4px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.25);pointer-events:none;`;
+      overlay.appendChild(el);
+      s.fixedLabel = el;
+      return el;
     };
 
     // ── Click-vs-drag + snap on hover ─────────────────────────────
@@ -1234,16 +1334,26 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
     };
 
     // Recompute the distance label from the current picks + active mode.
-    // Extracted so the mode/style-change effect can call it without
-    // having to know about the closure-local helpers.
+    // In fixed-distance mode the reported value is the *perpendicular*
+    // component (Δy for H, Δx for V) — the fixed value itself shows on
+    // the other dim leg's label.
     const recomputeLabel = () => {
       const s = measureRef.current;
       if (!s || s.picks.length !== 2) return;
+      reconcileLockedPick();
       const a = s.picks[0], b = s.picks[1];
       const mode = measureModeRef.current;
+      const fixed = measureFixedDistRef.current;
+      const fixedActive = fixed !== null && Number.isFinite(fixed) && (mode === 'horizontal' || mode === 'vertical');
       let dist: number;
       let suffix = '';
-      if (mode === 'horizontal') {
+      if (fixedActive && mode === 'horizontal') {
+        dist = Math.abs(b.y - a.y);
+        suffix = ' ↕';
+      } else if (fixedActive && mode === 'vertical') {
+        dist = Math.abs(b.x - a.x);
+        suffix = ' ↔';
+      } else if (mode === 'horizontal') {
         dist = Math.abs(b.x - a.x);
         suffix = ' ↔';
       } else if (mode === 'vertical') {
@@ -1259,8 +1369,8 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
       label.textContent = `${formatMeasureDistance(dist)}${suffix}`;
     };
 
-    // Expose for the mode/style-change effect — calling this redraws the
-    // overlay using whatever measureModeRef / measureAutocadRef hold.
+    // Expose for the mode / fixed-distance change effect — calling this
+    // redraws the overlay using whatever the refs currently hold.
     measureRedrawRef.current = () => {
       recomputeLabel();
       updateOverlay();
@@ -1275,7 +1385,10 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
         for (const m of s.markers) m.parentElement?.removeChild(m);
         s.markers = [];
         s.picks = [];
+        s.rawSecondClick = null;
         s.line!.style.display = 'none';
+        if (s.fixedLine) s.fixedLine.style.display = 'none';
+        if (s.fixedLabel) s.fixedLabel.style.display = 'none';
         if (s.refLine) s.refLine.style.display = 'none';
         if (s.extLineA) s.extLineA.style.display = 'none';
         if (s.extLineB) s.extLineB.style.display = 'none';
@@ -1283,10 +1396,17 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
         setMeasureDistance(null);
       }
 
-      s.picks.push({ x: p.x, y: p.y });
-      s.markers.push(makeMarker());
-
-      if (s.picks.length === 2) {
+      if (s.picks.length === 0) {
+        s.picks.push({ x: p.x, y: p.y });
+        s.markers.push(makeMarker());
+      } else {
+        // Second pick — remember the raw click so we can re-lock if the
+        // user later edits the fixed-distance input; reconcileLockedPick
+        // (called by recomputeLabel / updateOverlay) writes the effective
+        // position into picks[1].
+        s.rawSecondClick = { x: p.x, y: p.y };
+        s.picks.push({ x: p.x, y: p.y });
+        s.markers.push(makeMarker());
         recomputeLabel();
       }
       updateOverlay();
@@ -1315,17 +1435,17 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
       teardown();
       setMeasureDistance(null);
     };
-    // NOTE: measureMode / measureAutocad intentionally *not* in deps —
-    // switching mode/style preserves picks and just triggers a redraw via
-    // the separate effect below.
+    // NOTE: measureMode / measureFixedDist intentionally *not* in deps —
+    // switching mode or editing the fixed distance preserves picks and
+    // just triggers a redraw via the separate effect below.
   }, [measureEnabled, loading, error]);
 
-  // Redraw the measurement overlay when mode or AutoCAD-style toggle
-  // changes, using the picks that are already in measureRef. The main
-  // measure effect exposes `measureRedrawRef.current` for this.
+  // Redraw the measurement overlay when mode or fixed-distance changes,
+  // using the picks that are already in measureRef. The main measure
+  // effect exposes `measureRedrawRef.current` for this.
   useEffect(() => {
     measureRedrawRef.current?.();
-  }, [measureMode, measureAutocad]);
+  }, [measureMode, measureFixedDist]);
 
   const toggleLayer = (name: string) => {
     setLayers(prev => prev.map(l => {
@@ -1402,24 +1522,6 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
         </button>
         {measureEnabled && (
           <>
-            {/* AutoCAD-style toggle — when on, dimensions render with
-                extension lines + arrow heads (DIMLINEAR look). When off,
-                just a plain line between picks. Switching it on also
-                pulls Point mode out to a useful default (H) since plain
-                Point doesn't really benefit from AutoCAD styling. */}
-            <button
-              onClick={() => {
-                setMeasureAutocad(prev => {
-                  const next = !prev;
-                  if (next && measureMode === 'point') setMeasureMode('horizontal');
-                  return next;
-                });
-              }}
-              className={btn + (measureAutocad ? ' bg-orange-100 text-orange-700' : '')}
-              title={measureAutocad ? 'AutoCAD dim style is ON — extension lines + arrows' : 'AutoCAD dim style is OFF — plain line. Click to turn on (also switches to H if you\'re in Point).'}
-            >
-              ⊥
-            </button>
             <div className="flex items-stretch h-7 rounded border border-gray-200 overflow-hidden text-[11px] font-semibold">
               <button
                 onClick={() => setMeasureMode('point')}
@@ -1443,6 +1545,42 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
                 V
               </button>
             </div>
+            {/* Fixed-distance input — locks the second pick's axis-aligned
+                coord to (first pick's coord ± entered value). The
+                displayed measurement becomes the perpendicular distance.
+                Only useful in H or V mode. Sign of the offset follows
+                whichever side of the first pick the user clicks on. */}
+            {(measureMode === 'horizontal' || measureMode === 'vertical') && (
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="any"
+                  value={measureFixedInput}
+                  placeholder={measureMode === 'horizontal' ? 'fix Δx' : 'fix Δy'}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    setMeasureFixedInput(raw);
+                    if (raw.trim() === '') setMeasureFixedDist(null);
+                    else {
+                      const n = parseFloat(raw);
+                      setMeasureFixedDist(Number.isFinite(n) && n !== 0 ? n : null);
+                    }
+                  }}
+                  className="h-7 w-20 px-1.5 text-[11px] font-mono rounded border border-gray-200 bg-white text-gray-700 focus:outline-none focus:border-orange-400"
+                  title="Lock the second pick's axis coord to first pick + this value (mm). The reported measurement becomes the perpendicular distance."
+                />
+                {measureFixedDist !== null && (
+                  <button
+                    onClick={() => { setMeasureFixedDist(null); setMeasureFixedInput(''); }}
+                    className="text-gray-400 hover:text-gray-600 text-[11px] px-1"
+                    title="Clear fixed distance"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            )}
           </>
         )}
         {measureEnabled && measureDistance !== null && (
