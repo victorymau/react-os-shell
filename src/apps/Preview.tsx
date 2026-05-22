@@ -947,8 +947,64 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
     fixedLineEl.style.display = 'none';
     svg.appendChild(fixedLineEl);
 
+    // AutoCAD-style snap indicator — one container, three glyphs swapped
+    // by setSnapGlyph() based on what was matched: square for endpoint,
+    // X for intersection, bowtie/hourglass for nearest-on-line.
     const snapEl = document.createElement('div');
-    snapEl.style.cssText = `position:absolute;width:14px;height:14px;border:2px solid #ff8800;background:rgba(255,255,255,0.7);transform:translate(-50%,-50%) rotate(45deg);box-sizing:border-box;display:none;`;
+    snapEl.style.cssText = `position:absolute;transform:translate(-50%,-50%);pointer-events:none;display:none;`;
+    const SVGNS = 'http://www.w3.org/2000/svg';
+    const snapSvg = document.createElementNS(SVGNS, 'svg');
+    snapSvg.setAttribute('width', '22');
+    snapSvg.setAttribute('height', '22');
+    snapSvg.setAttribute('viewBox', '0 0 22 22');
+    snapSvg.setAttribute('style', 'overflow:visible;display:block');
+    snapEl.appendChild(snapSvg);
+    const mkSnapGlyph = (build: (g: SVGGElement) => void): SVGGElement => {
+      const g = document.createElementNS(SVGNS, 'g');
+      build(g);
+      g.style.display = 'none';
+      snapSvg.appendChild(g);
+      return g;
+    };
+    // Endpoint — hollow square (filled white, orange stroke)
+    const snapGlyphEndpoint = mkSnapGlyph((g) => {
+      const r = document.createElementNS(SVGNS, 'rect');
+      r.setAttribute('x', '4');  r.setAttribute('y', '4');
+      r.setAttribute('width', '14'); r.setAttribute('height', '14');
+      r.setAttribute('fill', 'rgba(255,255,255,0.9)');
+      r.setAttribute('stroke', '#ff8800');
+      r.setAttribute('stroke-width', '1.8');
+      g.appendChild(r);
+    });
+    // Intersection — X (two crossing diagonals)
+    const snapGlyphIntersection = mkSnapGlyph((g) => {
+      const mkLn = (x1: number, y1: number, x2: number, y2: number) => {
+        const ln = document.createElementNS(SVGNS, 'line');
+        ln.setAttribute('x1', String(x1)); ln.setAttribute('y1', String(y1));
+        ln.setAttribute('x2', String(x2)); ln.setAttribute('y2', String(y2));
+        ln.setAttribute('stroke', '#ff8800');
+        ln.setAttribute('stroke-width', '2.2');
+        ln.setAttribute('stroke-linecap', 'round');
+        return ln;
+      };
+      g.appendChild(mkLn(4, 4, 18, 18));
+      g.appendChild(mkLn(18, 4, 4, 18));
+    });
+    // Line ("nearest") — bowtie / hourglass
+    const snapGlyphLine = mkSnapGlyph((g) => {
+      const poly = document.createElementNS(SVGNS, 'polygon');
+      poly.setAttribute('points', '4,4 18,4 4,18 18,18');
+      poly.setAttribute('fill', 'rgba(255,255,255,0.9)');
+      poly.setAttribute('stroke', '#ff8800');
+      poly.setAttribute('stroke-width', '1.8');
+      poly.setAttribute('stroke-linejoin', 'round');
+      g.appendChild(poly);
+    });
+    const setSnapGlyph = (type: 'endpoint' | 'intersection' | 'line') => {
+      snapGlyphEndpoint.style.display = type === 'endpoint' ? '' : 'none';
+      snapGlyphIntersection.style.display = type === 'intersection' ? '' : 'none';
+      snapGlyphLine.style.display = type === 'line' ? '' : 'none';
+    };
     overlay.appendChild(snapEl);
 
     measureRef.current = {
@@ -1010,7 +1066,10 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
     })();
 
     // ── Snap detection in screen space ────────────────────────────
-    const SNAP_PX = 12;
+    // Tolerance in CSS px from the cursor to a candidate snap target.
+    // 18 px is wide enough to feel "sticky" without overlapping nearby
+    // unrelated features on dense drawings.
+    const SNAP_PX = 18;
     // Screen-space segment ↔ segment intersection. Operates directly on
     // the projected endpoints (which dxf-viewer's orthographic camera
     // turns into a linear scene→screen map), so the returned point is
@@ -1380,6 +1439,7 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
         s.snap.style.left = `${p.x}px`;
         s.snap.style.top = `${p.y}px`;
         s.snap.style.display = '';
+        setSnapGlyph(lastSnap.type);
       } else {
         s.snap.style.display = 'none';
       }

@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.3.22] — 2026-05-23
+
+### Changed
+- **DXF Preview measure tool: AutoCAD-style per-type snap glyphs and a wider snap zone.** The single orange diamond is replaced with three type-specific markers — a hollow **square** for endpoint, an **X** for intersection, and a **bowtie/hourglass** for nearest-on-line. The snap radius bumps from 12 px to 18 px so picks "stick" earlier and the cursor doesn't have to land exactly on a feature to snap. Priority is unchanged: intersection > endpoint > line, all within the wider tolerance.
+
 ## [0.3.21] — 2026-05-23
 
 ### Fixed
