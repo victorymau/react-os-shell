@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.3.15] — 2026-05-22
+
+### Fixed
+- **Preview: Show Edges toggle now works when Section View is on.** Section view adds stencil-helper meshes as children of each original mesh so the cap can mask correctly. OV's `GenerateEdgeModel` walks every `isMesh` in `mainModel`, so when the user toggled Show Edges (or changed the threshold) with section view active, OV produced a duplicate set of `LineSegments` *for the helpers too*, with fresh `LineBasicMaterial`s that didn't carry our clipping plane — so the new edges rendered past the cut and the toggle looked broken. The edge-settings effect now strips helper-derived edges after `SetEdgeSettings` (identifiable via the `userData.__sectionHelper` flag OV copies onto the line) and reapplies the section clipping plane to the surviving edge materials.
+
 ## [0.3.14] — 2026-05-21
 
 ### Fixed

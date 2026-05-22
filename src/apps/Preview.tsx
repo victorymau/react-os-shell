@@ -1638,6 +1638,40 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
     if (!OV || !v?.viewer) return;
     try {
       v.viewer.SetEdgeSettings(new OV.EdgeSettings(showEdges, hexToRgb(OV, edgeColor), edgeThreshold));
+
+      // OV's GenerateEdgeModel walks every mesh in mainModel — including
+      // the stencil helpers we add as children of the originals when
+      // section view is on. That produces duplicate edge LineSegments
+      // (one per helper, on top of the originals) and the new
+      // LineBasicMaterials don't carry our clipping plane, so the edges
+      // render past the cut. Strip the helper-derived edges and reapply
+      // clipping to what's left.
+      const s = sectionRef.current;
+      if (s) {
+        const helperEdges: any[] = [];
+        v.viewer.mainModel?.EnumerateEdges?.((edge: any) => {
+          if (edge.userData?.__sectionHelper) helperEdges.push(edge);
+        });
+        for (const e of helperEdges) {
+          e.parent?.remove(e);
+          e.geometry?.dispose?.();
+          e.material?.dispose?.();
+        }
+        const plane = s.plane;
+        const applyMatClip = (mat: any) => {
+          if (!mat || s.materialState.has(mat)) return;
+          s.materialState.set(mat, { clippingPlanes: mat.clippingPlanes, clipShadows: mat.clipShadows });
+          mat.clippingPlanes = [plane];
+          mat.clipShadows = true;
+          mat.needsUpdate = true;
+        };
+        v.viewer.mainModel?.EnumerateEdges?.((edge: any) => {
+          const mat = edge.material;
+          if (Array.isArray(mat)) for (const m of mat) applyMatClip(m);
+          else applyMatClip(mat);
+        });
+      }
+
       v.viewer.Render?.();
     } catch {}
   }, [showEdges, edgeColor, edgeThreshold]);
