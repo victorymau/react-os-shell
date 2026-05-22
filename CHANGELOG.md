@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.3.16] — 2026-05-22
+
+### Fixed
+- **Preview measurement label no longer leaves a phantom "…mm" chip stuck in the top-left of the canvas.** The on-canvas orange label is centered on the midpoint of the measurement (via `transform: translate(-50%, -50%)`). When the user panned/zoomed (DXF) or orbited (3D) the measurement off-screen, the midpoint projected to negative pixel coordinates — but the label's right half still rendered against the canvas's top-left edge, showing just "mm" or "…mm" with no indication of what it was measuring. The label now hides itself whenever its midpoint projects outside the canvas bounds, and is parked off-screen on creation so it never flashes at (0,0) before the first positioning pass.
+
 ## [0.3.15] — 2026-05-22
 
 ### Fixed

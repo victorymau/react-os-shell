@@ -975,7 +975,11 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
       const s = measureRef.current!;
       if (s.label) return s.label;
       const el = document.createElement('div');
-      el.style.cssText = `position:absolute;transform:translate(-50%,-50%);padding:2px 6px;font-size:11px;font-weight:600;font-family:system-ui,-apple-system,sans-serif;background:rgba(255,136,0,0.95);color:#fff;border-radius:4px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.25);pointer-events:none;`;
+      // Park the label off-screen on creation so it never flashes at (0,0)
+      // — callers always set left/top before showing it, but the browser
+      // would otherwise lay it out at the overlay's top-left corner the
+      // first frame after appendChild.
+      el.style.cssText = `position:absolute;left:-9999px;top:-9999px;transform:translate(-50%,-50%);padding:2px 6px;font-size:11px;font-weight:600;font-family:system-ui,-apple-system,sans-serif;background:rgba(255,136,0,0.95);color:#fff;border-radius:4px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.25);pointer-events:none;`;
       overlay.appendChild(el);
       s.label = el;
       return el;
@@ -1051,8 +1055,17 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
         s.line!.setAttribute('y2', String(tp.y));
         s.line!.style.display = '';
         if (s.label) {
-          s.label.style.left = `${(fp.x + tp.x) / 2}px`;
-          s.label.style.top = `${(fp.y + tp.y) / 2}px`;
+          const cx = (fp.x + tp.x) / 2;
+          const cy = (fp.y + tp.y) / 2;
+          s.label.style.left = `${cx}px`;
+          s.label.style.top = `${cy}px`;
+          // Hide the label when its midpoint falls outside the canvas (e.g.
+          // the user panned/zoomed so the measurement is off-screen).
+          // Without this, transform:translate(-50%,-50%) leaves the label's
+          // right half stuck against the top-left edge showing "…mm", which
+          // looks like a phantom indicator.
+          const w = canvas.clientWidth, h = canvas.clientHeight;
+          s.label.style.display = (cx < 0 || cy < 0 || cx > w || cy > h) ? 'none' : '';
         }
       } else {
         s.line!.style.display = 'none';
@@ -1141,6 +1154,7 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
         if (!p.lineDir) {
           // Quick visual cue — flash a hint label and bail.
           const label = ensureLabel();
+          label.style.display = '';
           label.style.opacity = '1';
           label.style.left = `${pxFromScene(p.x, p.y).x}px`;
           label.style.top = `${pxFromScene(p.x, p.y).y - 18}px`;
@@ -2290,6 +2304,10 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
       if (s.label) return s.label;
       const el = document.createElement('div');
       el.style.position = 'absolute';
+      // Park off-screen on creation so the label never flashes at (0,0)
+      // before updateLabel() positions it.
+      el.style.left = '-9999px';
+      el.style.top = '-9999px';
       el.style.transform = 'translate(-50%, -50%)';
       el.style.padding = '2px 6px';
       el.style.fontSize = '11px';
@@ -2323,8 +2341,12 @@ function StepPanel({ url, filename, onDownload, onEmail }: StepPanelProps) {
       const y = ((-projected.y + 1) / 2) * rect.height;
       s.label.style.left = `${x}px`;
       s.label.style.top = `${y}px`;
-      // Hide if behind the camera (z > 1).
-      s.label.style.opacity = projected.z > 1 ? '0' : '1';
+      // Hide if behind the camera (z > 1) OR if the midpoint projects
+      // outside the canvas — otherwise transform:translate(-50%,-50%)
+      // leaves the label's right edge stuck at the top-left corner
+      // showing "…mm" after the user orbits the measurement off-screen.
+      const offScreen = x < 0 || y < 0 || x > rect.width || y > rect.height;
+      s.label.style.opacity = (projected.z > 1 || offScreen) ? '0' : '1';
     };
 
     // Continuous re-projection so the label tracks orbit/pan/zoom — RAF is
