@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.3.18] — 2026-05-23
+
+### Changed
+- **DXF Preview measure tool: AutoCAD DIMLINEAR-style rendering, plus picks survive mode switches.** The measure pill is now `Point | H | V` with a separate `⊥` button before it that toggles AutoCAD-style decoration on or off. When `⊥` is on (default), the dim line renders with outward arrow heads at both ends and an extension line from the second pick to the dim line — the classic DIMLINEAR look. When off, just a plain orange line. Switching mode (Point ↔ H ↔ V) or toggling `⊥` no longer resets the two picks — the overlay just re-renders against the same picks, so the user can compare Δx, Δy, and Euclidean distance for the same pair without re-picking. Default mode is now H (was Point); clicking `⊥` when in Point mode also switches to H since plain Point doesn't really benefit from AutoCAD styling. The old snap-to-line ⊥ mode (which required the first pick to land on a line) is removed — `⊥` is now purely a style flag.
+
 ## [0.3.17] — 2026-05-22
 
 ### Added

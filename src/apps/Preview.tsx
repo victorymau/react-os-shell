@@ -655,20 +655,34 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
   // space against a cached list of every line segment in the scene
   // (built once on viewer load).
   const [measureEnabled, setMeasureEnabled] = useState(false);
-  const [measureMode, setMeasureMode] = useState<'point' | 'perp' | 'horizontal' | 'vertical'>('point');
+  const [measureMode, setMeasureMode] = useState<'point' | 'horizontal' | 'vertical'>('horizontal');
+  /** When on, dimensions render AutoCAD-style: extension lines from each
+   *  pick + dim line with arrow heads at both ends. When off, just a plain
+   *  line. Toggled by the ⊥ button. Defaults on. */
+  const [measureAutocad, setMeasureAutocad] = useState(true);
   const [measureDistance, setMeasureDistance] = useState<number | null>(null);
+  // Refs that mirror the React state so the main measure effect can read
+  // the current values without rebuilding when the user switches mode or
+  // style — picks are preserved across these changes.
+  const measureModeRef = useRef(measureMode);
+  const measureAutocadRef = useRef(measureAutocad);
+  useEffect(() => { measureModeRef.current = measureMode; }, [measureMode]);
+  useEffect(() => { measureAutocadRef.current = measureAutocad; }, [measureAutocad]);
+  /** Exposed by the measure effect so other effects can ask it to redraw
+   *  using the current refs (e.g. after mode/style change). */
+  const measureRedrawRef = useRef<(() => void) | null>(null);
   const measureRef = useRef<{
     /** Picked scene points, at most two. */
     picks: { x: number; y: number }[];
-    /** Direction vector of the first picked line in ⊥ mode (unit-length, scene-space).
-     *  In H / V modes this is unused — the direction is implicit from `measureMode`. */
-    lineDir: { dx: number; dy: number } | null;
     /** Imperative DOM nodes — recreated on each enable. */
     overlay: HTMLDivElement | null;
     svg: SVGSVGElement | null;
     line: SVGLineElement | null;
-    /** Dashed extension of the captured reference line (⊥ mode only). */
+    /** Dashed extension of the dim-axis through the first pick. */
     refLine: SVGLineElement | null;
+    /** AutoCAD-style extension lines from each pick to the dim line. */
+    extLineA: SVGLineElement | null;
+    extLineB: SVGLineElement | null;
     markers: HTMLDivElement[];
     label: HTMLDivElement | null;
     snap: HTMLDivElement | null;
@@ -789,10 +803,10 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
   // ──────────────────────────────────────────────────────────────────────
   // Measurement tool — DXF (2D) edition.
   //
-  // All visuals (markers, line, label, snap indicator) are HTML / SVG
-  // overlays positioned via camera projection — they stay constant size
-  // in pixels regardless of zoom, so they never balloon into giant
-  // orange blobs as the user zooms in.
+  // All visuals (markers, line, label, extension lines, snap indicator)
+  // are HTML / SVG overlays positioned via camera projection — they stay
+  // constant size in pixels regardless of zoom, so they never balloon
+  // into giant orange blobs as the user zooms in.
   //
   // Snap-to-line / snap-to-endpoint is computed in *screen space* against
   // a cached list of every line segment in the dxf-viewer scene (built
@@ -800,12 +814,22 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
   // endpoint or the closest point on a segment within 12 px snaps the
   // cursor — clicks then use that snapped position.
   //
-  // Two modes via a Point | ⊥ pill that appears next to Measure:
-  //   - Point: straight-line distance between two picks.
-  //   - ⊥:     first pick must snap to a line (we capture that line's
-  //            unit direction); second pick can be any point. The
-  //            reported distance is the perpendicular from the second
-  //            point to the first line.
+  // Three modes via a Point | H | V pill that appears next to Measure:
+  //   - Point: straight-line (Euclidean) distance between two picks.
+  //   - H:     distance along the X axis (|Δx|). Dim line drawn through
+  //            pick A horizontally, ending at pick B's projected X.
+  //   - V:     distance along the Y axis (|Δy|). Dim line drawn through
+  //            pick A vertically, ending at pick B's projected Y.
+  //
+  // A separate ⊥ toggle controls *style* (independent of mode): when on,
+  // the dim line gets arrow heads at both ends and (for H/V) an
+  // extension line from the second pick to the dim line — the classic
+  // AutoCAD DIMLINEAR look. When off, just a plain line.
+  //
+  // Switching mode or style preserves the two picks — the overlay just
+  // re-renders. The main setup effect therefore intentionally does not
+  // depend on measureMode / measureAutocad; a smaller effect calls
+  // measureRedrawRef.current() on those changes instead.
   // ──────────────────────────────────────────────────────────────────────
   useEffect(() => {
     const v = viewerRef.current;
@@ -836,10 +860,28 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
 
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('style', 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;');
+    // AutoCAD-style arrowhead, applied to the dim line via marker-start /
+    // marker-end. orient="auto-start-reverse" makes the same marker point
+    // outward at *both* ends, so one definition covers both arrows.
+    const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+    const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+    marker.setAttribute('id', 'dxf-measure-arrow');
+    marker.setAttribute('viewBox', '0 0 10 10');
+    marker.setAttribute('refX', '9');
+    marker.setAttribute('refY', '5');
+    marker.setAttribute('markerWidth', '6');
+    marker.setAttribute('markerHeight', '6');
+    marker.setAttribute('orient', 'auto-start-reverse');
+    const arrowPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    arrowPath.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
+    arrowPath.setAttribute('fill', '#ff8800');
+    marker.appendChild(arrowPath);
+    defs.appendChild(marker);
+    svg.appendChild(defs);
     overlay.appendChild(svg);
 
-    // Dashed extension of the captured ⊥ reference line — drawn first so
-    // the solid measurement line renders on top of it.
+    // Dashed extension of the dim-axis through the first pick. Drawn first
+    // so the solid dim line renders on top.
     const refLineEl = document.createElementNS('http://www.w3.org/2000/svg', 'line');
     refLineEl.setAttribute('stroke', '#ff8800');
     refLineEl.setAttribute('stroke-width', '1');
@@ -847,6 +889,22 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
     refLineEl.setAttribute('opacity', '0.55');
     refLineEl.style.display = 'none';
     svg.appendChild(refLineEl);
+
+    // AutoCAD-style extension lines — thin solid lines from each pick to
+    // the dim line. Drawn before the dim line so the dim line + arrows
+    // render on top.
+    const extLineA = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    extLineA.setAttribute('stroke', '#ff8800');
+    extLineA.setAttribute('stroke-width', '1');
+    extLineA.setAttribute('opacity', '0.85');
+    extLineA.style.display = 'none';
+    svg.appendChild(extLineA);
+    const extLineB = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    extLineB.setAttribute('stroke', '#ff8800');
+    extLineB.setAttribute('stroke-width', '1');
+    extLineB.setAttribute('opacity', '0.85');
+    extLineB.style.display = 'none';
+    svg.appendChild(extLineB);
 
     const lineEl = document.createElementNS('http://www.w3.org/2000/svg', 'line');
     lineEl.setAttribute('stroke', '#ff8800');
@@ -861,8 +919,8 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
 
     measureRef.current = {
       picks: [],
-      lineDir: null,
       overlay, svg, line: lineEl, refLine: refLineEl,
+      extLineA, extLineB,
       markers: [], label: null, snap: snapEl,
       segments: [],
     };
@@ -992,32 +1050,22 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
       el.style.top = `${p.y}px`;
     };
 
-    // The rendered line depends on mode:
-    //   - point: straight line between a and b.
-    //   - ⊥:     perpendicular from b onto the captured reference line —
-    //            visible segment goes from b to its foot on that line.
-    //   - H / V: linear dimension along the X or Y axis (AutoCAD DIMLINEAR
-    //            style). Visible segment goes from a horizontally /
-    //            vertically to b's projection on that axis through a.
+    // The dim line endpoints depend on the current mode:
+    //   - point: straight diagonal line between a and b.
+    //   - H:     horizontal line through a's Y, ending at b's X.
+    //   - V:     vertical line through a's X, ending at b's Y.
+    //
+    // Reads mode from the ref so it always reflects the current React
+    // state — that's how mode switches re-render without losing picks.
     const computeRenderedEnds = () => {
       const s = measureRef.current!;
       const a = s.picks[0];
       const b = s.picks[1];
-      if (measureMode === 'perp' && s.lineDir) {
-        // P_perp is the foot of the perpendicular from b onto the line
-        // through a with direction s.lineDir.
-        const d = s.lineDir;
-        const ax = a.x, ay = a.y;
-        const t = (b.x - ax) * d.dx + (b.y - ay) * d.dy;
-        const fx = ax + d.dx * t;
-        const fy = ay + d.dy * t;
-        // The visible perpendicular line goes between b and that foot.
-        return { from: { x: fx, y: fy }, to: { x: b.x, y: b.y } };
-      }
-      if (measureMode === 'horizontal') {
+      const mode = measureModeRef.current;
+      if (mode === 'horizontal') {
         return { from: a, to: { x: b.x, y: a.y } };
       }
-      if (measureMode === 'vertical') {
+      if (mode === 'vertical') {
         return { from: a, to: { x: a.x, y: b.y } };
       }
       return { from: a, to: b };
@@ -1026,24 +1074,23 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
     const updateOverlay = () => {
       const s = measureRef.current;
       if (!s) return;
+      const mode = measureModeRef.current;
+      const autocad = measureAutocadRef.current;
       // Markers
       if (s.markers[0]) positionMarker(s.markers[0], s.picks[0].x, s.picks[0].y);
       if (s.markers[1]) positionMarker(s.markers[1], s.picks[1].x, s.picks[1].y);
       // Reference-axis preview — dashed line across the canvas through the
-      // first pick along the active direction. In ⊥ mode the direction is
-      // captured from the snapped segment; in H/V it's the X/Y axis. Lets
-      // the user see exactly which axis the measurement is being taken on.
-      const refDir = measureMode === 'horizontal'
+      // first pick along the X or Y axis. Helps the user confirm which
+      // axis the dimension is being taken on before the second pick.
+      const refDir = mode === 'horizontal'
         ? { dx: 1, dy: 0 }
-        : measureMode === 'vertical'
+        : mode === 'vertical'
           ? { dx: 0, dy: 1 }
-          : (measureMode === 'perp' ? s.lineDir : null);
+          : null;
       if (refDir && s.picks.length >= 1 && s.refLine) {
         const a = s.picks[0];
         const w = canvas.clientWidth, h = canvas.clientHeight;
-        const screenSpan = Math.hypot(w, h) * 4; // generous extension in px
-        // Scene-per-pixel along the direction so the dashed line stretches
-        // beyond the visible canvas (visible portion gets clipped by SVG).
+        const screenSpan = Math.hypot(w, h) * 4;
         const ap = pxFromScene(a.x, a.y);
         const probe = pxFromScene(a.x + refDir.dx, a.y + refDir.dy);
         const pxLen = Math.hypot(probe.x - ap.x, probe.y - ap.y) || 1;
@@ -1062,8 +1109,9 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
       } else if (s.refLine) {
         s.refLine.style.display = 'none';
       }
-      // Line + label
+      // Dim line + extension lines + label
       if (s.picks.length === 2) {
+        const a = s.picks[0], b = s.picks[1];
         const ends = computeRenderedEnds();
         const fp = pxFromScene(ends.from.x, ends.from.y);
         const tp = pxFromScene(ends.to.x, ends.to.y);
@@ -1072,21 +1120,56 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
         s.line!.setAttribute('x2', String(tp.x));
         s.line!.setAttribute('y2', String(tp.y));
         s.line!.style.display = '';
+        // AutoCAD style: draw outward arrows at the dim line ends, and
+        // (for H/V) extension lines from each pick to the dim line so the
+        // user can see how each pick relates to the dimension.
+        if (autocad) {
+          s.line!.setAttribute('marker-start', 'url(#dxf-measure-arrow)');
+          s.line!.setAttribute('marker-end', 'url(#dxf-measure-arrow)');
+        } else {
+          s.line!.removeAttribute('marker-start');
+          s.line!.removeAttribute('marker-end');
+        }
+        // Extension lines — only meaningful for H / V. For H, the dim line
+        // sits on a's Y; extension line B drops vertically from b to that
+        // Y. (Extension line A is zero-length since a is already on the
+        // dim line — skip it.) Mirror for V.
+        const extA = s.extLineA!;
+        const extB = s.extLineB!;
+        if (autocad && mode === 'horizontal' && Math.abs(b.y - a.y) > 1e-9) {
+          const p = pxFromScene(b.x, a.y);
+          const q = pxFromScene(b.x, b.y);
+          extB.setAttribute('x1', String(p.x));
+          extB.setAttribute('y1', String(p.y));
+          extB.setAttribute('x2', String(q.x));
+          extB.setAttribute('y2', String(q.y));
+          extB.style.display = '';
+          extA.style.display = 'none';
+        } else if (autocad && mode === 'vertical' && Math.abs(b.x - a.x) > 1e-9) {
+          const p = pxFromScene(a.x, b.y);
+          const q = pxFromScene(b.x, b.y);
+          extB.setAttribute('x1', String(p.x));
+          extB.setAttribute('y1', String(p.y));
+          extB.setAttribute('x2', String(q.x));
+          extB.setAttribute('y2', String(q.y));
+          extB.style.display = '';
+          extA.style.display = 'none';
+        } else {
+          extA.style.display = 'none';
+          extB.style.display = 'none';
+        }
         if (s.label) {
           const cx = (fp.x + tp.x) / 2;
           const cy = (fp.y + tp.y) / 2;
           s.label.style.left = `${cx}px`;
           s.label.style.top = `${cy}px`;
-          // Hide the label when its midpoint falls outside the canvas (e.g.
-          // the user panned/zoomed so the measurement is off-screen).
-          // Without this, transform:translate(-50%,-50%) leaves the label's
-          // right half stuck against the top-left edge showing "…mm", which
-          // looks like a phantom indicator.
           const w = canvas.clientWidth, h = canvas.clientHeight;
           s.label.style.display = (cx < 0 || cy < 0 || cx > w || cy > h) ? 'none' : '';
         }
       } else {
         s.line!.style.display = 'none';
+        if (s.extLineA) s.extLineA.style.display = 'none';
+        if (s.extLineB) s.extLineB.style.display = 'none';
       }
     };
 
@@ -1142,14 +1225,48 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
       // pointer position from dxf-viewer's event.
       const raw = ev?.detail?.position;
       if (!raw) return;
-      const useSnap = lastSnap && Math.hypot(downX - (canvas.getBoundingClientRect().width), 0) >= 0; // always prefer snap when present
-      const picked = useSnap && lastSnap
-        ? { x: lastSnap.sx, y: lastSnap.sy, snapType: lastSnap.type, lineDir: lastSnap.dir }
-        : { x: raw.x, y: raw.y, snapType: undefined, lineDir: undefined };
+      // Prefer the snapped position when one is available, otherwise the
+      // raw pointer position from dxf-viewer's event.
+      const picked = lastSnap
+        ? { x: lastSnap.sx, y: lastSnap.sy }
+        : { x: raw.x, y: raw.y };
       doPick(picked);
     };
 
-    const doPick = (p: { x: number; y: number; snapType?: string; lineDir?: { dx: number; dy: number } }) => {
+    // Recompute the distance label from the current picks + active mode.
+    // Extracted so the mode/style-change effect can call it without
+    // having to know about the closure-local helpers.
+    const recomputeLabel = () => {
+      const s = measureRef.current;
+      if (!s || s.picks.length !== 2) return;
+      const a = s.picks[0], b = s.picks[1];
+      const mode = measureModeRef.current;
+      let dist: number;
+      let suffix = '';
+      if (mode === 'horizontal') {
+        dist = Math.abs(b.x - a.x);
+        suffix = ' ↔';
+      } else if (mode === 'vertical') {
+        dist = Math.abs(b.y - a.y);
+        suffix = ' ↕';
+      } else {
+        const dx = b.x - a.x, dy = b.y - a.y;
+        dist = Math.sqrt(dx * dx + dy * dy);
+      }
+      setMeasureDistance(dist);
+      const label = ensureLabel();
+      label.style.opacity = '1';
+      label.textContent = `${formatMeasureDistance(dist)}${suffix}`;
+    };
+
+    // Expose for the mode/style-change effect — calling this redraws the
+    // overlay using whatever measureModeRef / measureAutocadRef hold.
+    measureRedrawRef.current = () => {
+      recomputeLabel();
+      updateOverlay();
+    };
+
+    const doPick = (p: { x: number; y: number }) => {
       const s = measureRef.current;
       if (!s) return;
 
@@ -1158,59 +1275,19 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
         for (const m of s.markers) m.parentElement?.removeChild(m);
         s.markers = [];
         s.picks = [];
-        s.lineDir = null;
         s.line!.style.display = 'none';
         if (s.refLine) s.refLine.style.display = 'none';
+        if (s.extLineA) s.extLineA.style.display = 'none';
+        if (s.extLineB) s.extLineB.style.display = 'none';
         if (s.label) s.label.style.opacity = '0';
         setMeasureDistance(null);
-      }
-
-      // ⊥ mode: the FIRST pick must land on (or at the endpoint of) a line —
-      // we need a reference direction for the perpendicular. A snap of either
-      // 'line' or 'endpoint' type carries that direction.
-      if (measureMode === 'perp' && s.picks.length === 0) {
-        if (!p.lineDir) {
-          // Quick visual cue — flash a hint label and bail.
-          const label = ensureLabel();
-          label.style.display = '';
-          label.style.opacity = '1';
-          label.style.left = `${pxFromScene(p.x, p.y).x}px`;
-          label.style.top = `${pxFromScene(p.x, p.y).y - 18}px`;
-          label.textContent = '⊥: snap to a line or corner first';
-          setTimeout(() => { if (s.label && s.picks.length === 0) s.label.style.opacity = '0'; }, 1500);
-          return;
-        }
-        s.lineDir = p.lineDir;
       }
 
       s.picks.push({ x: p.x, y: p.y });
       s.markers.push(makeMarker());
 
       if (s.picks.length === 2) {
-        const a = s.picks[0], b = s.picks[1];
-        let dist: number;
-        let suffix = '';
-        if (measureMode === 'perp' && s.lineDir) {
-          // Perpendicular distance from b to the line through a with
-          // direction lineDir.
-          const dx = b.x - a.x, dy = b.y - a.y;
-          // Cross product magnitude with unit direction = perpendicular distance.
-          dist = Math.abs(dx * s.lineDir.dy - dy * s.lineDir.dx);
-          suffix = ' ⊥';
-        } else if (measureMode === 'horizontal') {
-          dist = Math.abs(b.x - a.x);
-          suffix = ' ↔';
-        } else if (measureMode === 'vertical') {
-          dist = Math.abs(b.y - a.y);
-          suffix = ' ↕';
-        } else {
-          const dx = b.x - a.x, dy = b.y - a.y;
-          dist = Math.sqrt(dx * dx + dy * dy);
-        }
-        setMeasureDistance(dist);
-        const label = ensureLabel();
-        label.style.opacity = '1';
-        label.textContent = `${formatMeasureDistance(dist)}${suffix}`;
+        recomputeLabel();
       }
       updateOverlay();
     };
@@ -1234,10 +1311,21 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
       try { v.Unsubscribe?.('viewChanged', updateOverlay); } catch {}
       canvas.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('keydown', onKeyDown);
+      measureRedrawRef.current = null;
       teardown();
       setMeasureDistance(null);
     };
-  }, [measureEnabled, measureMode, loading, error]);
+    // NOTE: measureMode / measureAutocad intentionally *not* in deps —
+    // switching mode/style preserves picks and just triggers a redraw via
+    // the separate effect below.
+  }, [measureEnabled, loading, error]);
+
+  // Redraw the measurement overlay when mode or AutoCAD-style toggle
+  // changes, using the picks that are already in measureRef. The main
+  // measure effect exposes `measureRedrawRef.current` for this.
+  useEffect(() => {
+    measureRedrawRef.current?.();
+  }, [measureMode, measureAutocad]);
 
   const toggleLayer = (name: string) => {
     setLayers(prev => prev.map(l => {
@@ -1313,50 +1401,61 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
           Measure
         </button>
         {measureEnabled && (
-          <div className="flex items-stretch h-7 rounded border border-gray-200 overflow-hidden text-[11px] font-semibold">
+          <>
+            {/* AutoCAD-style toggle — when on, dimensions render with
+                extension lines + arrow heads (DIMLINEAR look). When off,
+                just a plain line between picks. Switching it on also
+                pulls Point mode out to a useful default (H) since plain
+                Point doesn't really benefit from AutoCAD styling. */}
             <button
-              onClick={() => setMeasureMode('point')}
-              className={`px-2 transition-colors ${measureMode === 'point' ? 'bg-orange-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-              title="Point — straight-line distance between two picks"
-            >
-              Point
-            </button>
-            <button
-              onClick={() => setMeasureMode('perp')}
-              className={`px-2 transition-colors ${measureMode === 'perp' ? 'bg-orange-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-              title="Perpendicular — click on a line first, then pick a point. Reports the perpendicular distance."
+              onClick={() => {
+                setMeasureAutocad(prev => {
+                  const next = !prev;
+                  if (next && measureMode === 'point') setMeasureMode('horizontal');
+                  return next;
+                });
+              }}
+              className={btn + (measureAutocad ? ' bg-orange-100 text-orange-700' : '')}
+              title={measureAutocad ? 'AutoCAD dim style is ON — extension lines + arrows' : 'AutoCAD dim style is OFF — plain line. Click to turn on (also switches to H if you\'re in Point).'}
             >
               ⊥
             </button>
-            <button
-              onClick={() => setMeasureMode('horizontal')}
-              className={`px-2 transition-colors ${measureMode === 'horizontal' ? 'bg-orange-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-              title="Horizontal — distance along the X axis between two picks (AutoCAD DIMLINEAR horizontal)"
-            >
-              H
-            </button>
-            <button
-              onClick={() => setMeasureMode('vertical')}
-              className={`px-2 transition-colors ${measureMode === 'vertical' ? 'bg-orange-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-              title="Vertical — distance along the Y axis between two picks (AutoCAD DIMLINEAR vertical)"
-            >
-              V
-            </button>
-          </div>
+            <div className="flex items-stretch h-7 rounded border border-gray-200 overflow-hidden text-[11px] font-semibold">
+              <button
+                onClick={() => setMeasureMode('point')}
+                className={`px-2 transition-colors ${measureMode === 'point' ? 'bg-orange-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                title="Point — straight-line (Euclidean) distance between two picks"
+              >
+                Point
+              </button>
+              <button
+                onClick={() => setMeasureMode('horizontal')}
+                className={`px-2 transition-colors ${measureMode === 'horizontal' ? 'bg-orange-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                title="Horizontal — distance along the X axis between two picks (AutoCAD DIMLINEAR horizontal)"
+              >
+                H
+              </button>
+              <button
+                onClick={() => setMeasureMode('vertical')}
+                className={`px-2 transition-colors ${measureMode === 'vertical' ? 'bg-orange-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                title="Vertical — distance along the Y axis between two picks (AutoCAD DIMLINEAR vertical)"
+              >
+                V
+              </button>
+            </div>
+          </>
         )}
         {measureEnabled && measureDistance !== null && (
           <div
             className="px-2 py-1 text-[11px] font-mono font-semibold text-orange-600 bg-orange-50 border border-orange-200 rounded whitespace-nowrap"
             title={
-              measureMode === 'perp' ? 'Perpendicular distance from second pick to first line'
-              : measureMode === 'horizontal' ? 'Horizontal distance (Δx) between the two picked points'
+              measureMode === 'horizontal' ? 'Horizontal distance (Δx) between the two picked points'
               : measureMode === 'vertical' ? 'Vertical distance (Δy) between the two picked points'
               : 'Straight-line distance between the two picked points'
             }
           >
             {formatMeasureDistance(measureDistance)}
-            {measureMode === 'perp' ? ' ⊥'
-              : measureMode === 'horizontal' ? ' ↔'
+            {measureMode === 'horizontal' ? ' ↔'
               : measureMode === 'vertical' ? ' ↕'
               : ''}
           </div>
