@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-05-27
+
+### Added
+- **`SystemPreferences` component — generic two-pane settings window.** A reusable container with a sidebar of consumer-provided sections on the left and the active section's body on the right. Each entry carries `{ key, label, description?, icon?, render }`, so portals can compose preferences pages by mixing shell-provided panels with their own (notification subscriptions, delivery defaults, formatting prefs, etc.). Exports `SystemPreferences`, `SystemPreferencesProps`, and `SystemPreferencesSection`.
+- **`BehaviorPanel` — pulled out of `Customization` as a standalone export.** Renders the window-position / double-click-desktop / default-window-size / show-version-on-desktop / auto-enter-fullscreen controls. Reads and writes shell prefs via `useShellPrefs` so it can be dropped into any `SystemPreferences` sidebar entry.
+- **`SoundsPanel` — sound effects toggle + per-event pack picker.** Was previously a private `SoundSettings` function inside Customization; now a public export with preview-on-pick behaviour.
+
+### Changed
+- **`Customization` accepts an `omit` prop.** `omit?: readonly ('behavior' | 'desktop')[]` hides the corresponding inline sections so consumers who surface them elsewhere (typically as separate `SystemPreferences` sidebar entries) don't render duplicate UI. Existing callers that don't pass the prop are unaffected. Exports `CustomizationProps` and `CustomizationOmitSection`.
+
 ## [0.3.22] — 2026-05-23
 
 ### Changed
