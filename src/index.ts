@@ -83,6 +83,11 @@ export { default as Desktop } from './shell/Desktop';
 
 // ── Built-in settings pages (consumer registers via window registry) ──
 export { default as Customization } from './settings/Customization';
+export type { CustomizationProps, CustomizationOmitSection } from './settings/Customization';
+export { default as BehaviorPanel } from './settings/BehaviorPanel';
+export { default as SoundsPanel } from './settings/SoundsPanel';
+export { default as SystemPreferences } from './settings/SystemPreferences';
+export type { SystemPreferencesProps, SystemPreferencesSection } from './settings/SystemPreferences';
 
 // ── Pageless data grid primitives ──
 export { default as EntityList } from './data/EntityList';

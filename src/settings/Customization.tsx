@@ -42,7 +42,16 @@ function previewColor(resolved: string, light: string, dark: string, pink: strin
   return light;
 }
 
-export default function Customization() {
+/** Sections that can be omitted from the inline Customization page when the
+ *  consumer renders them elsewhere (e.g. as separate entries in SystemPreferences). */
+export type CustomizationOmitSection = 'behavior' | 'desktop';
+
+export interface CustomizationProps {
+  omit?: readonly CustomizationOmitSection[];
+}
+
+export default function Customization({ omit }: CustomizationProps = {}) {
+  const omitSet = new Set(omit ?? []);
   const host = useDesktopHost();
   const WALLPAPERS = host.wallpapers && host.wallpapers.length > 0 ? host.wallpapers : DEFAULT_WALLPAPERS;
   const { prefs, save } = useShellPrefs();
@@ -408,6 +417,7 @@ export default function Customization() {
       </div>
 
       {/* ── Behavior ── */}
+      {!omitSet.has('behavior') && (
       <div>
         <h3 className="text-sm font-semibold text-gray-900 mb-3">Behavior</h3>
         <div className="space-y-3">
@@ -457,8 +467,10 @@ export default function Customization() {
           </div>
         </div>
       </div>
+      )}
 
       {/* ── Desktop ── */}
+      {!omitSet.has('desktop') && (
       <div>
         <h3 className="text-sm font-semibold text-gray-900 mb-3">Desktop</h3>
         <label className="flex items-center gap-2 cursor-pointer">
@@ -475,6 +487,7 @@ export default function Customization() {
         </label>
         <SoundSettings />
       </div>
+      )}
 
       <ModalActions>
         <span className="text-xs text-gray-400">Changes are saved automatically</span>
