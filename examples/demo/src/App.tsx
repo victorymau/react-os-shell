@@ -43,7 +43,10 @@ import { bundledApps, utilityApps, gameApps, mailApps, documentApps, webApps } f
 import DevToolbox from './DevToolbox';
 
 // Settings → Customization page (theme picker, wallpaper picker, hotkeys, etc.)
-const Customization = lazy(() => import('react-os-shell').then(m => ({ default: m.Customization })));
+// Cast through `any` so the registry's `LazyExoticComponent<any>` slot
+// accepts it — `Customization` now declares an optional `omit` prop and
+// TS's invariance on lazy types rejects the assignment without the cast.
+const Customization = lazy(() => import('react-os-shell').then(m => ({ default: m.Customization }))) as React.LazyExoticComponent<any>;
 // Demo profile page wired to the shell's start-menu profile row.
 const ProfilePage = lazy(() => import('./ProfilePage'));
 
