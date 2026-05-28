@@ -50,12 +50,21 @@ export default function StartMenu({
   const isMobile = useIsMobile();
   const [hoveredSection, setHoveredSection] = useState<string | null>(null);
   const [hoveredY, setHoveredY] = useState(0);
+  // 3rd-level flyout: when the user hovers a NavItem (inside a section flyout)
+  // that has `children`, we open a sub-flyout anchored next to that item.
+  const [hoveredChild, setHoveredChild] = useState<string | null>(null);
+  const [hoveredChildY, setHoveredChildY] = useState(0);
   const [search, setSearch] = useState('');
   const [searchIdx, setSearchIdx] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
+  const flyoutRef = useRef<HTMLDivElement>(null);
   const hoverTimeout = useRef<ReturnType<typeof setTimeout>>();
+  const childHoverTimeout = useRef<ReturnType<typeof setTimeout>>();
 
-  useEffect(() => { if (!open) { setSearch(''); setHoveredSection(null); setSearchIdx(0); } }, [open]);
+  useEffect(() => { if (!open) { setSearch(''); setHoveredSection(null); setHoveredChild(null); setSearchIdx(0); } }, [open]);
+
+  // Clear the 3rd-level flyout whenever the level-2 flyout changes target.
+  useEffect(() => { setHoveredChild(null); }, [hoveredSection]);
 
   useEffect(() => {
     if (!open) return;
@@ -78,18 +87,22 @@ export default function StartMenu({
   // surfaced from the bottom-nav "Menu" button.
   if (isMobile) {
     const allItems: { item: NavItem; sectionLabel?: string }[] = [];
+    // Recursively flatten — 3rd-level children show up as their own rows so
+    // they can be searched/tapped from the mobile sheet too.
+    const pushItem = (it: NavItem, sectionLabel?: string) => {
+      if (it.perms && !hasAnyPerm(it.perms)) return;
+      allItems.push({ item: it, sectionLabel });
+      if (it.children) {
+        for (const c of it.children) pushItem(c, it.label);
+      }
+    };
     for (const entry of navSections) {
       if (isSection(entry)) {
         const sec = entry as NavSection;
         if (sec.perms && !hasAnyPerm(sec.perms)) continue;
-        for (const it of sec.items) {
-          if (it.perms && !hasAnyPerm(it.perms)) continue;
-          allItems.push({ item: it, sectionLabel: sec.label });
-        }
+        for (const it of sec.items) pushItem(it, sec.label);
       } else {
-        const it = entry as NavItem;
-        if (it.perms && !hasAnyPerm(it.perms)) continue;
-        allItems.push({ item: it });
+        pushItem(entry as NavItem);
       }
     }
     const filtered = search.length >= 1
@@ -164,14 +177,25 @@ export default function StartMenu({
   const getVisibleItems = (section: NavSection) =>
     section.items.filter(item => !item.perms || hasAnyPerm(item.perms));
 
-  // Search
+  // Search — walks 3rd-level children too. Section column shows the parent
+  // item label for children so users can tell nested entries apart.
+  const matchTree = (it: NavItem, sectionLabel: string): (NavItem & { section: string })[] => {
+    if (it.perms && !hasAnyPerm(it.perms)) return [];
+    const hits: (NavItem & { section: string })[] = [];
+    if (it.label.toLowerCase().includes(search.toLowerCase())) {
+      hits.push({ ...it, section: sectionLabel });
+    }
+    if (it.children) {
+      for (const c of it.children) hits.push(...matchTree(c, it.label));
+    }
+    return hits;
+  };
   const searchResults = search.length >= 2 ? navSections.flatMap(item => {
     if (isSection(item)) {
-      return (item as NavSection).items
-        .filter(i => (!i.perms || hasAnyPerm(i.perms)) && i.label.toLowerCase().includes(search.toLowerCase()))
-        .map(i => ({ ...i, section: (item as NavSection).label }));
+      const sec = item as NavSection;
+      return sec.items.flatMap(i => matchTree(i, sec.label));
     }
-    return item.label.toLowerCase().includes(search.toLowerCase()) ? [{ ...item, section: '' }] : [];
+    return matchTree(item as NavItem, '');
   }) : [];
 
   const posStyle: React.CSSProperties =
@@ -374,24 +398,74 @@ export default function StartMenu({
 
         {/* Flyout submenu — positioned vertically centered on hovered item */}
         {hoveredSection && flyoutItems.length > 0 && search.length < 2 && (
-          <div className={`fixed ${sizeConfig.fw} rounded-2xl overflow-hidden`}
+          <div ref={flyoutRef} className={`fixed ${sizeConfig.fw} rounded-2xl overflow-hidden`}
             style={{ left: menuRef.current ? menuRef.current.getBoundingClientRect().right + 4 : menuWidth + 12, top: flyoutTop, animation: 'submenu-in 0.1s ease-out', ...menuGlass }}
             onMouseEnter={() => clearTimeout(hoverTimeout.current)}
-            onMouseLeave={() => { hoverTimeout.current = setTimeout(() => setHoveredSection(null), 200); }}>
+            onMouseLeave={() => { hoverTimeout.current = setTimeout(() => { setHoveredSection(null); setHoveredChild(null); }, 200); }}>
             <div className="py-1 px-1">
-              {flyoutItems.map(item => (
-                <div key={item.to}>
-                  <button onClick={() => handleClick(item.to)}
-                    className={`${itemCls} text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors`}>
-                    {iconEl(item.to)}
-                    <span>{item.label}</span>
-                  </button>
-                  {item.dividerAfter && <div className="border-t border-white/20 my-1.5 mx-2" />}
-                </div>
-              ))}
+              {flyoutItems.map(item => {
+                const hasChildren = !!item.children && item.children.length > 0;
+                const isChildHovered = hoveredChild === item.to;
+                return (
+                  <div key={item.to}
+                    onMouseEnter={hasChildren ? (e) => {
+                      clearTimeout(childHoverTimeout.current);
+                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                      setHoveredChildY(rect.top + rect.height / 2);
+                      setHoveredChild(item.to);
+                    } : () => {
+                      // Hovering a leaf inside the flyout cancels any pending
+                      // sub-flyout from a sibling that had children.
+                      childHoverTimeout.current = setTimeout(() => setHoveredChild(null), 200);
+                    }}>
+                    <button onClick={() => handleClick(item.to)}
+                      className={`${itemCls} transition-colors ${isChildHovered ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-blue-50 hover:text-blue-700'}`}>
+                      {iconEl(item.to)}
+                      <span>{item.label}</span>
+                      {hasChildren && (
+                        <svg className="h-3.5 w-3.5 ml-auto text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+                      )}
+                    </button>
+                    {item.dividerAfter && <div className="border-t border-white/20 my-1.5 mx-2" />}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
+
+        {/* 3rd-level flyout — anchored to the right of the level-2 flyout. */}
+        {(() => {
+          if (search.length >= 2 || !hoveredChild) return null;
+          const parent = flyoutItems.find(it => it.to === hoveredChild);
+          const kids = (parent?.children ?? []).filter(c => !c.perms || hasAnyPerm(c.perms));
+          if (!parent || kids.length === 0) return null;
+          const flyoutRect = flyoutRef.current?.getBoundingClientRect();
+          const subLeft = flyoutRect ? flyoutRect.right + 4 : 0;
+          const subH = kids.length * sizeConfig.itemH + 12;
+          let subTop = hoveredChildY - subH / 2;
+          if (subTop < minTop) subTop = minTop;
+          if (subTop + subH > maxBottom) subTop = maxBottom - subH;
+          return (
+            <div className={`fixed ${sizeConfig.fw} rounded-2xl overflow-hidden`}
+              style={{ left: subLeft, top: subTop, animation: 'submenu-in 0.1s ease-out', ...menuGlass }}
+              onMouseEnter={() => { clearTimeout(hoverTimeout.current); clearTimeout(childHoverTimeout.current); }}
+              onMouseLeave={() => { childHoverTimeout.current = setTimeout(() => setHoveredChild(null), 200); }}>
+              <div className="py-1 px-1">
+                {kids.map(child => (
+                  <div key={child.to}>
+                    <button onClick={() => handleClick(child.to)}
+                      className={`${itemCls} text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors`}>
+                      {iconEl(child.to)}
+                      <span>{child.label}</span>
+                    </button>
+                    {child.dividerAfter && <div className="border-t border-white/20 my-1.5 mx-2" />}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       <style>{`

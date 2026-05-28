@@ -10,6 +10,9 @@ export interface NavItem {
   label: string;
   perms?: string[];
   dividerAfter?: boolean;
+  /** Optional 3rd-level sub-items. Hovering the parent in <StartMenu> opens
+   *  a nested flyout; in <Sidebar> the parent becomes an inline sub-accordion. */
+  children?: NavItem[];
 }
 
 export interface NavSection {

@@ -107,7 +107,16 @@ const NAV_SECTIONS = [
       .filter(([to]) => !TOP_LEVEL_ROUTES.has(to))
       .map(([to, e]) => ({ to, label: (e as any).label })),
   },
-  { label: 'Games', items: Object.entries(gameApps).map(([to, e]) => ({ to, label: (e as any).label })) },
+  { label: 'Games', items: (() => {
+      const PUZZLES = new Set(['/sudoku', '/2048', '/minesweeper']);
+      const all = Object.entries(gameApps).map(([to, e]) => ({ to, label: (e as any).label }));
+      // Demo the 3rd-level menu: nest puzzle games under a "Puzzles" parent
+      // (hover the row in the start-menu flyout to see the sub-flyout).
+      return [
+        ...all.filter(g => !PUZZLES.has(g.to)),
+        { to: '/sudoku', label: 'Puzzles', children: all.filter(g => PUZZLES.has(g.to)) },
+      ];
+    })() },
 ];
 
 const START_MENU_CATEGORIES = { erp: [], system: ['Utilities', 'Games'] };

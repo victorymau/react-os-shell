@@ -87,14 +87,24 @@ export default function Sidebar({
   };
 
   // Search across all items + sections (same flat list StartMenu uses).
+  // Walks 3rd-level children too so nested entries are still discoverable.
+  const matchTree = (it: NavItem, q: string): NavItem[] => {
+    if (it.perms && !hasAnyPerm(it.perms)) return [];
+    const hits: NavItem[] = [];
+    if (it.label.toLowerCase().includes(q)) hits.push(it);
+    if (it.children) {
+      for (const c of it.children) hits.push(...matchTree(c, q));
+    }
+    return hits;
+  };
   const searchResults = useMemo(() => {
     if (search.length < 2) return [] as NavItem[];
     const q = search.toLowerCase();
     return navSections.flatMap((entry) => {
       if (isSection(entry)) {
-        return getVisibleItems(entry).filter(it => it.label.toLowerCase().includes(q));
+        return getVisibleItems(entry).flatMap(it => matchTree(it, q));
       }
-      return entry.label.toLowerCase().includes(q) ? [entry] : [];
+      return matchTree(entry as NavItem, q);
     });
   }, [search, navSections, hasAnyPerm]);
 
@@ -160,6 +170,48 @@ export default function Sidebar({
     </div>
   );
 
+  // 3rd-level: when a NavItem inside an accordion has children, render the
+  // parent as its own mini-accordion (further indented). Expansion key is
+  // `child:<to>` so it doesn't clash with the section labels in `expanded`.
+  const renderNestedItem = (item: NavItem) => {
+    const kids = (item.children ?? []).filter(c => !c.perms || hasAnyPerm(c.perms));
+    if (kids.length === 0) return renderItem(item);
+    const key = `child:${item.to}`;
+    const isOpen = expanded.has(key);
+    return (
+      <div key={item.to}>
+        <button
+          onClick={() => toggleExpanded(key)}
+          aria-expanded={isOpen}
+          className={`${itemCls} text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors`}
+        >
+          {iconEl(item.to)}
+          <span className="truncate">{item.label}</span>
+          <svg
+            className={`h-3.5 w-3.5 ml-auto text-gray-500 transition-transform ${isOpen ? 'rotate-90' : ''}`}
+            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+          </svg>
+        </button>
+        {isOpen && (
+          <div className="pl-4 mt-0.5 mb-1 space-y-0.5">
+            {kids.map(c => (
+              <button
+                key={c.to}
+                onClick={() => handleClick(c.to)}
+                className={`${itemCls} text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors`}
+              >
+                {iconEl(c.to)}
+                <span className="truncate">{c.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {item.dividerAfter && <div className="border-t border-white/20 my-1.5 mx-2" />}
+      </div>
+    );
+  };
+
   const renderSectionAccordion = (section: NavSection | VirtualSection, isErp: boolean) => {
     const items = 'perms' in section
       ? getVisibleItems(section as NavSection)
@@ -185,16 +237,7 @@ export default function Sidebar({
         </button>
         {isOpen && (
           <div className="pl-4 mt-0.5 mb-1 space-y-0.5">
-            {items.map(it => (
-              <button
-                key={it.to}
-                onClick={() => handleClick(it.to)}
-                className={`${itemCls} text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors`}
-              >
-                {iconEl(it.to)}
-                <span className="truncate">{it.label}</span>
-              </button>
-            ))}
+            {items.map(it => renderNestedItem(it))}
           </div>
         )}
       </div>

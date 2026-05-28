@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-05-28
+
+### Added
+- **3rd-level nav items.** `NavItem` gains an optional `children?: NavItem[]` field, so any item inside a section can carry its own sub-menu. In `StartMenu`, hovering a parent in the section flyout opens a second flyout to the right (chevron on the parent, same animation + clamping as the section flyout). In `Sidebar`, the parent expands inline as a nested accordion with one extra level of indent. Search (desktop start-menu, mobile start sheet, and sidebar) walks the full tree so nested entries stay discoverable. Mobile home folders keep their one-level grid by design — nested items are reachable from the mobile start sheet's flat list.
+
 ## [0.4.0] — 2026-05-27
 
 ### Added
