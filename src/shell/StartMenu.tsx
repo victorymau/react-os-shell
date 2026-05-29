@@ -48,6 +48,9 @@ export default function StartMenu({
     virtualSections.map(v => [v.label, v]),
   );
   const { hasAnyPerm } = useAuth();
+  // Flat rows pinned to the footer (next to the profile), e.g. System
+  // Preferences. Rendered directly — no flyout — unlike `categories.footer`.
+  const footerItems = (categories.footerItems ?? []).filter(item => !item.perms || hasAnyPerm(item.perms));
   const isMobile = useIsMobile();
   const [hoveredSection, setHoveredSection] = useState<string | null>(null);
   const [hoveredY, setHoveredY] = useState(0);
@@ -106,6 +109,7 @@ export default function StartMenu({
         pushItem(entry as NavItem);
       }
     }
+    for (const it of footerItems) pushItem(it);
     const filtered = search.length >= 1
       ? allItems.filter(({ item }) => item.label.toLowerCase().includes(search.toLowerCase()))
       : allItems;
@@ -192,13 +196,16 @@ export default function StartMenu({
     }
     return hits;
   };
-  const searchResults = search.length >= 2 ? navSections.flatMap(item => {
-    if (isSection(item)) {
-      const sec = item as NavSection;
-      return sec.items.flatMap(i => matchTree(i, sec.label));
-    }
-    return matchTree(item as NavItem, '');
-  }) : [];
+  const searchResults = search.length >= 2 ? [
+    ...navSections.flatMap(item => {
+      if (isSection(item)) {
+        const sec = item as NavSection;
+        return sec.items.flatMap(i => matchTree(i, sec.label));
+      }
+      return matchTree(item as NavItem, '');
+    }),
+    ...footerItems.flatMap(item => matchTree(item, '')),
+  ] : [];
 
   const posStyle: React.CSSProperties =
     taskbarPosition === 'top' ? { top: taskbarH + 8, left: 8 } :
@@ -330,10 +337,17 @@ export default function StartMenu({
           ) : (
             <div className="flex-1 overflow-y-auto px-1 pb-1 flex flex-col">
               {isVertical && (<>
-                {/* Reversed column → profile sits at the top, so footer sections
-                    render first to stay pinned next to it. */}
+                {/* Reversed column → profile sits at the top, so footer items +
+                    sections render first to stay pinned next to it. */}
+                {footerItems.map(item => (
+                  <button key={item.to} onClick={() => handleClick(item.to)}
+                    className={`${itemCls} text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors`}>
+                    {iconEl(item.to)}
+                    <span>{item.label}</span>
+                  </button>
+                ))}
                 {footerSections.map(s => renderSection(s as NavSection, false))}
-                {footerSections.length > 0 && <div className="border-t border-white/20 my-1.5 mx-2" />}
+                {(footerSections.length > 0 || footerItems.length > 0) && <div className="border-t border-white/20 my-1.5 mx-2" />}
                 {/* Vertical layout: ERP sections first */}
                 {erpSections.map(s => renderSection(s as NavSection, true))}
                 <div className="border-t border-white/20 my-1.5 mx-2" />
@@ -376,9 +390,16 @@ export default function StartMenu({
                 {virtualSections.map(v => renderVirtualSection(v))}
                 <div className="border-t border-white/20 my-1.5 mx-2" />
                 {erpSections.map(s => renderSection(s as NavSection, true))}
-                {/* Footer sections: pinned just above the profile, divided from ERP. */}
-                {footerSections.length > 0 && <div className="border-t border-white/20 my-1.5 mx-2" />}
+                {/* Footer items + sections: pinned just above the profile, divided from ERP. */}
+                {(footerSections.length > 0 || footerItems.length > 0) && <div className="border-t border-white/20 my-1.5 mx-2" />}
                 {footerSections.map(s => renderSection(s as NavSection, false))}
+                {footerItems.map(item => (
+                  <button key={item.to} onClick={() => handleClick(item.to)}
+                    className={`${itemCls} text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors`}>
+                    {iconEl(item.to)}
+                    <span>{item.label}</span>
+                  </button>
+                ))}
               </>)}
             </div>
           )}

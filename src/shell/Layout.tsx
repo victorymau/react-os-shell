@@ -79,6 +79,9 @@ export interface LayoutProps {
    *  the shell. The shell renders the node as-is — keep it small (a
    *  single icon-sized button) so it fits the existing tray rhythm. */
   taskbarTrayLeft?: ReactNode;
+  /** Show the Mail & Calendar connect button in the system tray.
+   *  Defaults to true. Set false for portals with no mail integration. */
+  showMail?: boolean;
 }
 
 
@@ -578,6 +581,7 @@ export default function Layout({
   notifications,
   search,
   taskbarTrayLeft,
+  showMail = true,
 }: LayoutProps = {}) {
   const bugReport = useBugReport();
   const { user, logout, hasAnyPerm } = useAuth();
@@ -933,12 +937,14 @@ export default function Layout({
           <div className="w-full px-2">
             <div className={`flex items-center justify-center gap-2 ${taskbarPosition === 'right' ? 'flex-row-reverse' : ''}`}>
               <TaskbarClock />
-              <button onClick={() => setMailConnectOpen(true)} title={mailConnected ? 'Mail & Calendar Connected' : 'Connect Mail & Calendar'}
-                className={`shrink-0 rounded-md p-1.5 transition-colors ${mailConnected ? 'hover:bg-green-50 text-green-600' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-200'}`}>
-                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
-                  <path d="M3 7l9 6 9-6M5 5h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
+              {showMail && (
+                <button onClick={() => setMailConnectOpen(true)} title={mailConnected ? 'Mail & Calendar Connected' : 'Connect Mail & Calendar'}
+                  className={`shrink-0 rounded-md p-1.5 transition-colors ${mailConnected ? 'hover:bg-green-50 text-green-600' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-200'}`}>
+                  <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                    <path d="M3 7l9 6 9-6M5 5h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+              )}
               <TaskbarPomodoro />
               {/* Host-supplied tray content (e.g. server-status icon).
                   Sits next to the notification bell on the bell's
@@ -953,12 +959,14 @@ export default function Layout({
             <TaskbarPomodoro />
             {taskbarTrayLeft}
             {notifications && <NotificationBell {...notifications} />}
-            <button onClick={() => setMailConnectOpen(true)} title={mailConnected ? 'Mail & Calendar Connected' : 'Connect Mail & Calendar'}
-              className={`shrink-0 rounded-md p-2 transition-colors ${mailConnected ? 'hover:bg-green-50 text-green-600' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-200'}`}>
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
-                <path d="M3 7l9 6 9-6M5 5h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
+            {showMail && (
+              <button onClick={() => setMailConnectOpen(true)} title={mailConnected ? 'Mail & Calendar Connected' : 'Connect Mail & Calendar'}
+                className={`shrink-0 rounded-md p-2 transition-colors ${mailConnected ? 'hover:bg-green-50 text-green-600' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-200'}`}>
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                  <path d="M3 7l9 6 9-6M5 5h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            )}
             <TaskbarClock />
           </>
         )}

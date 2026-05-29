@@ -40,6 +40,12 @@ export interface StartMenuCategories {
   /** Optional section labels pinned to the bottom of the menu, next to the user
    *  profile, separated from the ERP group by a divider. */
   footer?: string[];
+  /** Optional flat top-level items pinned to the bottom of the menu, next to
+   *  the user profile, separated from the ERP group by a divider. Unlike
+   *  `footer` (section labels rendered as flyouts), these render as direct
+   *  clickable rows — use for standalone destinations like System Preferences
+   *  or a bug-report link. */
+  footerItems?: NavItem[];
 }
 
 export function isSection(item: NavSection | NavItem): item is NavSection {

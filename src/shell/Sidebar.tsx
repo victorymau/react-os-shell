@@ -62,6 +62,9 @@ export default function Sidebar({
   const erpLabels = new Set(categories.erp);
   const systemLabels = new Set(categories.system);
   const footerLabels = new Set(categories.footer ?? []);
+  // Flat rows pinned to the footer (next to the profile) — rendered inline,
+  // not as an accordion section. Mirrors StartMenu's `footerItems`.
+  const footerItems = (categories.footerItems ?? []).filter(it => !it.perms || hasAnyPerm(it.perms));
   const virtualSections = categories.virtual ?? [];
 
   const [search, setSearch] = useState('');
@@ -102,13 +105,16 @@ export default function Sidebar({
   const searchResults = useMemo(() => {
     if (search.length < 2) return [] as NavItem[];
     const q = search.toLowerCase();
-    return navSections.flatMap((entry) => {
-      if (isSection(entry)) {
-        return getVisibleItems(entry).flatMap(it => matchTree(it, q));
-      }
-      return matchTree(entry as NavItem, q);
-    });
-  }, [search, navSections, hasAnyPerm]);
+    return [
+      ...navSections.flatMap((entry) => {
+        if (isSection(entry)) {
+          return getVisibleItems(entry).flatMap(it => matchTree(it, q));
+        }
+        return matchTree(entry as NavItem, q);
+      }),
+      ...footerItems.flatMap(it => matchTree(it, q)),
+    ];
+  }, [search, navSections, footerItems, hasAnyPerm]);
 
   // Esc collapses any expanded section + clears search; '/' focuses search.
   useEffect(() => {
@@ -318,9 +324,10 @@ export default function Sidebar({
             {erpSections.map(s => renderSectionAccordion(s, true))}
             {systemSections.map(s => renderSectionAccordion(s, false))}
             {virtualSections.map(v => renderSectionAccordion(v, false))}
-            {/* Footer sections: pinned just above the profile, divided from the rest. */}
-            {footerSections.length > 0 && <div className="border-t border-white/15 my-1.5 mx-2" />}
+            {/* Footer items + sections: pinned just above the profile, divided from the rest. */}
+            {(footerSections.length > 0 || footerItems.length > 0) && <div className="border-t border-white/15 my-1.5 mx-2" />}
             {footerSections.map(s => renderSectionAccordion(s, false))}
+            {footerItems.map(renderItem)}
           </>
         )}
       </div>

@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-05-30
+
+### Added
+- **`footerItems` start-menu category.** `StartMenuCategories` gains an optional `footerItems?: NavItem[]` to complement `footer`. Where `footer` lists section labels (rendered as hover flyouts), `footerItems` lists flat clickable rows — pinned next to the user profile and separated from the ERP group by a divider in both `StartMenu` and `Sidebar`. Use for single-destination entries like System Preferences or a bug-report link that don't need their own section. Items honour the same `perms` filter as the rest of the nav and remain searchable.
+
 ## [0.6.0] — 2026-05-29
 
 ### Added
