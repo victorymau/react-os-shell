@@ -31,7 +31,7 @@ export function setShellNavIcons(icons: Record<string, ReactNode>): void {
 
 export const sectionIcons: Record<string, ReactNode> = {};
 export const navSections: (NavSection | NavItem)[] = [];
-export const startMenuCategories: StartMenuCategories = { erp: [], system: [], virtual: [] };
+export const startMenuCategories: StartMenuCategories = { erp: [], system: [], virtual: [], footer: [] };
 
 export { isSection } from '../shell/nav-types';
 export type { NavItem, NavSection, StartMenuCategories, VirtualSection };

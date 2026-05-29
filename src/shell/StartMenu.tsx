@@ -42,6 +42,7 @@ export default function StartMenu({
 }: StartMenuProps) {
   const erpLabels = new Set(categories.erp);
   const systemLabels = new Set(categories.system);
+  const footerLabels = new Set(categories.footer ?? []);
   const virtualSections = categories.virtual ?? [];
   const virtualByLabel: Record<string, VirtualSection> = Object.fromEntries(
     virtualSections.map(v => [v.label, v]),
@@ -173,6 +174,7 @@ export default function StartMenu({
   const topItems = navSections.filter(item => !isSection(item)) as NavItem[];
   const erpSections = navSections.filter(item => isSection(item) && erpLabels.has((item as NavSection).label));
   const systemSections = navSections.filter(item => isSection(item) && systemLabels.has((item as NavSection).label));
+  const footerSections = navSections.filter(item => isSection(item) && footerLabels.has((item as NavSection).label));
 
   const getVisibleItems = (section: NavSection) =>
     section.items.filter(item => !item.perms || hasAnyPerm(item.perms));
@@ -220,7 +222,7 @@ export default function StartMenu({
   const hoveredVirtual = hoveredSection ? virtualByLabel[hoveredSection] : undefined;
   const hoveredData = hoveredVirtual
     ? null
-    : (hoveredSection ? [...erpSections, ...systemSections].find(s => (s as NavSection).label === hoveredSection) as NavSection | undefined : null);
+    : (hoveredSection ? [...erpSections, ...systemSections, ...footerSections].find(s => (s as NavSection).label === hoveredSection) as NavSection | undefined : null);
   const flyoutItems = hoveredVirtual
     ? hoveredVirtual.items
     : (hoveredData ? getVisibleItems(hoveredData) : []);
@@ -328,6 +330,10 @@ export default function StartMenu({
           ) : (
             <div className="flex-1 overflow-y-auto px-1 pb-1 flex flex-col">
               {isVertical && (<>
+                {/* Reversed column → profile sits at the top, so footer sections
+                    render first to stay pinned next to it. */}
+                {footerSections.map(s => renderSection(s as NavSection, false))}
+                {footerSections.length > 0 && <div className="border-t border-white/20 my-1.5 mx-2" />}
                 {/* Vertical layout: ERP sections first */}
                 {erpSections.map(s => renderSection(s as NavSection, true))}
                 <div className="border-t border-white/20 my-1.5 mx-2" />
@@ -370,6 +376,9 @@ export default function StartMenu({
                 {virtualSections.map(v => renderVirtualSection(v))}
                 <div className="border-t border-white/20 my-1.5 mx-2" />
                 {erpSections.map(s => renderSection(s as NavSection, true))}
+                {/* Footer sections: pinned just above the profile, divided from ERP. */}
+                {footerSections.length > 0 && <div className="border-t border-white/20 my-1.5 mx-2" />}
+                {footerSections.map(s => renderSection(s as NavSection, false))}
               </>)}
             </div>
           )}

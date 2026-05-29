@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-05-29
+
+### Added
+- **`footer` start-menu category.** `StartMenuCategories` gains an optional `footer?: string[]`. Section labels listed there render pinned next to the user profile — below the ERP group in `StartMenu`, and at the end of the body in `Sidebar` — separated from the rest by a divider. Lets consumers park a "Help & Feedback"-style section at the very bottom of the menu instead of mixing it into the system group. Footer sections render non-bold (like system sections), keep their hover flyout in `StartMenu`, and remain searchable. Consumers that don't set `footer` are unaffected.
+
 ## [0.5.0] — 2026-05-28
 
 ### Added

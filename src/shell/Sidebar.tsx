@@ -61,6 +61,7 @@ export default function Sidebar({
   const { hasAnyPerm } = useAuth();
   const erpLabels = new Set(categories.erp);
   const systemLabels = new Set(categories.system);
+  const footerLabels = new Set(categories.footer ?? []);
   const virtualSections = categories.virtual ?? [];
 
   const [search, setSearch] = useState('');
@@ -80,6 +81,7 @@ export default function Sidebar({
   const topItems = navSections.filter(item => !isSection(item)) as NavItem[];
   const erpSections = navSections.filter(item => isSection(item) && erpLabels.has((item as NavSection).label)) as NavSection[];
   const systemSections = navSections.filter(item => isSection(item) && systemLabels.has((item as NavSection).label)) as NavSection[];
+  const footerSections = navSections.filter(item => isSection(item) && footerLabels.has((item as NavSection).label)) as NavSection[];
 
   const getVisibleItems = (section: { items: NavItem[]; perms?: string[] }) => {
     if (section.perms && !hasAnyPerm(section.perms)) return [];
@@ -316,6 +318,9 @@ export default function Sidebar({
             {erpSections.map(s => renderSectionAccordion(s, true))}
             {systemSections.map(s => renderSectionAccordion(s, false))}
             {virtualSections.map(v => renderSectionAccordion(v, false))}
+            {/* Footer sections: pinned just above the profile, divided from the rest. */}
+            {footerSections.length > 0 && <div className="border-t border-white/15 my-1.5 mx-2" />}
+            {footerSections.map(s => renderSectionAccordion(s, false))}
           </>
         )}
       </div>

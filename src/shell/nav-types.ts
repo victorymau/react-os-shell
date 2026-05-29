@@ -37,6 +37,9 @@ export interface StartMenuCategories {
   system: string[];
   /** Optional virtual flyouts (e.g. a "Utilities" tray). */
   virtual?: VirtualSection[];
+  /** Optional section labels pinned to the bottom of the menu, next to the user
+   *  profile, separated from the ERP group by a divider. */
+  footer?: string[];
 }
 
 export function isSection(item: NavSection | NavItem): item is NavSection {
