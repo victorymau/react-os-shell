@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.6.2] — 2026-06-01
+
+### Fixed
+- **Taskbar start button centers its label.** The start button (product icon + name) now centers its contents within the button instead of left-aligning them, so a short product name no longer sits flush-left with empty space to its right. Applies in both the horizontal taskbar (fixed `min-w-[140px]`) and the vertical taskbar (`w-full`).
+
 ## [0.6.1] — 2026-05-30
 
 ### Added

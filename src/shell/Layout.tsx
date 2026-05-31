@@ -910,7 +910,7 @@ export default function Layout({
             </div>
           )}
           <button data-menu-toggle onClick={() => setMenuOpen(prev => !prev)} title={menuOpen ? 'Close menu' : 'Open menu'}
-            className={`group/erp relative flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-medium border overflow-hidden transition-all ${isVerticalTaskbar ? 'w-full' : 'min-w-[140px]'} ${menuOpen ? 'bg-gray-200/40 border-gray-300/40 text-gray-800' : 'bg-gray-50/40 border-gray-200/40 text-gray-600 hover:text-gray-800'}`}
+            className={`group/erp relative flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-xs font-medium border overflow-hidden transition-all ${isVerticalTaskbar ? 'w-full' : 'min-w-[140px]'} ${menuOpen ? 'bg-gray-200/40 border-gray-300/40 text-gray-800' : 'bg-gray-50/40 border-gray-200/40 text-gray-600 hover:text-gray-800'}`}
             style={{ transition: 'box-shadow 0.3s, border-color 0.3s' }}
             onMouseMove={e => { const r = e.currentTarget.getBoundingClientRect(); e.currentTarget.style.setProperty('--mx', `${e.clientX - r.left}px`); e.currentTarget.style.setProperty('--my', `${e.clientY - r.top}px`); }}
             onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 0 15px rgba(255,255,255,0.2), 0 0 30px rgba(255,255,255,0.1)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.4)'; }}
