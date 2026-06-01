@@ -245,15 +245,22 @@ export default function StartMenu({
   const menuGlass = glassStyle();
   const itemCls = `w-full flex items-center gap-2 rounded-lg ${sizeConfig.px} ${sizeConfig.py} ${sizeConfig.text}`;
 
-  // Calculate flyout vertical position — center on hovered item, clamp to viewport
+  // Calculate flyout vertical position — center on hovered item, clamp so it
+  // stays within the main menu's visible span (so it can't drift below the
+  // menu bottom and overlap the taskbar). Fall back to the viewport minus the
+  // taskbar on first render before menuRef has measured.
   const flyoutH = flyoutItems.length * sizeConfig.itemH + 12;
   const menuWidth = sizeConfig.mw;
+  const menuRect = menuRef.current?.getBoundingClientRect();
+  const minTop = menuRect ? menuRect.top : (taskbarPosition === 'top' ? taskbarH + 4 : 4);
+  const maxBottom = menuRect ? menuRect.bottom : (taskbarPosition === 'bottom' ? window.innerHeight - taskbarH - 4 : window.innerHeight - 4);
   let flyoutTop = hoveredY - flyoutH / 2;
-  // Clamp: don't go above viewport or below taskbar
-  const minTop = taskbarPosition === 'top' ? taskbarH + 4 : 4;
-  const maxBottom = taskbarPosition === 'bottom' ? window.innerHeight - taskbarH - 4 : window.innerHeight - 4;
   if (flyoutTop < minTop) flyoutTop = minTop;
-  if (flyoutTop + flyoutH > maxBottom) flyoutTop = maxBottom - flyoutH;
+  if (flyoutTop + flyoutH > maxBottom) flyoutTop = Math.max(minTop, maxBottom - flyoutH);
+  // Safety cap — if the height estimate is wrong (long labels wrap, dividers
+  // add px), maxHeight prevents the rendered flyout from physically extending
+  // past the menu bottom. The flyout becomes scrollable in that case.
+  const flyoutMaxH = maxBottom - flyoutTop;
 
   const handleSectionHover = (label: string, e: React.MouseEvent) => {
     clearTimeout(hoverTimeout.current);
@@ -426,13 +433,15 @@ export default function StartMenu({
           </div>
         </div>
 
-        {/* Flyout submenu — positioned vertically centered on hovered item */}
+        {/* Flyout submenu — positioned vertically centered on hovered item.
+            maxHeight is clamped to the main menu's bottom edge so the flyout
+            can never overlap the taskbar; long lists become scrollable. */}
         {hoveredSection && flyoutItems.length > 0 && search.length < 2 && (
-          <div ref={flyoutRef} className={`fixed ${sizeConfig.fw} rounded-2xl overflow-hidden`}
-            style={{ left: menuRef.current ? menuRef.current.getBoundingClientRect().right + 4 : menuWidth + 12, top: flyoutTop, animation: 'submenu-in 0.1s ease-out', ...menuGlass }}
+          <div ref={flyoutRef} className={`fixed ${sizeConfig.fw} rounded-2xl flex flex-col overflow-hidden`}
+            style={{ left: menuRef.current ? menuRef.current.getBoundingClientRect().right + 4 : menuWidth + 12, top: flyoutTop, maxHeight: flyoutMaxH, animation: 'submenu-in 0.1s ease-out', ...menuGlass }}
             onMouseEnter={() => clearTimeout(hoverTimeout.current)}
             onMouseLeave={() => { hoverTimeout.current = setTimeout(() => { setHoveredSection(null); setHoveredChild(null); }, 200); }}>
-            <div className="py-1 px-1">
+            <div className="py-1 px-1 overflow-y-auto">
               {flyoutItems.map(item => {
                 const hasChildren = !!item.children && item.children.length > 0;
                 const isChildHovered = hoveredChild === item.to;
@@ -475,13 +484,14 @@ export default function StartMenu({
           const subH = kids.length * sizeConfig.itemH + 12;
           let subTop = hoveredChildY - subH / 2;
           if (subTop < minTop) subTop = minTop;
-          if (subTop + subH > maxBottom) subTop = maxBottom - subH;
+          if (subTop + subH > maxBottom) subTop = Math.max(minTop, maxBottom - subH);
+          const subMaxH = maxBottom - subTop;
           return (
-            <div className={`fixed ${sizeConfig.fw} rounded-2xl overflow-hidden`}
-              style={{ left: subLeft, top: subTop, animation: 'submenu-in 0.1s ease-out', ...menuGlass }}
+            <div className={`fixed ${sizeConfig.fw} rounded-2xl flex flex-col overflow-hidden`}
+              style={{ left: subLeft, top: subTop, maxHeight: subMaxH, animation: 'submenu-in 0.1s ease-out', ...menuGlass }}
               onMouseEnter={() => { clearTimeout(hoverTimeout.current); clearTimeout(childHoverTimeout.current); }}
               onMouseLeave={() => { childHoverTimeout.current = setTimeout(() => setHoveredChild(null), 200); }}>
-              <div className="py-1 px-1">
+              <div className="py-1 px-1 overflow-y-auto">
                 {kids.map(child => (
                   <div key={child.to}>
                     <button onClick={() => handleClick(child.to)}

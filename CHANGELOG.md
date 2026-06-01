@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.6.3] — 2026-06-01
+
+### Fixed
+- **Start-menu flyout no longer overlaps the taskbar.** The flyout's vertical clamp now reads the live `getBoundingClientRect()` of the main menu (rather than viewport ± taskbar height), so the flyout stays strictly within the main menu's top/bottom edges instead of drifting a few px past them onto the taskbar. Both the level-2 section flyout and the level-3 child flyout also get a `maxHeight` matching the available space + `overflow-y: auto`, so very tall lists (or items with wrapping labels) scroll inside the flyout instead of bleeding past the menu bottom.
+
 ## [0.6.2] — 2026-06-01
 
 ### Fixed
