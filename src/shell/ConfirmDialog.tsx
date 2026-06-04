@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react';
-import { ExclamationTriangleIcon } from '@heroicons/react/24/outline';
+import { ExclamationTriangleIcon, XMarkIcon } from '@heroicons/react/24/outline';
 
 interface ConfirmOptions {
   title?: string;
@@ -179,13 +179,21 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
       <Dialog open={dOpen} onClose={() => handleDClose(false)} className="relative z-[9999]">
         <DialogBackdrop className="fixed inset-0 bg-black/30 transition-opacity" />
         <div className="fixed inset-0 flex items-center justify-center p-4">
-          <DialogPanel className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+          <DialogPanel className="relative w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <button
+              type="button"
+              onClick={() => handleDClose(false)}
+              aria-label="Close"
+              className="absolute right-4 top-4 rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            >
+              <XMarkIcon className="h-5 w-5" />
+            </button>
             <div className="flex gap-4">
               <div className={`shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${dOptions.variant === 'warning' ? 'text-yellow-600 bg-yellow-100' : 'text-red-600 bg-red-100'}`}>
                 <ExclamationTriangleIcon className="h-5 w-5" />
               </div>
               <div className="flex-1">
-                <DialogTitle className="text-base font-semibold text-gray-900">
+                <DialogTitle className="text-base font-semibold text-gray-900 pr-6">
                   {dOptions.title || 'Confirm Action'}
                 </DialogTitle>
                 <p className="mt-2 text-sm text-gray-600">{dOptions.message}</p>
@@ -206,7 +214,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
             <div className="mt-6 flex justify-end gap-3">
               <button type="button" onClick={() => handleDClose(false)}
                 className="bg-white text-gray-700 border border-gray-300 px-4 py-2 text-sm font-medium rounded-lg hover:bg-gray-50">
-                Cancel
+                Dismiss
               </button>
               <button type="button" onClick={() => handleDClose(true)}
                 disabled={dInput !== dOptions.confirmWord}
