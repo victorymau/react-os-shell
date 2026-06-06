@@ -24,6 +24,8 @@ export { ConfirmProvider, confirm, confirmDestructive, prompt } from './shell/Co
 export { default as GlobalSearch } from './shell/GlobalSearch';
 export type { SearchResult, SearchProvider, SearchConfig } from './shell/GlobalSearch';
 export { default as ShortcutHelp } from './shell/ShortcutHelp';
+export { default as HelpCenter } from './shell/HelpCenter';
+export type { HelpCenterProps, HelpCenterDoc } from './shell/HelpCenter';
 export { ALT_SHIFT_E, ALT_SHIFT_D, ALT_SHIFT_N, CMD_ENTER, CMD_S, CMD_K, CMD_DOT, CMD_A, MOD, ALT, SHIFT, ENTER, isMac } from './shell/Kbd';
 export { default as toast } from './shell/toast';
 export { default as EditableGrid } from './shell/EditableGrid';
