@@ -84,6 +84,7 @@ export { default as Layout } from './shell/Layout';
 export type { LayoutProps } from './shell/Layout';
 export { default as StartMenu } from './shell/StartMenu';
 export { default as Desktop } from './shell/Desktop';
+export { default as WidgetManager } from './shell/WidgetManager';
 
 // ── Built-in settings pages (consumer registers via window registry) ──
 export { default as Customization } from './settings/Customization';

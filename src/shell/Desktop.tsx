@@ -4,6 +4,7 @@ import { useWindowManager } from './WindowManager';
 import { navIcons } from '../shell-config/nav';
 import { useShellPrefs } from './ShellPrefs';
 import Modal from './Modal';
+import WidgetManager from './WidgetManager';
 import { APP_VERSION } from '../version';
 import changelog, { type ChangelogEntry } from '../changelog';
 import toast from './toast';
@@ -590,6 +591,7 @@ export default function Desktop({ profile }: { profile: any }) {
   const [openFolder, setOpenFolder] = useState<string | null>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [whatsNewOpen, setWhatsNewOpen] = useState(false);
+  const [widgetsOpen, setWidgetsOpen] = useState(false);
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [editingStickyId, setEditingStickyId] = useState<string | null>(null);
@@ -1433,6 +1435,10 @@ export default function Desktop({ profile }: { profile: any }) {
             <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" /></svg>
             Snap to Grid
           </PopupMenuItem>
+          <PopupMenuItem onClick={() => { setContextMenu(null); setWidgetsOpen(true); }}>
+            <svg className="h-4 w-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="3.5" y="13.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="13.5" width="7" height="7" rx="1.5" /></svg>
+            Manage Widgets…
+          </PopupMenuItem>
           <PopupMenuDivider />
           <PopupMenuItem onClick={() => { setContextMenu(null); openPage('/settings/customization'); }}>
             <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.42 3.42a15.995 15.995 0 004.764-4.648l3.876-5.814a1.151 1.151 0 00-1.597-1.597L14.146 6.32a15.996 15.996 0 00-4.649 4.763m3.42 3.42a6.776 6.776 0 00-3.42-3.42" /></svg>
@@ -1554,6 +1560,9 @@ export default function Desktop({ profile }: { profile: any }) {
           />
         );
       })()}
+
+      {/* Widget manager — add / remove desktop widgets */}
+      <WidgetManager open={widgetsOpen} onClose={() => setWidgetsOpen(false)} />
 
       {/* About dialog */}
       {aboutOpen && (() => {

@@ -102,9 +102,13 @@ const TOP_NAV_ITEMS: TopNavItem[] = (() => {
 const NAV_SECTIONS = [
   ...TOP_NAV_ITEMS,
   {
+    // Widgets (Calculator, Weather, Currency, Pomodoro, World Clock) are
+    // added/removed from the desktop's Widget Manager panel (right-click the
+    // desktop → Manage Widgets…), so they're filtered out of the start menu
+    // here — only non-widget utilities would remain.
     label: 'Utilities',
     items: Object.entries(utilityApps)
-      .filter(([to]) => !TOP_LEVEL_ROUTES.has(to))
+      .filter(([to, e]) => !TOP_LEVEL_ROUTES.has(to) && !(e as any).widget)
       .map(([to, e]) => ({ to, label: (e as any).label })),
   },
   { label: 'Games', items: (() => {

@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-06-06
+
+### Added
+- **Widget manager — add/remove desktop widgets from one place.** New `WidgetManager` panel (right-click the desktop → **Manage Widgets…**) lists every widget-flagged page in the live window registry (the bundled Calculator, Currency Converter, Pomodoro Timer, Weather, and World Clock, plus anything a consumer registers with `widget: true`), shows which are currently on the desktop, and lets you toggle each on/off — with **Add all** / **Remove all** and a live "N of M on your desktop" count. It drives the same plumbing the Start Menu already uses (`openPage` to drop a widget on the desktop, `closeEntity` to remove it), so there's no new persistence layer — widgets still restore via the open-windows session store and keep their dragged positions. Each card uses the consumer's per-route `navIcon` (falling back to a generic widget glyph) and is keyboard/pointer toggleable; the active checkmark turns into a "×" on hover to signal removal. Exported from the package root so a consumer can also register it as a window or wire it to a taskbar tray button.
+
+### Removed
+- **Notifications row dropped from the Start Menu and Sidebar.** The `/notifications` launcher row no longer renders in either nav surface — the system-tray notification bell remains the entry point. Both `StartMenu` layouts (horizontal and vertical) and the `Sidebar` are affected; consumers that relied on the menu row should point users at the tray bell (or add their own nav item).
+
 ## [0.6.9] — 2026-06-06
 
 ### Fixed
