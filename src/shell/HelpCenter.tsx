@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
+import Markdown from './Markdown';
 
 /**
  * One help article. Generic shape — the consuming portal maps its own
@@ -243,9 +244,7 @@ export default function HelpCenter({
               {renderBody ? (
                 renderBody(selected)
               ) : selected.body ? (
-                <pre className="whitespace-pre-wrap text-sm text-gray-800 font-sans leading-relaxed">
-                  {selected.body}
-                </pre>
+                <Markdown>{selected.body}</Markdown>
               ) : (
                 <p className="text-sm text-gray-500 italic">This article has no body yet.</p>
               )}
