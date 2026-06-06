@@ -59,6 +59,10 @@ export { default as BugReportDetail } from './shell/BugReportDetail';
 export { default as StatusBadge, StatusBadgeProvider } from './shell/StatusBadge';
 export type { SemanticGroup } from './shell/StatusBadge';
 
+// ── Dev-environment chrome (localhost-only tray badge + tab-title prefix) ──
+export { default as DevIndicator } from './shell/DevIndicator';
+export { isDevEnv, applyDevTitle, DEV_BANNER_TEXT } from './utils/env';
+
 // ── Window manager ──
 export {
   WindowManagerProvider,

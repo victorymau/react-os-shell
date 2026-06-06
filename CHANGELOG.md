@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.7.2] — 2026-06-06
+
+### Added
+- **Dev-environment indicator, shared.** New `DevIndicator` system-tray badge (drop into a host's `taskbarTrayLeft`) plus `isDevEnv()` / `applyDevTitle()` helpers, so consumer apps no longer each maintain their own copy. The badge renders only when served from `localhost`/`127.0.0.1` (a developer's machine) and is `null` everywhere else; `applyDevTitle({ faviconHref? })` prefixes the tab title with `[DEV]` (and optionally swaps the favicon) on the same hosts, idempotently. Nothing is auto-injected into `Layout` — a consumer opts in by rendering `<DevIndicator/>` and calling `applyDevTitle()` in `main.tsx`.
+
 ## [0.7.1] — 2026-06-06
 
 ### Fixed
