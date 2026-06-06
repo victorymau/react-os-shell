@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, isValidElement, cloneElement, type ReactElement, type ReactNode } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, isValidElement, cloneElement, type ReactElement, type ReactNode } from 'react';
 import {
   navSections as defaultNavSections,
   navIcons as defaultNavIcons,
@@ -62,13 +62,37 @@ export default function StartMenu({
   const [searchIdx, setSearchIdx] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
   const flyoutRef = useRef<HTMLDivElement>(null);
+  const subFlyoutRef = useRef<HTMLDivElement>(null);
   const hoverTimeout = useRef<ReturnType<typeof setTimeout>>();
   const childHoverTimeout = useRef<ReturnType<typeof setTimeout>>();
+  // Measured heights — used to refine the estimate-based top position so the
+  // flyout fits its content without needing a scrollbar.
+  const [measuredFlyoutH, setMeasuredFlyoutH] = useState<number | null>(null);
+  const [measuredSubH, setMeasuredSubH] = useState<number | null>(null);
 
   useEffect(() => { if (!open) { setSearch(''); setHoveredSection(null); setHoveredChild(null); setSearchIdx(0); } }, [open]);
 
   // Clear the 3rd-level flyout whenever the level-2 flyout changes target.
   useEffect(() => { setHoveredChild(null); }, [hoveredSection]);
+
+  // Reset measured heights when the target changes so the next pass uses the
+  // estimate first, then refines from the new DOM measurement.
+  useEffect(() => { setMeasuredFlyoutH(null); }, [hoveredSection]);
+  useEffect(() => { setMeasuredSubH(null); }, [hoveredChild]);
+
+  // Capture the flyout's intrinsic (rendered) height after layout. Setting
+  // state here triggers a synchronous re-render before paint, so the user
+  // only ever sees the corrected position.
+  useLayoutEffect(() => {
+    if (!flyoutRef.current || !hoveredSection || search.length >= 2) return;
+    const h = flyoutRef.current.offsetHeight;
+    if (h !== measuredFlyoutH) setMeasuredFlyoutH(h);
+  }, [hoveredSection, search, measuredFlyoutH]);
+  useLayoutEffect(() => {
+    if (!subFlyoutRef.current || !hoveredChild || search.length >= 2) return;
+    const h = subFlyoutRef.current.offsetHeight;
+    if (h !== measuredSubH) setMeasuredSubH(h);
+  }, [hoveredChild, search, measuredSubH]);
 
   useEffect(() => {
     if (!open) return;
@@ -247,9 +271,13 @@ export default function StartMenu({
 
   // Calculate flyout vertical position — center on hovered item, clamp so it
   // stays within the main menu's visible span (so it can't drift below the
-  // menu bottom and overlap the taskbar). Fall back to the viewport minus the
-  // taskbar on first render before menuRef has measured.
-  const flyoutH = flyoutItems.length * sizeConfig.itemH + 12;
+  // menu bottom and overlap the taskbar). The first render uses a rough
+  // estimate (`flyoutEstH`); a `useLayoutEffect` then captures the actual
+  // rendered height in `measuredFlyoutH`, and the next paint repositions the
+  // flyout using that measured value — so it never needs a scrollbar even
+  // when labels wrap or dividers nudge the height past the estimate.
+  const flyoutEstH = flyoutItems.length * sizeConfig.itemH + 12;
+  const flyoutH = measuredFlyoutH ?? flyoutEstH;
   const menuWidth = sizeConfig.mw;
   const menuRect = menuRef.current?.getBoundingClientRect();
   const minTop = menuRect ? menuRect.top : (taskbarPosition === 'top' ? taskbarH + 4 : 4);
@@ -257,10 +285,6 @@ export default function StartMenu({
   let flyoutTop = hoveredY - flyoutH / 2;
   if (flyoutTop < minTop) flyoutTop = minTop;
   if (flyoutTop + flyoutH > maxBottom) flyoutTop = Math.max(minTop, maxBottom - flyoutH);
-  // Safety cap — if the height estimate is wrong (long labels wrap, dividers
-  // add px), maxHeight prevents the rendered flyout from physically extending
-  // past the menu bottom. The flyout becomes scrollable in that case.
-  const flyoutMaxH = maxBottom - flyoutTop;
 
   const handleSectionHover = (label: string, e: React.MouseEvent) => {
     clearTimeout(hoverTimeout.current);
@@ -434,14 +458,15 @@ export default function StartMenu({
         </div>
 
         {/* Flyout submenu — positioned vertically centered on hovered item.
-            maxHeight is clamped to the main menu's bottom edge so the flyout
-            can never overlap the taskbar; long lists become scrollable. */}
+            Height is left intrinsic; the useLayoutEffect above measures the
+            rendered offsetHeight and `flyoutTop` clamps using that measured
+            value, so the flyout shifts up to fit without ever scrolling. */}
         {hoveredSection && flyoutItems.length > 0 && search.length < 2 && (
-          <div ref={flyoutRef} className={`fixed ${sizeConfig.fw} rounded-2xl flex flex-col overflow-hidden`}
-            style={{ left: menuRef.current ? menuRef.current.getBoundingClientRect().right + 4 : menuWidth + 12, top: flyoutTop, maxHeight: flyoutMaxH, animation: 'submenu-in 0.1s ease-out', ...menuGlass }}
+          <div ref={flyoutRef} className={`fixed ${sizeConfig.fw} rounded-2xl overflow-hidden`}
+            style={{ left: menuRef.current ? menuRef.current.getBoundingClientRect().right + 4 : menuWidth + 12, top: flyoutTop, animation: 'submenu-in 0.1s ease-out', ...menuGlass }}
             onMouseEnter={() => clearTimeout(hoverTimeout.current)}
             onMouseLeave={() => { hoverTimeout.current = setTimeout(() => { setHoveredSection(null); setHoveredChild(null); }, 200); }}>
-            <div className="py-1 px-1 overflow-y-auto">
+            <div className="py-1 px-1">
               {flyoutItems.map(item => {
                 const hasChildren = !!item.children && item.children.length > 0;
                 const isChildHovered = hoveredChild === item.to;
@@ -481,17 +506,17 @@ export default function StartMenu({
           if (!parent || kids.length === 0) return null;
           const flyoutRect = flyoutRef.current?.getBoundingClientRect();
           const subLeft = flyoutRect ? flyoutRect.right + 4 : 0;
-          const subH = kids.length * sizeConfig.itemH + 12;
+          const subEstH = kids.length * sizeConfig.itemH + 12;
+          const subH = measuredSubH ?? subEstH;
           let subTop = hoveredChildY - subH / 2;
           if (subTop < minTop) subTop = minTop;
           if (subTop + subH > maxBottom) subTop = Math.max(minTop, maxBottom - subH);
-          const subMaxH = maxBottom - subTop;
           return (
-            <div className={`fixed ${sizeConfig.fw} rounded-2xl flex flex-col overflow-hidden`}
-              style={{ left: subLeft, top: subTop, maxHeight: subMaxH, animation: 'submenu-in 0.1s ease-out', ...menuGlass }}
+            <div ref={subFlyoutRef} className={`fixed ${sizeConfig.fw} rounded-2xl overflow-hidden`}
+              style={{ left: subLeft, top: subTop, animation: 'submenu-in 0.1s ease-out', ...menuGlass }}
               onMouseEnter={() => { clearTimeout(hoverTimeout.current); clearTimeout(childHoverTimeout.current); }}
               onMouseLeave={() => { childHoverTimeout.current = setTimeout(() => setHoveredChild(null), 200); }}>
-              <div className="py-1 px-1 overflow-y-auto">
+              <div className="py-1 px-1">
                 {kids.map(child => (
                   <div key={child.to}>
                     <button onClick={() => handleClick(child.to)}

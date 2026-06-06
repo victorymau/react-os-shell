@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.6.8] — 2026-06-06
+
+### Fixed
+- **Start-menu flyout no longer needs a scrollbar.** 0.6.3 capped the flyout to `maxHeight: menuBottom - flyoutTop` with `overflow-y: auto`, but when the height estimate underestimated the real content (dividers, wrapping labels) the cap kicked in and a scrollbar appeared even though the flyout would have fit if positioned a few pixels higher. The flyout now renders at its intrinsic height and a `useLayoutEffect` captures the real `offsetHeight` after layout — the next paint repositions the flyout using that measured value, so it shifts up to fit fully inside the main menu's bounds without ever clipping. Applies to both the level-2 section flyout and the level-3 child flyout.
+
 ## [0.6.3] — 2026-06-01
 
 ### Fixed
