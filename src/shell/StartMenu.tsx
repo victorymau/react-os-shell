@@ -66,33 +66,40 @@ export default function StartMenu({
   const hoverTimeout = useRef<ReturnType<typeof setTimeout>>();
   const childHoverTimeout = useRef<ReturnType<typeof setTimeout>>();
   // Measured heights — used to refine the estimate-based top position so the
-  // flyout fits its content without needing a scrollbar.
-  const [measuredFlyoutH, setMeasuredFlyoutH] = useState<number | null>(null);
-  const [measuredSubH, setMeasuredSubH] = useState<number | null>(null);
+  // flyout fits its content without needing a scrollbar. Tracked together
+  // with the target (section/child) the measurement is FOR, so a stale value
+  // from a previous target is never used: when the target changes the
+  // derived `flyoutH` falls back to the estimate until useLayoutEffect
+  // re-measures. This avoids the post-paint reset that previously caused the
+  // level-2 flyout to "bounce" between estimate and measured positions —
+  // that bounce would shift items vertically right under the cursor, so
+  // hovering an item with children on the first try never registered.
+  const [measuredFlyout, setMeasuredFlyout] = useState<{ key: string; h: number } | null>(null);
+  const [measuredSub, setMeasuredSub] = useState<{ key: string; h: number } | null>(null);
 
   useEffect(() => { if (!open) { setSearch(''); setHoveredSection(null); setHoveredChild(null); setSearchIdx(0); } }, [open]);
 
   // Clear the 3rd-level flyout whenever the level-2 flyout changes target.
   useEffect(() => { setHoveredChild(null); }, [hoveredSection]);
 
-  // Reset measured heights when the target changes so the next pass uses the
-  // estimate first, then refines from the new DOM measurement.
-  useEffect(() => { setMeasuredFlyoutH(null); }, [hoveredSection]);
-  useEffect(() => { setMeasuredSubH(null); }, [hoveredChild]);
-
-  // Capture the flyout's intrinsic (rendered) height after layout. Setting
-  // state here triggers a synchronous re-render before paint, so the user
-  // only ever sees the corrected position.
+  // Capture each flyout's intrinsic rendered height after layout. Runs
+  // before paint, so the very next paint repositions using the actual h.
+  // Stale measurements from a different target are discarded by the
+  // `measuredFlyout?.key === hoveredSection` check below.
   useLayoutEffect(() => {
     if (!flyoutRef.current || !hoveredSection || search.length >= 2) return;
     const h = flyoutRef.current.offsetHeight;
-    if (h !== measuredFlyoutH) setMeasuredFlyoutH(h);
-  }, [hoveredSection, search, measuredFlyoutH]);
+    if (measuredFlyout?.key !== hoveredSection || measuredFlyout.h !== h) {
+      setMeasuredFlyout({ key: hoveredSection, h });
+    }
+  }, [hoveredSection, search, measuredFlyout]);
   useLayoutEffect(() => {
     if (!subFlyoutRef.current || !hoveredChild || search.length >= 2) return;
     const h = subFlyoutRef.current.offsetHeight;
-    if (h !== measuredSubH) setMeasuredSubH(h);
-  }, [hoveredChild, search, measuredSubH]);
+    if (measuredSub?.key !== hoveredChild || measuredSub.h !== h) {
+      setMeasuredSub({ key: hoveredChild, h });
+    }
+  }, [hoveredChild, search, measuredSub]);
 
   useEffect(() => {
     if (!open) return;
@@ -273,11 +280,11 @@ export default function StartMenu({
   // stays within the main menu's visible span (so it can't drift below the
   // menu bottom and overlap the taskbar). The first render uses a rough
   // estimate (`flyoutEstH`); a `useLayoutEffect` then captures the actual
-  // rendered height in `measuredFlyoutH`, and the next paint repositions the
+  // rendered height in `measuredFlyout`, and the next paint repositions the
   // flyout using that measured value — so it never needs a scrollbar even
   // when labels wrap or dividers nudge the height past the estimate.
   const flyoutEstH = flyoutItems.length * sizeConfig.itemH + 12;
-  const flyoutH = measuredFlyoutH ?? flyoutEstH;
+  const flyoutH = measuredFlyout?.key === hoveredSection ? measuredFlyout.h : flyoutEstH;
   const menuWidth = sizeConfig.mw;
   const menuRect = menuRef.current?.getBoundingClientRect();
   const minTop = menuRect ? menuRect.top : (taskbarPosition === 'top' ? taskbarH + 4 : 4);
@@ -507,7 +514,7 @@ export default function StartMenu({
           const flyoutRect = flyoutRef.current?.getBoundingClientRect();
           const subLeft = flyoutRect ? flyoutRect.right + 4 : 0;
           const subEstH = kids.length * sizeConfig.itemH + 12;
-          const subH = measuredSubH ?? subEstH;
+          const subH = measuredSub?.key === hoveredChild ? measuredSub.h : subEstH;
           let subTop = hoveredChildY - subH / 2;
           if (subTop < minTop) subTop = minTop;
           if (subTop + subH > maxBottom) subTop = Math.max(minTop, maxBottom - subH);

@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.6.9] — 2026-06-06
+
+### Fixed
+- **Level-3 start-menu flyout opens on the first hover.** A pair of post-paint `useEffect` resets (`setMeasuredFlyoutH(null)` keyed on `hoveredSection` / `hoveredChild`) were undoing the measurement that the `useLayoutEffect` had just captured — so the level-2 flyout rendered correctly, painted, then bounced through one extra render at the estimated position before settling. That intermediate paint shifted items vertically right when the user was moving onto an item-with-children, so the `onMouseEnter` for the child never registered. The measurement now tracks the target it was taken for (`{ key, h }`), so a stale value from a previous section/child naturally falls back to the estimate without needing a reset. One frame of estimate, then a clean transition to measured — no bounce.
+
 ## [0.6.8] — 2026-06-06
 
 ### Fixed
