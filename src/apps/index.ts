@@ -52,12 +52,12 @@ const Files = lazy(() => import('./Files'));
 const Browser = lazy(() => import('./Browser'));
 
 export const utilityApps: WindowRegistry = {
-  '/calculator': { component: Calculator, label: 'Calculator', size: 'sm', allowPinOnTop: true, utility: true, widget: true, autoHeight: true, dimensions: [280, 420] },
+  '/calculator': { component: Calculator, label: 'Calculator', size: 'sm', allowPinOnTop: true, utility: true, widget: true, dimensions: [280, 420] },
   '/spreadsheet': { component: Spreadsheet, label: 'Spreadsheets', size: '2xl', appStyle: true, multiInstance: true },
   '/notepad': { component: Notepad, label: 'Notepad', size: 'lg', allowPinOnTop: true },
   '/weather': { component: Weather, label: 'Weather', size: 'sm', utility: true, widget: true, autoHeight: true, dimensions: [320, 400] },
   '/currency': { component: CurrencyConverter, label: 'Currency Converter', size: 'sm', utility: true, widget: true, autoHeight: true, dimensions: [320, 480] },
-  '/pomodoro': { component: PomodoroTimer, label: 'Pomodoro Timer', size: 'sm', utility: true, widget: true, autoHeight: true, dimensions: [320, 600] },
+  '/pomodoro': { component: PomodoroTimer, label: 'Pomodoro Timer', size: 'sm', utility: true, widget: true, dimensions: [320, 600] },
   '/world-clock': { component: WorldClock, label: 'World Clock', size: 'sm', utility: true, widget: true, autoHeight: true, dimensions: [320, 480] },
   '/todo': { component: TodoList, label: 'Todo List', size: 'md', dimensions: [560, 640] },
 };

@@ -114,7 +114,7 @@ export default function WorldClock() {
        *  Rows use `divide-y` rather than per-row border classes so the
        *  last row never paints a stray separator line at the panel's
        *  bottom edge. */}
-      <div className="h-full"
+      <div
         style={{
           backgroundColor: `rgb(var(--taskbar-bg-rgb, 243 244 246) / ${appearance.activeOpacity / 100})`,
           backdropFilter: appearance.activeBlur > 0 ? `blur(${appearance.activeBlur}px)` : undefined,

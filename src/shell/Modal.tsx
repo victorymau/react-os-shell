@@ -224,6 +224,24 @@ export function setWindowDefaultPosition(key: string, pos: { x: number; y: numbe
   _savePositionsDebounced();
 }
 
+/** Read the saved box for a window key (viewport-relative px), or null. */
+export function getWindowPosition(key: string): { x: number; y: number; w: number; h: number } | null {
+  return _windowPositions[key] ? { ..._windowPositions[key] } : null;
+}
+
+/**
+ * Force a window's saved position — unlike `setWindowDefaultPosition` this
+ * overwrites any existing entry. Use when the consumer wants to deliberately
+ * (re)place a window, e.g. the Widget Manager dropping a freshly-added widget
+ * into a tidy top-left slot regardless of where it last sat. For `autoHeight`
+ * windows the `h` here is only a first-paint placeholder — the window
+ * re-measures its content height on open.
+ */
+export function setWindowPosition(key: string, pos: { x: number; y: number; w: number; h: number }) {
+  _windowPositions[key] = pos;
+  _savePositionsDebounced();
+}
+
 interface ModalProps {
   open: boolean;
   onClose: () => void;
@@ -1052,11 +1070,13 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   // smaller/larger like any other window. Persisted positions short-circuit
   // the measurement step — if `boxKey` already maps to a saved h, we keep
   // it.
-  const [autoHeightResolved, setAutoHeightResolved] = useState(() => {
-    if (!autoHeight) return true;
-    if (boxKey && _windowPositions[boxKey] && typeof _windowPositions[boxKey].h === 'number') return true;
-    return false;
-  });
+  // `autoHeight` windows always re-measure their content height on open so
+  // they stay content-aware. A stale saved height must not short-circuit this
+  // — e.g. a seeded default, or a height frozen earlier while the flex body
+  // was filling the panel (which made content-sized widgets open far too
+  // tall). Position and width are still restored from the saved box below;
+  // only the height is recomputed from the rendered content.
+  const [autoHeightResolved, setAutoHeightResolved] = useState(() => !autoHeight);
   // Always-maximized layout: when the Layout sets `--layout-mode: sidebar`
   // on <html>, every non-widget Modal becomes immovable and locked to
   // calcMaximized() — no windowed state, no drag-to-restore, no maximize
@@ -1078,19 +1098,44 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   const boxRef = useRef(box);
   boxRef.current = box;
 
-  // Measure-then-freeze autoHeight. After React commits the first paint with
-  // `height: auto` (capped by maxHeight), grab the rendered height from the
-  // panel and write it back into box.h. Subsequent renders use the fixed h
-  // — no more calc(), no more reactivity to box.y / viewport.
+  // autoHeight measurement. While unresolved the panel renders at `height:
+  // auto` with a content-sized (flex-none) body, so its measured box reflects
+  // the natural content height. A single first-paint measurement is unreliable
+  // — the open animation, the lazy/Suspense widget body, and async data each
+  // settle over several frames, so measuring once can lock in the fallback's
+  // height (a loading spinner) or a mid-animation value. We instead track the
+  // panel with a ResizeObserver:
+  //   • Widgets stay content-sized for their whole life (never freeze), so a
+  //     widget grows/shrinks with its content — a World Clock gains height as
+  //     each city's weather loads or when the user adds a city, a Currency
+  //     widget hugs its rows. Widgets aren't user-resizable, so there's nothing
+  //     to preserve by freezing.
+  //   • Other autoHeight windows (e.g. settings dialogs) measure-then-freeze
+  //     once the height holds steady, then behave as normal fixed-size windows
+  //     (draggable/resizable, no reactivity to box.y / viewport / content).
   useLayoutEffect(() => {
     if (autoHeightResolved) return;
     const el = panelRef.current;
     if (!el) return;
-    const rect = el.getBoundingClientRect();
-    if (rect.height <= 0) return;
-    setBox(prev => ({ ...prev, h: rect.height }));
-    setAutoHeightResolved(true);
-  }, [autoHeightResolved]);
+    let lastH = 0;
+    let freezeTimer: ReturnType<typeof setTimeout> | null = null;
+    const measure = () => {
+      const h = el.getBoundingClientRect().height;
+      if (h <= 0) return;
+      if (Math.abs(h - lastH) > 1) {
+        lastH = h;
+        setBox(prev => (Math.abs(prev.h - h) > 1 ? { ...prev, h } : prev));
+        if (!widget) {
+          if (freezeTimer) clearTimeout(freezeTimer);
+          freezeTimer = setTimeout(() => setAutoHeightResolved(true), 140);
+        }
+      }
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => { ro.disconnect(); if (freezeTimer) clearTimeout(freezeTimer); };
+  }, [autoHeightResolved, widget]);
 
   // When sidebar mode is toggled at runtime, snap existing windows to the
   // maximized box so they instantly fill the new work area. When it's
@@ -1130,9 +1175,13 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     if (!open) return;
     setTouched(false);
     closingRef.current = false;
-    // If we have a saved position in the store, restore it instead of resetting
+    // If we have a saved position in the store, restore it instead of resetting.
+    // For `autoHeight` windows the stored `h` is only a placeholder — height is
+    // owned by live measurement — so keep the currently-measured `h` rather
+    // than clobbering it back to the (stale/seeded) saved value.
     if (boxKey && _windowPositions[boxKey]) {
-      setBox({ ..._windowPositions[boxKey] });
+      const saved = _windowPositions[boxKey];
+      setBox(prev => (autoHeight ? { ...saved, h: prev.h } : { ...saved }));
       return;
     }
     if (initialBox) {
@@ -1651,7 +1700,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
         <ModalActionsContext.Provider value={{ rightRef: actionsRef as React.RefObject<HTMLDivElement | null>, leftRef: actionsLeftRef as React.RefObject<HTMLDivElement | null>, notify: () => setHasActions(true), active: isActive, isDirty }}>
         <div
           {...(widget ? { onPointerDown: startDrag, onContextMenu: (e: React.MouseEvent) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }); } } : {})}
-          className={`flex-1 min-h-0 flex flex-col ${widget ? 'p-0 cursor-move' : appStyle ? 'p-0' : compact ? 'p-2' : 'p-4'} ${widget ? '' : 'backdrop-blur-sm'} ${(bodyScroll === false || appStyle) ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain'} ${widget ? 'rounded-2xl select-none' : ''}`}
+          className={`${(autoHeight && !autoHeightResolved) ? 'flex-none' : 'flex-1 min-h-0'} flex flex-col ${widget ? 'p-0 cursor-move' : appStyle ? 'p-0' : compact ? 'p-2' : 'p-4'} ${widget ? '' : 'backdrop-blur-sm'} ${(autoHeight && !autoHeightResolved) ? 'overflow-visible' : ((bodyScroll === false || appStyle) ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain')} ${widget ? 'rounded-2xl select-none' : ''}`}
           style={{ ...(widget ? { touchAction: 'none' } : {}), backgroundColor: widget ? 'transparent' : (isActive ? `rgb(var(--window-content-rgb) / var(--active-content-opacity, 0.9))` : `rgb(var(--window-content-rgb) / var(--inactive-content-opacity, 0.8))`) }}>
           {children}
         </div>

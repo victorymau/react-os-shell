@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-06-06
+
+### Fixed
+- **Widgets are now content-aware in height.** `autoHeight` windows measured their height once on first paint, which (a) caught the lazy/Suspense body or a mid-animation frame and (b) was immediately clobbered by the "restore saved position" effect re-applying the stale/seeded height — so widgets opened at their full `dimensions[1]` with dead space below (e.g. the Currency widget showed four rows in a 480 px panel). `autoHeight` now tracks the panel with a ResizeObserver: widgets stay content-sized for their whole life (a World Clock grows as each city's weather loads or when you add a city; Currency/Weather hug their content), while non-widget `autoHeight` dialogs measure-then-freeze once stable. The reset-on-open effect no longer overwrites a measured height.
+- **Elastic widgets keep their designed size.** Calculator and Pomodoro deliberately fill a fixed height (keypad grid / timer column), so content-measuring squashed them. They no longer set `autoHeight` and render at their `dimensions` again. World Clock dropped an `h-full` wrapper so it sizes to its city rows.
+
+### Added
+- **Widget Manager places new widgets tidily.** Adding a widget now drops it into the top-left corner and stacks it below existing widgets (reading their live on-screen rects) so it never covers one, wrapping to a new column when a column fills and never running off-screen. **Add all** lays the set out column-by-column. New `setWindowPosition(key, box)` / `getWindowPosition(key)` exports back this (companions to `setWindowDefaultPosition`).
+
 ## [0.7.0] — 2026-06-06
 
 ### Added
