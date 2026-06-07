@@ -1,12 +1,12 @@
 # react-os-shell
 
-A desktop-style React UI shell — windows, taskbar, start menu, sticky notes, frosted-glass theming — plus bundled apps. **Email** and **Calendar** talk to your own IMAP/SMTP/CalDAV provider via a colocated Node bridge server in `server/`.
+A desktop-style React UI shell — windows, taskbar, start menu, sticky notes, frosted-glass theming — plus bundled apps.
 
-> **Status:** v0.3.0 — Google services have been removed. Email is now IMAP/SMTP, Calendar is CalDAV. Bring your own provider (Fastmail, iCloud, Yahoo, self-hosted Dovecot/Radicale, …).
+> **Status:** v0.8.0 — the bundled Email + Calendar apps and their Node IMAP/SMTP/CalDAV bridge have been removed. Mail is now the consuming app's responsibility.
 
 ### → [Live demo](https://victorymau.github.io/react-os-shell/)
 
-A backend-less playground hosted on GitHub Pages. Wallpapers, themes, sticky notes, the spreadsheet, the calendar, all wired to `localStorage` so the page survives a refresh. Source is in [`examples/demo/`](examples/demo/).
+A backend-less playground hosted on GitHub Pages. Wallpapers, themes, sticky notes, the spreadsheet, all wired to `localStorage` so the page survives a refresh. Source is in [`examples/demo/`](examples/demo/).
 
 [![react-os-shell demo](docs/hero.png)](https://victorymau.github.io/react-os-shell/)
 
@@ -14,17 +14,16 @@ A backend-less playground hosted on GitHub Pages. Wallpapers, themes, sticky not
 
 ## What's in the box
 
-**Shell:** `<Layout>`, `<StartMenu>`, `<Desktop>` (with sticky notes + folders), `<WindowManager>`, `<Modal>` (standard / compact / widget styles), `<PopupMenu>`, `<ConfirmDialog>`, `<GlobalSearch>` (Cmd-K), `<ShortcutHelp>`, `<NotificationBell>`, `<BugReportDetail>`, `<StatusBadge>`, frosted-glass theming, `<MailConnectModal>`.
+**Shell:** `<Layout>`, `<StartMenu>`, `<Desktop>` (with sticky notes + folders), `<WindowManager>`, `<Modal>` (standard / compact / widget styles), `<PopupMenu>`, `<ConfirmDialog>`, `<GlobalSearch>` (Cmd-K), `<ShortcutHelp>`, `<NotificationBell>`, `<BugReportDetail>`, `<StatusBadge>`, frosted-glass theming.
 
 **Apps:**
 - **Utilities:** Calculator, Notepad, Spreadsheet, Weather, CurrencyConverter, PomodoroTimer, WorldClock, TodoList
 - **Games:** Chess, Checkers, Minesweeper, Sudoku, Tetris, 2048
-- **Mail / Calendar:** Email (IMAP/SMTP), Calendar (CalDAV) — both talk to the bridge server in `server/`
 - **Documents / Web:** Preview, Documents, Files, Browser
 
-Most apps ship in the `bundledApps` registry; a few (WorldClock, Notepad, Calendar) want consumer-supplied prefs wiring to persist content across reloads. The bundled `Customization` settings page is also exported separately for consumers to register at `/settings/customization`.
+Most apps ship in the `bundledApps` registry; a few (WorldClock, Notepad) want consumer-supplied prefs wiring to persist content across reloads. The bundled `Customization` settings page is also exported separately for consumers to register at `/settings/customization`.
 
-**Hooks:** `useWindowManager`, `useTheme`, full hotkey/nav system, `useMailAuth`, `useEmailUnread`.
+**Hooks:** `useWindowManager`, `useTheme`, full hotkey/nav system.
 
 **Themes:** light + dark (frosted-glass tinting; the package ships base styles, additional theme variants like pink/green/grey/blue can layer on top).
 
@@ -107,25 +106,7 @@ export default function App() {
 }
 ```
 
-That gives you the full desktop with all utility, game, mail, document and web apps reachable through the start menu. Add your own entity windows by extending the registry, and wire the notification / bug-report / sticky-note systems through optional config callbacks when you want them.
-
-### Email & Calendar setup
-
-Run the colocated bridge server in `server/` so the Email and Calendar apps can reach IMAP/SMTP/CalDAV. From the repo root:
-
-```bash
-npm run server:install   # one-time
-npm run dev:all          # library demo + server on http://localhost:3001
-```
-
-Then open the shell, click the mail icon in the taskbar, and connect via IMAP/SMTP (+ optional CalDAV). Presets ship for Fastmail, iCloud, Yahoo, Gmail (app-password), and Outlook (app-password). See `server/README.md` for environment variables and the HTTP contract.
-
-Consumers running their own bridge can point the library elsewhere:
-
-```ts
-import { setShellMailServer } from 'react-os-shell';
-setShellMailServer('https://mail.example.com');
-```
+That gives you the full desktop with all utility, game, document and web apps reachable through the start menu. Add your own entity windows by extending the registry, and wire the notification / bug-report / sticky-note systems through optional config callbacks when you want them.
 
 ## Concepts
 
@@ -191,7 +172,6 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 | `NotificationBell` | Taskbar bell — config via `<Layout notifications={…}>`. |
 | `BugReportDetail` | Used inside an entity-window registry entry; reads from `<BugReportConfigProvider>`. |
 | `StatusBadge` | Coloured pill rendering a status string. Map status→semantic group via `<StatusBadgeProvider groups={{...}}>`. |
-| `MailConnectModal` | IMAP/SMTP/CalDAV credential form — opens via the taskbar mail button. |
 
 ### Providers + setters
 
@@ -204,7 +184,6 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 | `<DesktopHostProvider value={{ stickyResolver?, saveShortcuts?, … }}>` | Sticky-note ref resolver + persistence callbacks. |
 | `<StatusBadgeProvider groups={{ status: 'success' \| ... }}>` | Status string → semantic group. |
 | `setShellApiClient(axios)` | Module-level: register your axios instance once. |
-| `setShellMailServer(url \| axios)` | Module-level: point the Email/Calendar apps at a bridge server (default `http://localhost:3001`). |
 | `setShellAuthBridge({ user, logout })` | Module-level: register user identity / logout handler. |
 | `setShellWindowRegistry(registry)` | Module-level: register your composed `WindowRegistry`. |
 
@@ -221,8 +200,6 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 | `useModalDuplicate(handler)` | Alt-D inside a modal. |
 | `useTableNav({ rows, cols, onCell })` | Arrow-key cell navigation in editable grids. |
 | `useMultiModal()` | Manages multi-window stacking + activate/blur. |
-| `useMailAuth()` | Mail bridge session — `{ isConnected, user, capabilities, login, logout, refresh }`. |
-| `useEmailUnreadCount()` | Live unread-count for the taskbar Email badge. |
 | `useShellAuth() / useShellPrefs() / useShellEntityFetcher() / useBugReport() / useDesktopHost()` | Context readers — the shell uses these internally; consumers may also call them. |
 
 ### Apps barrel — `react-os-shell/apps`
@@ -230,8 +207,8 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 | Export | Type |
 |---|---|
 | `bundledApps` | `WindowRegistry` — 12 ready-to-mount apps. |
-| `utilityApps`, `gameApps`, `mailApps`, `documentApps`, `webApps` | Subsets of `bundledApps`. |
-| `Calculator`, `Spreadsheet`, `Weather`, `CurrencyConverter`, `PomodoroTimer`, `Chess`, `Checkers`, `Sudoku`, `Tetris`, `Game2048`, `Email`, `Calendar`, `TodoList`, `Browser` | Lazy components — use directly in custom registry entries. |
+| `utilityApps`, `gameApps`, `documentApps`, `webApps` | Subsets of `bundledApps`. |
+| `Calculator`, `Spreadsheet`, `Weather`, `CurrencyConverter`, `PomodoroTimer`, `Chess`, `Checkers`, `Sudoku`, `Tetris`, `Game2048`, `TodoList`, `Browser` | Lazy components — use directly in custom registry entries. |
 
 ### Misc
 

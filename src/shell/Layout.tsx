@@ -11,9 +11,6 @@ import { useShellPrefs } from './ShellPrefs';
 import { useWindowManager } from './WindowManager';
 import { useTheme } from '../hooks/useTheme';
 import Desktop from './Desktop';
-import MailConnectModal from './MailConnectModal';
-import useMailAuth from '../hooks/useMailAuth';
-import { useEmailUnreadCount } from '../hooks/useEmailUnread';
 import useClickOutside from '../hooks/useClickOutside';
 import { playStartup } from '../utils/sounds';
 import { glassStyle as getGlassStyle } from '../utils/glass';
@@ -79,9 +76,6 @@ export interface LayoutProps {
    *  the shell. The shell renders the node as-is — keep it small (a
    *  single icon-sized button) so it fits the existing tray rhythm. */
   taskbarTrayLeft?: ReactNode;
-  /** Show the Mail & Calendar connect button in the system tray.
-   *  Defaults to true. Set false for portals with no mail integration. */
-  showMail?: boolean;
 }
 
 
@@ -409,7 +403,7 @@ function TaskbarClock() {
 
         return (
           <div className="fixed z-[300] rounded-lg border border-gray-200 bg-white shadow-xl" style={posStyle}>
-            <CalendarPopup now={now} onOpenCalendar={() => { openPage('/calendar'); setOpen(false); }} />
+            <CalendarPopup now={now} />
           </div>
         );
       })()}
@@ -420,10 +414,9 @@ function TaskbarClock() {
 /**
  * Mini month calendar shown when the user clicks the taskbar clock.
  * Header has month + year and prev/next nav arrows; today is filled in
- * the accent colour; days outside the current month are dimmed. The
- * footer offers a one-click escape to open the full Calendar app.
+ * the accent colour; days outside the current month are dimmed.
  */
-function CalendarPopup({ now, onOpenCalendar }: { now: Date; onOpenCalendar: () => void }) {
+function CalendarPopup({ now }: { now: Date }) {
   const [month, setMonth] = useState(() => new Date(now.getFullYear(), now.getMonth(), 1));
 
   const monthLabel = month.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
@@ -506,17 +499,6 @@ function CalendarPopup({ now, onOpenCalendar }: { now: Date; onOpenCalendar: () 
           );
         })}
       </div>
-
-      {/* Footer */}
-      <div className="mt-2 pt-2 border-t border-gray-100">
-        <button onClick={onOpenCalendar}
-          className="w-full text-[11px] font-medium text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded py-1 transition-colors flex items-center justify-center gap-1.5">
-          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
-          </svg>
-          Open Calendar
-        </button>
-      </div>
     </div>
   );
 }
@@ -581,13 +563,11 @@ export default function Layout({
   notifications,
   search,
   taskbarTrayLeft,
-  showMail = true,
 }: LayoutProps = {}) {
   const bugReport = useBugReport();
   const { user, logout, hasAnyPerm } = useAuth();
   const { openPage, openEntity, openWindows } = useWindowManager();
   const [menuOpen, setMenuOpen] = useState(false);
-  const emailUnreadCount = useEmailUnreadCount();
   const isMobile = useIsMobile();
 
   // Profile is reserved for consumer integration; the shell only consumes prefs.
@@ -677,17 +657,7 @@ export default function Layout({
   const [balloonDismissed, setBalloonDismissed] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
   const [taskbarMenu, setTaskbarMenu] = useState<{ x: number; y: number } | null>(null);
-  const [mailConnectOpen, setMailConnectOpen] = useState(false);
-  const { isConnected: mailConnected } = useMailAuth();
-
   const [showLogout, setShowLogout] = useState(false);
-
-  // Allow child pages to open the Mail/Calendar connect modal
-  useEffect(() => {
-    const handler = () => setMailConnectOpen(true);
-    window.addEventListener('open-mail-connect', handler);
-    return () => window.removeEventListener('open-mail-connect', handler);
-  }, []);
 
   const savePref = useCallback((key: string, value: any) => {
     savePrefs({ [key]: value });
@@ -933,18 +903,10 @@ export default function Layout({
 
         {/* System tray */}
         {isVerticalTaskbar ? (
-          /* Vertical: clock + mail-connect + bell evenly spaced */
+          /* Vertical: clock + bell evenly spaced */
           <div className="w-full px-2">
             <div className={`flex items-center justify-center gap-2 ${taskbarPosition === 'right' ? 'flex-row-reverse' : ''}`}>
               <TaskbarClock />
-              {showMail && (
-                <button onClick={() => setMailConnectOpen(true)} title={mailConnected ? 'Mail & Calendar Connected' : 'Connect Mail & Calendar'}
-                  className={`shrink-0 rounded-md p-1.5 transition-colors ${mailConnected ? 'hover:bg-green-50 text-green-600' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-200'}`}>
-                  <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
-                    <path d="M3 7l9 6 9-6M5 5h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </button>
-              )}
               <TaskbarPomodoro />
               {/* Host-supplied tray content (e.g. server-status icon).
                   Sits next to the notification bell on the bell's
@@ -959,14 +921,6 @@ export default function Layout({
             <TaskbarPomodoro />
             {taskbarTrayLeft}
             {notifications && <NotificationBell {...notifications} />}
-            {showMail && (
-              <button onClick={() => setMailConnectOpen(true)} title={mailConnected ? 'Mail & Calendar Connected' : 'Connect Mail & Calendar'}
-                className={`shrink-0 rounded-md p-2 transition-colors ${mailConnected ? 'hover:bg-green-50 text-green-600' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-200'}`}>
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
-                  <path d="M3 7l9 6 9-6M5 5h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
-            )}
             <TaskbarClock />
           </>
         )}
@@ -990,7 +944,6 @@ export default function Layout({
 
       <GlobalSearch {...search} />
       <ShortcutHelp />
-      <MailConnectModal open={mailConnectOpen} onClose={() => setMailConnectOpen(false)} />
     </div>
   );
 }

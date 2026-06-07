@@ -1,6 +1,6 @@
 /**
- * Shared task store for the Todo List app, the Pomodoro widget and the
- * Calendar app — all three read/write the same list via `useTodoTasks()`.
+ * Shared task store for the Todo List app and the Pomodoro widget — both
+ * read/write the same list via `useTodoTasks()`.
  *
  * Two backends:
  *  • Default: `useShellPrefs()` → `prefs.todo_tasks` (per-user prefs blob).
@@ -8,7 +8,7 @@
  *    `setShellTodoProvider(...)`. When set, the three apps read/write through
  *    it instead — letting an ERP make the shell's tasks the SAME records as
  *    its own task table, and tag each with a `contextLabel` badge (e.g.
- *    "Deal: Acme"). Mirrors `setShellApiClient` / `setShellMailServer`.
+ *    "Deal: Acme"). Mirrors `setShellApiClient`.
  *
  * `migratePomodoroTasksOnce()` folds legacy `localStorage.pomodoro_tasks`
  * into the prefs store on first Pomodoro mount (no-op in provider mode).

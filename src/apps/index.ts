@@ -1,5 +1,5 @@
 /**
- * Bundled apps — pre-built window registry entries for the 16 apps that ship
+ * Bundled apps — pre-built window registry entries for the 14 apps that ship
  * with `react-os-shell`. Consumers compose them into their own registry via
  * `createWindowRegistry`:
  *
@@ -9,11 +9,11 @@
  *
  *   const windows = createWindowRegistry(bundledApps, erpEntities);
  *
- * Subsets are also exported (`utilityApps`, `gameApps`, `mailApps`) so a
+ * Subsets are also exported (`utilityApps`, `gameApps`) so a
  * consumer can pick-and-choose without importing every component.
  *
- * NOTE: 3 apps require consumer-supplied persistence (Calendar / Notepad for
- * stored content, Minesweeper for leaderboard). They're exported individually
+ * NOTE: 2 apps require consumer-supplied persistence (Notepad for stored
+ * content, Minesweeper for leaderboard). They're exported individually
  * but absent from `bundledApps` — wire the prefs provider to opt them in.
  * WorldClock uses `useShellPrefs()` so it lives in `bundledApps`; without a
  * consumer-supplied prefs adapter the city list won't survive a reload.
@@ -39,10 +39,6 @@ const Sudoku = lazy(() => import('./Sudoku'));
 const Tetris = lazy(() => import('./Tetris'));
 const Game2048 = lazy(() => import('./Game2048'));
 const Minesweeper = lazy(() => import('./Minesweeper'));
-
-// ── Mail / Calendar (talk to the IMAP/SMTP/CalDAV bridge server) ──
-const Email = lazy(() => import('./Email'));
-const Calendar = lazy(() => import('./Calendar'));
 
 // ── Document apps ──
 const Preview = lazy(() => import('./Preview'));
@@ -73,11 +69,6 @@ export const gameApps: WindowRegistry = {
   '/minesweeper': { component: Minesweeper, label: 'Minesweeper', size: 'sm', compact: true },
 };
 
-export const mailApps: WindowRegistry = {
-  '/email': { component: Email, label: 'Email', size: '2xl', appStyle: true },
-  '/calendar': { component: Calendar, label: 'Calendar', size: 'xl' },
-};
-
 export const documentApps: WindowRegistry = {
   '/preview': { component: Preview, label: 'Preview', size: '2xl', appStyle: true, multiInstance: true },
   '/documents': { component: Documents, label: 'Documents', size: 'xl', appStyle: true, multiInstance: true },
@@ -91,7 +82,6 @@ export const webApps: WindowRegistry = {
 export const bundledApps: WindowRegistry = {
   ...utilityApps,
   ...gameApps,
-  ...mailApps,
   ...documentApps,
   ...webApps,
 };
@@ -112,8 +102,6 @@ export {
   Tetris,
   Game2048,
   Minesweeper,
-  Email,
-  Calendar,
   Preview,
   Documents,
   Files,

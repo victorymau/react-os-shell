@@ -127,14 +127,10 @@ export {
 } from './shell/ShellEntityFetcher';
 export type { EntityFetcher } from './shell/ShellEntityFetcher';
 export { setShellApiClient } from './api/client';
-export { setShellMailServer } from './api/mailClient';
 export { setShellTodoProvider } from './apps/_todoStore';
 export type { TodoProvider } from './apps/_todoStore';
 export type { TodoTask } from './apps/_todoTypes';
 export { setShellAuthBridge } from './contexts/AuthContext';
-export { default as useMailAuth } from './hooks/useMailAuth';
-export type { MailUser, MailCapabilities, LoginPayload } from './hooks/useMailAuth';
-export { default as MailConnectModal } from './shell/MailConnectModal';
 
 // ── Utilities ──
 export { glassStyle, GLASS_DIVIDER, GLASS_INPUT_BG } from './utils/glass';

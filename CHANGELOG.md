@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-06-07
+
+### Removed
+- **Email + Calendar apps and the Node mail bridge.** The bundled `Email` (IMAP/SMTP) and `Calendar` (CalDAV) apps, the `MailConnectModal`, the `useMailAuth` / `useEmailUnreadCount` hooks, the `setShellMailServer` setter, the `mailApps` registry subset, and the entire `server/` bridge are gone. `bundledApps` no longer includes `/email` or `/calendar`, and the taskbar Mail & Calendar connect button is removed. Consumers needing mail implement it in their own app (the EFFICIENT admin portal now does this against its Django backend). **Breaking** — bumped to 0.8.0.
+
 ## [0.7.3] — 2026-06-07
 
 ### Added
