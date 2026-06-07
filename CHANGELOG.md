@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.7.3] — 2026-06-07
+
+### Added
+- **Stocks widget.** New desktop widget (`/stock`, registered in `utilityApps` with `widget: true`) for tracking a watchlist of equities — each row shows the ticker, last price, and the day's change as a colour-coded absolute/percent delta. Right-click → **Settings** manages the watchlist (add/remove symbols, capped at 8) and the shared appearance sliders; the list, the API key, and the appearance all persist to `localStorage`. Quotes come from Finnhub's browser-friendly `/quote` endpoint, polled once a minute with a 1-minute cache that keeps the last good value on a failed refresh. Because there is no reliable keyless + CORS stock feed, the user pastes a free Finnhub key in settings — until then the widget shows a "Track live stock prices → Set up" call-to-action. Like the other bundled widgets it's added/removed from the Widget Manager and is filtered out of the Start Menu.
+
 ## [0.7.2] — 2026-06-06
 
 ### Added

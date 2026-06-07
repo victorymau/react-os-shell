@@ -102,8 +102,8 @@ const TOP_NAV_ITEMS: TopNavItem[] = (() => {
 const NAV_SECTIONS = [
   ...TOP_NAV_ITEMS,
   {
-    // Widgets (Calculator, Weather, Currency, Pomodoro, World Clock) are
-    // added/removed from the desktop's Widget Manager panel (right-click the
+    // Widgets (Calculator, Weather, Currency, Pomodoro, World Clock, Stocks)
+    // are added/removed from the desktop's Widget Manager panel (right-click the
     // desktop → Manage Widgets…), so they're filtered out of the start menu
     // here — only non-widget utilities would remain.
     label: 'Utilities',
@@ -142,6 +142,7 @@ const NAV_ICONS: Record<string, JSX.Element> = {
   '/weather': path('M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z'),
   '/currency': path('M12 7.5v9m3.75-9.75H9.375a2.625 2.625 0 100 5.25h2.25a2.625 2.625 0 010 5.25H8.25M21 12a9 9 0 11-18 0 9 9 0 0118 0z'),
   '/pomodoro': path('M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z'),
+  '/stock': path('M2.25 18L9 11.25l4.306 4.306a11.95 11.95 0 015.814-5.518l2.74-1.22m0 0l-5.94-2.281m5.94 2.28l-2.28 5.941'),
   '/chess': path('M16.5 18.75h-9m9 0a3 3 0 013 3h-15a3 3 0 013-3m9 0v-3.375c0-.621-.503-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.007 0H9.497m5.007 0a7.454 7.454 0 01-.982-3.172M9.497 14.25a7.454 7.454 0 00.981-3.172M5.25 4.236c-.982.143-1.954.317-2.916.52A6.003 6.003 0 007.73 9.728M5.25 4.236V4.5c0 2.108.966 3.99 2.48 5.228M5.25 4.236V2.721C7.456 2.41 9.71 2.25 12 2.25c2.291 0 4.545.16 6.75.47v1.516M18.75 4.236c.982.143 1.954.317 2.916.52A6.003 6.003 0 0116.27 9.728M18.75 4.236V4.5c0 2.108-.966 3.99-2.48 5.228m0 0a6.003 6.003 0 01-2.27.853m0 0h.008v.008h-.008v-.008z'),
   '/checkers': path('M21 12a9 9 0 11-18 0 9 9 0 0118 0zM12 9a3 3 0 100 6 3 3 0 000-6z'),
   '/sudoku': path('M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15'),
