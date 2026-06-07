@@ -2,19 +2,24 @@ import { useEffect, useState } from 'react';
 import { playLogout } from '../utils/sounds';
 
 export default function LogoutAnimation({ onComplete, subtitle }: { onComplete: () => void; subtitle?: string }) {
-  const [phase, setPhase] = useState<'show' | 'shrink' | 'fade'>('show');
+  // 'show' → greeting visible; 'out' → logo/title spin and fade away. The
+  // full-screen cover itself stays opaque the whole time — it never fades to
+  // transparent — so the desktop underneath is never revealed. onComplete
+  // fires while the cover is still solid, so the consumer's login screen
+  // swaps in behind it and the user goes straight from "Goodbye" to login
+  // (no flash of the desktop in between).
+  const [phase, setPhase] = useState<'show' | 'out'>('show');
 
   useEffect(() => {
     playLogout();
-    const t1 = setTimeout(() => setPhase('shrink'), 800);
-    const t2 = setTimeout(() => setPhase('fade'), 1800);
-    const t3 = setTimeout(onComplete, 2300);
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+    const t1 = setTimeout(() => setPhase('out'), 800);
+    const t2 = setTimeout(onComplete, 2300);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [onComplete]);
 
   return (
     <div
-      className={`fixed inset-0 z-[9999] flex flex-col items-center justify-center transition-opacity duration-500 ${phase === 'fade' ? 'opacity-0' : 'opacity-100'}`}
+      className="fixed inset-0 z-[9999] flex flex-col items-center justify-center"
       style={{ background: 'linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%)' }}
     >
       {/* Glow effect */}
@@ -23,14 +28,14 @@ export default function LogoutAnimation({ onComplete, subtitle }: { onComplete: 
           style={{
             background: 'radial-gradient(circle, rgba(124,58,237,0.4) 0%, transparent 70%)',
             animation: 'logout-glow 2s ease-in-out infinite',
-            opacity: phase === 'shrink' ? 0 : 0.2,
+            opacity: phase === 'show' ? 0.2 : 0,
             transition: 'opacity 1s',
           }} />
       </div>
 
       {/* Logo — spins out */}
-      <div className={`relative transition-all duration-1000 ease-in ${phase === 'shrink' ? 'scale-0 opacity-0' : 'scale-100 opacity-100'}`}
-        style={phase === 'shrink' ? { transform: 'scale(0) rotate(180deg)' } : undefined}>
+      <div className={`relative transition-all duration-1000 ease-in ${phase === 'out' ? 'scale-0 opacity-0' : 'scale-100 opacity-100'}`}
+        style={phase === 'out' ? { transform: 'scale(0) rotate(180deg)' } : undefined}>
         <img src="/favicon.svg" alt="" className="h-20 w-20 drop-shadow-[0_0_30px_rgba(124,58,237,0.5)]" />
       </div>
 

@@ -210,6 +210,9 @@ export default function StartMenu({
   const erpSections = navSections.filter(item => isSection(item) && erpLabels.has((item as NavSection).label));
   const systemSections = navSections.filter(item => isSection(item) && systemLabels.has((item as NavSection).label));
   const footerSections = navSections.filter(item => isSection(item) && footerLabels.has((item as NavSection).label));
+  // The "apps" group = top-level items + system + virtual sections. Gates the
+  // ERP↔apps divider so it only renders when both sides have content.
+  const hasAppsGroup = topItems.length > 0 || systemSections.length > 0 || virtualSections.length > 0;
 
   const getVisibleItems = (section: NavSection) =>
     section.items.filter(item => !item.perms || hasAnyPerm(item.perms));
@@ -388,7 +391,7 @@ export default function StartMenu({
                 {(footerSections.length > 0 || footerItems.length > 0) && <div className="border-t border-white/20 my-1.5 mx-2" />}
                 {/* Vertical layout: ERP sections first */}
                 {erpSections.map(s => renderSection(s as NavSection, true))}
-                <div className="border-t border-white/20 my-1.5 mx-2" />
+                {erpSections.length > 0 && hasAppsGroup && <div className="border-t border-white/20 my-1.5 mx-2" />}
                 {/* Then top-level items + system */}
                 {topItems.map(item => (
                   <div key={item.to}>
@@ -416,7 +419,7 @@ export default function StartMenu({
                   </div>
                 ))}{systemSections.map(s => renderSection(s as NavSection, false))}
                 {virtualSections.map(v => renderVirtualSection(v))}
-                <div className="border-t border-white/20 my-1.5 mx-2" />
+                {hasAppsGroup && erpSections.length > 0 && <div className="border-t border-white/20 my-1.5 mx-2" />}
                 {erpSections.map(s => renderSection(s as NavSection, true))}
                 {/* Footer items + sections: pinned just above the profile, divided from ERP. */}
                 {(footerSections.length > 0 || footerItems.length > 0) && <div className="border-t border-white/20 my-1.5 mx-2" />}
