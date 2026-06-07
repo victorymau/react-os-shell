@@ -195,6 +195,11 @@ function TaskRow({ task, editing, onToggle, onClick, onSave, onDelete, onCancelE
           🍅 {pomos}
         </span>
       )}
+      {task.contextLabel && (
+        <span className="shrink-0 text-[11px] font-medium px-1.5 py-0.5 rounded bg-purple-100 text-purple-700" title={task.contextLabel}>
+          {task.contextLabel}
+        </span>
+      )}
       {dueLabel && (
         <span className={`shrink-0 text-[11px] font-medium px-1.5 py-0.5 rounded ${overdue ? 'bg-red-100 text-red-700' : task.dueDate === todayStr() ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
           {dueLabel}

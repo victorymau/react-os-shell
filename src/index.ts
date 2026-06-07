@@ -128,6 +128,9 @@ export {
 export type { EntityFetcher } from './shell/ShellEntityFetcher';
 export { setShellApiClient } from './api/client';
 export { setShellMailServer } from './api/mailClient';
+export { setShellTodoProvider } from './apps/_todoStore';
+export type { TodoProvider } from './apps/_todoStore';
+export type { TodoTask } from './apps/_todoTypes';
 export { setShellAuthBridge } from './contexts/AuthContext';
 export { default as useMailAuth } from './hooks/useMailAuth';
 export type { MailUser, MailCapabilities, LoginPayload } from './hooks/useMailAuth';

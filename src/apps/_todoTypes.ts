@@ -17,6 +17,10 @@ export interface TodoTask {
   completed?: number;
   /** Free-text notes — surfaced in the Todo edit drawer. */
   notes?: string;
+  /** Origin of the task — e.g. 'crm' for tasks backed by a CRM deal/contact. Set by a TodoProvider. */
+  source?: string;
+  /** Short context label shown as a badge (e.g. "Deal: Acme", "Contact: Jane"). Set by a TodoProvider. */
+  contextLabel?: string;
   /** ISO timestamp — useful for "recently added" sorting. */
   createdAt: string;
   /** ISO timestamp — bumped on every local mutation. */

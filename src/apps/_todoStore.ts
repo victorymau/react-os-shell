@@ -1,17 +1,19 @@
 /**
- * Shared task store — wraps `useShellPrefs()` so the Todo List app, the
- * Pomodoro widget, and the Calendar app all read/write the same array
- * at `prefs.todo_tasks`. Mutations bump `updatedAt` so Google-Tasks
- * sync (when enabled) can use last-write-wins conflict resolution.
+ * Shared task store for the Todo List app, the Pomodoro widget and the
+ * Calendar app — all three read/write the same list via `useTodoTasks()`.
  *
- * `migratePomodoroTasksOnce()` is a one-shot escape hatch: when the
- * Pomodoro widget mounts the first time after this refactor, it copies
- * any existing tasks from the legacy `localStorage.pomodoro_tasks` key
- * into the shared store and removes the old key. After that mount it's
- * a no-op.
+ * Two backends:
+ *  • Default: `useShellPrefs()` → `prefs.todo_tasks` (per-user prefs blob).
+ *  • Opt-in: a consumer-supplied `TodoProvider` registered with
+ *    `setShellTodoProvider(...)`. When set, the three apps read/write through
+ *    it instead — letting an ERP make the shell's tasks the SAME records as
+ *    its own task table, and tag each with a `contextLabel` badge (e.g.
+ *    "Deal: Acme"). Mirrors `setShellApiClient` / `setShellMailServer`.
+ *
+ * `migratePomodoroTasksOnce()` folds legacy `localStorage.pomodoro_tasks`
+ * into the prefs store on first Pomodoro mount (no-op in provider mode).
  */
-
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useSyncExternalStore } from 'react';
 import { useShellPrefs } from '../shell/ShellPrefs';
 import type { TodoTask } from './_todoTypes';
 
@@ -40,7 +42,90 @@ export interface UseTodoTasks {
   setAllTasks: (tasks: TodoTask[]) => void;
 }
 
-export function useTodoTasks(): UseTodoTasks {
+/**
+ * A consumer-supplied task backend. Registering one (opt-in) routes every
+ * shell task surface through it instead of the prefs blob. Methods map to/from
+ * the shell's `TodoTask` shape, including the optional `source`/`contextLabel`.
+ */
+export interface TodoProvider {
+  list(): Promise<TodoTask[]>;
+  create(input: Partial<Omit<TodoTask, 'id' | 'createdAt' | 'updatedAt'>> & { name: string }): Promise<TodoTask>;
+  update(id: string, patch: Partial<TodoTask>): Promise<TodoTask>;
+  remove(id: string): Promise<void>;
+}
+
+// ── Module-level provider store (shared across all consumers) ──
+let provider: TodoProvider | null = null;
+let cache: TodoTask[] = [];
+let loaded = false;
+let inflight: Promise<void> | null = null;
+const listeners = new Set<() => void>();
+
+function emit(): void {
+  for (const l of listeners) l();
+}
+
+function setCache(next: TodoTask[]): void {
+  cache = next;
+  emit();
+}
+
+function refresh(): Promise<void> {
+  const p = provider;
+  if (!p) {
+    cache = [];
+    loaded = true;
+    emit();
+    return Promise.resolve();
+  }
+  inflight = p
+    .list()
+    .then(rows => {
+      if (provider === p) {
+        cache = rows;
+        loaded = true;
+        emit();
+      }
+    })
+    .catch(() => {
+      if (provider === p) {
+        loaded = true;
+        emit();
+      }
+    })
+    .finally(() => {
+      inflight = null;
+    });
+  return inflight;
+}
+
+/** Register (or clear with `null`) the backend task provider. Opt-in. */
+export function setShellTodoProvider(next: TodoProvider | null): void {
+  provider = next;
+  cache = [];
+  loaded = false;
+  if (next) refresh();
+  else emit();
+}
+
+export function hasShellTodoProvider(): boolean {
+  return provider !== null;
+}
+
+function subscribe(cb: () => void): () => void {
+  listeners.add(cb);
+  if (provider && !loaded && !inflight) refresh();
+  return () => {
+    listeners.delete(cb);
+  };
+}
+
+function getSnapshot(): TodoTask[] {
+  return cache;
+}
+
+// ── Prefs-backed implementation (default / fallback) ──
+function usePrefsTodoTasks(): UseTodoTasks {
   const { prefs, save } = useShellPrefs();
   const tasks: TodoTask[] = useMemo(() => {
     const raw = prefs.todo_tasks;
@@ -54,23 +139,13 @@ export function useTodoTasks(): UseTodoTasks {
   const addTask = useCallback<UseTodoTasks['addTask']>((input) => {
     const id = uid();
     const ts = nowIso();
-    const task: TodoTask = {
-      done: false,
-      ...input,
-      // Ensure name is trimmed and id/timestamps overwrite anything the
-      // caller might have passed in.
-      name: input.name.trim(),
-      id,
-      createdAt: ts,
-      updatedAt: ts,
-    };
+    const task: TodoTask = { done: false, ...input, name: input.name.trim(), id, createdAt: ts, updatedAt: ts };
     writeTasks([...tasks, task]);
     return id;
   }, [tasks, writeTasks]);
 
   const updateTask = useCallback<UseTodoTasks['updateTask']>((id, patch) => {
-    const next = tasks.map(t => t.id === id ? { ...t, ...patch, id: t.id, updatedAt: nowIso() } : t);
-    writeTasks(next);
+    writeTasks(tasks.map(t => (t.id === id ? { ...t, ...patch, id: t.id, updatedAt: nowIso() } : t)));
   }, [tasks, writeTasks]);
 
   const removeTask = useCallback<UseTodoTasks['removeTask']>((id) => {
@@ -79,22 +154,67 @@ export function useTodoTasks(): UseTodoTasks {
 
   const toggleDone = useCallback<UseTodoTasks['toggleDone']>((id) => {
     const target = tasks.find(t => t.id === id);
-    if (!target) return;
-    updateTask(id, { done: !target.done });
+    if (target) updateTask(id, { done: !target.done });
   }, [tasks, updateTask]);
 
   return { tasks, addTask, updateTask, removeTask, toggleDone, setAllTasks: writeTasks };
 }
 
+// ── Public hook (provider-aware) ──
+export function useTodoTasks(): UseTodoTasks {
+  // Both hooks always run (rules of hooks); the active impl is chosen below.
+  const prefsImpl = usePrefsTodoTasks();
+  const providerTasks = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+
+  const addTask = useCallback<UseTodoTasks['addTask']>((input) => {
+    const p = provider;
+    if (!p) return prefsImpl.addTask(input);
+    const tempId = 'tmp-' + uid();
+    const ts = nowIso();
+    const optimistic: TodoTask = { done: false, ...input, name: input.name.trim(), id: tempId, createdAt: ts, updatedAt: ts };
+    setCache([...cache, optimistic]);
+    p.create({ ...input, name: input.name.trim() })
+      // Merge so server-owned fields win but client-only fields (estimated/
+      // completed/notes the backend may not persist) survive the round-trip.
+      .then(saved => setCache(cache.map(t => (t.id === tempId ? { ...optimistic, ...saved } : t))))
+      .catch(() => setCache(cache.filter(t => t.id !== tempId)));
+    return tempId;
+  }, [prefsImpl]);
+
+  const updateTask = useCallback<UseTodoTasks['updateTask']>((id, patch) => {
+    const p = provider;
+    if (!p) return prefsImpl.updateTask(id, patch);
+    setCache(cache.map(t => (t.id === id ? { ...t, ...patch, id, updatedAt: nowIso() } : t)));
+    p.update(id, patch).catch(() => { refresh(); });
+  }, [prefsImpl]);
+
+  const removeTask = useCallback<UseTodoTasks['removeTask']>((id) => {
+    const p = provider;
+    if (!p) return prefsImpl.removeTask(id);
+    const prev = cache;
+    setCache(cache.filter(t => t.id !== id));
+    p.remove(id).catch(() => setCache(prev));
+  }, [prefsImpl]);
+
+  const toggleDone = useCallback<UseTodoTasks['toggleDone']>((id) => {
+    if (!provider) return prefsImpl.toggleDone(id);
+    const target = cache.find(t => t.id === id);
+    if (target) updateTask(id, { done: !target.done });
+  }, [prefsImpl, updateTask]);
+
+  const setAllTasks = useCallback<UseTodoTasks['setAllTasks']>((next) => {
+    // Provider owns persistence — bulk replace (Google Tasks sync) is a no-op there.
+    if (!provider) prefsImpl.setAllTasks(next);
+  }, [prefsImpl]);
+
+  if (!hasShellTodoProvider()) return prefsImpl;
+  return { tasks: providerTasks, addTask, updateTask, removeTask, toggleDone, setAllTasks };
+}
+
 /**
  * One-time migration: pull any tasks the Pomodoro widget previously
  * persisted to `localStorage.pomodoro_tasks` into the shared store.
- * Called from PomodoroTimer's mount effect — safe to invoke on every
- * mount, since the migrated flag stays set after the first run.
- *
- * Pass `setAllTasks` from `useTodoTasks()` so the migration can fold
- * the legacy entries in alongside any tasks the user has already added
- * elsewhere (i.e. via the new TodoList app).
+ * No-op when a provider is registered (the provider owns persistence).
  */
 export function migratePomodoroTasksOnce(
   currentTasks: TodoTask[],
@@ -126,15 +246,12 @@ export function migratePomodoroTasksOnce(
         createdAt: ts,
         updatedAt: ts,
       }));
-    // Fold migrated tasks in first so the legacy list keeps its position
-    // ahead of anything the user added via the new app.
     const existingIds = new Set(currentTasks.map(t => t.id));
     const additions = migrated.filter(t => !existingIds.has(t.id));
     setAllTasks([...additions, ...currentTasks]);
     localStorage.removeItem(POMODORO_LEGACY_KEY);
     localStorage.setItem(POMODORO_LEGACY_MIGRATED_FLAG, '1');
   } catch {
-    // Don't block startup on corrupt localStorage — just mark it migrated.
     try { localStorage.setItem(POMODORO_LEGACY_MIGRATED_FLAG, '1'); } catch {}
   }
 }
