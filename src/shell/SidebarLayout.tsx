@@ -122,9 +122,9 @@ export default function SidebarLayout({
         onPointerDown={startDrag}
         onDoubleClick={() => setWidth(clamp(defaultWidth, minWidth, maxWidth))}
         title="Drag to resize · double-click to reset"
-        className={`group absolute inset-y-0 ${edge} z-10 w-2 cursor-col-resize`}
+        className={`group/resize absolute inset-y-0 ${edge} z-10 w-2 cursor-col-resize`}
       >
-        <div className={`absolute inset-y-0 ${edge} w-px bg-transparent transition-colors group-hover:bg-blue-400`} />
+        <div className={`absolute inset-y-0 ${edge} w-px bg-transparent transition-colors group-hover/resize:bg-[var(--accent-500,#3b82f6)]`} />
       </div>
     </div>
   );
