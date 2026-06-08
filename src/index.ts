@@ -32,6 +32,8 @@ export { ALT_SHIFT_E, ALT_SHIFT_D, ALT_SHIFT_N, CMD_ENTER, CMD_S, CMD_K, CMD_DOT
 export { default as toast } from './shell/toast';
 export { default as EditableGrid } from './shell/EditableGrid';
 export type { GridColumn, CellStyle, EditableGridProps } from './shell/EditableGrid';
+export { default as SidebarLayout } from './shell/SidebarLayout';
+export type { SidebarLayoutProps } from './shell/SidebarLayout';
 
 // ── Notification system ──
 export { default as NotificationBell } from './shell/NotificationBell';

@@ -114,7 +114,7 @@ That gives you the full desktop with all utility, game, document and web apps re
 
 Every window the shell can open lives in a `WindowRegistry` map. Two entry shapes:
 
-- **Page** — `{ component: LazyExoticComponent, label, size?, widget?, … }`. Opened via `openPage(routeKey)`.
+- **Page** — `{ component: LazyExoticComponent, label, size?, widget?, compact?, appStyle?, flushBody?, … }`. Opened via `openPage(routeKey)`. `flushBody` keeps the standard title bar + footer but drops the body padding (pair it with `<SidebarLayout>` for two-pane apps).
 - **Entity** — `{ endpoint, render(entity, …), title(entity), footer?, … }`. Opened via `openEntity(typeKey, id)`. The shell GETs `${endpoint}${id}/` (via the consumer-supplied entity fetcher) and hands the result to `render`.
 
 Compose multiple partial maps with `createWindowRegistry(...maps)`:
@@ -172,6 +172,7 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 | `NotificationBell` | Taskbar bell — config via `<Layout notifications={…}>`. |
 | `BugReportDetail` | Used inside an entity-window registry entry; reads from `<BugReportConfigProvider>`. |
 | `StatusBadge` | Coloured pill rendering a status string. Map status→semantic group via `<StatusBadgeProvider groups={{...}}>`. |
+| `SidebarLayout` | Two-pane layout with a drag-to-resize sidebar (`storageKey` persists the width). Pair with a `flushBody` window so the sidebar runs edge-to-edge. |
 
 ### Providers + setters
 

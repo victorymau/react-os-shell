@@ -30,6 +30,11 @@ export interface PageRegistryEntry {
   /** App-style window for self-chromed apps (Preview, Files, Browser, etc.):
    *  small title bar with full controls, no body padding, no footer. */
   appStyle?: boolean;
+  /** Flush body — keeps the STANDARD full title bar and footer, but drops the
+   *  body padding so the app's content (e.g. a `<SidebarLayout>`) sits flush to
+   *  the window edges. Implies `bodyScroll: false`; the app manages its own
+   *  scrolling. Use for two-pane / sidebar apps that want normal window chrome. */
+  flushBody?: boolean;
   /** Custom window dimensions [width, height] in pixels. */
   dimensions?: [number, number];
   /** Auto-size window height to its content. Combine with naturally-flowing

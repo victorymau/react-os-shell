@@ -278,6 +278,10 @@ interface ModalProps {
    *  self-chromed apps like Preview, Files, Browser. Implies `bodyScroll: false`
    *  — apps manage their own scrolling internally. */
   appStyle?: boolean;
+  /** Flush body: keeps the STANDARD full title bar and footer, but drops the
+   *  body padding so the content sits flush to the window edges (e.g. a
+   *  `<SidebarLayout>`). Implies `bodyScroll: false`. */
+  flushBody?: boolean;
   /** Auto-size height based on content. Window's height adapts to whatever the
    *  body renders; combined with `autoMinHeight` to prevent collapse and capped
    *  to the available viewport so nothing overflows the screen. Only set this
@@ -700,7 +704,7 @@ export function ExposeBackdrop() {
 }
 
 
-export default function Modal({ open, onClose, title, icon, copyText, size = 'lg', dirty = false, onNext, onPrev, footer, bodyScroll, onMinimize, initialBox, actions, actionsLeft, allowPinOnTop, initialPosition, widget, compact, appStyle, autoHeight, autoMinHeight, widgetMenu, dimensions, windowKey, openedFromKey, children }: ModalProps) {
+export default function Modal({ open, onClose, title, icon, copyText, size = 'lg', dirty = false, onNext, onPrev, footer, bodyScroll, onMinimize, initialBox, actions, actionsLeft, allowPinOnTop, initialPosition, widget, compact, appStyle, flushBody, autoHeight, autoMinHeight, widgetMenu, dimensions, windowKey, openedFromKey, children }: ModalProps) {
   const isMobile = useIsMobile();
   // Mobile swipe-from-left-edge gesture: track horizontal offset of the panel.
   // 0 = at rest. While the user is dragging from the left edge, this grows
@@ -1700,7 +1704,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
         <ModalActionsContext.Provider value={{ rightRef: actionsRef as React.RefObject<HTMLDivElement | null>, leftRef: actionsLeftRef as React.RefObject<HTMLDivElement | null>, notify: () => setHasActions(true), active: isActive, isDirty }}>
         <div
           {...(widget ? { onPointerDown: startDrag, onContextMenu: (e: React.MouseEvent) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }); } } : {})}
-          className={`${(autoHeight && !autoHeightResolved) ? 'flex-none' : 'flex-1 min-h-0'} flex flex-col ${widget ? 'p-0 cursor-move' : appStyle ? 'p-0' : compact ? 'p-2' : 'p-4'} ${widget ? '' : 'backdrop-blur-sm'} ${(autoHeight && !autoHeightResolved) ? 'overflow-visible' : ((bodyScroll === false || appStyle) ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain')} ${widget ? 'rounded-2xl select-none' : ''}`}
+          className={`${(autoHeight && !autoHeightResolved) ? 'flex-none' : 'flex-1 min-h-0'} flex flex-col ${widget ? 'p-0 cursor-move' : appStyle ? 'p-0' : flushBody ? 'p-0' : compact ? 'p-2' : 'p-4'} ${widget ? '' : 'backdrop-blur-sm'} ${(autoHeight && !autoHeightResolved) ? 'overflow-visible' : ((bodyScroll === false || appStyle || flushBody) ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain')} ${widget ? 'rounded-2xl select-none' : ''}`}
           style={{ ...(widget ? { touchAction: 'none' } : {}), backgroundColor: widget ? 'transparent' : (isActive ? `rgb(var(--window-content-rgb) / var(--active-content-opacity, 0.9))` : `rgb(var(--window-content-rgb) / var(--inactive-content-opacity, 0.8))`) }}>
           {children}
         </div>
