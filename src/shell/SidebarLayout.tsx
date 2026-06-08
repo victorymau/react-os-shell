@@ -2,13 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode, PointerEvent as ReactPointerEvent } from 'react';
 
 /**
- * Two-pane layout with a drag-to-resize left sidebar.
+ * Two-pane layout with a drag-to-resize sidebar (left or right).
  *
  * Renders flush (`h-full w-full`) — pair it with a `flushBody` window so the
  * sidebar runs from just under the title bar to the very bottom with no
- * surrounding padding. The user can drag the right edge of the sidebar to
- * resize it; pass `storageKey` to persist that width across reopens, or
- * double-click the handle to reset to `defaultWidth`.
+ * surrounding padding. The user can drag the sidebar's inner edge to resize
+ * it; pass `storageKey` to persist that width across reopens, or double-click
+ * the handle to reset to `defaultWidth`. Set `side="right"` to put the sidebar
+ * on the right (e.g. a detail-panel layout).
  *
  * @example
  * <SidebarLayout sidebar={<MyNav />} storageKey="todo.sidebarWidth">
@@ -18,8 +19,11 @@ import type { ReactNode, PointerEvent as ReactPointerEvent } from 'react';
 export interface SidebarLayoutProps {
   /** Content of the left sidebar pane. */
   sidebar: ReactNode;
-  /** Content of the main pane (right of the sidebar). */
+  /** Content of the main pane (opposite the sidebar). */
   children: ReactNode;
+  /** Which side the sidebar sits on. Default `'left'`. When `'right'`, the
+   *  sidebar renders on the right with the resize handle on its left edge. */
+  side?: 'left' | 'right';
   /** localStorage key to persist the sidebar width across reopens. When set,
    *  the last dragged width is restored on mount. Omit for session-only width. */
   storageKey?: string;
@@ -44,14 +48,18 @@ const clamp = (n: number, lo: number, hi: number) => Math.min(Math.max(n, lo), h
 export default function SidebarLayout({
   sidebar,
   children,
+  side = 'left',
   storageKey,
   defaultWidth = 256,
   minWidth = 180,
   maxWidth = 480,
   className = '',
-  sidebarClassName = 'border-r border-gray-200 bg-gray-50',
+  sidebarClassName = side === 'right'
+    ? 'border-l border-gray-200 bg-gray-50'
+    : 'border-r border-gray-200 bg-gray-50',
   contentClassName = 'bg-white',
 }: SidebarLayoutProps) {
+  const sideRight = side === 'right';
   const [width, setWidth] = useState<number>(() => {
     if (storageKey && typeof window !== 'undefined') {
       const saved = window.localStorage.getItem(storageKey);
@@ -66,8 +74,10 @@ export default function SidebarLayout({
   const onMove = useCallback((e: PointerEvent) => {
     const d = dragRef.current;
     if (!d) return;
-    setWidth(clamp(d.startWidth + (e.clientX - d.startX), minWidth, maxWidth));
-  }, [minWidth, maxWidth]);
+    // Right-side sidebar grows as the handle is dragged left → invert the delta.
+    const delta = (e.clientX - d.startX) * (sideRight ? -1 : 1);
+    setWidth(clamp(d.startWidth + delta, minWidth, maxWidth));
+  }, [minWidth, maxWidth, sideRight]);
 
   const onUp = useCallback(() => {
     dragRef.current = null;
@@ -101,25 +111,36 @@ export default function SidebarLayout({
     window.removeEventListener('pointerup', onUp);
   }, [onMove, onUp]);
 
+  const edge = sideRight ? 'left-0' : 'right-0';
+  const sidebarPane = (
+    <div className="relative flex h-full shrink-0 flex-col" style={{ width }}>
+      <div className={`flex h-full flex-col overflow-y-auto ${sidebarClassName}`}>
+        {sidebar}
+      </div>
+      {/* Resize handle — pinned to the sidebar's inner edge, fixed while it scrolls. */}
+      <div
+        onPointerDown={startDrag}
+        onDoubleClick={() => setWidth(clamp(defaultWidth, minWidth, maxWidth))}
+        title="Drag to resize · double-click to reset"
+        className={`group absolute inset-y-0 ${edge} z-10 w-2 cursor-col-resize`}
+      >
+        <div className={`absolute inset-y-0 ${edge} w-px bg-transparent transition-colors group-hover:bg-blue-400`} />
+      </div>
+    </div>
+  );
+  const contentPane = (
+    <div className={`flex min-w-0 flex-1 flex-col ${contentClassName}`}>
+      {children}
+    </div>
+  );
+
   return (
     <div className={`flex h-full w-full overflow-hidden ${className}`}>
-      <div className="relative flex h-full shrink-0 flex-col" style={{ width }}>
-        <div className={`flex h-full flex-col overflow-y-auto ${sidebarClassName}`}>
-          {sidebar}
-        </div>
-        {/* Resize handle — pinned to the right edge, fixed while the pane scrolls. */}
-        <div
-          onPointerDown={startDrag}
-          onDoubleClick={() => setWidth(clamp(defaultWidth, minWidth, maxWidth))}
-          title="Drag to resize · double-click to reset"
-          className="group absolute inset-y-0 right-0 z-10 w-2 cursor-col-resize"
-        >
-          <div className="absolute inset-y-0 right-0 w-px bg-transparent transition-colors group-hover:bg-blue-400" />
-        </div>
-      </div>
-      <div className={`flex min-w-0 flex-1 flex-col ${contentClassName}`}>
-        {children}
-      </div>
+      {sideRight ? (
+        <>{contentPane}{sidebarPane}</>
+      ) : (
+        <>{sidebarPane}{contentPane}</>
+      )}
     </div>
   );
 }

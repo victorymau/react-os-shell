@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import SidebarLayout from '../shell/SidebarLayout';
 
 /** One section in the SystemPreferences sidebar. */
 export interface SystemPreferencesSection {
@@ -59,9 +60,15 @@ export default function SystemPreferences({
   const active = sections.find(s => s.key === selected) ?? sections[0];
 
   return (
-    <div className={`flex h-full gap-4 px-4 py-3 min-h-0 ${className ?? ''}`.trim()}>
-      <aside className="w-60 shrink-0 flex flex-col bg-white rounded-lg shadow overflow-hidden">
-        <div className="flex-1 overflow-y-auto py-1">
+    <SidebarLayout
+      storageKey="shell.systemPreferences.sidebarWidth"
+      defaultWidth={240}
+      minWidth={200}
+      maxWidth={360}
+      className={className}
+      sidebarClassName="border-r border-gray-200 bg-gray-50"
+      sidebar={
+        <nav className="py-1.5">
           {sections.map(item => {
             const isActive = item.key === selected;
             return (
@@ -70,7 +77,7 @@ export default function SystemPreferences({
                 type="button"
                 onClick={() => setSelected(item.key)}
                 className={`w-full text-left px-3 py-2.5 text-sm transition-colors flex items-start gap-2.5 ${
-                  isActive ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50 text-gray-700'
+                  isActive ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-700'
                 }`}
               >
                 {item.icon && (
@@ -95,12 +102,12 @@ export default function SystemPreferences({
               </button>
             );
           })}
-        </div>
-      </aside>
-
-      <main className="flex-1 min-w-0 flex flex-col min-h-0 overflow-auto pr-2">
+        </nav>
+      }
+    >
+      <main className="flex-1 min-w-0 overflow-auto p-4">
         {active?.render()}
       </main>
-    </div>
+    </SidebarLayout>
   );
 }
