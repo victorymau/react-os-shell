@@ -151,6 +151,21 @@
   color: #cdd6f4 !important;
 }
 
+/* iOS auto-zooms the viewport when a focused form control's computed
+   font-size is below 16px. On phones/tablets (same breakpoint as
+   useIsMobile) pin text-bearing controls to 16px so focusing them never
+   triggers the zoom. This keeps pinch-zoom working, unlike a
+   `maximum-scale=1` viewport lock. !important beats Tailwind text-*
+   utilities; the :not() list mirrors the dark-input rule above and skips
+   controls that don't take a text caret. */
+@media (max-width: 767px), (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
 /* Window title colors — read by Modal.tsx */
 [data-theme="dark"] {
   --window-title-active: #cdd6f4;

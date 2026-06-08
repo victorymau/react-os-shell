@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.12.1] — 2026-06-08
+
+### Fixed
+- **iOS no longer zooms in when focusing an input in mobile mode.** Touch/phone viewports now pin text-bearing form controls (`input`, `select`, `textarea`) to a 16px font-size — the threshold below which iOS Safari auto-zooms the page on focus. Scoped to the same breakpoint as the mobile shell (`max-width: 767px` / `pointer: coarse`) and keeps pinch-to-zoom working (no `maximum-scale` viewport lock).
+
 ## [0.8.0] — 2026-06-07
 
 ### Removed
