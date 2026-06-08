@@ -101,6 +101,8 @@ export type { SystemPreferencesProps, SystemPreferencesSection } from './setting
 // ── Pageless data grid primitives ──
 export { default as EntityList } from './data/EntityList';
 export type { EntityListColumn, EntityListProps } from './data/EntityList';
+export { default as Kanban } from './data/Kanban';
+export type { KanbanColumn, KanbanProps } from './data/Kanban';
 export { default as ResizableTable } from './data/ResizableTable';
 export { default as ListFooter } from './data/ListFooter';
 export { default as useTableNav } from './data/useTableNav';
