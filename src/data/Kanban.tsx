@@ -1,20 +1,24 @@
-import { useMemo, useState } from 'react';
-import type { CSSProperties, DragEvent, ReactNode } from 'react';
+import { Fragment, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 
 /**
  * Generic, drag-and-drop Kanban board. Self-contained (native HTML5 DnD, no
  * library) and styled with the same Tailwind utilities + `grid-scroll` class the
  * shell already ships, so consumers get it for free.
  *
- * Group items into columns with `columnOf`, render each card with `renderCard`,
- * and handle moves with `onMove(id, toColumn)`. Drops only change a card's
- * column; within-column order is presentational (optionally via `sortInColumn`).
+ * Group items into columns with `columnOf`, render each card with `renderCard`.
+ * Cards can be dragged **between** columns (to change which column they belong
+ * to) and **within** a column (to reorder / prioritise). On drop, `onMove(id,
+ * toColumn, toIndex)` fires — `toIndex` is the target position within `toColumn`
+ * measured against that column's cards *excluding* the dragged one, so the
+ * consumer can persist an order (e.g. midpoint between neighbours) that every
+ * user then sees. Sort each column by that order via `sortInColumn`.
  *
- * Drag affordance: as a card is dragged over a *different* column, the cards at
- * and below the hovered position slide down (CSS transform transition) to open a
- * gap the size of the dragged card, and the column highlights. The dragged card
- * is dimmed. Insertion index tracks `dragenter` (once per card crossed) rather
- * than `dragover` (every few ms) so the gap stays stable instead of oscillating.
+ * Affordance: a blue **drop-line** shows exactly where the card will land
+ * (between two cards, in either the source or a different column), and the
+ * target column highlights. The dragged card dims. The insertion point tracks
+ * `dragenter` (once per card crossed) so the line stays stable rather than
+ * flickering.
  */
 export interface KanbanColumn {
   /** Stable column key — what `columnOf` returns and `onMove` receives. */
@@ -31,12 +35,17 @@ export interface KanbanProps<T> {
   columns: KanbanColumn[];
   columnOf: (item: T) => string;
   getId: (item: T) => string;
-  /** Called when a card is dropped on a column (its own `value`). */
-  onMove: (id: string, toColumn: string) => void;
+  /**
+   * Fired on drop. `toColumn` is the destination column's `value`; `toIndex` is
+   * the target position within that column measured against its cards
+   * **excluding** the dragged card (0 = top). A same-column drop that wouldn't
+   * change the order is not reported.
+   */
+  onMove: (id: string, toColumn: string, toIndex: number) => void;
   /** Inner card content — the card chrome (border, padding, hover) is provided. */
   renderCard: (item: T) => ReactNode;
   onCardClick?: (item: T) => void;
-  /** Optional comparator for ordering within a column. */
+  /** Comparator for ordering within a column — sort by the persisted order field. */
   sortInColumn?: (a: T, b: T) => number;
   isLoading?: boolean;
   loadingText?: string;
@@ -66,8 +75,6 @@ export default function Kanban<T>({
   columnEmptyText = 'Drop here',
 }: KanbanProps<T>) {
   const [dragId, setDragId] = useState<string | null>(null);
-  const [fromCol, setFromCol] = useState<string | null>(null);
-  const [gap, setGap] = useState(0);
   const [over, setOver] = useState<OverState | null>(null);
 
   const grouped = useMemo(() => {
@@ -80,10 +87,25 @@ export default function Kanban<T>({
 
   const reset = () => {
     setDragId(null);
-    setFromCol(null);
     setOver(null);
   };
-  const isActive = (col: string) => over !== null && over.col === col && fromCol !== col;
+
+  const commitMove = (col: string) => {
+    if (dragId && over && over.col === col) {
+      const colItems = grouped[col] ?? [];
+      const dp = colItems.findIndex(it => getId(it) === dragId); // dragged's pos in this column, or -1
+      const sameCol = dp !== -1;
+      // Dropping right above or below itself changes nothing.
+      const noop = sameCol && (over.index === dp || over.index === dp + 1);
+      if (!noop) {
+        // `over.index` counts the dragged card while it's still shown; remove it
+        // from the count when the drop lands below its current slot.
+        const toIndex = sameCol && over.index > dp ? over.index - 1 : over.index;
+        onMove(dragId, col, toIndex);
+      }
+    }
+    reset();
+  };
 
   if (isLoading) return <div className="text-sm text-gray-500 p-4">{loadingText}</div>;
   if (items.length === 0) {
@@ -95,21 +117,18 @@ export default function Kanban<T>({
       <div className="flex gap-3 h-full min-w-max pb-2">
         {columns.map(col => {
           const colItems = grouped[col.value] ?? [];
-          const active = isActive(col.value);
+          const isOver = over !== null && over.col === col.value;
+          const dp = dragId !== null ? colItems.findIndex(it => getId(it) === dragId) : -1;
+          // The drop-line index, or -1 to hide it (incl. the no-op slots next to the dragged card).
+          const lineAt = isOver && !(dp !== -1 && (over!.index === dp || over!.index === dp + 1)) ? over!.index : -1;
           return (
             <div
               key={col.value}
               className={`flex flex-col w-72 shrink-0 rounded-xl bg-gray-50 border transition-colors ${
-                active ? 'border-blue-400 ring-2 ring-blue-300/60' : 'border-gray-200'
+                isOver ? 'border-blue-400 ring-2 ring-blue-300/60' : 'border-gray-200'
               }`}
               onDragOver={e => e.preventDefault()}
-              onDragEnter={() =>
-                setOver(prev => (prev && prev.col === col.value ? prev : { col: col.value, index: colItems.length }))
-              }
-              onDrop={() => {
-                if (dragId) onMove(dragId, col.value);
-                reset();
-              }}
+              onDrop={() => commitMove(col.value)}
             >
               <div
                 className={`flex items-center justify-between px-3 py-2 rounded-t-xl text-sm font-medium ${
@@ -124,55 +143,57 @@ export default function Kanban<T>({
               </div>
               <div
                 className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[120px]"
-                style={{ paddingBottom: active ? gap + 8 : 8, transition: 'padding-bottom 160ms ease' }}
+                // Entering the column's empty area (not a card) targets the end.
+                onDragEnter={() =>
+                  setOver(prev =>
+                    prev && prev.col === col.value && prev.index === colItems.length
+                      ? prev
+                      : { col: col.value, index: colItems.length },
+                  )
+                }
               >
                 {colItems.map((item, index) => {
                   const id = getId(item);
-                  const shift = active && over !== null && index >= over.index ? gap : 0;
-                  const style: CSSProperties =
-                    dragId === null
-                      ? {}
-                      : {
-                          transform: `translateY(${shift}px)`,
-                          transition: 'transform 160ms cubic-bezier(0.2, 0, 0, 1), opacity 120ms ease',
-                          opacity: id === dragId ? 0.4 : 1,
-                        };
+                  const isDragged = id === dragId;
                   return (
-                    <div
-                      key={id}
-                      draggable
-                      onDragStart={e => {
-                        setDragId(id);
-                        setFromCol(col.value);
-                        setGap(Math.round(e.currentTarget.getBoundingClientRect().height) + 8);
-                        try {
-                          e.dataTransfer.effectAllowed = 'move';
-                        } catch {
-                          /* some environments disallow setting this */
-                        }
-                      }}
-                      onDragEnter={e => {
-                        // Keep the column's onDragEnter from overriding this precise index.
-                        e.stopPropagation();
-                        setOver(prev =>
-                          prev && prev.col === col.value && prev.index === index ? prev : { col: col.value, index },
-                        );
-                      }}
-                      onDragEnd={reset}
-                      onClick={onCardClick ? () => onCardClick(item) : undefined}
-                      style={style}
-                      className={`rounded-lg bg-white border border-gray-200 p-3 shadow-sm hover:border-blue-400 hover:shadow transition ${
-                        onCardClick ? 'cursor-pointer' : ''
-                      }`}
-                    >
-                      {renderCard(item)}
-                    </div>
+                    <Fragment key={id}>
+                      {lineAt === index && <div className="h-0.5 rounded-full bg-blue-500" aria-hidden />}
+                      <div
+                        draggable
+                        onDragStart={e => {
+                          setDragId(id);
+                          try {
+                            e.dataTransfer.effectAllowed = 'move';
+                          } catch {
+                            /* some environments disallow setting this */
+                          }
+                        }}
+                        onDragEnter={e => {
+                          // Don't let the column's onDragEnter override this precise slot.
+                          e.stopPropagation();
+                          setOver(prev =>
+                            prev && prev.col === col.value && prev.index === index ? prev : { col: col.value, index },
+                          );
+                        }}
+                        onDragEnd={reset}
+                        onClick={onCardClick ? () => onCardClick(item) : undefined}
+                        style={dragId === null ? undefined : { opacity: isDragged ? 0.4 : 1, transition: 'opacity 120ms ease' }}
+                        className={`rounded-lg bg-white border border-gray-200 p-3 shadow-sm hover:border-blue-400 hover:shadow transition ${
+                          onCardClick ? 'cursor-pointer' : ''
+                        }`}
+                      >
+                        {renderCard(item)}
+                      </div>
+                    </Fragment>
                   );
                 })}
+                {colItems.length > 0 && lineAt === colItems.length && (
+                  <div className="h-0.5 rounded-full bg-blue-500" aria-hidden />
+                )}
                 {colItems.length === 0 && (
                   <div
                     className={`text-[11px] text-center rounded-lg transition-all duration-150 ${
-                      active
+                      isOver
                         ? 'border-2 border-dashed border-blue-300 bg-blue-50/50 text-blue-400 py-8'
                         : 'text-gray-400 py-6'
                     }`}
