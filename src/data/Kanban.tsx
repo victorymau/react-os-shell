@@ -240,8 +240,16 @@ export default function Kanban<T>({
                         onDragEnter={e => {
                           // Don't let the column's onDragEnter override this precise slot.
                           e.stopPropagation();
+                          // Insert *after* this card when dragging it downward onto a
+                          // neighbour, *before* it when dragging up — otherwise nudging a
+                          // card down by one lands "before its neighbour" = its own slot,
+                          // which commitMove treats as a no-op (the same-column reorder bug).
+                          const draggedPos = dragId !== null ? colItems.findIndex(it => getId(it) === dragId) : -1;
+                          const target = draggedPos !== -1 && draggedPos < index ? index + 1 : index;
                           setOver(prev =>
-                            prev && prev.col === col.value && prev.index === index ? prev : { col: col.value, index },
+                            prev && prev.col === col.value && prev.index === target
+                              ? prev
+                              : { col: col.value, index: target },
                           );
                         }}
                         onDragEnd={reset}
