@@ -307,6 +307,26 @@ const sizeDefaults: Record<string, number> = {
   sm: 384, md: 512, lg: 672, xl: 896, '2xl': 1152,
 };
 
+// The user's "Default window size" preference (Settings → Behavior). Layout
+// publishes it as the `--default-window-size` CSS var; here it scales a
+// freshly-opened window's initial height. 'large' is the default and opens
+// windows taller than 'medium' (the old fixed ladder), 'small' opens them
+// shorter, and 'maximized' opens non-widget windows filling the work area
+// (handled separately via the maximized state). Widgets ignore the pref —
+// they're content-sized utilities. Windows with explicit `dimensions` keep
+// their height for small/medium/large.
+type WindowSizePref = 'small' | 'medium' | 'large' | 'maximized';
+const readDefaultWindowSize = (): WindowSizePref => {
+  if (typeof document === 'undefined') return 'large';
+  const v = getComputedStyle(document.documentElement).getPropertyValue('--default-window-size')?.trim();
+  return v === 'small' || v === 'medium' || v === 'maximized' ? v : 'large';
+};
+// Multiplier applied to the per-size open-height ladder. 'medium' reproduces
+// the previous fixed heights; 'large' (the default) opens 25 % taller.
+const windowHeightScale: Record<WindowSizePref, number> = {
+  small: 0.8, medium: 1, large: 1.25, maximized: 1.25,
+};
+
 // Track modal depth for stacking z-index and ESC handling
 export let modalDepth = 0;
 export const modalStack: string[] = [];
@@ -955,11 +975,15 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     // minHeight (~240 px at line ~1500) stays in place as the manual-resize
     // floor, so users can still drag a window smaller. xl/2xl previously had
     // no cap and ballooned to fill the entire viewport on tall screens;
-    // they're now bounded at 800 / 920 px. All caps are further clamped to
-    // the available viewport, so small screens still get a window that fits.
+    // they're now bounded at 800 / 920 px. The ladder is then scaled by the
+    // user's "Default window size" preference — 'large' (the default) opens
+    // 25 % taller than the old fixed values, 'small' shorter, 'medium' keeps
+    // them. All caps are further clamped to the available viewport, so small
+    // screens still get a window that fits.
+    const heightScale = windowHeightScale[readDefaultWindowSize()];
     const h = dimensions
         ? Math.min(dimensions[1], availH)
-        : (() => { const minH = 320; const maxH = size === 'sm' ? 500 : size === 'md' ? 600 : size === 'lg' ? 700 : size === 'xl' ? 800 : 920; return Math.max(minH, Math.min(maxH, window.innerHeight - taskbarH - 80)); })();
+        : (() => { const minH = 320; const maxH = (size === 'sm' ? 500 : size === 'md' ? 600 : size === 'lg' ? 700 : size === 'xl' ? 800 : 920) * heightScale; return Math.max(minH, Math.min(maxH, window.innerHeight - taskbarH - 80)); })();
     // Window position mode
     const posMode = getComputedStyle(document.documentElement).getPropertyValue('--window-position')?.trim() || 'cascade';
     const offset = posMode === 'cascade' ? (activationOrder.length - 1) * 30 : 0;
@@ -1055,6 +1079,11 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     };
   }, [open, modalId, boxKey, calcMaximized]);
 
+  // 'Maximized' default-window-size preference: a freshly-opened non-widget
+  // window fills the work area. Widgets (small content-sized utilities) and
+  // windows restored from a saved/explicit box are exempt.
+  const openMaximized = !widget && readDefaultWindowSize() === 'maximized';
+
   // Restore saved position from window position store
   const [box, setBox] = useState(() => {
     if (boxKey && _windowPositions[boxKey]) {
@@ -1063,7 +1092,8 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
       if (dimensions) { saved.w = dimensions[0]; if (!autoHeight) saved.h = dimensions[1]; }
       return saved;
     }
-    return initialBox ? { x: initialBox.x, y: initialBox.y, w: initialBox.w, h: initialBox.h } : calcWindowed();
+    if (initialBox) return { x: initialBox.x, y: initialBox.y, w: initialBox.w, h: initialBox.h };
+    return openMaximized ? calcMaximized() : calcWindowed();
   });
   // `autoHeight` is a *one-shot* "size to content at open time" hint, not a
   // continuous CSS rule. We render with `height: auto` (plus the viewport-
@@ -1098,7 +1128,13 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     return () => window.removeEventListener('react-os-shell:layout-mode-changed', refresh);
   }, []);
   const alwaysMaximized = alwaysMaximizedRaw && !widget;
-  const [maximized, setMaximized] = useState(() => alwaysMaximized);
+  const [maximized, setMaximized] = useState(() => {
+    // Saved positions and explicit restore boxes keep their own state (the
+    // open effect below restores `initialBox.maximized`); a fresh window
+    // honours the 'maximized' default-window-size preference.
+    if ((boxKey && _windowPositions[boxKey]) || initialBox) return alwaysMaximized;
+    return alwaysMaximized || openMaximized;
+  });
   const boxRef = useRef(box);
   boxRef.current = box;
 
