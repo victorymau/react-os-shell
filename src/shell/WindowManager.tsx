@@ -461,6 +461,11 @@ function TaskbarTabPreview({ items, anchorEl, onActivate, onClose, onMouseEnter,
   // actual rendered size before snapping into place. This avoids a single
   // mis-aligned frame.
   const [pos, setPos] = useState<{ left: number; top: number; ready: boolean }>({ left: -9999, top: -9999, ready: false });
+  const [taskbarPos, setTaskbarPos] = useState<string>(() =>
+    typeof document !== 'undefined'
+      ? (getComputedStyle(document.documentElement).getPropertyValue('--taskbar-position')?.trim() || 'bottom')
+      : 'bottom'
+  );
 
   useLayoutEffect(() => {
     const el = popoverRef.current;
@@ -468,15 +473,16 @@ function TaskbarTabPreview({ items, anchorEl, onActivate, onClose, onMouseEnter,
     const measure = () => {
       const tabRect = anchorEl.getBoundingClientRect();
       const popRect = el.getBoundingClientRect();
-      const taskbarPos = getComputedStyle(document.documentElement).getPropertyValue('--taskbar-position')?.trim() || 'bottom';
+      const tbPos = getComputedStyle(document.documentElement).getPropertyValue('--taskbar-position')?.trim() || 'bottom';
+      setTaskbarPos(tbPos);
       let left = tabRect.left + tabRect.width / 2 - popRect.width / 2;
       let top: number;
-      if (taskbarPos === 'top') {
+      if (tbPos === 'top') {
         top = tabRect.bottom + 8;
-      } else if (taskbarPos === 'left') {
+      } else if (tbPos === 'left') {
         left = tabRect.right + 8;
         top = tabRect.top + tabRect.height / 2 - popRect.height / 2;
-      } else if (taskbarPos === 'right') {
+      } else if (tbPos === 'right') {
         left = tabRect.left - popRect.width - 8;
         top = tabRect.top + tabRect.height / 2 - popRect.height / 2;
       } else {
@@ -496,6 +502,13 @@ function TaskbarTabPreview({ items, anchorEl, onActivate, onClose, onMouseEnter,
     return () => ro.disconnect();
   }, [anchorEl, items.length]);
 
+  // When the taskbar is on top, the popover hangs below the tab, so the
+  // snapshot should sit closest to the tab (i.e. on top of the popover) and
+  // the title sits beneath it. Every other taskbar position keeps the title
+  // above the snapshot.
+  const titleBelow = taskbarPos === 'top';
+  const titleClass = `${titleBelow ? 'mt-1' : 'mb-1'} max-w-[240px] truncate text-[11px] font-medium text-gray-900 bg-white/80 px-2 py-0.5 rounded shadow-sm ring-2 ring-transparent transition group-hover:ring-blue-400`;
+
   return createPortal(
     <div
       ref={popoverRef}
@@ -510,9 +523,7 @@ function TaskbarTabPreview({ items, anchorEl, onActivate, onClose, onMouseEnter,
     >
       {items.map(it => (
         <div key={it.id} className="group flex flex-col items-center">
-          <span className="mb-1 max-w-[240px] truncate text-[11px] font-medium text-gray-900 bg-white/80 px-2 py-0.5 rounded shadow-sm ring-2 ring-transparent transition group-hover:ring-blue-400">
-            {it.label}
-          </span>
+          {!titleBelow && <span className={titleClass}>{it.label}</span>}
           <ThumbCard
             id={it.id}
             label={it.label}
@@ -522,6 +533,7 @@ function TaskbarTabPreview({ items, anchorEl, onActivate, onClose, onMouseEnter,
             onClick={() => onActivate(it.id)}
             onClose={() => onClose(it.id)}
           />
+          {titleBelow && <span className={titleClass}>{it.label}</span>}
         </div>
       ))}
     </div>,
