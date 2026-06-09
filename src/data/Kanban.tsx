@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 
 /**
@@ -90,6 +90,55 @@ export default function Kanban<T>({
     setOver(null);
   };
 
+  // FLIP: when the order changes (e.g. on drop), slide each card from its old
+  // position to its new one — so the dropped card and the cards making room for
+  // it animate into place instead of snapping. Skipped while a drag is active.
+  const boardRef = useRef<HTMLDivElement>(null);
+  const prevRects = useRef<Map<string, DOMRect>>(new Map());
+  useLayoutEffect(() => {
+    if (dragId !== null) return;
+    const board = boardRef.current;
+    if (!board) return;
+    const next = new Map<string, DOMRect>();
+    const moved: [HTMLElement, number, number][] = [];
+    board.querySelectorAll<HTMLElement>('[data-kanban-card]').forEach(el => {
+      const id = el.dataset.kanbanCard as string;
+      const rect = el.getBoundingClientRect();
+      next.set(id, rect);
+      const prev = prevRects.current.get(id);
+      if (prev) {
+        const dx = prev.left - rect.left;
+        const dy = prev.top - rect.top;
+        if (dx || dy) moved.push([el, dx, dy]);
+      }
+    });
+    prevRects.current = next;
+    if (!moved.length) return;
+    // Invert: jump each moved card back to where it was, with no transition…
+    for (const [el, dx, dy] of moved) {
+      el.style.transition = 'none';
+      el.style.transform = `translate(${dx}px, ${dy}px)`;
+    }
+    // …then play: release to the real position on the next frame so it animates.
+    requestAnimationFrame(() => {
+      for (const [el] of moved) {
+        el.style.transition = 'transform 200ms cubic-bezier(0.2, 0, 0, 1)';
+        el.style.transform = '';
+        el.addEventListener(
+          'transitionend',
+          () => {
+            el.style.transition = '';
+            el.style.transform = '';
+          },
+          { once: true },
+        );
+      }
+    });
+    // Re-measure only when the grouping (order/membership) changes or a drag
+    // ends — not on every render — so typing/search doesn't thrash layout.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grouped, dragId]);
+
   const commitMove = (col: string) => {
     if (dragId && over && over.col === col) {
       const colItems = grouped[col] ?? [];
@@ -113,7 +162,7 @@ export default function Kanban<T>({
   }
 
   return (
-    <div className="flex-1 overflow-x-auto grid-scroll">
+    <div ref={boardRef} className="flex-1 overflow-x-auto grid-scroll">
       <div className="flex gap-3 h-full min-w-max pb-2">
         {columns.map(col => {
           const colItems = grouped[col.value] ?? [];
@@ -159,6 +208,7 @@ export default function Kanban<T>({
                     <Fragment key={id}>
                       {lineAt === index && <div className="h-0.5 rounded-full bg-blue-500" aria-hidden />}
                       <div
+                        data-kanban-card={id}
                         draggable
                         onDragStart={e => {
                           setDragId(id);
