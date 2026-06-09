@@ -5,6 +5,7 @@ import apiClient from '../api/client';
 import toast from '../shell/toast';
 import { useWindowManager } from '../shell/WindowManager';
 import { useShellPrefs } from '../shell/ShellPrefs';
+import SidebarLayout from '../shell/SidebarLayout';
 
 interface Note {
   id: string;
@@ -322,44 +323,52 @@ Tips:
   [] Type [] for a checkbox, click to toggle
   SO#35001 Type XX#NNNNN to link entities (SO, PO, CI, VI, PL, etc.)`;
 
-  return (
-    <div className="flex h-full">
-      {/* Note list sidebar */}
-      <div className="w-56 shrink-0 border-r border-gray-200 flex flex-col">
-        <div className="p-2 border-b border-gray-200">
-          <button onClick={createNote}
-            className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-blue-700 transition-colors">
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-            New Note
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto">
-          {notes.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-8 px-4">No notes yet. Create one to get started.</p>
-          ) : (
-            notes.map(n => {
-              const c = getColor(n.color);
-              return (
-                <button key={n.id} onClick={() => selectNote(n)}
-                  className={`w-full text-left px-3 py-2.5 border-b border-gray-100 transition-colors ${selectedId === n.id ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
-                  <div className="flex items-center gap-2">
-                    <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${c.dot}`} />
-                    <span className="text-sm font-medium text-gray-900 truncate flex-1">
-                      {n.title || 'Untitled'}
-                    </span>
-                    {n.sticky && (
-                      <svg className="h-3 w-3 text-amber-500 shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>
-                    )}
-                  </div>
-                  <p className="text-xs text-gray-400 mt-0.5 truncate ml-4.5">{n.content.replace(/\[[ xX]?\]/g, '').slice(0, 60) || 'Empty note'}</p>
-                  <p className="text-[10px] text-gray-300 mt-0.5 ml-4.5">{timeAgo(n.updated_at)}</p>
-                </button>
-              );
-            })
-          )}
-        </div>
+  const sidebar = (
+    <>
+      <div className="p-2 border-b border-gray-200">
+        <button onClick={createNote}
+          className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-blue-700 transition-colors">
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+          New Note
+        </button>
       </div>
+      <div className="flex-1 overflow-y-auto">
+        {notes.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-8 px-4">No notes yet. Create one to get started.</p>
+        ) : (
+          notes.map(n => {
+            const c = getColor(n.color);
+            return (
+              <button key={n.id} onClick={() => selectNote(n)}
+                className={`w-full text-left px-3 py-2.5 border-b border-gray-100 transition-colors ${selectedId === n.id ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
+                <div className="flex items-center gap-2">
+                  <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${c.dot}`} />
+                  <span className="text-sm font-medium text-gray-900 truncate flex-1">
+                    {n.title || 'Untitled'}
+                  </span>
+                  {n.sticky && (
+                    <svg className="h-3 w-3 text-amber-500 shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>
+                  )}
+                </div>
+                <p className="text-xs text-gray-400 mt-0.5 truncate ml-4.5">{n.content.replace(/\[[ xX]?\]/g, '').slice(0, 60) || 'Empty note'}</p>
+                <p className="text-[10px] text-gray-300 mt-0.5 ml-4.5">{timeAgo(n.updated_at)}</p>
+              </button>
+            );
+          })
+        )}
+      </div>
+    </>
+  );
 
+  return (
+    <div className="h-full">
+      <SidebarLayout
+        sidebar={sidebar}
+        storageKey="notepad.sidebarWidth"
+        defaultWidth={224}
+        minWidth={180}
+        maxWidth={360}
+      >
       {/* Editor */}
       {selectedId ? (
         <div className="flex-1 flex flex-col min-w-0">
@@ -425,6 +434,7 @@ Tips:
           </div>
         </div>
       )}
+      </SidebarLayout>
     </div>
   );
 }

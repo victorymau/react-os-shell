@@ -34,7 +34,7 @@ import {
   VERSION,
   type NotificationsConfig,
 } from 'react-os-shell';
-import { bundledApps, utilityApps, gameApps, documentApps, webApps } from 'react-os-shell/apps';
+import { bundledApps, utilityApps, gameApps, documentApps, webApps, setFilesDemoTree, type FilesDemoNode } from 'react-os-shell/apps';
 
 // Floating panel toggled with Alt+Shift+T to test toast / notification /
 // confirm / confirmDestructive / prompt visually. Eagerly imported because
@@ -42,11 +42,6 @@ import { bundledApps, utilityApps, gameApps, documentApps, webApps } from 'react
 // throws to a missing boundary and trips React error #426.
 import DevToolbox from './DevToolbox';
 
-// Settings → Customization page (theme picker, wallpaper picker, hotkeys, etc.)
-// Cast through `any` so the registry's `LazyExoticComponent<any>` slot
-// accepts it — `Customization` now declares an optional `omit` prop and
-// TS's invariance on lazy types rejects the assignment without the cast.
-const Customization = lazy(() => import('react-os-shell').then(m => ({ default: m.Customization }))) as React.LazyExoticComponent<any>;
 // Demo profile page wired to the shell's start-menu profile row.
 const ProfilePage = lazy(() => import('./ProfilePage'));
 // Demo pages that exercise the shell's data/layout primitives.
@@ -58,10 +53,14 @@ const BreadcrumbsDemo = lazy(() => import('./BreadcrumbsDemo'));
 const PreferencesDemo = lazy(() => import('./PreferencesDemo'));
 
 setShellWindowRegistry(createWindowRegistry(bundledApps, {
+  // The shell's menus (desktop right-click, profile menu) open
+  // `/settings/customization`; in the demo that's the Preferences window —
+  // the sectioned SystemPreferences hosting the split Customization page.
   '/settings/customization': {
-    component: Customization,
-    label: 'Customization',
-    size: 'lg',
+    component: PreferencesDemo,
+    label: 'Preferences',
+    size: 'xl',
+    flushBody: true,
   },
   '/profile': {
     component: ProfilePage,
@@ -95,13 +94,38 @@ setShellWindowRegistry(createWindowRegistry(bundledApps, {
     label: 'Breadcrumbs',
     size: 'lg',
   },
-  '/preferences-demo': {
-    component: PreferencesDemo,
-    label: 'Preferences',
-    size: 'xl',
-    flushBody: true,
-  },
 }));
+
+// Inject a static demo filesystem so the Files app browses in-memory (no file
+// server needed in the demo). A real consumer never calls this and keeps its
+// live server. See setFilesDemoTree in react-os-shell/apps.
+const DEMO_FILES: FilesDemoNode[] = [
+  { name: 'Documents', kind: 'folder', modifiedAt: '2026-05-20T10:00:00Z', children: [
+    { name: 'Resume.pdf', kind: 'file', size: 248_000, modifiedAt: '2026-05-18T09:12:00Z' },
+    { name: 'Budget.xlsx', kind: 'file', size: 41_300, modifiedAt: '2026-06-01T14:03:00Z' },
+    { name: 'Reports', kind: 'folder', modifiedAt: '2026-06-05T11:00:00Z', children: [
+      { name: 'Q1-summary.pdf', kind: 'file', size: 1_200_000, modifiedAt: '2026-04-02T16:20:00Z' },
+      { name: 'Q2-summary.pdf', kind: 'file', size: 1_350_000, modifiedAt: '2026-06-04T16:20:00Z' },
+    ] },
+  ] },
+  { name: 'Pictures', kind: 'folder', modifiedAt: '2026-05-30T08:00:00Z', children: [
+    { name: 'Yosemite.jpg', kind: 'file', size: 3_400_000, modifiedAt: '2026-05-12T07:30:00Z' },
+    { name: 'Lake.jpg', kind: 'file', size: 2_800_000, modifiedAt: '2026-05-13T07:30:00Z' },
+    { name: 'Screenshots', kind: 'folder', children: [
+      { name: 'desktop.png', kind: 'file', size: 540_000, modifiedAt: '2026-06-07T19:45:00Z' },
+    ] },
+  ] },
+  { name: 'Downloads', kind: 'folder', modifiedAt: '2026-06-08T20:00:00Z', children: [
+    { name: 'react-os-shell-1.0.0.tgz', kind: 'file', size: 750_000, modifiedAt: '2026-06-09T20:30:00Z' },
+    { name: 'invoice-2026-06.pdf', kind: 'file', size: 88_000, modifiedAt: '2026-06-06T12:00:00Z' },
+  ] },
+  { name: 'Projects', kind: 'folder', modifiedAt: '2026-06-09T09:00:00Z', children: [
+    { name: 'README.md', kind: 'file', size: 4_200, modifiedAt: '2026-06-09T09:05:00Z' },
+    { name: 'notes.txt', kind: 'file', size: 1_100, modifiedAt: '2026-06-08T17:00:00Z' },
+  ] },
+  { name: 'welcome.txt', kind: 'file', size: 320, modifiedAt: '2026-06-01T08:00:00Z' },
+];
+setFilesDemoTree(DEMO_FILES);
 
 // Logout dispatches a CustomEvent the App listens for (the auth bridge is
 // set once at module-load and can't close over React state).
@@ -120,7 +144,7 @@ const queryClient = new QueryClient();
 // Top-level flat items shown directly in the main start menu (alongside the
 // built-in Notifications entry). The remaining utility/game apps stay in their
 // category sub-trays below.
-const TOP_LEVEL_ROUTES = new Set(['/spreadsheet', '/notepad', '/todo', '/documents', '/preview', '/files', '/browser']);
+const TOP_LEVEL_ROUTES = new Set(['/spreadsheet', '/notepad', '/documents', '/preview', '/files', '/browser']);
 const lookupLabel = (to: string) =>
   (utilityApps as any)[to]?.label
   ?? (gameApps as any)[to]?.label
@@ -128,13 +152,12 @@ const lookupLabel = (to: string) =>
   ?? (webApps as any)[to]?.label
   ?? to;
 
-// Top-level apps, then a divider, then Customization as its own row.
-// (No "Settings" section anymore.)
+// Top-level apps, then a divider, then Preferences as its own row.
 type TopNavItem = { to: string; label: string; dividerAfter?: boolean };
 const TOP_NAV_ITEMS: TopNavItem[] = (() => {
   const items: TopNavItem[] = Array.from(TOP_LEVEL_ROUTES).map(to => ({ to, label: lookupLabel(to) }));
   if (items.length) items[items.length - 1].dividerAfter = true;
-  items.push({ to: '/settings/customization', label: 'Customization' });
+  items.push({ to: '/settings/customization', label: 'Preferences' });
   return items;
 })();
 
@@ -149,7 +172,6 @@ const NAV_SECTIONS = [
       { to: '/sidebar-demo', label: 'Sidebar' },
       { to: '/topnav-demo', label: 'Top Nav' },
       { to: '/breadcrumbs-demo', label: 'Breadcrumbs' },
-      { to: '/preferences-demo', label: 'Preferences' },
     ],
   },
   {
@@ -186,7 +208,6 @@ const path = (d: string) => (
 const NAV_ICONS: Record<string, JSX.Element> = {
   '/spreadsheet': path('M3.75 6.75h16.5v10.5H3.75zM3.75 11.25h16.5M9 6.75v10.5'),
   '/notepad': path('M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125'),
-  '/todo': path('M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.063 2.522-.187 3.756a4.501 4.501 0 01-4.057 4.057 60.41 60.41 0 01-7.512 0 4.5 4.5 0 01-4.057-4.057A60.39 60.39 0 013 12c0-1.268.063-2.522.187-3.756a4.5 4.5 0 014.057-4.057 60.395 60.395 0 017.512 0 4.5 4.5 0 014.057 4.057c.124 1.234.187 2.488.187 3.756z'),
   '/calculator': path('M15.75 15.75V18m-7.5-6.75h.008v.008H8.25v-.008zm0 2.25h.008v.008H8.25V13.5zm0 2.25h.008v.008H8.25v-.008zm0 2.25h.008v.008H8.25V18zm2.498-6.75h.007v.008h-.007v-.008zm0 2.25h.007v.008h-.007V13.5zm0 2.25h.007v.008h-.007v-.008zm0 2.25h.007v.008h-.007V18zm2.504-6.75h.008v.008h-.008v-.008zm0 2.25h.008v.008h-.008V13.5zm0 4.5h.008v.008h-.008V18zm2.498-6.75h.008v.008h-.008v-.008zm0 2.25h.008v.008h-.008V13.5zM4.5 9.75h15v9a2.25 2.25 0 01-2.25 2.25h-10.5A2.25 2.25 0 014.5 18.75v-9zM4.5 9.75V7.5a2.25 2.25 0 012.25-2.25h10.5A2.25 2.25 0 0119.5 7.5v2.25h-15z'),
   '/weather': path('M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z'),
   '/currency': path('M12 7.5v9m3.75-9.75H9.375a2.625 2.625 0 100 5.25h2.25a2.625 2.625 0 010 5.25H8.25M21 12a9 9 0 11-18 0 9 9 0 0118 0z'),
@@ -209,7 +230,6 @@ const NAV_ICONS: Record<string, JSX.Element> = {
   '/list-demo': path('M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z'),
   '/topnav-demo': path('M3.75 9h16.5M4.5 5.25h15a.75.75 0 01.75.75v12a.75.75 0 01-.75.75h-15a.75.75 0 01-.75-.75V6a.75.75 0 01.75-.75z'),
   '/breadcrumbs-demo': path('M5.25 4.5l7.5 7.5-7.5 7.5m6-15l7.5 7.5-7.5 7.5'),
-  '/preferences-demo': path('M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75'),
 };
 
 setShellNavIcons(NAV_ICONS);
