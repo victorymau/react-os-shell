@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.13.1] — 2026-06-09
+
+### Fixed
+- **Kanban cards no longer snap back before landing on drop.** Dropping a card showed a two-stage animation — the native drag-image flew back to the card's original slot, then the card jumped to its new position — making a clean reorder feel like a swap or a return. This is the browser's "cancelled drag" fly-back, a separate artifact from the v0.13.0 drop-settle animation (which only animates the *real* cards once the order changes). The board's drop target now explicitly accepts the drag as a *move* (`dropEffect = 'move'` on `dragover`) and prevents the default drop action (`preventDefault` on `drop`), so the browser ends the drag at the drop point and only the drop-settle slide plays — one smooth motion.
+
+## [0.13.0] — 2026-06-09
+
+### Added
+- **Kanban drop-settle (FLIP) animation.** When a card's column or order changes, the board now slides each affected card from its old position to its new one (200ms) instead of snapping — the dropped card and the cards making room for it animate into place. Implemented with a FLIP pass (`getBoundingClientRect` invert-then-play) in a layout effect, keyed on grouping/drag changes so search and typing don't thrash layout, and skipped while a drag is in progress.
+
 ## [0.12.1] — 2026-06-08
 
 ### Fixed

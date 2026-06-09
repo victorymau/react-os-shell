@@ -176,8 +176,27 @@ export default function Kanban<T>({
               className={`flex flex-col w-72 shrink-0 rounded-xl bg-gray-50 border transition-colors ${
                 isOver ? 'border-blue-400 ring-2 ring-blue-300/60' : 'border-gray-200'
               }`}
-              onDragOver={e => e.preventDefault()}
-              onDrop={() => commitMove(col.value)}
+              onDragOver={e => {
+                // Accept the drop as a *move* so the browser doesn't treat it as
+                // cancelled and play the native "fly the drag-image back to its
+                // origin" animation — the snap-back the card showed before it
+                // jumped to its new slot. Both this and `dropEffect` are needed:
+                // preventing the default on dragover marks the column a valid
+                // target, `dropEffect` makes the accepted action a move.
+                e.preventDefault();
+                try {
+                  e.dataTransfer.dropEffect = 'move';
+                } catch {
+                  /* some environments disallow setting this */
+                }
+              }}
+              onDrop={e => {
+                // Prevent the default drop handling too, so the drag ends cleanly
+                // at the drop point and React re-renders the card straight into
+                // its new position — one smooth motion, no snap-back.
+                e.preventDefault();
+                commitMove(col.value);
+              }}
             >
               <div
                 className={`flex items-center justify-between px-3 py-2 rounded-t-xl text-sm font-medium ${
