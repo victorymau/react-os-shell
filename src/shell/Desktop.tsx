@@ -152,6 +152,12 @@ export interface StickyEntityRef {
 
 export type StickyResolver = (prefix: string, number: string) => Promise<StickyEntityRef | null>;
 
+/** Optional items in the desktop right-click menu that a consumer can hide via
+ *  {@link DesktopHostConfig.hiddenContextMenuItems} — e.g. when they're surfaced
+ *  under Preferences instead. `'customization'` is the Preferences/Customization
+ *  shortcut, `'favorites'` the Favorites shortcut, `'about'` the About item. */
+export type DesktopContextMenuItem = 'customization' | 'favorites' | 'about';
+
 export interface DesktopHostConfig {
   /** Product name shown in the About dialog and desktop context menu. */
   productName?: string;
@@ -180,6 +186,9 @@ export interface DesktopHostConfig {
   saveSnap?: (snap: boolean) => void | Promise<void>;
   /** Persists the user's notepad / sticky-note content. */
   saveNotes?: (notes: unknown[]) => void | Promise<void>;
+  /** Desktop right-click menu items to hide (all shown by default). Pass keys
+   *  here when the consumer surfaces them elsewhere — e.g. under Preferences. */
+  hiddenContextMenuItems?: DesktopContextMenuItem[];
 }
 
 const DesktopHostContext = createContext<DesktopHostConfig>({});
@@ -506,6 +515,7 @@ export default function Desktop({ profile }: { profile: any }) {
   // The PREFIX#NUMBER → entity lookup is consumer-supplied; the shell only
   // calls the resolver and hands the result to openEntity().
   const host = useDesktopHost();
+  const hiddenMenuItems = host.hiddenContextMenuItems ?? [];
   const openStickyRef = async (prefix: string, number: string) => {
     const refNum = `${prefix}#${number}`;
     if (!host.stickyResolver) { toast.error(`Unknown reference: ${refNum}`); return; }
@@ -1439,19 +1449,25 @@ export default function Desktop({ profile }: { profile: any }) {
             <svg className="h-4 w-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="3.5" y="13.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="13.5" width="7" height="7" rx="1.5" /></svg>
             Manage Widgets…
           </PopupMenuItem>
-          <PopupMenuDivider />
-          <PopupMenuItem onClick={() => { setContextMenu(null); openPage('/settings/customization'); }}>
-            <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.42 3.42a15.995 15.995 0 004.764-4.648l3.876-5.814a1.151 1.151 0 00-1.597-1.597L14.146 6.32a15.996 15.996 0 00-4.649 4.763m3.42 3.42a6.776 6.776 0 00-3.42-3.42" /></svg>
-            Preferences
-          </PopupMenuItem>
-          <PopupMenuItem onClick={() => { setContextMenu(null); openPage('/settings/favorites'); }}>
-            <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" /></svg>
-            Favorites
-          </PopupMenuItem>
-          <PopupMenuItem onClick={() => { setContextMenu(null); setAboutOpen(true); }}>
-            <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" /></svg>
-            About {host.productName ?? 'this app'}
-          </PopupMenuItem>
+          {!(hiddenMenuItems.includes('customization') && hiddenMenuItems.includes('favorites') && hiddenMenuItems.includes('about')) && <PopupMenuDivider />}
+          {!hiddenMenuItems.includes('customization') && (
+            <PopupMenuItem onClick={() => { setContextMenu(null); openPage('/settings/customization'); }}>
+              <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.42 3.42a15.995 15.995 0 004.764-4.648l3.876-5.814a1.151 1.151 0 00-1.597-1.597L14.146 6.32a15.996 15.996 0 00-4.649 4.763m3.42 3.42a6.776 6.776 0 00-3.42-3.42" /></svg>
+              Preferences
+            </PopupMenuItem>
+          )}
+          {!hiddenMenuItems.includes('favorites') && (
+            <PopupMenuItem onClick={() => { setContextMenu(null); openPage('/settings/favorites'); }}>
+              <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" /></svg>
+              Favorites
+            </PopupMenuItem>
+          )}
+          {!hiddenMenuItems.includes('about') && (
+            <PopupMenuItem onClick={() => { setContextMenu(null); setAboutOpen(true); }}>
+              <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" /></svg>
+              About {host.productName ?? 'this app'}
+            </PopupMenuItem>
+          )}
           {bugReport && <>
             <PopupMenuDivider />
             <PopupMenuItem onClick={() => { setContextMenu(null); reportBug(bugReport.submit); }}>
