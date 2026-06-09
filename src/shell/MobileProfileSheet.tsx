@@ -74,7 +74,7 @@ export default function MobileProfileSheet({ profile, user, onClose, onNavigate,
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
             </span>
-            <span className="flex-1 text-sm font-medium text-gray-800">Customization</span>
+            <span className="flex-1 text-sm font-medium text-gray-800">Preferences</span>
             <svg className="h-4 w-4 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
             </svg>

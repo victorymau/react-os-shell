@@ -16,6 +16,28 @@ import { useWindowManager } from '../shell/WindowManager';
 import toast from '../shell/toast';
 import { confirm, prompt } from '../shell/ConfirmDialog';
 import { openPreviewFile } from '../utils/openPreviewFile';
+import Breadcrumbs from '../shell/Breadcrumbs';
+import type { BreadcrumbItem } from '../shell/Breadcrumbs';
+import SidebarLayout from '../shell/SidebarLayout';
+
+/**
+ * Demo filesystem. When a consumer (e.g. the demo app) injects a static tree
+ * via `setFilesDemoTree`, Files browses it in-memory — no file server needed.
+ * Browse-only: upload / new-folder / rename / delete / trash are hidden while a
+ * demo tree is set. Consumers with a real file server never call it, so their
+ * behaviour is unchanged.
+ */
+export interface FilesDemoNode {
+  name: string;
+  kind: 'file' | 'folder';
+  size?: number;
+  modifiedAt?: string;
+  children?: FilesDemoNode[];
+}
+let filesDemoTree: FilesDemoNode[] | null = null;
+export function setFilesDemoTree(tree: FilesDemoNode[] | null) {
+  filesDemoTree = tree;
+}
 
 const DEFAULT_SERVER =
   (typeof window !== 'undefined' && (window as any).__REACT_OS_SHELL_FILE_SERVER__) ||
@@ -80,16 +102,37 @@ function formatSize(bytes: number) {
 }
 
 function formatTime(iso: string) {
+  if (!iso) return '—';
   try {
     const d = new Date(iso);
+    if (isNaN(d.getTime())) return '—';
     return d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
   } catch { return iso; }
 }
 
+/** Resolve a directory path against the injected demo tree → its child entries. */
+function demoEntriesAt(dir: string): FileEntry[] {
+  if (!filesDemoTree) return [];
+  let level: FilesDemoNode[] = filesDemoTree;
+  for (const part of dir.split('/').filter(Boolean)) {
+    const node = level.find(n => n.kind === 'folder' && n.name === part);
+    if (!node || !node.children) return [];
+    level = node.children;
+  }
+  return level.map(n => ({
+    name: n.name,
+    kind: n.kind,
+    size: n.size ?? 0,
+    modifiedAt: n.modifiedAt ?? '',
+  }));
+}
+
 export default function Files() {
   const server = DEFAULT_SERVER.replace(/\/$/, '');
+  const demoMode = filesDemoTree !== null;
   const [path, setPath] = useState('/');
   const [entries, setEntries] = useState<FileEntry[]>([]);
+  const [rootFolders, setRootFolders] = useState<string[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [unreachable, setUnreachable] = useState(false);
@@ -138,8 +181,17 @@ export default function Files() {
   }, [authedFetch, server]);
 
   const loadDir = useCallback(async (dir: string) => {
-    setLoading(true);
     setSelected(null);
+    if (demoMode) {
+      const list = demoEntriesAt(dir);
+      setEntries(list);
+      setPath(dir);
+      setUnreachable(false);
+      setLoading(false);
+      if (dir === '/') setRootFolders(list.filter(e => e.kind === 'folder').map(e => e.name));
+      return;
+    }
+    setLoading(true);
     try {
       const res = await authedFetch(
         `${server}/api/files?path=${encodeURIComponent(dir)}`,
@@ -150,18 +202,21 @@ export default function Files() {
         return;
       }
       const data = await res.json();
-      setEntries(data.entries || []);
+      const list: FileEntry[] = data.entries || [];
+      setEntries(list);
       setPath(data.path || dir);
       setUnreachable(false);
+      if ((data.path || dir) === '/') setRootFolders(list.filter(e => e.kind === 'folder').map(e => e.name));
     } catch (e: any) {
       setUnreachable(true);
     } finally {
       setLoading(false);
     }
     refreshQuota();
-  }, [authedFetch, server, refreshQuota]);
+  }, [authedFetch, server, refreshQuota, demoMode]);
 
   const loadTrash = useCallback(async () => {
+    if (demoMode) { setTrash([]); setLoading(false); return; }
     setLoading(true);
     setSelected(null);
     try {
@@ -180,7 +235,7 @@ export default function Files() {
       setLoading(false);
     }
     refreshQuota();
-  }, [authedFetch, server, refreshQuota]);
+  }, [authedFetch, server, refreshQuota, demoMode]);
 
   useEffect(() => {
     if (view === 'files') loadDir(path);
@@ -244,6 +299,7 @@ export default function Files() {
   // Delegates fetch + staging to `openPreviewFile`, which also emits the
   // event Desktop listens for to record a Documents-folder shortcut.
   const openFile = async (entry: FileEntry) => {
+    if (demoMode) return;
     const fullPath = joinPath(path, entry.name);
     const ext = (entry.name.split('.').pop() || '').toLowerCase();
     const kind = PREVIEW_EXTS[ext];
@@ -416,10 +472,49 @@ export default function Files() {
     : 0;
   const usageColor = usagePct > 90 ? 'bg-red-500' : usagePct > 75 ? 'bg-amber-500' : 'bg-blue-500';
 
+  const crumbs: BreadcrumbItem[] = [
+    { label: 'My files', onClick: () => setPath('/') },
+    ...segments.map((seg, i) => ({
+      label: seg,
+      onClick: () => setPath('/' + segments.slice(0, i + 1).join('/')),
+    })),
+  ];
+  const navBtn = (active: boolean) =>
+    `flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors ${
+      active ? 'bg-blue-50 font-medium text-blue-700' : 'text-gray-700 hover:bg-gray-100'
+    }`;
+  const navSvg = (d: string) => (
+    <svg className="h-4 w-4 shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
+      <path strokeLinecap="round" strokeLinejoin="round" d={d} />
+    </svg>
+  );
+  const folderNav = (
+    <nav className="p-2">
+      <div className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Locations</div>
+      <button onClick={() => { setView('files'); setPath('/'); }} className={navBtn(view === 'files' && path === '/')}>
+        {navSvg('M2.25 12l8.954-8.955a1.5 1.5 0 012.122 0L21.75 12M4.5 9.75v9.75a.75.75 0 00.75.75H9V15a.75.75 0 01.75-.75h4.5A.75.75 0 0115 15v5.25h3.75a.75.75 0 00.75-.75V9.75')}
+        My files
+      </button>
+      {rootFolders.map(name => (
+        <button key={name} onClick={() => { setView('files'); setPath('/' + name); }} className={navBtn(view === 'files' && path === '/' + name)}>
+          {navSvg('M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z')}
+          <span className="truncate">{name}</span>
+        </button>
+      ))}
+      {!demoMode && (
+        <button onClick={() => setView('trash')} className={navBtn(view === 'trash')}>
+          {navSvg('M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79')}
+          Trash
+        </button>
+      )}
+    </nav>
+  );
+
   return (
     <div
       className="relative flex flex-col h-full bg-white"
       onDragEnter={(e) => {
+        if (demoMode) return;
         if (!e.dataTransfer?.types?.includes?.('Files')) return;
         e.preventDefault();
         dragDepthRef.current++;
@@ -436,6 +531,7 @@ export default function Files() {
       onDrop={(e) => {
         e.preventDefault();
         resetDrag();
+        if (demoMode) return;
         if (e.dataTransfer.files?.length) uploadFiles(e.dataTransfer.files);
       }}
     >
@@ -451,6 +547,15 @@ export default function Files() {
         }}
       />
 
+      <div className="flex-1 min-h-0">
+        <SidebarLayout
+          sidebar={folderNav}
+          storageKey="files.sidebarWidth"
+          defaultWidth={200}
+          minWidth={150}
+          maxWidth={320}
+        >
+          <div className="flex h-full min-w-0 flex-col">
       {/* Toolbar */}
       <div className="flex items-center gap-1 px-2 py-1.5 border-b border-gray-200 bg-gray-50 shrink-0 text-xs">
         {view === 'files' ? (
@@ -466,19 +571,8 @@ export default function Files() {
               </svg>
             </button>
 
-            <div className="flex-1 flex items-center gap-0.5 text-gray-700 truncate min-w-0">
-              <button onClick={() => setPath('/')} className="px-1.5 py-0.5 rounded hover:bg-gray-200 font-medium">My files</button>
-              {segments.map((seg, i) => (
-                <span key={i} className="flex items-center gap-0.5">
-                  <span className="text-gray-400">/</span>
-                  <button
-                    onClick={() => setPath('/' + segments.slice(0, i + 1).join('/'))}
-                    className="px-1.5 py-0.5 rounded hover:bg-gray-200"
-                  >
-                    {seg}
-                  </button>
-                </span>
-              ))}
+            <div className="flex-1 min-w-0">
+              <Breadcrumbs items={crumbs} maxItems={5} />
             </div>
 
             <button onClick={() => loadDir(path)} className="px-2 py-1 rounded hover:bg-gray-200 text-gray-600" title="Refresh">
@@ -486,6 +580,8 @@ export default function Files() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992V4.356M2.985 19.644v-4.992h4.992M3.05 9.348a9 9 0 0114.85-3.36L21.015 9.348m0 5.304a9 9 0 01-14.85 3.36l-3.115-3.36" />
               </svg>
             </button>
+            {!demoMode && (
+            <>
             <button onClick={() => setView('trash')} className="px-2 py-1 rounded hover:bg-gray-200 text-gray-600 flex items-center gap-1" title="Open trash">
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
@@ -504,6 +600,8 @@ export default function Files() {
               </svg>
               Upload
             </button>
+            </>
+            )}
           </>
         ) : (
           <>
@@ -608,7 +706,7 @@ export default function Files() {
           <div className="p-6 text-center text-sm text-gray-400">Loading…</div>
         ) : entries.length === 0 ? (
           <div className="p-10 text-center text-sm text-gray-400">
-            Empty folder. Drop files here or click <span className="font-medium">Upload</span>.
+            Empty folder.{!demoMode && <> Drop files here or click <span className="font-medium">Upload</span>.</>}
           </div>
         ) : (
           <table className="w-full text-sm">
@@ -646,6 +744,7 @@ export default function Files() {
                     {formatTime(e.modifiedAt)}
                   </td>
                   <td className="px-3 py-1.5 text-right whitespace-nowrap">
+                    {!demoMode && (<>
                     {e.kind === 'file' && (
                       <button
                         onClick={(ev) => { ev.stopPropagation(); downloadFile(e); }}
@@ -660,12 +759,16 @@ export default function Files() {
                       onClick={(ev) => { ev.stopPropagation(); handleDelete(e); }}
                       className="px-1.5 py-0.5 rounded hover:bg-red-100 text-red-600 text-[11px] ml-1"
                     >Delete</button>
+                    </>)}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
+      </div>
+          </div>
+        </SidebarLayout>
       </div>
 
       {isDragging && (

@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-06-09
+
+First stable release. The window manager, start menu, theming, data primitives
+(`EntityList`, `Kanban`), layout primitives (`SidebarLayout`, `TopNav`,
+`Breadcrumbs`) and bundled apps are considered mature.
+
+### Changed
+- **The settings menu now reads "Preferences"** (desktop right-click, profile menu, mobile sheet) and opens the sectioned `SystemPreferences` window. The `Customization` component is unchanged and still exported (it renders as the Appearance / Layout / Behavior sections inside Preferences).
+- **Dark-mode contrast fixed.** Bare `bg-*-100` / `text-*-700` utilities (status pills, badges, avatars, dialog icons, menu selection) had no dark override and rendered light-on-light; they now mute the background and lighten the text, and the selected-item highlight is more legible on dark glass.
+- **Files** gained a folder sidebar (`SidebarLayout`) and a `Breadcrumbs` path bar, and can browse an in-memory demo filesystem (see `setFilesDemoTree`) with no file server — real-server behaviour is unchanged when no demo tree is injected.
+- **Notepad** now uses `SidebarLayout` (a resizable, width-persisted notes rail).
+- **Stocks** ships static demo data — no API key or server required.
+
+### Added
+- `setFilesDemoTree(tree)` + the `FilesDemoNode` type (from `react-os-shell/apps`) — inject a static filesystem so the Files app browses in-memory.
+
+### Removed
+- The bundled **Todo List** app (`/todo`). The shared task store (`_todoStore` / `_todoTypes`, used by the Pomodoro widget) and the `setShellTodoProvider` API are retained.
+
 ## [0.14.0] — 2026-06-09
 
 ### Added

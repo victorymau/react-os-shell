@@ -30,7 +30,6 @@ const PomodoroTimer = lazy(() => import('./PomodoroTimer'));
 const Notepad = lazy(() => import('./Notepad'));
 const WorldClock = lazy(() => import('./WorldClock'));
 const Stock = lazy(() => import('./Stock'));
-const TodoList = lazy(() => import('./TodoList'));
 
 // ── Games ──
 const Chess = lazy(() => import('./Chess'));
@@ -51,13 +50,12 @@ const Browser = lazy(() => import('./Browser'));
 export const utilityApps: WindowRegistry = {
   '/calculator': { component: Calculator, label: 'Calculator', size: 'sm', allowPinOnTop: true, utility: true, widget: true, dimensions: [280, 420] },
   '/spreadsheet': { component: Spreadsheet, label: 'Spreadsheets', size: '2xl', appStyle: true, multiInstance: true },
-  '/notepad': { component: Notepad, label: 'Notepad', size: 'lg', allowPinOnTop: true },
+  '/notepad': { component: Notepad, label: 'Notepad', size: 'lg', allowPinOnTop: true, flushBody: true },
   '/weather': { component: Weather, label: 'Weather', size: 'sm', utility: true, widget: true, autoHeight: true, dimensions: [320, 400] },
   '/currency': { component: CurrencyConverter, label: 'Currency Converter', size: 'sm', utility: true, widget: true, autoHeight: true, dimensions: [320, 480] },
   '/pomodoro': { component: PomodoroTimer, label: 'Pomodoro Timer', size: 'sm', utility: true, widget: true, dimensions: [320, 600] },
   '/world-clock': { component: WorldClock, label: 'World Clock', size: 'sm', utility: true, widget: true, autoHeight: true, dimensions: [320, 480] },
   '/stock': { component: Stock, label: 'Stocks', size: 'sm', utility: true, widget: true, autoHeight: true, dimensions: [320, 360] },
-  '/todo': { component: TodoList, label: 'Todo List', size: 'md', dimensions: [560, 640] },
 };
 
 export const gameApps: WindowRegistry = {
@@ -95,7 +93,6 @@ export {
   PomodoroTimer,
   WorldClock,
   Stock,
-  TodoList,
   Chess,
   Checkers,
   Sudoku,
@@ -110,6 +107,7 @@ export {
 
 export { setPdfPreview } from './Preview';
 export { setSpreadsheetPreview } from './Spreadsheet';
-export { openFilesInTrashMode } from './Files';
+export { openFilesInTrashMode, setFilesDemoTree } from './Files';
+export type { FilesDemoNode } from './Files';
 export type { PdfPreviewData, PdfPreviewHandle } from './Preview';
 export type { SpreadsheetPreviewData, SpreadsheetPreviewHandle } from './Spreadsheet';
