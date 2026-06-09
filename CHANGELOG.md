@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-06-09
+
+### Added
+- **`<TopNav>` — horizontal tab-style navigation bar.** A controlled top-nav primitive with an optional `brand` slot (left) and `actions` slot (right, pinned to the far edge). Tabs accept an `icon`, a `badge` (e.g. a count) and a `disabled` state; the active tab gets an accent underline. Self-contained, themed via the shell's Tailwind utilities.
+- **`<Breadcrumbs>` — path/trail navigation.** An ordered crumb trail (root → current). Every crumb except the last renders as a button when given an `onClick`; the last is rendered inert as the current location (`aria-current="page"`). A `maxItems` prop collapses the middle of a long trail into an ellipsis, and the `separator` is customisable (chevron by default).
+- **`Customization` can render a single section.** New `section` prop (`'appearance' | 'layout' | 'behavior'`) renders just one logical group — Appearance (theme, wallpaper, transparency), Layout (layout mode, taskbar, menu) or Behavior (windows, desktop, sounds) — so the page can be split across separate `SystemPreferences` entries. Omitting `section` renders the whole page exactly as before (backward compatible). Exposes the `CustomizationSection` type.
+
+### Demo
+- New **Components** entries: **List** (`EntityList`), **Top Nav** (`TopNav`), **Breadcrumbs** (`Breadcrumbs`) and **Preferences** (a `SystemPreferences` window hosting the split `Customization`), alongside the existing Kanban and Sidebar demos.
+
+## [0.13.2] — 2026-06-09
+
+### Fixed
+- **Same-column downward reorder is no longer dropped.** Dragging a Kanban card *down* onto its neighbour set the insertion point to that neighbour's own index ("before the neighbour"), which equals the card's current slot — so the reorder was treated as a no-op and discarded. `dragenter` is now direction-aware: dragging downward targets *after* the hovered card, dragging upward targets *before* it.
+
 ## [0.13.1] — 2026-06-09
 
 ### Fixed

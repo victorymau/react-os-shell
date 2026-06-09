@@ -46,12 +46,21 @@ function previewColor(resolved: string, light: string, dark: string, pink: strin
  *  consumer renders them elsewhere (e.g. as separate entries in SystemPreferences). */
 export type CustomizationOmitSection = 'behavior' | 'desktop';
 
+/** A logical group of the Customization page. Pass `section` to render only one
+ *  group, so the page can be split across separate SystemPreferences entries
+ *  (Appearance / Layout / Behavior). Omit `section` to render the whole page. */
+export type CustomizationSection = 'appearance' | 'layout' | 'behavior';
+
 export interface CustomizationProps {
   omit?: readonly CustomizationOmitSection[];
+  /** Render only one logical group of settings. Omit to render everything. */
+  section?: CustomizationSection;
 }
 
-export default function Customization({ omit }: CustomizationProps = {}) {
+export default function Customization({ omit, section }: CustomizationProps = {}) {
   const omitSet = new Set(omit ?? []);
+  // With `section` set, render only that group's blocks; otherwise render all.
+  const inSection = (group: CustomizationSection) => section === undefined || section === group;
   const host = useDesktopHost();
   const WALLPAPERS = host.wallpapers && host.wallpapers.length > 0 ? host.wallpapers : DEFAULT_WALLPAPERS;
   const { prefs, save } = useShellPrefs();
@@ -106,6 +115,8 @@ export default function Customization({ omit }: CustomizationProps = {}) {
 
   return (
     <div className="space-y-6">
+      {inSection('appearance') && (
+      <>
       {/* ── Live Preview ── */}
       <div className="flex justify-center">
         <div className="rounded-lg border border-gray-200 overflow-hidden" style={{ width: 480 }}>
@@ -324,7 +335,11 @@ export default function Customization({ omit }: CustomizationProps = {}) {
           })}
         </div>
       </div>
+      </>
+      )}
 
+      {inSection('layout') && (
+      <>
       {/* ── Layout Mode ── */}
       <div>
         <h3 className="text-sm font-semibold text-gray-900 mb-3">Layout Mode</h3>
@@ -415,9 +430,11 @@ export default function Customization({ omit }: CustomizationProps = {}) {
           </div>
         </div>
       </div>
+      </>
+      )}
 
       {/* ── Behavior ── */}
-      {!omitSet.has('behavior') && (
+      {inSection('behavior') && !omitSet.has('behavior') && (
       <div>
         <h3 className="text-sm font-semibold text-gray-900 mb-3">Behavior</h3>
         <div className="space-y-3">
@@ -470,7 +487,7 @@ export default function Customization({ omit }: CustomizationProps = {}) {
       )}
 
       {/* ── Desktop ── */}
-      {!omitSet.has('desktop') && (
+      {inSection('behavior') && !omitSet.has('desktop') && (
       <div>
         <h3 className="text-sm font-semibold text-gray-900 mb-3">Desktop</h3>
         <label className="flex items-center gap-2 cursor-pointer">
