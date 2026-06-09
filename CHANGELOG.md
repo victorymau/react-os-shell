@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [1.1.2] — 2026-06-10
+
+### Fixed
+- **Taskbar tab preview with the taskbar on top**: the popover hangs *below* the tab there, so the window snapshot now sits closest to the tab and the title moves beneath the snapshot. Every other taskbar position keeps the title above, as before.
+
 ## [1.0.0] — 2026-06-09
 
 First stable release. The window manager, start menu, theming, data primitives
