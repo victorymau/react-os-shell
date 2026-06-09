@@ -34,6 +34,10 @@ export { default as EditableGrid } from './shell/EditableGrid';
 export type { GridColumn, CellStyle, EditableGridProps } from './shell/EditableGrid';
 export { default as SidebarLayout } from './shell/SidebarLayout';
 export type { SidebarLayoutProps } from './shell/SidebarLayout';
+export { default as TopNav } from './shell/TopNav';
+export type { TopNavProps, TopNavItem } from './shell/TopNav';
+export { default as Breadcrumbs } from './shell/Breadcrumbs';
+export type { BreadcrumbsProps, BreadcrumbItem } from './shell/Breadcrumbs';
 
 // ── Notification system ──
 export { default as NotificationBell } from './shell/NotificationBell';
@@ -94,7 +98,7 @@ export { default as WidgetManager } from './shell/WidgetManager';
 
 // ── Built-in settings pages (consumer registers via window registry) ──
 export { default as Customization } from './settings/Customization';
-export type { CustomizationProps, CustomizationOmitSection } from './settings/Customization';
+export type { CustomizationProps, CustomizationOmitSection, CustomizationSection } from './settings/Customization';
 export { default as BehaviorPanel } from './settings/BehaviorPanel';
 export { default as SoundsPanel } from './settings/SoundsPanel';
 export { default as SystemPreferences } from './settings/SystemPreferences';

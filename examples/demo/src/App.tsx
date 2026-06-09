@@ -52,6 +52,10 @@ const ProfilePage = lazy(() => import('./ProfilePage'));
 // Demo pages that exercise the shell's data/layout primitives.
 const KanbanDemo = lazy(() => import('./KanbanDemo'));
 const SidebarDemo = lazy(() => import('./SidebarDemo'));
+const ListDemo = lazy(() => import('./ListDemo'));
+const TopNavDemo = lazy(() => import('./TopNavDemo'));
+const BreadcrumbsDemo = lazy(() => import('./BreadcrumbsDemo'));
+const PreferencesDemo = lazy(() => import('./PreferencesDemo'));
 
 setShellWindowRegistry(createWindowRegistry(bundledApps, {
   '/settings/customization': {
@@ -73,6 +77,28 @@ setShellWindowRegistry(createWindowRegistry(bundledApps, {
     component: SidebarDemo,
     label: 'Sidebar',
     size: 'lg',
+    flushBody: true,
+  },
+  '/list-demo': {
+    component: ListDemo,
+    label: 'List',
+    size: 'xl',
+  },
+  '/topnav-demo': {
+    component: TopNavDemo,
+    label: 'Top Nav',
+    size: 'lg',
+    flushBody: true,
+  },
+  '/breadcrumbs-demo': {
+    component: BreadcrumbsDemo,
+    label: 'Breadcrumbs',
+    size: 'lg',
+  },
+  '/preferences-demo': {
+    component: PreferencesDemo,
+    label: 'Preferences',
+    size: 'xl',
     flushBody: true,
   },
 }));
@@ -118,8 +144,12 @@ const NAV_SECTIONS = [
     // Showcase the library's data + layout primitives in isolation.
     label: 'Components',
     items: [
+      { to: '/list-demo', label: 'List' },
       { to: '/kanban-demo', label: 'Kanban' },
       { to: '/sidebar-demo', label: 'Sidebar' },
+      { to: '/topnav-demo', label: 'Top Nav' },
+      { to: '/breadcrumbs-demo', label: 'Breadcrumbs' },
+      { to: '/preferences-demo', label: 'Preferences' },
     ],
   },
   {
@@ -176,6 +206,10 @@ const NAV_ICONS: Record<string, JSX.Element> = {
   '/profile': path('M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z'),
   '/kanban-demo': path('M9 4.5v15m6-15v15m-10.875 0h15.75c.621 0 1.125-.504 1.125-1.125V5.625c0-.621-.504-1.125-1.125-1.125H4.125C3.504 4.5 3 5.004 3 5.625v12.75c0 .621.504 1.125 1.125 1.125z'),
   '/sidebar-demo': path('M9 4.5v15m-4.875 0h15.75c.621 0 1.125-.504 1.125-1.125V5.625c0-.621-.504-1.125-1.125-1.125H4.125C3.504 4.5 3 5.004 3 5.625v12.75c0 .621.504 1.125 1.125 1.125z'),
+  '/list-demo': path('M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z'),
+  '/topnav-demo': path('M3.75 9h16.5M4.5 5.25h15a.75.75 0 01.75.75v12a.75.75 0 01-.75.75h-15a.75.75 0 01-.75-.75V6a.75.75 0 01.75-.75z'),
+  '/breadcrumbs-demo': path('M5.25 4.5l7.5 7.5-7.5 7.5m6-15l7.5 7.5-7.5 7.5'),
+  '/preferences-demo': path('M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75'),
 };
 
 setShellNavIcons(NAV_ICONS);
