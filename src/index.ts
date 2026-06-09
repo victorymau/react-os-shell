@@ -84,6 +84,7 @@ export {
 } from './shell/Desktop';
 export type {
   DesktopHostConfig,
+  DesktopContextMenuItem,
   StickyEntityRef,
   StickyResolver,
 } from './shell/Desktop';
