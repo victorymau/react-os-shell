@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useSyncExternalStore, isValidElement, cloneElement, lazy, Suspense, type ReactElement } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore, isValidElement, cloneElement, lazy, Suspense, type ReactElement } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../contexts/AuthContext';
@@ -76,6 +76,24 @@ export interface LayoutProps {
    *  the shell. The shell renders the node as-is — keep it small (a
    *  single icon-sized button) so it fits the existing tray rhythm. */
   taskbarTrayLeft?: ReactNode;
+  /** Taskbar clock popover config — lets the host surface per-day content
+   *  (e.g. tasks due that day) inside the mini month calendar. When omitted
+   *  the popover stays a plain date grid. */
+  clockCalendar?: ClockCalendarConfig;
+}
+
+export interface ClockCalendarConfig {
+  /** Local dates (YYYY-MM-DD) to mark with a dot in the mini month grid —
+   *  typically days that have items on them. */
+  markedDates?: string[];
+  /** Render content for the selected day below the grid. The popover
+   *  defaults the selection to today when it opens, so clicking the clock
+   *  immediately shows today's items; clicking any day in the grid
+   *  re-renders the panel for that day (days outside the shown month also
+   *  flip the grid to their month). `close` dismisses the popover — call
+   *  it when a row click opens a window so the popup doesn't linger over
+   *  it. */
+  renderDay?: (dateISO: string, api: { close: () => void }) => ReactNode;
 }
 
 
@@ -372,7 +390,7 @@ function TaskbarPomodoro() {
   );
 }
 
-function TaskbarClock() {
+function TaskbarClock({ clockCalendar }: { clockCalendar?: ClockCalendarConfig }) {
   const [now, setNow] = useState(new Date());
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -403,7 +421,7 @@ function TaskbarClock() {
 
         return (
           <div className="fixed z-[300] rounded-lg border border-gray-200 bg-white shadow-xl" style={posStyle}>
-            <CalendarPopup now={now} />
+            <CalendarPopup now={now} config={clockCalendar} close={() => setOpen(false)} />
           </div>
         );
       })()}
@@ -411,13 +429,25 @@ function TaskbarClock() {
   );
 }
 
+const toISODate = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 /**
  * Mini month calendar shown when the user clicks the taskbar clock.
  * Header has month + year and prev/next nav arrows; today is filled in
  * the accent colour; days outside the current month are dimmed.
+ *
+ * With a host-supplied `config` (see ClockCalendarConfig) the grid becomes
+ * interactive: days are clickable, days in `markedDates` get a dot, and a
+ * panel below the grid renders `renderDay` for the selected day (today on
+ * open). Selection then moves the accent fill; today shows as an accent
+ * number when not selected.
  */
-function CalendarPopup({ now }: { now: Date }) {
+function CalendarPopup({ now, config, close }: { now: Date; config?: ClockCalendarConfig; close: () => void }) {
   const [month, setMonth] = useState(() => new Date(now.getFullYear(), now.getMonth(), 1));
+  const [selected, setSelected] = useState(() => toISODate(now));
+  const interactive = !!config?.renderDay;
+  const markedSet = useMemo(() => new Set(config?.markedDates ?? []), [config?.markedDates]);
 
   const monthLabel = month.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
   const fullDate = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
@@ -452,7 +482,7 @@ function CalendarPopup({ now }: { now: Date }) {
   const goToday = () => setMonth(new Date(today.getFullYear(), today.getMonth(), 1));
 
   return (
-    <div className="w-[260px] p-3">
+    <div className={`${interactive ? 'w-[300px]' : 'w-[260px]'} p-3`}>
       {/* Live date + time line */}
       <div className="px-1 pb-2.5 border-b border-gray-100">
         <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">{fullDate}</div>
@@ -485,20 +515,64 @@ function CalendarPopup({ now }: { now: Date }) {
       <div className="grid grid-cols-7 gap-px text-center">
         {cells.map((cell, i) => {
           const todayCell = cell.thisMonth && isToday(cell.date);
+          const iso = toISODate(cell.date);
+          const isSelected = interactive && selected === iso;
+          // Interactive: selection carries the accent fill; an unselected
+          // today falls back to an accent-coloured number so it stays
+          // findable. Static (no host config): today keeps the fill.
+          const look = isSelected
+            ? 'bg-blue-500 text-white font-semibold'
+            : todayCell
+              ? interactive
+                ? 'text-blue-600 font-bold hover:bg-gray-100'
+                : 'bg-blue-500 text-white font-semibold'
+              : cell.thisMonth
+                ? 'text-gray-700 hover:bg-gray-100'
+                : interactive
+                  ? 'text-gray-300 hover:bg-gray-100'
+                  : 'text-gray-300';
+          const dayClass = `relative text-[12px] py-1.5 rounded-md transition-colors ${look}`;
+          const dot = markedSet.has(iso) && (
+            <span
+              className={`absolute bottom-[3px] left-1/2 -translate-x-1/2 h-1 w-1 rounded-full ${
+                isSelected ? 'bg-white' : cell.thisMonth ? 'bg-blue-500' : 'bg-gray-300'
+              }`}
+            />
+          );
+          if (!interactive) {
+            return (
+              <div key={i} className={dayClass}>
+                {cell.day}
+                {dot}
+              </div>
+            );
+          }
           return (
-            <div key={i}
-              className={`text-[12px] py-1.5 rounded-md transition-colors ${
-                todayCell
-                  ? 'bg-blue-500 text-white font-semibold'
-                  : cell.thisMonth
-                    ? 'text-gray-700 hover:bg-gray-100'
-                    : 'text-gray-300'
-              }`}>
+            <button
+              key={i}
+              onClick={() => {
+                setSelected(iso);
+                // Spilled prev/next-month days also flip the grid there.
+                if (!cell.thisMonth) setMonth(new Date(cell.date.getFullYear(), cell.date.getMonth(), 1));
+              }}
+              aria-label={cell.date.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+              aria-pressed={isSelected}
+              className={`cursor-pointer ${dayClass}`}
+            >
               {cell.day}
-            </div>
+              {dot}
+            </button>
           );
         })}
       </div>
+
+      {/* Host-rendered day panel (e.g. tasks due on the selected day).
+          Keyed on the day so its scroll position resets per selection. */}
+      {config?.renderDay && (
+        <div key={selected} className="mt-2.5 max-h-[280px] overflow-y-auto border-t border-gray-100 pt-2">
+          {config.renderDay(selected, { close })}
+        </div>
+      )}
     </div>
   );
 }
@@ -563,6 +637,7 @@ export default function Layout({
   notifications,
   search,
   taskbarTrayLeft,
+  clockCalendar,
 }: LayoutProps = {}) {
   const bugReport = useBugReport();
   const { user, logout, hasAnyPerm } = useAuth();
@@ -906,7 +981,7 @@ export default function Layout({
           /* Vertical: clock + bell evenly spaced */
           <div className="w-full px-2">
             <div className={`flex items-center justify-center gap-2 ${taskbarPosition === 'right' ? 'flex-row-reverse' : ''}`}>
-              <TaskbarClock />
+              <TaskbarClock clockCalendar={clockCalendar} />
               <TaskbarPomodoro />
               {/* Host-supplied tray content (e.g. server-status icon).
                   Sits next to the notification bell on the bell's
@@ -921,7 +996,7 @@ export default function Layout({
             <TaskbarPomodoro />
             {taskbarTrayLeft}
             {notifications && <NotificationBell {...notifications} />}
-            <TaskbarClock />
+            <TaskbarClock clockCalendar={clockCalendar} />
           </>
         )}
       </div>
