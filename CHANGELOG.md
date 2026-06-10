@@ -4,7 +4,10 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
-## [1.3.0] — 2026-06-10
+## [1.4.0] — 2026-06-10
+
+### Added
+- **Taskbar clock: host-rendered day panel.** New optional `Layout` prop `clockCalendar` (`ClockCalendarConfig`, exported). With `renderDay` set, the clock popover's mini month grid becomes interactive: opening the popover selects today and renders the host's panel for it below the grid (e.g. tasks due that day); clicking any day re-renders the panel for that day (days spilled from the previous/next month also flip the grid there). `markedDates` (local `YYYY-MM-DD`) draws a dot under days that have items. Selection carries the accent fill; an unselected today shows as an accent-coloured number. The popover widens 260 → 300 px in interactive mode; the panel is capped at 280 px and scrolls. Without the prop the popover is unchanged.
 
 ### Added
 - **Spreadsheets: Email button for staged previews.** `SpreadsheetPreviewData` accepts an optional `onEmail(csv, filename)` callback; when provided (e.g. by a consumer's CSV-export flow), the toolbar shows an **Email** button next to Save CSV that serializes the sheet *at click time* — current edits included — and hands the CSV text plus a filename derived from the window title back to the consumer (Spreadsheets app → 1.1.0).
