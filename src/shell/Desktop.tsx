@@ -1,7 +1,6 @@
-import { useState, useRef, useEffect, useCallback, isValidElement, cloneElement, createContext, useContext, type ReactNode, type ReactElement } from 'react';
+import { useState, useRef, useEffect, useCallback, createContext, useContext, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useWindowManager } from './WindowManager';
-import { navIcons } from '../shell-config/nav';
 import { useShellPrefs } from './ShellPrefs';
 import Modal from './Modal';
 import WidgetManager from './WidgetManager';
@@ -19,100 +18,19 @@ import {
   type PreviewOpenedDetail,
 } from '../utils/openPreviewFile';
 
-// ── Entity icon config ──
-const ENTITY_ICON_COLORS: Record<string, string> = {
-  order: 'text-blue-600', purchase_order: 'text-purple-600', invoice: 'text-green-600',
-  client: 'text-indigo-600', manufacturer: 'text-orange-600', shipment: 'text-teal-600',
-  part_number: 'text-gray-600', project: 'text-pink-600', mould: 'text-red-600',
-  design: 'text-cyan-600', brand: 'text-amber-600', price_sheet: 'text-emerald-600',
-  folder: 'text-yellow-600', page: 'text-blue-500',
-};
-const ENTITY_ICONS: Record<string, string> = {
-  order: 'SO', purchase_order: 'PO', invoice: 'INV', client: 'CLI',
-  manufacturer: 'MFR', shipment: 'DN', part_number: 'PN', project: 'PRJ',
-  mould: 'MLD', design: 'DSN', brand: 'BRD', price_sheet: 'PS',
-  vendor_invoice: 'VI', vendor_payment: 'VP', warranty_claim: 'WC',
-  qc_report: 'QC', vendor_shipment: 'GRN', bank_account: 'BA',
-  wheel_finish: 'WF', weight_log: 'WL', production_progress: 'PP',
-  vendor_price_sheet: 'VPS', proposal: 'PR', folder: 'FLD',
-};
+// Icon tiles, entity-icon config and the Files-app bridge live in
+// desktopIcons.tsx so Files can share them without importing Desktop.
+import {
+  FileIconTile,
+  FolderGlyph,
+  publishDesktopFolders,
+  requestFilesDesktopFolderView,
+  requestFilesTrashView,
+  type DesktopItem,
+} from './desktopIcons';
 
-// Glyphs and colors for the auto-tracked preview shortcuts that live in the
-// Documents folder. Keyed by `fileKind`, not `entityType`.
-const PREVIEW_FILE_CODES: Record<PreviewFileKind, string> = {
-  pdf: 'PDF', dxf: 'DXF', '3d': 'STP', image: 'IMG', csv: 'CSV',
-};
-const PREVIEW_FILE_COLORS: Record<PreviewFileKind, string> = {
-  pdf: 'text-red-600', dxf: 'text-blue-600', '3d': 'text-purple-600',
-  image: 'text-emerald-600', csv: 'text-green-600',
-};
 const DOCUMENTS_FOLDER_ID = 'documents';
 const DOCUMENTS_FOLDER_NAME = 'Documents';
-
-interface DesktopItem {
-  entityType: string;
-  entityId: string;
-  label: string;
-  x?: number;
-  y?: number;
-  folderId?: string; // if inside a folder
-  // When the item lives inside a folder, these hold its free-form position
-  // (in pixels, relative to the folder body's top-left). Undefined → fall
-  // back to the default grid layout for that folder.
-  folderX?: number;
-  folderY?: number;
-  // Set for `entityType: 'preview-file'` shortcuts auto-recorded when the
-  // user previews a file. `filePath` is the server-relative path passed
-  // back into `openPreviewFile` on shortcut click.
-  filePath?: string;
-  fileKind?: PreviewFileKind;
-}
-
-// Shared 48×48 tile used by both the desktop and folder-window icon
-// renderers, so the two surfaces never visually diverge.
-function FileIconTile({ entityType, isSelected, entityId, label, fileKind }: {
-  entityType: string;
-  isSelected: boolean;
-  entityId?: string;
-  label?: string;
-  fileKind?: PreviewFileKind;
-}) {
-  const isPreviewFile = entityType === 'preview-file' && fileKind;
-  const previewColor = isPreviewFile ? PREVIEW_FILE_COLORS[fileKind!] : null;
-  const previewCode = isPreviewFile ? PREVIEW_FILE_CODES[fileKind!] : null;
-  if (entityType === 'folder') {
-    return (
-      <div className={`w-12 h-12 flex items-center justify-center ${isSelected ? 'rounded-lg bg-blue-400/30 ring-2 ring-blue-500' : ''}`}>
-        <svg className="h-12 w-12 drop-shadow-[0_2px_3px_rgba(0,0,0,0.3)]" viewBox="0 0 48 48">
-          <path d="M6 12a4 4 0 014-4h10l4 4h14a4 4 0 014 4v20a4 4 0 01-4 4H10a4 4 0 01-4-4V12z" fill="white" stroke="#eab308" strokeWidth="2" strokeLinejoin="round" />
-          <path d="M6 18h36" stroke="#eab308" strokeWidth="1.5" />
-        </svg>
-      </div>
-    );
-  }
-  if (entityType === 'page') {
-    const icon = (label && navIcons[label]) || (entityId ? navIcons[entityId] : undefined);
-    return (
-      <div className={`w-12 h-12 flex items-center justify-center ${isSelected ? 'rounded-lg bg-blue-400/30 ring-2 ring-blue-500' : ''}`}>
-        {icon && isValidElement(icon)
-          ? cloneElement(icon as ReactElement, { className: 'h-10 w-10 text-white drop-shadow-[0_2px_3px_rgba(0,0,0,0.4)]' })
-          : <svg className="h-10 w-10 text-white drop-shadow-[0_2px_3px_rgba(0,0,0,0.4)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6z" /></svg>}
-      </div>
-    );
-  }
-  return (
-    <div className={`w-12 h-12 relative flex items-center justify-center ${isSelected ? 'rounded-lg bg-blue-400/30 ring-2 ring-blue-500' : ''}`}>
-      <svg className={`w-10 h-12 drop-shadow-[0_2px_3px_rgba(0,0,0,0.3)] ${previewColor ?? ENTITY_ICON_COLORS[entityType] ?? 'text-gray-500'}`} viewBox="0 0 40 48" fill="none">
-        <path d="M4 0h22l10 10v34a4 4 0 01-4 4H4a4 4 0 01-4-4V4a4 4 0 014-4z" fill="white" fillOpacity="0.92" />
-        <path d="M26 0l10 10H30a4 4 0 01-4-4V0z" fill="currentColor" fillOpacity="0.2" />
-        <path d="M4 0h22l10 10v34a4 4 0 01-4 4H4a4 4 0 01-4-4V4a4 4 0 014-4z" stroke="currentColor" strokeWidth="1.5" strokeOpacity="0.5" />
-      </svg>
-      <span className={`absolute inset-0 flex items-center justify-center text-[9px] font-bold pt-2 ${previewColor ?? ENTITY_ICON_COLORS[entityType] ?? 'text-gray-600'}`}>
-        {previewCode ?? ENTITY_ICONS[entityType] ?? entityType.slice(0, 3).toUpperCase()}
-      </span>
-    </div>
-  );
-}
 
 interface DesktopFolder {
   id: string;
@@ -199,295 +117,6 @@ export function DesktopHostProvider({ value, children }: { value: DesktopHostCon
 
 export function useDesktopHost(): DesktopHostConfig {
   return useContext(DesktopHostContext);
-}
-
-const FOLDER_GRID = 90;
-const FOLDER_ITEM_W = 80;
-const FOLDER_ITEM_H = 80;
-const FOLDER_PAD = 12;
-
-/** Folder content window — visually distinct from regular windows
- *  (manilla-paper background, folder glyph in title) and supports
- *  rubber-band selection, shift / cmd / ctrl multi-select, free
- *  positioning of items, and drag-to-desktop to move items out. */
-function FolderWindow({ folder, items, onClose, onOpen, onMoveOut, onSetFolderPosition, onDragOutToDesktop }: {
-  folder: { id: string; name: string };
-  items: DesktopItem[];
-  onClose: () => void;
-  onOpen: (item: DesktopItem) => void;
-  onMoveOut: (items: DesktopItem[]) => void;
-  onSetFolderPosition: (updates: { item: DesktopItem; x: number; y: number }[]) => void;
-  onDragOutToDesktop: (drops: { item: DesktopItem; clientX: number; clientY: number }[]) => void;
-}) {
-  const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [rubber, setRubber] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
-  const didDragRubber = useRef(false);
-  const bodyRef = useRef<HTMLDivElement>(null);
-  const [bodyWidth, setBodyWidth] = useState(800);
-  // Drag-out indicator is updated via direct DOM manipulation rather than
-  // React state — otherwise the re-render at the boundary crossing would
-  // clobber the inline `style.left`/`top` overrides we apply to the
-  // dragged items, making them flicker back to their saved positions.
-  const setDragOutsideClass = (on: boolean) => {
-    const el = bodyRef.current;
-    if (!el) return;
-    el.style.outline = on ? '2px dashed rgb(96 165 250 / 0.6)' : '';
-    el.style.outlineOffset = on ? '-2px' : '';
-  };
-
-  useEffect(() => {
-    const el = bodyRef.current;
-    if (!el) return;
-    const update = () => setBodyWidth(el.clientWidth);
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  const cols = Math.max(1, Math.floor((bodyWidth - FOLDER_PAD) / FOLDER_GRID));
-  const getItemFolderPos = (item: DesktopItem, idx: number) => {
-    if (item.folderX != null && item.folderY != null) return { x: item.folderX, y: item.folderY };
-    return { x: FOLDER_PAD + (idx % cols) * FOLDER_GRID, y: FOLDER_PAD + Math.floor(idx / cols) * FOLDER_GRID };
-  };
-
-  const toggleSelect = (i: number, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (e.shiftKey || e.metaKey || e.ctrlKey) {
-      setSelected(prev => { const next = new Set(prev); next.has(i) ? next.delete(i) : next.add(i); return next; });
-    } else if (!selected.has(i)) {
-      setSelected(new Set([i]));
-    }
-  };
-
-  // ── Rubber band on body ─────────────────────────────────────────────────
-  // Coordinates are in the body's *scrolled content* space so the rectangle
-  // and the items it intersects stay in sync when the body is scrolled.
-  const startRubber = (e: React.PointerEvent) => {
-    if (e.button !== 0 || e.target !== bodyRef.current) return;
-    const el = bodyRef.current!;
-    const r = el.getBoundingClientRect();
-    const x = e.clientX - r.left + el.scrollLeft;
-    const y = e.clientY - r.top + el.scrollTop;
-    setRubber({ x1: x, y1: y, x2: x, y2: y });
-    didDragRubber.current = false;
-    setSelected(new Set());
-  };
-
-  useEffect(() => {
-    if (!rubber) return;
-    const computeSelection = (minX: number, maxX: number, minY: number, maxY: number) => {
-      const next = new Set<number>();
-      const r = bodyRef.current;
-      if (!r) return next;
-      const tiles = r.querySelectorAll<HTMLElement>('[data-folder-item]');
-      const containerRect = r.getBoundingClientRect();
-      tiles.forEach(t => {
-        const tr = t.getBoundingClientRect();
-        const tx = tr.left - containerRect.left + r.scrollLeft;
-        const ty = tr.top - containerRect.top + r.scrollTop;
-        if (tx + tr.width > minX && tx < maxX && ty + tr.height > minY && ty < maxY) {
-          const i = parseInt(t.getAttribute('data-folder-item') || '-1', 10);
-          if (i >= 0) next.add(i);
-        }
-      });
-      return next;
-    };
-    const move = (e: PointerEvent) => {
-      const el = bodyRef.current;
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      const x = e.clientX - r.left + el.scrollLeft;
-      const y = e.clientY - r.top + el.scrollTop;
-      const dx = x - rubber.x1, dy = y - rubber.y1;
-      if (dx * dx + dy * dy > 16) didDragRubber.current = true;
-      setRubber(prev => prev ? { ...prev, x2: x, y2: y } : null);
-      if (didDragRubber.current) {
-        const minX = Math.min(rubber.x1, x);
-        const maxX = Math.max(rubber.x1, x);
-        const minY = Math.min(rubber.y1, y);
-        const maxY = Math.max(rubber.y1, y);
-        setSelected(computeSelection(minX, maxX, minY, maxY));
-      }
-    };
-    const up = () => setRubber(null);
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
-    return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
-  }, [rubber]);
-
-  // ── Item drag (move within folder OR drop out to desktop) ──────────────
-  // Mirrors Desktop's drag: if the grabbed icon is part of a multi-selection
-  // they all move together; otherwise it's a single-icon drag.
-  type FDragEntry = { idx: number; item: DesktopItem; origX: number; origY: number; el: HTMLElement | null };
-  const dragEntriesRef = useRef<FDragEntry[]>([]);
-  const dragStartRef = useRef<{ clientX: number; clientY: number } | null>(null);
-
-  const startItemDrag = (i: number, e: React.PointerEvent) => {
-    if (e.button !== 0) return;
-    e.stopPropagation();
-    e.preventDefault();
-    // Multi-drag if the grabbed item is already in a multi-selection.
-    const useMulti = selected.has(i) && selected.size > 1;
-    const idxs = useMulti ? Array.from(selected) : [i];
-    if (!useMulti) setSelected(new Set([i]));
-    const entries: FDragEntry[] = idxs.map(idx => {
-      const item = items[idx];
-      const pos = getItemFolderPos(item, idx);
-      const el = bodyRef.current?.querySelector<HTMLElement>(`[data-folder-item="${idx}"]`) ?? null;
-      return { idx, item, origX: pos.x, origY: pos.y, el };
-    }).filter(e => e.item);
-    dragEntriesRef.current = entries;
-    dragStartRef.current = { clientX: e.clientX, clientY: e.clientY };
-    setDragOutsideClass(false);
-
-    let moved = false;
-    const move = (ev: PointerEvent) => {
-      const start = dragStartRef.current;
-      if (!start) return;
-      const dx = ev.clientX - start.clientX;
-      const dy = ev.clientY - start.clientY;
-      if (!moved && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) moved = true;
-      if (!moved) return;
-      for (const entry of dragEntriesRef.current) {
-        if (!entry.el) continue;
-        entry.el.style.left = `${entry.origX + dx}px`;
-        entry.el.style.top = `${entry.origY + dy}px`;
-        entry.el.style.zIndex = '100';
-        entry.el.style.opacity = '0.85';
-      }
-      // Outside-folder hit-test for the "drop on desktop" affordance.
-      const r = bodyRef.current?.getBoundingClientRect();
-      const inside = !!r && ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
-      setDragOutsideClass(!inside);
-    };
-    const up = (ev: PointerEvent) => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-      const entries = dragEntriesRef.current;
-      dragEntriesRef.current = [];
-      dragStartRef.current = null;
-      // Reset transient visual overrides. zIndex / opacity aren't React-
-      // managed so they'd otherwise stick after the re-render.
-      for (const entry of entries) {
-        if (!entry.el) continue;
-        entry.el.style.zIndex = '';
-        entry.el.style.opacity = '';
-      }
-      setDragOutsideClass(false);
-      if (!moved) return;
-      const r = bodyRef.current?.getBoundingClientRect();
-      const inside = !!r && ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
-      if (!inside) {
-        const drops = entries.map(e => ({ item: e.item, clientX: ev.clientX, clientY: ev.clientY }));
-        // The items are about to leave this folder; clear the now-stale
-        // index-based selection so it doesn't carry over to a different row.
-        setSelected(new Set());
-        onDragOutToDesktop(drops);
-      } else {
-        // The new in-folder position is whatever we already wrote to
-        // `style.left`/`top` during the last move — read it back so React
-        // can persist it.
-        const updates = entries.map(e => {
-          const leftStr = e.el?.style.left || `${e.origX}px`;
-          const topStr = e.el?.style.top || `${e.origY}px`;
-          const x = Math.max(0, parseFloat(leftStr));
-          const y = Math.max(0, parseFloat(topStr));
-          return { item: e.item, x, y };
-        });
-        onSetFolderPosition(updates);
-      }
-    };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
-  };
-
-  const moveSelectedOut = () => {
-    if (selected.size === 0) return;
-    onMoveOut(Array.from(selected).map(i => items[i]).filter(Boolean));
-    setSelected(new Set());
-  };
-
-  // Header icon = folder glyph
-  const folderIcon = (
-    <svg className="h-5 w-5 text-amber-500" fill="currentColor" viewBox="0 0 24 24">
-      <path d="M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-    </svg>
-  );
-
-  // Body height: enough to hold the lowest item, with breathing room. So
-  // free-positioned items can sit anywhere and the body still scrolls when
-  // they're dragged below the visible region.
-  const contentHeight = items.reduce((max, item, i) => {
-    const pos = getItemFolderPos(item, i);
-    return Math.max(max, pos.y + FOLDER_ITEM_H + FOLDER_PAD);
-  }, 300);
-
-  return (
-    <Modal open onClose={onClose} title={folder.name} icon={folderIcon} size="lg">
-      <div
-        ref={bodyRef}
-        onPointerDown={startRubber}
-        onClick={() => {
-          if (didDragRubber.current) { didDragRubber.current = false; return; }
-          setSelected(new Set());
-        }}
-        className="relative h-full min-h-[300px] p-3 overflow-auto"
-        style={{
-          background: 'linear-gradient(135deg, rgba(254, 243, 199, 0.55) 0%, rgba(253, 230, 138, 0.4) 50%, rgba(252, 211, 77, 0.3) 100%)',
-        }}
-      >
-        {selected.size > 0 && (
-          <div className="sticky top-0 z-20 mb-2 flex items-center gap-2 px-2 py-1 rounded-md bg-white/80 backdrop-blur-sm shadow border border-gray-200 text-xs text-gray-700 w-fit">
-            <span>{selected.size} selected</span>
-            <button onClick={moveSelectedOut} className="px-2 py-0.5 rounded text-blue-600 hover:bg-blue-50">Move to desktop</button>
-            <button onClick={() => setSelected(new Set())} className="px-2 py-0.5 rounded text-gray-500 hover:bg-gray-100">Clear</button>
-          </div>
-        )}
-
-        {items.length === 0 ? (
-          <p className="text-sm text-gray-500 text-center py-8 italic">Folder is empty. Drag documents here.</p>
-        ) : (
-          <div className="relative" style={{ height: contentHeight }}>
-            {items.map((item, i) => {
-              const isSelected = selected.has(i);
-              const pos = getItemFolderPos(item, i);
-              return (
-                <div
-                  key={`${item.entityType}-${item.entityId}-${i}`}
-                  data-folder-item={i}
-                  onPointerDown={(e) => startItemDrag(i, e)}
-                  onClick={(e) => toggleSelect(i, e)}
-                  onDoubleClick={() => onOpen(item)}
-                  style={{ position: 'absolute', left: pos.x, top: pos.y }}
-                  className="cursor-default select-none"
-                >
-                  <div className="flex flex-col items-center gap-1 w-20 p-2">
-                    <FileIconTile entityType={item.entityType} isSelected={isSelected} entityId={item.entityId} label={item.label} fileKind={item.fileKind} />
-                    <span className={`text-[10px] font-medium text-center leading-tight truncate w-full ${isSelected ? 'text-blue-900 bg-blue-200/60 rounded px-1' : 'text-gray-700'}`}>
-                      {item.label}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {rubber && (
-          <div
-            className="absolute border border-blue-500 bg-blue-500/10 pointer-events-none"
-            style={{
-              left: Math.min(rubber.x1, rubber.x2),
-              top: Math.min(rubber.y1, rubber.y2),
-              width: Math.abs(rubber.x2 - rubber.x1),
-              height: Math.abs(rubber.y2 - rubber.y1),
-            }}
-          />
-        )}
-      </div>
-    </Modal>
-  );
 }
 
 export default function Desktop({ profile }: { profile: any }) {
@@ -598,7 +227,6 @@ export default function Desktop({ profile }: { profile: any }) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; itemIdx?: number; folderIdx?: number } | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [rubberBand, setRubberBand] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null);
-  const [openFolder, setOpenFolder] = useState<string | null>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [whatsNewOpen, setWhatsNewOpen] = useState(false);
   const [widgetsOpen, setWidgetsOpen] = useState(false);
@@ -630,11 +258,11 @@ export default function Desktop({ profile }: { profile: any }) {
     else saveShellPrefs({ desktop_snap: v });
   }, [host, saveShellPrefs]);
 
-  // Latest-state refs so the preview-opened event handler (registered once)
-  // always reads the current folders / favDocs instead of stale closure
-  // values from initial mount.
-  const previewStateRef = useRef({ folders, favDocs, saveFolders, saveDocs });
-  previewStateRef.current = { folders, favDocs, saveFolders, saveDocs };
+  // Latest-state refs so handlers registered once (the preview-opened event
+  // listener, the Files-app bridge callbacks) always read the current
+  // folders / favDocs instead of stale closure values from initial mount.
+  const liveStateRef = useRef({ folders, favDocs, saveFolders, saveDocs });
+  liveStateRef.current = { folders, favDocs, saveFolders, saveDocs };
 
   // When the user previews a file (via Files app or a Documents-folder
   // shortcut), drop a dedup'd shortcut into the auto-created "Documents"
@@ -644,7 +272,7 @@ export default function Desktop({ profile }: { profile: any }) {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<PreviewOpenedDetail>).detail;
       if (!detail?.filePath) return;
-      const { folders: fs, favDocs: docs, saveFolders: sf, saveDocs: sd } = previewStateRef.current;
+      const { folders: fs, favDocs: docs, saveFolders: sf, saveDocs: sd } = liveStateRef.current;
       if (!fs.some(f => f.id === DOCUMENTS_FOLDER_ID)) {
         sf([...fs, { id: DOCUMENTS_FOLDER_ID, name: DOCUMENTS_FOLDER_NAME }]);
       }
@@ -686,6 +314,48 @@ export default function Desktop({ profile }: { profile: any }) {
   // Items not in any folder
   const desktopItems = favDocs.filter(d => !d.folderId);
   const folderItems = (folderId: string) => favDocs.filter(d => d.folderId === folderId);
+
+  // Open a shortcut — shared by icon double-click and the context menu.
+  const openItem = (item: DesktopItem) => {
+    if (item.entityType === 'preview-file' && item.filePath && item.fileKind) {
+      openPreviewFile({
+        filePath: item.filePath,
+        filename: item.label,
+        kind: item.fileKind,
+        onStaged: route => openPage(route),
+      });
+    } else if (item.entityType === 'page') {
+      openPage(item.entityId);
+    } else {
+      openEntity(item.entityType, item.entityId, null, item.label);
+    }
+  };
+
+  // Desktop folders open in the Files app (same side-channel the Trash icon
+  // uses): flag + event for an already-open instance, then route to /files.
+  const openDesktopFolder = (folderId: string) => {
+    requestFilesDesktopFolderView(folderId);
+    openPage('/files');
+  };
+
+  // ── Files-app bridge ──
+  // Publish the live folder list (and mutation callbacks) so the Files app
+  // can list desktop folders in its sidebar and render their contents.
+  const bridgeMoveToDesktop = useCallback((toMove: DesktopItem[]) => {
+    const { favDocs: docs, saveDocs: sd } = liveStateRef.current;
+    const ids = new Set(toMove.map(t => `${t.entityType}|${t.entityId}`));
+    sd(docs.map(d =>
+      d.folderId && ids.has(`${d.entityType}|${d.entityId}`)
+        ? { ...d, folderId: undefined, folderX: undefined, folderY: undefined }
+        : d,
+    ));
+  }, []);
+
+  const bridgeRemoveShortcuts = useCallback((toRemove: DesktopItem[]) => {
+    const { favDocs: docs, saveDocs: sd } = liveStateRef.current;
+    const ids = new Set(toRemove.map(t => `${t.entityType}|${t.entityId}`));
+    sd(docs.filter(d => !(d.folderId && ids.has(`${d.entityType}|${d.entityId}`))));
+  }, []);
 
   // ── Drag logic ──
   // Local position overrides — applied immediately on drop, before API responds
@@ -875,6 +545,24 @@ export default function Desktop({ profile }: { profile: any }) {
   const foldersKey = JSON.stringify(folders.map(f => `${f.id}:${f.x ?? ''}:${f.y ?? ''}`));
   useEffect(() => { setLocalPositions({}); }, [favDocsKey, foldersKey]);
 
+  // Re-publish the Files-app bridge whenever folders or their contents
+  // change (the content keys above already capture both).
+  useEffect(() => {
+    const { folders: fs, favDocs: docs } = liveStateRef.current;
+    const itemsByFolder: Record<string, DesktopItem[]> = {};
+    for (const f of fs) itemsByFolder[f.id] = [];
+    for (const d of docs) {
+      if (d.folderId && itemsByFolder[d.folderId]) itemsByFolder[d.folderId].push(d);
+    }
+    publishDesktopFolders({
+      folders: fs.map(f => ({ id: f.id, name: f.name, itemCount: itemsByFolder[f.id]?.length ?? 0 })),
+      itemsByFolder,
+      moveToDesktop: bridgeMoveToDesktop,
+      removeShortcuts: bridgeRemoveShortcuts,
+    });
+  }, [favDocsKey, foldersKey, bridgeMoveToDesktop, bridgeRemoveShortcuts]);
+  useEffect(() => () => publishDesktopFolders(null), []);
+
   // ── Rubber band selection ──
   const didRubberBandDragRef = useRef(false);
   const startRubberBand = (e: React.PointerEvent) => {
@@ -906,6 +594,18 @@ export default function Desktop({ profile }: { profile: any }) {
           sel.add(`folder-${i}`);
         }
       });
+      // The Trash is bottom-anchored (and movable), so measure its live DOM
+      // rect instead of mirroring the right/top math used for the grid icons.
+      const trashEl = containerRef.current?.querySelector('[data-desktop-icon="trash"]');
+      const containerRect = containerRef.current?.getBoundingClientRect();
+      if (trashEl && containerRect) {
+        const tr = trashEl.getBoundingClientRect();
+        const tx = tr.left - containerRect.left;
+        const ty = tr.top - containerRect.top;
+        if (tx + tr.width > minX && tx < maxX && ty + tr.height > minY && ty < maxY) {
+          sel.add('trash');
+        }
+      }
       return sel;
     };
     const move = (e: PointerEvent) => {
@@ -1173,6 +873,7 @@ export default function Desktop({ profile }: { profile: any }) {
         const trashPos = (prefs as any).desktop_trash_position as { right: number; bottom: number } | undefined;
         const right = trashPos?.right ?? defaultRight;
         const bottom = trashPos?.bottom ?? defaultBottom;
+        const isTrashSelected = selected.has('trash');
 
         const startTrashDrag = (e: React.PointerEvent) => {
           if (e.button !== 0) return;
@@ -1212,22 +913,30 @@ export default function Desktop({ profile }: { profile: any }) {
             data-desktop-icon="trash"
             style={{ position: 'absolute', right, bottom, zIndex: 1 }}
             onPointerDown={startTrashDrag}
-            onClick={e => e.stopPropagation()}
+            onClick={e => {
+              e.stopPropagation();
+              // Same selection contract as the other icons: plain click
+              // selects, shift / cmd / ctrl toggles within the selection.
+              if (e.shiftKey || e.metaKey || e.ctrlKey) {
+                setSelected(prev => { const next = new Set(prev); next.has('trash') ? next.delete('trash') : next.add('trash'); return next; });
+              } else if (!selected.has('trash')) {
+                setSelected(new Set(['trash']));
+              }
+            }}
             onContextMenu={e => e.preventDefault()}
             onDoubleClick={e => {
               e.stopPropagation();
-              // Side-channel contract owned by src/apps/Files.tsx:
-              // - global flag is read on mount when Files isn't open yet
-              // - event tells an already-open Files instance to flip view
-              (window as any).__REACT_OS_SHELL_FILES_VIEW__ = 'trash';
-              window.dispatchEvent(new CustomEvent('react-os-shell:files-show-trash'));
+              // Side-channel contract owned by src/apps/Files.tsx: flag is
+              // read on mount when Files isn't open yet; the event tells an
+              // already-open instance to flip view.
+              requestFilesTrashView();
               openPage('/files');
             }}
             className="cursor-default select-none"
             title="Trash — double-click to open, drag to move"
           >
         <div className="flex flex-col items-center gap-1 w-20 p-2">
-          <div className="w-12 h-12 flex items-center justify-center">
+          <div className={`w-12 h-12 flex items-center justify-center ${isTrashSelected ? 'rounded-lg bg-blue-400/30 ring-2 ring-blue-500' : ''}`}>
             <svg className="h-12 w-12 drop-shadow-[0_2px_3px_rgba(0,0,0,0.4)]" viewBox="0 0 24 24">
               {/* Solid heroicons trash, filled with silver. Subtle darker
                   stroke gives it a metallic edge against light wallpapers. */}
@@ -1242,7 +951,7 @@ export default function Desktop({ profile }: { profile: any }) {
               />
             </svg>
           </div>
-          <span className="text-[10px] font-medium text-center leading-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+          <span className={`text-[10px] font-medium text-center leading-tight drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] ${isTrashSelected ? 'text-blue-200 bg-blue-600/60 rounded px-1' : 'text-white'}`}>
             Trash
           </span>
         </div>
@@ -1268,21 +977,7 @@ export default function Desktop({ profile }: { profile: any }) {
               }
             }}
             onContextMenu={e => handleItemContextMenu(e, i)}
-            onDoubleClick={e => {
-              e.stopPropagation();
-              if (doc.entityType === 'preview-file' && doc.filePath && doc.fileKind) {
-                openPreviewFile({
-                  filePath: doc.filePath,
-                  filename: doc.label,
-                  kind: doc.fileKind,
-                  onStaged: route => openPage(route),
-                });
-              } else if (doc.entityType === 'page') {
-                openPage(doc.entityId);
-              } else {
-                openEntity(doc.entityType, doc.entityId, null, doc.label);
-              }
-            }}
+            onDoubleClick={e => { e.stopPropagation(); openItem(doc); }}
             className="cursor-default select-none"
           >
             {renderIcon(doc.entityType, doc.label, isSelected, doc.entityId, doc.fileKind)}
@@ -1313,15 +1008,12 @@ export default function Desktop({ profile }: { profile: any }) {
               }
             }}
             onContextMenu={e => handleFolderContextMenu(e, i)}
-            onDoubleClick={e => { e.stopPropagation(); setOpenFolder(folder.id); }}
+            onDoubleClick={e => { e.stopPropagation(); openDesktopFolder(folder.id); }}
             className="cursor-default select-none"
           >
             <div className="flex flex-col items-center gap-1 w-20 p-2">
               <div className={`w-12 h-12 flex items-center justify-center ${isSelected ? 'rounded-lg bg-blue-400/30 ring-2 ring-blue-500' : ''} ${isHovered ? 'rounded-lg ring-4 ring-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.6)]' : ''}`}>
-                <svg className="h-12 w-12 drop-shadow-[0_2px_3px_rgba(0,0,0,0.3)]" viewBox="0 0 48 48">
-            <path d="M6 12a4 4 0 014-4h10l4 4h14a4 4 0 014 4v20a4 4 0 01-4 4H10a4 4 0 01-4-4V12z" fill="white" stroke="#eab308" strokeWidth="2" strokeLinejoin="round" />
-            <path d="M6 18h36" stroke="#eab308" strokeWidth="1.5" />
-          </svg>
+                <FolderGlyph className="h-12 w-12 text-amber-500 drop-shadow-[0_2px_3px_rgba(0,0,0,0.3)]" />
               </div>
               {renamingFolder === folder.id ? (
                 <input autoFocus value={renameValue} onChange={e => setRenameValue(e.target.value)}
@@ -1481,7 +1173,7 @@ export default function Desktop({ profile }: { profile: any }) {
       {/* Context menu — item */}
       {contextMenu && contextMenu.itemIdx != null && (
         <PopupMenu style={menuStyle(contextMenu.x, contextMenu.y)} minWidth={160}>
-          <PopupMenuItem onClick={() => { const d = desktopItems[contextMenu.itemIdx!]; d.entityType === 'page' ? openPage(d.entityId) : openEntity(d.entityType, d.entityId, null, d.label); setContextMenu(null); }}>
+          <PopupMenuItem onClick={() => { openItem(desktopItems[contextMenu.itemIdx!]); setContextMenu(null); }}>
             Open
           </PopupMenuItem>
           <PopupMenuDivider />
@@ -1494,7 +1186,7 @@ export default function Desktop({ profile }: { profile: any }) {
       {/* Context menu — folder */}
       {contextMenu && contextMenu.folderIdx != null && (
         <PopupMenu style={menuStyle(contextMenu.x, contextMenu.y)} minWidth={160}>
-          <PopupMenuItem onClick={() => { setOpenFolder(folders[contextMenu.folderIdx!].id); setContextMenu(null); }}>
+          <PopupMenuItem onClick={() => { openDesktopFolder(folders[contextMenu.folderIdx!].id); setContextMenu(null); }}>
             Open
           </PopupMenuItem>
           <PopupMenuItem onClick={() => { setRenamingFolder(folders[contextMenu.folderIdx!].id); setRenameValue(folders[contextMenu.folderIdx!].name); setContextMenu(null); }}>
@@ -1506,76 +1198,6 @@ export default function Desktop({ profile }: { profile: any }) {
           </PopupMenuItem>
         </PopupMenu>
       )}
-
-      {/* Folder window */}
-      {openFolder && (() => {
-        const folder = folders.find(f => f.id === openFolder);
-        if (!folder) return null;
-        return (
-          <FolderWindow
-            folder={folder}
-            items={folderItems(openFolder)}
-            onClose={() => setOpenFolder(null)}
-            onOpen={(item) => {
-              if (item.entityType === 'preview-file' && item.filePath && item.fileKind) {
-                openPreviewFile({
-                  filePath: item.filePath,
-                  filename: item.label,
-                  kind: item.fileKind,
-                  onStaged: route => openPage(route),
-                });
-              } else {
-                openEntity(item.entityType, item.entityId, null, item.label);
-              }
-            }}
-            onMoveOut={(toMove) => {
-              const ids = new Set(toMove.map(t => `${t.entityType}|${t.entityId}`));
-              const updated = favDocs.map(d =>
-                d.folderId === openFolder && ids.has(`${d.entityType}|${d.entityId}`)
-                  ? { ...d, folderId: undefined, folderX: undefined, folderY: undefined }
-                  : d,
-              );
-              saveDocs(updated);
-            }}
-            onSetFolderPosition={(updates) => {
-              // Patch folderX/folderY on each affected item. Items are
-              // matched by entityType+entityId so the patch survives any
-              // concurrent reordering.
-              const patch = new Map(updates.map(u => [`${u.item.entityType}|${u.item.entityId}`, u]));
-              const updated = favDocs.map(d => {
-                const u = patch.get(`${d.entityType}|${d.entityId}`);
-                return u ? { ...d, folderX: u.x, folderY: u.y } : d;
-              });
-              saveDocs(updated);
-            }}
-            onDragOutToDesktop={(drops) => {
-              // Convert cursor coords to desktop right/top (icons are
-              // right-anchored on the desktop, same convention used for
-              // desktop→folder drops). Container ref gives us the offset.
-              const containerRect = containerRef.current?.getBoundingClientRect();
-              const cw = containerRef.current?.clientWidth ?? window.innerWidth;
-              const patch = new Map<string, { right: number; top: number }>();
-              for (const d of drops) {
-                const offX = containerRect ? d.clientX - containerRect.left : d.clientX;
-                const offY = containerRect ? d.clientY - containerRect.top : d.clientY;
-                // Center the 80×80 icon on the cursor.
-                let right = cw - offX - 40;
-                let top = Math.max(0, offY - 40);
-                if (snapEnabled) { const s = snapToGrid(right, top); right = s.x; top = s.y; }
-                right = Math.max(0, right);
-                patch.set(`${d.item.entityType}|${d.item.entityId}`, { right, top });
-              }
-              const updated = favDocs.map(d => {
-                const p = patch.get(`${d.entityType}|${d.entityId}`);
-                return p
-                  ? { ...d, folderId: undefined, folderX: undefined, folderY: undefined, x: p.right, y: p.top }
-                  : d;
-              });
-              saveDocs(updated);
-            }}
-          />
-        );
-      })()}
 
       {/* Widget manager — add / remove desktop widgets */}
       <WidgetManager open={widgetsOpen} onClose={() => setWidgetsOpen(false)} />

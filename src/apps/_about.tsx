@@ -53,9 +53,9 @@ export const BUILTIN_APP_INFO = {
   },
   files: {
     name: 'Files',
-    version: '1.0.0',
+    version: '1.1.0',
     route: '/files',
-    description: 'Personal file manager with folders, uploads, quota and trash.',
+    description: 'Personal file manager with folders, uploads, quota, trash and desktop shortcut folders.',
   },
   browser: {
     name: 'Browser',

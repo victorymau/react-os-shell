@@ -10,7 +10,7 @@
  * Server URL defaults to `http://localhost:4000`. Override at runtime via
  * `window.__REACT_OS_SHELL_FILE_SERVER__ = 'https://files.example.com'`.
  */
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useSyncExternalStore } from 'react';
 import { WindowTitle } from '../shell/Modal';
 import { useWindowManager } from '../shell/WindowManager';
 import toast from '../shell/toast';
@@ -20,6 +20,19 @@ import Breadcrumbs from '../shell/Breadcrumbs';
 import type { BreadcrumbItem } from '../shell/Breadcrumbs';
 import SidebarLayout from '../shell/SidebarLayout';
 import AboutApp from './_about';
+import {
+  DesktopItemMiniIcon,
+  FolderGlyph,
+  desktopItemTypeLabel,
+  consumeFilesViewRequest,
+  peekFilesViewRequest,
+  getDesktopFoldersSnapshot,
+  subscribeDesktopFolders,
+  requestFilesTrashView,
+  FILES_SHOW_TRASH_EVENT,
+  FILES_OPEN_DESKTOP_FOLDER_EVENT,
+  type DesktopItem,
+} from '../shell/desktopIcons';
 
 /**
  * Demo filesystem. When a consumer (e.g. the demo app) injects a static tree
@@ -44,17 +57,16 @@ const DEFAULT_SERVER =
   (typeof window !== 'undefined' && (window as any).__REACT_OS_SHELL_FILE_SERVER__) ||
   'http://localhost:4000';
 
-// Side-channel for "open Files in trash mode". Two cases handled:
-//  1) Files isn't open yet — caller sets `window.__REACT_OS_SHELL_FILES_VIEW__`
-//     then calls `openPage('/files')`. Files reads the flag on first mount.
-//  2) Files is already open — caller dispatches the event below; the live
-//     instance flips to trash view via its event listener.
-const FILES_VIEW_EVENT = 'react-os-shell:files-show-trash';
+// Side-channel for opening Files on a specific view (trash, desktop folder).
+// The flag + event plumbing lives in shell/desktopIcons.tsx; this wrapper is
+// kept because consumers import it from the package.
 export function openFilesInTrashMode() {
-  if (typeof window === 'undefined') return;
-  (window as any).__REACT_OS_SHELL_FILES_VIEW__ = 'trash';
-  window.dispatchEvent(new CustomEvent(FILES_VIEW_EVENT));
+  requestFilesTrashView();
 }
+
+/** Main-pane view: the server file tree, the server trash, or a virtual
+ *  desktop shortcut folder (published live by the Desktop component). */
+type FilesView = 'files' | 'trash' | { desktopFolderId: string };
 
 const PREVIEW_EXTS: Record<string, 'pdf' | 'image' | 'dxf' | '3d' | 'csv'> = {
   pdf: 'pdf',
@@ -139,28 +151,68 @@ export default function Files() {
   const [unreachable, setUnreachable] = useState(false);
   const [quota, setQuota] = useState<{ used: number; limit: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [view, setView] = useState<'files' | 'trash'>(() => {
-    if (typeof window === 'undefined') return 'files';
-    const w = window as any;
-    if (w.__REACT_OS_SHELL_FILES_VIEW__ === 'trash') {
-      w.__REACT_OS_SHELL_FILES_VIEW__ = null;
-      return 'trash';
-    }
+  // Peek (don't clear) in the initializer — StrictMode double-invokes it.
+  // The pending request is cleared by the mount effect below.
+  const [view, setView] = useState<FilesView>(() => {
+    const req = peekFilesViewRequest();
+    if (req === 'trash') return 'trash';
+    if (req) return { desktopFolderId: req.folderId };
     return 'files';
   });
+  useEffect(() => { consumeFilesViewRequest(); }, []);
   const [trash, setTrash] = useState<TrashEntry[]>([]);
 
-  // External trigger: when the Trash desktop icon is double-clicked while
-  // a Files window is already open, flip this instance to trash view.
+  // External triggers: the Trash desktop icon and desktop folders flip an
+  // already-open Files instance to their view. Each handler also consumes
+  // the pending flag so a later fresh mount doesn't replay a stale request.
   useEffect(() => {
-    const handler = () => setView('trash');
-    window.addEventListener(FILES_VIEW_EVENT, handler);
-    return () => window.removeEventListener(FILES_VIEW_EVENT, handler);
+    const showTrash = () => { consumeFilesViewRequest(); setView('trash'); };
+    const showDesktopFolder = (e: Event) => {
+      consumeFilesViewRequest();
+      const folderId = (e as CustomEvent<{ folderId?: string }>).detail?.folderId;
+      if (folderId) setView({ desktopFolderId: folderId });
+    };
+    window.addEventListener(FILES_SHOW_TRASH_EVENT, showTrash);
+    window.addEventListener(FILES_OPEN_DESKTOP_FOLDER_EVENT, showDesktopFolder);
+    return () => {
+      window.removeEventListener(FILES_SHOW_TRASH_EVENT, showTrash);
+      window.removeEventListener(FILES_OPEN_DESKTOP_FOLDER_EVENT, showDesktopFolder);
+    };
   }, []);
+
+  // Desktop shortcut folders, published live by the Desktop component.
+  // Null when no Desktop is mounted (e.g. mobile shell).
+  const desktopFolders = useSyncExternalStore(subscribeDesktopFolders, getDesktopFoldersSnapshot, getDesktopFoldersSnapshot);
+  const desktopFolderId = typeof view === 'object' ? view.desktopFolderId : null;
+  const desktopFolder = desktopFolderId ? desktopFolders?.folders.find(f => f.id === desktopFolderId) ?? null : null;
+  const desktopItems: DesktopItem[] = (desktopFolderId && desktopFolders?.itemsByFolder[desktopFolderId]) || [];
+
+  // If the folder being viewed is deleted on the desktop, fall back to files.
+  useEffect(() => {
+    if (desktopFolderId && desktopFolders && !desktopFolders.folders.some(f => f.id === desktopFolderId)) {
+      setView('files');
+    }
+  }, [desktopFolderId, desktopFolders]);
   const dragDepthRef = useRef(0);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const { openPage } = useWindowManager();
+  const { openPage, openEntity } = useWindowManager();
+
+  // Open a desktop shortcut — same dispatch the desktop icons use.
+  const openDesktopItem = (item: DesktopItem) => {
+    if (item.entityType === 'preview-file' && item.filePath && item.fileKind) {
+      openPreviewFile({
+        filePath: item.filePath,
+        filename: item.label,
+        kind: item.fileKind,
+        onStaged: route => openPage(route),
+      });
+    } else if (item.entityType === 'page') {
+      openPage(item.entityId);
+    } else {
+      openEntity(item.entityType, item.entityId, null, item.label);
+    }
+  };
 
   const authedFetch = useCallback(
     (url: string, init: RequestInit = {}) =>
@@ -240,7 +292,8 @@ export default function Files() {
 
   useEffect(() => {
     if (view === 'files') loadDir(path);
-    else loadTrash();
+    else if (view === 'trash') loadTrash();
+    // Desktop-folder view renders straight from the live bridge — no fetch.
     /* eslint-disable-next-line */
   }, [path, view]);
 
@@ -508,6 +561,20 @@ export default function Files() {
           Trash
         </button>
       )}
+      {/* Desktop shortcut folders — virtual (prefs-backed), so they only
+          appear while a Desktop is mounted to publish them. */}
+      {desktopFolders && desktopFolders.folders.length > 0 && (
+        <>
+          <div className="px-2 pt-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Desktop</div>
+          {desktopFolders.folders.map(f => (
+            <button key={f.id} onClick={() => setView({ desktopFolderId: f.id })} className={navBtn(desktopFolderId === f.id)}>
+              <FolderGlyph className="h-4 w-4 shrink-0 text-amber-500" />
+              <span className="truncate">{f.name}</span>
+              {f.itemCount > 0 && <span className="ml-auto text-[10px] text-gray-400 tabular-nums">{f.itemCount}</span>}
+            </button>
+          ))}
+        </>
+      )}
     </nav>
   );
 
@@ -515,7 +582,9 @@ export default function Files() {
     <div
       className="relative flex flex-col h-full bg-white"
       onDragEnter={(e) => {
-        if (demoMode) return;
+        // No drop-to-upload in demo mode or while a desktop shortcut folder
+        // is shown — the upload would land in the (hidden) server directory.
+        if (demoMode || typeof view === 'object') return;
         if (!e.dataTransfer?.types?.includes?.('Files')) return;
         e.preventDefault();
         dragDepthRef.current++;
@@ -532,11 +601,11 @@ export default function Files() {
       onDrop={(e) => {
         e.preventDefault();
         resetDrag();
-        if (demoMode) return;
+        if (demoMode || typeof view === 'object') return;
         if (e.dataTransfer.files?.length) uploadFiles(e.dataTransfer.files);
       }}
     >
-      <WindowTitle title={`Files${path === '/' ? '' : ' - ' + path}`} />
+      <WindowTitle title={desktopFolder ? `Files - ${desktopFolder.name}` : `Files${path === '/' ? '' : ' - ' + path}`} />
       <AboutApp app="files" />
       <input
         ref={fileRef}
@@ -605,7 +674,7 @@ export default function Files() {
             </>
             )}
           </>
-        ) : (
+        ) : view === 'trash' ? (
           <>
             <button
               onClick={() => setView('files')}
@@ -630,6 +699,21 @@ export default function Files() {
               Empty trash
             </button>
           </>
+        ) : (
+          <>
+            <button
+              onClick={() => setView('files')}
+              className="px-2 py-1 rounded hover:bg-gray-200 text-gray-600"
+              title="Back to files"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+              </svg>
+            </button>
+            <FolderGlyph className="h-4 w-4 text-amber-500 ml-1" />
+            <span className="flex-1 text-gray-700 font-medium px-1 truncate">{desktopFolder?.name ?? 'Desktop folder'}</span>
+            <span className="text-[10px] text-gray-400 px-2">Desktop shortcuts</span>
+          </>
         )}
 
         {/* Quota indicator */}
@@ -651,9 +735,58 @@ export default function Files() {
         )}
       </div>
 
-      {/* List — file or trash view */}
+      {/* List — file, trash or desktop-folder view */}
       <div className="flex-1 overflow-auto">
-        {view === 'trash' ? (
+        {typeof view === 'object' ? (
+          desktopItems.length === 0 ? (
+            <div className="p-10 text-center text-sm text-gray-400">
+              This desktop folder is empty. Drag shortcuts onto it on the desktop.
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">
+                <tr>
+                  <th className="text-left font-medium px-3 py-1.5">Name</th>
+                  <th className="text-left font-medium px-3 py-1.5 w-28">Type</th>
+                  <th className="w-56" />
+                </tr>
+              </thead>
+              <tbody>
+                {desktopItems.map((item) => {
+                  const key = `${item.entityType}|${item.entityId}`;
+                  return (
+                    <tr
+                      key={key}
+                      onClick={() => setSelected(key)}
+                      onDoubleClick={() => openDesktopItem(item)}
+                      className={`cursor-default border-b border-gray-100 ${selected === key ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                    >
+                      <td className="px-3 py-1.5 flex items-center gap-2">
+                        <DesktopItemMiniIcon item={item} />
+                        <span className="truncate" title={item.label}>{item.label}</span>
+                      </td>
+                      <td className="px-3 py-1.5 text-xs text-gray-500">{desktopItemTypeLabel(item)}</td>
+                      <td className="px-3 py-1.5 text-right whitespace-nowrap">
+                        <button
+                          onClick={(ev) => { ev.stopPropagation(); openDesktopItem(item); }}
+                          className="px-1.5 py-0.5 rounded hover:bg-gray-200 text-blue-600 text-[11px]"
+                        >Open</button>
+                        <button
+                          onClick={(ev) => { ev.stopPropagation(); desktopFolders?.moveToDesktop([item]); }}
+                          className="px-1.5 py-0.5 rounded hover:bg-gray-200 text-gray-500 text-[11px] ml-1"
+                        >Move to desktop</button>
+                        <button
+                          onClick={(ev) => { ev.stopPropagation(); desktopFolders?.removeShortcuts([item]); }}
+                          className="px-1.5 py-0.5 rounded hover:bg-red-100 text-red-600 text-[11px] ml-1"
+                        >Remove</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )
+        ) : view === 'trash' ? (
           loading && trash.length === 0 ? (
             <div className="p-6 text-center text-sm text-gray-400">Loading…</div>
           ) : trash.length === 0 ? (

@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-06-10
+
+### Added
+- **Desktop folders open in the Files app.** Double-clicking a desktop folder (or its right-click **Open**) now opens the Files app on that folder instead of the old standalone manila folder window. Files gained a **Desktop** sidebar section listing every desktop folder with its item count; the folder view lists the shortcuts with name, type tag and per-row **Open** / **Move to desktop** / **Remove** actions, and double-click opens the shortcut exactly like the desktop icon does (Files app → 1.1.0). Folder contents update live while the window is open. Drop-to-upload is disabled in this view — desktop folders are virtual shortcut collections, not server directories.
+- **Trash icon is selectable.** The desktop Trash now participates in selection like every other icon: click selects it, shift / cmd / ctrl toggles it within a multi-selection, and the rubber-band lasso picks it up too.
+
+### Changed
+- **Unified desktop icon styling.** Page/app shortcuts no longer render as bare white outline glyphs — each now sits on a colored gradient tile (iOS-style, white glyph), using the same per-route gradient hash as the mobile home grid so an app keeps its color across surfaces. Desktop folder icons switched from the white outline folder to the solid amber folder glyph the Files app uses, so folders read as the same object everywhere.
+
+### Removed
+- **Standalone folder window.** The manila-paper folder modal (free icon positioning, drag-out-to-desktop) is gone in favor of the Files-app folder view; persisted `folderX` / `folderY` fields are still parsed but no longer used. Moving items out of a folder is now the **Move to desktop** action in Files.
+
+### Fixed
+- **Files could ignore the requested view in dev/StrictMode.** Opening Files via the Trash icon (and now desktop folders) while no Files window is open consumed the pending-view flag inside the `useState` initializer, which React StrictMode double-invokes — the second invocation read an already-cleared flag and landed on "My files". The initializer now peeks without clearing; the flag is cleared once after mount. Production builds were unaffected.
+
 ## [1.4.0] — 2026-06-10
 
 ### Added

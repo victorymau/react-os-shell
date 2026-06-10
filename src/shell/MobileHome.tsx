@@ -12,36 +12,13 @@ import { isSection, type NavItem, type NavSection } from './nav-types';
 import { WINDOW_REGISTRY, isPageEntry, type PageRegistryEntry } from '../windowRegistry/types';
 import type { MinimizedItem } from './WindowManager';
 import LoadingSpinner from './LoadingSpinner';
+// Tile gradients are shared with the desktop "page" shortcuts (an app keeps
+// its color across surfaces); the class strings live in desktopIcons.tsx.
+import { hashGradient } from './desktopIcons';
 
 const MOBILE_WIDGET_ORDER_KEY = 'erp_mobile_widget_order';
 const MOBILE_HOME_ORDER_KEY = 'erp_mobile_home_order';
 const LONG_PRESS_MS = 400;
-
-// Per-app colored tile background. Tailwind's JIT scans the source so each
-// gradient class string must appear in full somewhere — keep them inline.
-const ICON_GRADIENTS = [
-  'from-blue-500 to-blue-700',
-  'from-indigo-500 to-purple-600',
-  'from-purple-500 to-pink-600',
-  'from-pink-500 to-rose-600',
-  'from-red-500 to-rose-600',
-  'from-orange-500 to-red-600',
-  'from-amber-500 to-orange-600',
-  'from-yellow-500 to-amber-500',
-  'from-lime-500 to-green-600',
-  'from-green-500 to-emerald-600',
-  'from-emerald-500 to-teal-600',
-  'from-teal-500 to-cyan-600',
-  'from-cyan-500 to-sky-600',
-  'from-sky-500 to-blue-600',
-  'from-violet-500 to-fuchsia-600',
-];
-
-function hashGradient(seed: string): string {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h << 5) - h + seed.charCodeAt(i);
-  return ICON_GRADIENTS[Math.abs(h) % ICON_GRADIENTS.length];
-}
 
 function loadOrder(key: string): string[] {
   try {
