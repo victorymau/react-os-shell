@@ -81,6 +81,10 @@ export interface SpreadsheetPreviewData {
   csv: string;
   /** Display name; the title strips a trailing `.csv`/`.tsv`/`.txt`. */
   filename: string;
+  /** When provided, the toolbar shows an Email button that calls back with the
+   *  sheet serialized as CSV at click time (edits included) and a filename
+   *  derived from the current title. */
+  onEmail?: (csv: string, filename: string) => void;
 }
 
 const SPREADSHEET_EVENT_NAME = 'react-os-shell:spreadsheet-preview-update';
@@ -180,6 +184,9 @@ export default function Spreadsheet() {
     return () => window.removeEventListener('keydown', handler);
   }, [undo]);
   const [title, setTitle] = useState(initialPreview?.title ?? 'Untitled');
+  const [emailHandler, setEmailHandler] = useState<SpreadsheetPreviewData['onEmail']>(
+    () => consumedRef.current?.data.onEmail,
+  );
 
   // Only respond to update events whose token matches our claim.
   useEffect(() => {
@@ -193,6 +200,7 @@ export default function Spreadsheet() {
       setSheets([sheet]);
       setActiveIdx(0);
       setTitle(detail.data.filename.replace(/\.(csv|tsv|txt)$/i, ''));
+      setEmailHandler(() => detail.data.onEmail);
     };
     window.addEventListener(SPREADSHEET_EVENT_NAME, handler);
     return () => window.removeEventListener(SPREADSHEET_EVENT_NAME, handler);
@@ -305,17 +313,19 @@ export default function Spreadsheet() {
     });
   };
 
+  // Serialize the active sheet (current edits included) as CSV
+  const serializeCSV = () => data
+    .filter(row => row.some(c => c.trim()))
+    .map(row => row.map(cell => {
+      if (cell.includes(',') || cell.includes('"') || cell.includes('\n'))
+        return `"${cell.replace(/"/g, '""')}"`;
+      return cell;
+    }).join(','))
+    .join('\n');
+
   // Export as CSV
   const exportCSV = () => {
-    const csv = data
-      .filter(row => row.some(c => c.trim()))
-      .map(row => row.map(cell => {
-        if (cell.includes(',') || cell.includes('"') || cell.includes('\n'))
-          return `"${cell.replace(/"/g, '""')}"`;
-        return cell;
-      }).join(','))
-      .join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
+    const blob = new Blob([serializeCSV()], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -397,6 +407,12 @@ export default function Spreadsheet() {
           className="text-xs text-gray-600 hover:text-gray-900 px-2 py-1 rounded hover:bg-gray-200 transition-colors">
           Save CSV
         </button>
+        {emailHandler && (
+          <button onClick={() => emailHandler(serializeCSV(), `${title || 'spreadsheet'}.csv`)}
+            className="text-xs text-gray-600 hover:text-gray-900 px-2 py-1 rounded hover:bg-gray-200 transition-colors">
+            Email
+          </button>
+        )}
 
         <div className="h-4 w-px bg-gray-300" />
 
