@@ -6,7 +6,12 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [1.1.2] — 2026-06-10
 
+### Added
+- **`setBrowserStartUrl(url)`** (from `react-os-shell/apps`) — stage a URL for the next Browser window mount, pairing with `openPage('/browser')`. Lets consumers route external links (e.g. links inside an email body) into the built-in Browser. Uses the same discard-safe peek/claim staging as Spreadsheet/Preview.
+
 ### Fixed
+- **Spreadsheet / Preview staged content lost on first open.** `setSpreadsheetPreview` / `setPdfPreview` followed by opening the app could produce an empty "Untitled" window in production builds: both components drained the staged payload **during the render phase**, and under React 18 concurrent rendering the first render pass of a lazy component (suspending on its chunk) can be discarded and replayed — the discarded pass swallowed the payload. The render phase now only *peeks* at the stage; it is claimed (cleared) in the mount effect, so discarded render passes no longer lose content. Affected every consumer flow that stages-then-opens (CSV export preview, email attachment open, PDF preview) when the app chunk wasn't already loaded.
+- **Dark mode: pale translucent panels stayed light.** The `bg-gray-50/50`, `bg-gray-50/60` and `bg-blue-50/30..60` alpha utilities had no `[data-theme="dark"]` override (the bare-class overrides don't match alpha variants), so surfaces built on them — e.g. a consumer app's sidebar — rendered as a washed-out light panel on dark windows. Added explicit dark equivalents alongside the existing `/40` overrides.
 - **Taskbar tab preview with the taskbar on top**: the popover hangs *below* the tab there, so the window snapshot now sits closest to the tab and the title moves beneath the snapshot. Every other taskbar position keeps the title above, as before.
 
 ## [1.0.0] — 2026-06-09

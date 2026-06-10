@@ -116,14 +116,25 @@ export function setSpreadsheetPreview(data: SpreadsheetPreviewData): Spreadsheet
 
 export default function Spreadsheet() {
   const containerRef = useRef<HTMLDivElement>(null);
-  // One-shot drain on first render: this instance claims whatever was staged
-  // and stores the token so it can recognise later `.update()` calls aimed
-  // at it. Subsequent mounts get nothing — they're independent windows.
+  // One-shot drain: this instance claims whatever was staged and stores the
+  // token so it can recognise later `.update()` calls aimed at it. The render
+  // phase only PEEKS — under React 18 concurrent rendering a render pass can
+  // be discarded and replayed (the first mount of this lazy component
+  // suspends on its chunk), and a destructive read here would let the
+  // discarded pass swallow the payload, leaving the committed window empty.
+  // The stage is cleared in the mount effect below (commit phase) instead.
   const consumedRef = useRef<PendingSpreadsheetStage | null | undefined>(undefined);
   if (consumedRef.current === undefined) {
     consumedRef.current = pendingSpreadsheet;
-    pendingSpreadsheet = null;
   }
+  useEffect(() => {
+    // Claim the stage for real once mounted. The identity check keeps a
+    // payload staged *after* our render-phase peek (e.g. a second preview
+    // opened in quick succession) available for the window it belongs to.
+    if (consumedRef.current !== null && pendingSpreadsheet === consumedRef.current) {
+      pendingSpreadsheet = null;
+    }
+  }, []);
   const initialPreview = (() => {
     const p = consumedRef.current;
     if (!p) return null;

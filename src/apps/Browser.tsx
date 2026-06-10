@@ -70,14 +70,45 @@ function loadBookmarks(): Bookmark[] {
   return DEFAULT_BOOKMARKS;
 }
 
+interface PendingStartUrl {
+  token: number;
+  url: string;
+}
+
+let pendingStartUrl: PendingStartUrl | null = null;
+let nextStartToken = 0;
+
+/** Stage a URL for the next Browser window mount — pair with
+ *  `openPage('/browser')`. Used by "open this link in the Browser" flows
+ *  (e.g. links inside an email body). */
+export function setBrowserStartUrl(url: string): void {
+  pendingStartUrl = { token: ++nextStartToken, url };
+}
+
 function loadHomepage(): string {
   if (typeof window === 'undefined') return DEFAULT_HOMEPAGE;
   return localStorage.getItem(HOMEPAGE_KEY) || DEFAULT_HOMEPAGE;
 }
 
 export default function Browser() {
+  // One-shot drain of a staged start URL. The render phase only PEEKS — under
+  // React 18 concurrent rendering the first render pass of this lazy component
+  // can be discarded and replayed, so a destructive read here would lose the
+  // payload (see Spreadsheet/Preview). The stage is cleared in the mount
+  // effect below.
+  const consumedRef = useRef<PendingStartUrl | null | undefined>(undefined);
+  if (consumedRef.current === undefined) {
+    consumedRef.current = pendingStartUrl;
+  }
+  useEffect(() => {
+    if (consumedRef.current !== null && pendingStartUrl === consumedRef.current) {
+      pendingStartUrl = null;
+    }
+  }, []);
+  const startUrl = consumedRef.current ? normalizeUrl(consumedRef.current.url) : '';
+
   const [homepage, setHomepage] = useState(loadHomepage);
-  const [url, setUrl] = useState(homepage);
+  const [url, setUrl] = useState(startUrl || homepage);
   const [inputUrl, setInputUrl] = useState(url);
   const [history, setHistory] = useState<string[]>([url]);
   const [historyIdx, setHistoryIdx] = useState(0);

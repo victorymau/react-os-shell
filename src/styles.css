@@ -154,11 +154,23 @@
    doesn't match. Override them explicitly with dark equivalents so taskbar
    tabs and the start-menu button don't look too bright in Dark mode. */
 [data-theme="dark"] .bg-gray-50\/40 { background-color: rgba(24, 24, 37, 0.4) !important; }
+/* /50 and /60 are used as in-window PANEL surfaces (sidebars, form sections,
+   popup cards) — keep them solid in dark so a bright wallpaper can't bleed
+   through the window glass and wash them out. */
+[data-theme="dark"] .bg-gray-50\/50 { background-color: #181825 !important; }
+[data-theme="dark"] .bg-gray-50\/60 { background-color: #181825 !important; }
+[data-theme="dark"] .hover\:bg-gray-50\/50:hover { background-color: #181825 !important; }
 [data-theme="dark"] .bg-gray-100\/40 { background-color: rgba(30, 30, 46, 0.4) !important; }
 [data-theme="dark"] .bg-gray-100\/60 { background-color: rgba(30, 30, 46, 0.6) !important; }
 [data-theme="dark"] .bg-gray-200\/40 { background-color: rgba(49, 50, 68, 0.4) !important; }
 [data-theme="dark"] .bg-gray-200\/50 { background-color: rgba(49, 50, 68, 0.5) !important; }
 [data-theme="dark"] .bg-blue-100\/60 { background-color: rgba(59, 130, 246, 0.22) !important; }
+/* Pale-blue tinted panels (selected rows, inline-reply box) — scale the
+   .bg-blue-50 dark tint (0.26) down through the alpha steps. */
+[data-theme="dark"] .bg-blue-50\/30 { background-color: rgba(59, 130, 246, 0.10) !important; }
+[data-theme="dark"] .bg-blue-50\/40 { background-color: rgba(59, 130, 246, 0.12) !important; }
+[data-theme="dark"] .bg-blue-50\/50 { background-color: rgba(59, 130, 246, 0.15) !important; }
+[data-theme="dark"] .bg-blue-50\/60 { background-color: rgba(59, 130, 246, 0.18) !important; }
 [data-theme="dark"] .border-gray-200\/40 { border-color: rgba(69, 71, 90, 0.4) !important; }
 [data-theme="dark"] .border-gray-300\/40 { border-color: rgba(88, 91, 112, 0.4) !important; }
 [data-theme="dark"] .border-blue-400\/60 { border-color: rgba(96, 165, 250, 0.45) !important; }

@@ -107,6 +107,7 @@ export {
 
 export { setPdfPreview } from './Preview';
 export { setSpreadsheetPreview } from './Spreadsheet';
+export { setBrowserStartUrl } from './Browser';
 export { openFilesInTrashMode, setFilesDemoTree } from './Files';
 export type { FilesDemoNode } from './Files';
 export type { PdfPreviewData, PdfPreviewHandle } from './Preview';
