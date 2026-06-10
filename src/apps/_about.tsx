@@ -29,7 +29,7 @@ export interface BuiltinAppInfo {
 export const BUILTIN_APP_INFO = {
   spreadsheet: {
     name: 'Spreadsheets',
-    version: '1.0.0',
+    version: '1.1.0',
     route: '/spreadsheet',
     description: 'Multi-sheet spreadsheet editor with CSV / TSV import and export.',
   },

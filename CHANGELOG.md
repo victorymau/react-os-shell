@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-06-10
+
+### Added
+- **Spreadsheets: Email button for staged previews.** `SpreadsheetPreviewData` accepts an optional `onEmail(csv, filename)` callback; when provided (e.g. by a consumer's CSV-export flow), the toolbar shows an **Email** button next to Save CSV that serializes the sheet *at click time* — current edits included — and hands the CSV text plus a filename derived from the window title back to the consumer (Spreadsheets app → 1.1.0).
+
+### Fixed
+- **Dark mode: selected grid cells were unreadable.** The spreadsheet grid's selection styling uses Tailwind's `!` important utilities (`!bg-blue-50`, `!bg-blue-100`, `!bg-blue-200`, `!text-gray-700`), which compile to their own class names (`.\!bg-blue-100` …) and so escaped the dark-theme remaps — selected cells and row/column headers kept their light-mode background while the cell text went light. Added explicit dark overrides for the bang variants.
+
 ## [1.2.0] — 2026-06-10
 
 ### Added

@@ -126,6 +126,16 @@
    light-mode value and wash out the text on top. Mute the background to a low
    tint and lighten the text so highlighted content stays readable in dark mode. */
 [data-theme="dark"] .bg-blue-100 { background-color: rgba(59, 130, 246, 0.22) !important; }
+
+/* Tailwind's `!` important modifier compiles to distinct class names
+   (`.\!bg-blue-100` etc.), so the EditableGrid selection utilities escape the
+   remaps above: the selection keeps its light-mode background while the cell
+   text goes light, making selected cells unreadable in dark mode. The
+   attribute selector outranks the utility's own !important. */
+[data-theme="dark"] .\!bg-blue-50 { background-color: rgba(59, 130, 246, 0.26) !important; }
+[data-theme="dark"] .\!bg-blue-100 { background-color: rgba(59, 130, 246, 0.22) !important; }
+[data-theme="dark"] .\!bg-blue-200 { background-color: rgba(59, 130, 246, 0.35) !important; }
+[data-theme="dark"] .\!text-gray-700 { color: #a6adc8 !important; }
 [data-theme="dark"] .bg-green-100 { background-color: rgba(34, 197, 94, 0.18) !important; }
 [data-theme="dark"] .bg-emerald-100 { background-color: rgba(16, 185, 129, 0.18) !important; }
 [data-theme="dark"] .bg-sky-100 { background-color: rgba(14, 165, 233, 0.18) !important; }
