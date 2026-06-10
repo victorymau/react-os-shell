@@ -23,18 +23,30 @@ import {
   ShellEntityFetcherProvider,
   StatusBadgeProvider,
   DesktopHostProvider,
+  BugReportProvider,
+  BugReportConfigProvider,
   Modal,
   setShellAuthBridge,
   setShellWindowRegistry,
   setShellNavIcons,
+  setShellApiClient,
   setWindowDefaultPosition,
   createWindowRegistry,
   useLocalStoragePrefs,
   useWindowManager,
   VERSION,
+  type BugReportConfig,
   type NotificationsConfig,
 } from 'react-os-shell';
 import { bundledApps, utilityApps, gameApps, documentApps, webApps, setFilesDemoTree, type FilesDemoNode } from 'react-os-shell/apps';
+// Global-search wiring: sample directory, providers, and the entity windows
+// search results open into (person / project detail modals).
+import { DEMO_SEARCH, DEMO_ENTITY_WINDOWS } from './searchDemo';
+import { DEMO_STATUS_GROUPS } from './demoStatusGroups';
+// Mock axios client — serves the directory entities and bridges /auth/me/
+// preference patches (window-menu "Add to Desktop", fav stars) to the demo's
+// localStorage prefs.
+import { demoApiClient, bindDemoApiPrefs } from './demoApiClient';
 
 // Floating panel toggled with Alt+Shift+T to test toast / notification /
 // confirm / confirmDestructive / prompt visually. Eagerly imported because
@@ -51,6 +63,9 @@ const ListDemo = lazy(() => import('./ListDemo'));
 const TopNavDemo = lazy(() => import('./TopNavDemo'));
 const BreadcrumbsDemo = lazy(() => import('./BreadcrumbsDemo'));
 const PreferencesDemo = lazy(() => import('./PreferencesDemo'));
+const GridDemo = lazy(() => import('./GridDemo'));
+const HelpCenterDemo = lazy(() => import('./HelpCenterDemo'));
+const BadgesDemo = lazy(() => import('./BadgesDemo'));
 
 setShellWindowRegistry(createWindowRegistry(bundledApps, {
   // The shell's menus (desktop right-click, profile menu) open
@@ -94,6 +109,25 @@ setShellWindowRegistry(createWindowRegistry(bundledApps, {
     label: 'Breadcrumbs',
     size: 'lg',
   },
+  '/grid-demo': {
+    component: GridDemo,
+    label: 'Grid',
+    size: 'xl',
+  },
+  '/help-demo': {
+    component: HelpCenterDemo,
+    label: 'Help Center',
+    size: 'xl',
+    flushBody: true,
+  },
+  '/badges-demo': {
+    component: BadgesDemo,
+    label: 'Status Badges',
+    size: 'lg',
+  },
+  // Entity windows opened by ⌘K search results (see searchDemo.tsx).
+  person: DEMO_ENTITY_WINDOWS.person,
+  project: DEMO_ENTITY_WINDOWS.project,
 }));
 
 // Inject a static demo filesystem so the Files app browses in-memory (no file
@@ -139,6 +173,8 @@ setShellAuthBridge({
   logout: () => window.dispatchEvent(new CustomEvent('demo-logout')),
 });
 
+setShellApiClient(demoApiClient);
+
 const queryClient = new QueryClient();
 
 // Top-level flat items shown directly in the main start menu (alongside the
@@ -168,10 +204,13 @@ const NAV_SECTIONS = [
     label: 'Components',
     items: [
       { to: '/list-demo', label: 'List' },
+      { to: '/grid-demo', label: 'Grid' },
       { to: '/kanban-demo', label: 'Kanban' },
       { to: '/sidebar-demo', label: 'Sidebar' },
       { to: '/topnav-demo', label: 'Top Nav' },
       { to: '/breadcrumbs-demo', label: 'Breadcrumbs' },
+      { to: '/badges-demo', label: 'Status Badges' },
+      { to: '/help-demo', label: 'Help Center' },
     ],
   },
   {
@@ -230,6 +269,9 @@ const NAV_ICONS: Record<string, JSX.Element> = {
   '/list-demo': path('M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z'),
   '/topnav-demo': path('M3.75 9h16.5M4.5 5.25h15a.75.75 0 01.75.75v12a.75.75 0 01-.75.75h-15a.75.75 0 01-.75-.75V6a.75.75 0 01.75-.75z'),
   '/breadcrumbs-demo': path('M5.25 4.5l7.5 7.5-7.5 7.5m6-15l7.5 7.5-7.5 7.5'),
+  '/grid-demo': path('M3.75 5.25h16.5v13.5H3.75zM3.75 9.75h16.5M3.75 14.25h16.5M9.5 5.25v13.5M15 5.25v13.5'),
+  '/help-demo': path('M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z'),
+  '/badges-demo': path('M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.746 3.746 0 011.043 3.296A3.745 3.745 0 0121 12z'),
 };
 
 setShellNavIcons(NAV_ICONS);
@@ -298,6 +340,19 @@ const DEMO_NOTIFICATIONS: NotificationsConfig = {
     notifyDemoListeners();
   },
   onItemClick: () => {},
+};
+
+// Bug-report flow: the shell captures + annotates the screenshot and builds
+// the payload; the consumer's submit callback decides where it goes. The
+// demo "files" it as an in-app notification so the round trip is visible.
+const DEMO_BUG_CONFIG: BugReportConfig = {
+  submit: async (p) => {
+    console.info('[demo] bug report payload', p);
+    pushDemoNotification(
+      p.reportType === 'bug' ? 'Bug report received' : 'Suggestion received',
+      p.description?.slice(0, 80) || '(no description)',
+    );
+  },
 };
 
 // Pick a wallpaper once per page load; reused across renders.
@@ -419,6 +474,9 @@ export default function App() {
   // every mount so existing users (who already have show_desktop_version:
   // true stored from before the dedup) drop the duplicate badge too.
   const prefs = useLocalStoragePrefs('react-os-shell-demo', { show_desktop_version: false });
+  // Keep the mock api client writing through the live prefs state — its
+  // /auth/me/ bridge backs the window-menu "Add to Desktop" persistence.
+  bindDemoApiPrefs(prefs);
   useEffect(() => {
     if (prefs.prefs.show_desktop_version !== false) prefs.save({ show_desktop_version: false });
   }, []);
@@ -439,7 +497,8 @@ export default function App() {
           <ShellAuthProvider value={{ hasAnyPerm: () => true }}>
             <ShellPrefsProvider value={prefs}>
               <ShellEntityFetcherProvider value={() => Promise.resolve({})}>
-                <StatusBadgeProvider groups={{}}>
+                <StatusBadgeProvider groups={DEMO_STATUS_GROUPS}>
+                  <BugReportConfigProvider value={DEMO_BUG_CONFIG}>
                   <DesktopHostProvider value={{
                     productName: 'react-os-shell',
                     productTagline: 'Desktop UI shell for React',
@@ -447,6 +506,7 @@ export default function App() {
                     wallpapers: WALLPAPER_OPTIONS,
                   }}>
                     <WindowManagerProvider>
+                      <BugReportProvider>
                       <DefaultWindows />
                       <VersionBadge />
                       <DevToolbox pushNotification={pushDemoNotification} />
@@ -463,12 +523,15 @@ export default function App() {
                               sectionIcons={SECTION_ICONS}
                               categories={START_MENU_CATEGORIES}
                               notifications={DEMO_NOTIFICATIONS}
+                              search={DEMO_SEARCH}
                             />
                           }
                         />
                       </Routes>
+                      </BugReportProvider>
                     </WindowManagerProvider>
                   </DesktopHostProvider>
+                  </BugReportConfigProvider>
                 </StatusBadgeProvider>
               </ShellEntityFetcherProvider>
             </ShellPrefsProvider>

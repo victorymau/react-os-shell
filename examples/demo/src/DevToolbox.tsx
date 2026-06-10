@@ -96,6 +96,12 @@ export default function DevToolbox({ pushNotification }: DevToolboxProps) {
         >
           prompt
         </button>
+        <button
+          onClick={() => document.dispatchEvent(new Event('toggle-shortcut-help'))}
+          className={btn}
+        >
+          shortcut help overlay (?)
+        </button>
       </div>
     </div>
   );
