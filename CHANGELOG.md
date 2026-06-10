@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [2.0.1] — 2026-06-11
+
+### Fixed
+- **Hover-revealed actions inside windows showed all at once.** The window/widget frame carried a bare Tailwind `group` class (unused by the shell itself), so any `group-hover:` utility in app content — note actions, row delete buttons, etc. — activated as soon as the cursor entered the window instead of when hovering the individual item. The frame no longer declares a hover group; per-item `group`/`group-hover:` pairs in app content now behave as written.
+
 ## [2.0.0] — 2026-06-10
 
 ### Removed
