@@ -41,9 +41,9 @@ export const BUILTIN_APP_INFO = {
   },
   documents: {
     name: 'Documents',
-    version: '1.0.0',
+    version: '1.1.0',
     route: '/documents',
-    description: 'Viewer and light editor for plain-text files and Word documents.',
+    description: 'Letter-page editor for Word documents and plain-text files — images, lists, alignment.',
   },
   preview: {
     name: 'Preview',

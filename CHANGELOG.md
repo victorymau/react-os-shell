@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-06-10
+
+### Added
+- **Documents: letter-size page.** Word-style documents (including the blank document the app opens with) now render on a US-letter page — 8.5 × 11 in with 1-in margins, centered on a gray desk that scrolls when the window is narrower than the page — instead of a content-height box. The page grows past 11 in as content does (Documents app → 1.1.0).
+- **Documents: images.** Insert via the new toolbar **Image** button, paste from the clipboard, or drag-drop image files onto the window (non-image files still open as documents). Images embed as data URLs so saved files stay self-contained, never overflow the page, and clicking one opens a menu with width presets (25 / 50 / 75 / 100% / original) and **Remove image**. Images inside imported .docx files render too (mammoth embeds them the same way).
+- **Documents: text alignment.** Align left / center / right and justify toolbar buttons.
+
+### Fixed
+- **Documents: list buttons produced invisible lists.** The bulleted / numbered list commands created proper `<ul>`/`<ol>` markup, but Tailwind's preflight strips list markers, so they rendered as plain lines. The editor now ships its own content styles (markers, indentation, paragraph spacing) in `styles.css`.
+
 ## [1.5.0] — 2026-06-10
 
 ### Added
