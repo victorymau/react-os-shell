@@ -6,6 +6,7 @@ import toast from '../shell/toast';
 import { useWindowManager } from '../shell/WindowManager';
 import { useShellPrefs } from '../shell/ShellPrefs';
 import SidebarLayout from '../shell/SidebarLayout';
+import AboutApp from './_about';
 
 interface Note {
   id: string;
@@ -362,6 +363,7 @@ Tips:
 
   return (
     <div className="h-full">
+      <AboutApp app="notepad" />
       <SidebarLayout
         sidebar={sidebar}
         storageKey="notepad.sidebarWidth"

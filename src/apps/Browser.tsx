@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { WindowTitle } from '../shell/Modal';
 import { confirm } from '../shell/ConfirmDialog';
+import AboutApp from './_about';
 
 interface Bookmark {
   label: string;
@@ -221,6 +222,7 @@ export default function Browser() {
   return (
     <div className="relative flex flex-col h-full bg-white">
       <WindowTitle title={`Browser - ${titleFromUrl(url)}`} />
+      <AboutApp app="browser" />
 
       {/* Top toolbar */}
       <div className="flex items-center gap-1 px-2 py-1.5 border-b border-gray-200 bg-gray-50 shrink-0">

@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import EditableGrid from '../shell/EditableGrid';
 import type { GridColumn, CellStyle } from '../shell/EditableGrid';
 import { WindowTitle } from '../shell/Modal';
+import AboutApp from './_about';
 
 const TITLE_DISPLAY_MAX = 24;
 function truncateForTitle(s: string) {
@@ -370,6 +371,7 @@ export default function Spreadsheet() {
   return (
     <div ref={containerRef} className="flex flex-col h-full">
       <WindowTitle title={`${truncateForTitle(title || 'Untitled')} - Spreadsheets`} />
+      <AboutApp app="spreadsheet" />
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 bg-gray-50 shrink-0">
         {editingTitle ? (

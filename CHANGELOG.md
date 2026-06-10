@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-06-10
+
+### Added
+- **About dialogs for the document & web apps.** Spreadsheets, Notepad, Documents, Preview, Files and Browser gained an "About <App>" item in the window title menu (the icon menu next to Minimize / Maximize / Add to Desktop). The dialog shows the app's icon, name, **its own app version** — each app is now versioned independently of the package, so app-level changes are easier to track — a one-line description, and a "Part of the react-os-shell desktop environment" attribution with the shell version. All six apps start at app version 1.0.0.
+- **`BUILTIN_APP_INFO`** (from `react-os-shell/apps`) — the per-app metadata registry behind the About dialogs (`{ name, version, description, route }` keyed by app id), exported so consumers can read app versions programmatically. Types `BuiltinAppId` / `BuiltinAppInfo` ship alongside.
+
 ## [1.1.2] — 2026-06-10
 
 ### Added

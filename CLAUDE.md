@@ -8,6 +8,7 @@ This package is published and consumed downstream, so version + changelog discip
 
 - **Bump the version** in `src/version.ts` (injected into `VERSION` at build) and `package.json`.
 - **Add a changelog entry** in `src/changelog.ts` and `CHANGELOG.md`.
+- **Bump the app version** in `BUILTIN_APP_INFO` (`src/apps/_about.tsx`) when changing one of the bundled document/web apps (Spreadsheets, Notepad, Documents, Preview, Files, Browser) — each carries its own version, shown in its About dialog.
 - **Update the help docs** for any added feature or change to existing behaviour.
 - **Publish in order:** bump → `npm run build` → `npm publish`, then bump the `react-os-shell` `^x.y.z` pin in each consuming portal.
 

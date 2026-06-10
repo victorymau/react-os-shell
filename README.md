@@ -210,6 +210,7 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 | `bundledApps` | `WindowRegistry` — 12 ready-to-mount apps. |
 | `utilityApps`, `gameApps`, `documentApps`, `webApps` | Subsets of `bundledApps`. |
 | `Calculator`, `Spreadsheet`, `Weather`, `CurrencyConverter`, `PomodoroTimer`, `Chess`, `Checkers`, `Sudoku`, `Tetris`, `Game2048`, `TodoList`, `Browser` | Lazy components — use directly in custom registry entries. |
+| `BUILTIN_APP_INFO` | Per-app metadata for the document/web apps (Spreadsheets, Notepad, Documents, Preview, Files, Browser): display name, independent app version and one-line description. Drives each app's "About" dialog (window title menu → About <App>), which also shows the shell version. |
 
 ### Misc
 

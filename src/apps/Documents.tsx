@@ -11,6 +11,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { WindowTitle } from '../shell/Modal';
 import toast from '../shell/toast';
+import AboutApp from './_about';
 
 const TITLE_DISPLAY_MAX = 24;
 function truncateForTitle(s: string) {
@@ -145,6 +146,7 @@ export default function Documents() {
       onDrop={handleDrop}
     >
       <WindowTitle title={`${titleName}${edited ? ' •' : ''} - Documents`} />
+      <AboutApp app="documents" />
 
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 bg-gray-50 shrink-0">

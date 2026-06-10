@@ -19,6 +19,7 @@ import { openPreviewFile } from '../utils/openPreviewFile';
 import Breadcrumbs from '../shell/Breadcrumbs';
 import type { BreadcrumbItem } from '../shell/Breadcrumbs';
 import SidebarLayout from '../shell/SidebarLayout';
+import AboutApp from './_about';
 
 /**
  * Demo filesystem. When a consumer (e.g. the demo app) injects a static tree
@@ -536,6 +537,7 @@ export default function Files() {
       }}
     >
       <WindowTitle title={`Files${path === '/' ? '' : ' - ' + path}`} />
+      <AboutApp app="files" />
       <input
         ref={fileRef}
         type="file"

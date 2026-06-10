@@ -105,6 +105,8 @@ export {
   Browser,
 };
 
+export { BUILTIN_APP_INFO } from './_about';
+export type { BuiltinAppId, BuiltinAppInfo } from './_about';
 export { setPdfPreview } from './Preview';
 export { setSpreadsheetPreview } from './Spreadsheet';
 export { setBrowserStartUrl } from './Browser';

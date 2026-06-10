@@ -13,6 +13,7 @@ import { createPortal } from 'react-dom';
 import * as pdfjsLib from 'pdfjs-dist';
 import toast from '../shell/toast';
 import { WindowTitle, getActiveModalId } from '../shell/Modal';
+import AboutApp from './_about';
 import ImageAnnotator, { type ImageAnnotatorHandle } from './ImageAnnotator';
 
 /** Slot at the right end of the outer Preview toolbar — each format panel
@@ -344,6 +345,7 @@ export default function Preview() {
       }}
     >
       <WindowTitle title={`${titleName} - Preview`} />
+      <AboutApp app="preview" />
       {Toolbar}
       <ToolbarSlotContext.Provider value={toolbarSlotEl}>
         <div className="flex-1 min-h-0">{body}</div>
