@@ -1573,7 +1573,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     <div>
       {/* Window */}
       <div ref={panelRef} data-modal-panel data-modal-id={modalId} data-window-key={windowKey || undefined} {...(allowPinOnTop ? { 'data-utility': '' } : {})} {...(widget ? { 'data-widget': '' } : {})}
-        className={`fixed rounded-2xl flex flex-col overflow-hidden group ${widget ? (isActive ? 'shadow-2xl' : 'shadow-lg') : `border ${isActive ? 'shadow-2xl border-gray-200' : 'shadow-lg border-gray-300'}`}`}
+        className={`fixed rounded-2xl flex flex-col overflow-hidden ${widget ? (isActive ? 'shadow-2xl' : 'shadow-lg') : `border ${isActive ? 'shadow-2xl border-gray-200' : 'shadow-lg border-gray-300'}`}`}
         onMouseDownCapture={(e) => {
           if (exposeActive) {
             // In exposé mode, any click on a tileable window selects it.
