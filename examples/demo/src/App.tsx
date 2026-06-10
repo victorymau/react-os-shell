@@ -8,8 +8,9 @@
  *   - permissive `hasAnyPerm` (no permission-gated nav items in this demo)
  *
  * Open the start menu (bottom-left "react-os-shell") and pick any app from
- * the Utilities / Games trays to see the windowing system in action. Cmd-K
- * opens the global search. Logout returns you to the demo's login splash.
+ * the Components / Utilities trays to see the windowing system in action.
+ * Cmd-K opens the global search. Logout returns you to the demo's login
+ * splash.
  */
 import { lazy, useEffect, useState, useSyncExternalStore } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
@@ -38,7 +39,7 @@ import {
   type BugReportConfig,
   type NotificationsConfig,
 } from 'react-os-shell';
-import { bundledApps, utilityApps, gameApps, documentApps, webApps, setFilesDemoTree, type FilesDemoNode } from 'react-os-shell/apps';
+import { bundledApps, utilityApps, documentApps, webApps, setFilesDemoTree, type FilesDemoNode } from 'react-os-shell/apps';
 // Global-search wiring: sample directory, providers, and the entity windows
 // search results open into (person / project detail modals).
 import { DEMO_SEARCH, DEMO_ENTITY_WINDOWS } from './searchDemo';
@@ -178,12 +179,11 @@ setShellApiClient(demoApiClient);
 const queryClient = new QueryClient();
 
 // Top-level flat items shown directly in the main start menu (alongside the
-// built-in Notifications entry). The remaining utility/game apps stay in their
+// built-in Notifications entry). The remaining utility apps stay in their
 // category sub-trays below.
 const TOP_LEVEL_ROUTES = new Set(['/spreadsheet', '/notepad', '/documents', '/preview', '/files', '/browser']);
 const lookupLabel = (to: string) =>
   (utilityApps as any)[to]?.label
-  ?? (gameApps as any)[to]?.label
   ?? (documentApps as any)[to]?.label
   ?? (webApps as any)[to]?.label
   ?? to;
@@ -223,19 +223,9 @@ const NAV_SECTIONS = [
       .filter(([to, e]) => !TOP_LEVEL_ROUTES.has(to) && !(e as any).widget)
       .map(([to, e]) => ({ to, label: (e as any).label })),
   },
-  { label: 'Games', items: (() => {
-      const PUZZLES = new Set(['/sudoku', '/2048', '/minesweeper']);
-      const all = Object.entries(gameApps).map(([to, e]) => ({ to, label: (e as any).label }));
-      // Demo the 3rd-level menu: nest puzzle games under a "Puzzles" parent
-      // (hover the row in the start-menu flyout to see the sub-flyout).
-      return [
-        ...all.filter(g => !PUZZLES.has(g.to)),
-        { to: '/sudoku', label: 'Puzzles', children: all.filter(g => PUZZLES.has(g.to)) },
-      ];
-    })() },
 ];
 
-const START_MENU_CATEGORIES = { erp: [], system: ['Components', 'Utilities', 'Games'] };
+const START_MENU_CATEGORIES = { erp: [], system: ['Components', 'Utilities'] };
 
 // Per-route icons rendered next to each start-menu item. Keep paths tight —
 // they re-render at h-4 w-4 inside the menu.
@@ -252,12 +242,6 @@ const NAV_ICONS: Record<string, JSX.Element> = {
   '/currency': path('M12 7.5v9m3.75-9.75H9.375a2.625 2.625 0 100 5.25h2.25a2.625 2.625 0 010 5.25H8.25M21 12a9 9 0 11-18 0 9 9 0 0118 0z'),
   '/pomodoro': path('M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z'),
   '/stock': path('M2.25 18L9 11.25l4.306 4.306a11.95 11.95 0 015.814-5.518l2.74-1.22m0 0l-5.94-2.281m5.94 2.28l-2.28 5.941'),
-  '/chess': path('M16.5 18.75h-9m9 0a3 3 0 013 3h-15a3 3 0 013-3m9 0v-3.375c0-.621-.503-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.007 0H9.497m5.007 0a7.454 7.454 0 01-.982-3.172M9.497 14.25a7.454 7.454 0 00.981-3.172M5.25 4.236c-.982.143-1.954.317-2.916.52A6.003 6.003 0 007.73 9.728M5.25 4.236V4.5c0 2.108.966 3.99 2.48 5.228M5.25 4.236V2.721C7.456 2.41 9.71 2.25 12 2.25c2.291 0 4.545.16 6.75.47v1.516M18.75 4.236c.982.143 1.954.317 2.916.52A6.003 6.003 0 0116.27 9.728M18.75 4.236V4.5c0 2.108-.966 3.99-2.48 5.228m0 0a6.003 6.003 0 01-2.27.853m0 0h.008v.008h-.008v-.008z'),
-  '/checkers': path('M21 12a9 9 0 11-18 0 9 9 0 0118 0zM12 9a3 3 0 100 6 3 3 0 000-6z'),
-  '/sudoku': path('M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15'),
-  '/tetris': path('M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0021 18V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v12a2.25 2.25 0 002.25 2.25z'),
-  '/2048': path('M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z'),
-  '/minesweeper': path('M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z'),
   '/preview': path('M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z'),
   '/documents': path('M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z'),
   '/files': path('M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z'),
@@ -280,7 +264,6 @@ setShellNavIcons(NAV_ICONS);
 const SECTION_ICONS: Record<string, JSX.Element> = {
   Components: path('M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z'),
   Utilities: path('M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437L12 10.5'),
-  Games: path('M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 11-6 0H5.25A2.25 2.25 0 003 12m18 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 9m18 0V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v3'),
   Settings: path('M10.343 3.94c.09-.542.56-.94 1.11-.94h1.093c.55 0 1.02.398 1.11.94l.149.894c.07.424.384.764.78.93.398.164.855.142 1.205-.108l.737-.527a1.125 1.125 0 011.45.12l.773.774c.39.389.44 1.002.12 1.45l-.527.737c-.25.35-.272.806-.107 1.204.165.397.505.71.93.78l.893.15c.543.09.94.56.94 1.109v1.094c0 .55-.397 1.02-.94 1.11l-.893.149c-.425.07-.765.383-.93.78-.165.398-.143.854.107 1.204l.527.738c.32.447.269 1.06-.12 1.45l-.774.773a1.125 1.125 0 01-1.449.12l-.738-.527c-.35-.25-.806-.272-1.203-.107-.397.165-.71.505-.781.929l-.149.894c-.09.542-.56.94-1.11.94h-1.094c-.55 0-1.019-.398-1.11-.94l-.148-.894c-.071-.424-.384-.764-.781-.93-.398-.164-.854-.142-1.204.108l-.738.527c-.447.32-1.06.269-1.45-.12l-.773-.774a1.125 1.125 0 01-.12-1.45l.527-.737c.25-.35.272-.806.108-1.204-.165-.397-.506-.71-.93-.78l-.894-.15c-.542-.09-.94-.56-.94-1.109v-1.094c0-.55.398-1.02.94-1.11l.894-.149c.424-.07.765-.383.93-.78.165-.398.143-.854-.108-1.204l-.526-.738a1.125 1.125 0 01.12-1.45l.773-.773a1.125 1.125 0 011.45-.12l.737.527c.35.25.807.272 1.204.107.397-.165.71-.505.78-.929l.15-.894z M15 12a3 3 0 11-6 0 3 3 0 016 0z'),
 };
 

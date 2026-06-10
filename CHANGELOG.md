@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [2.0.0] — 2026-06-10
+
+### Removed
+- **BREAKING: all bundled games removed.** Chess, Checkers, Sudoku, Tetris, 2048 and Minesweeper are gone — their app sources, their `/chess` … `/minesweeper` registry routes (no longer part of `bundledApps`), the `gameApps` subset export, the per-game lazy component exports (`Chess`, `Checkers`, `Sudoku`, `Tetris`, `Game2048`, `Minesweeper`), and the internal game-score analytics module that backed the Minesweeper leaderboard. `bundledApps` now contains the 8 utility, 3 document and 1 web app. **Migration:** drop any `gameApps` import/spread and any game routes from nav config; everything else is unchanged.
+
 ## [1.6.0] — 2026-06-10
 
 ### Added

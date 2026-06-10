@@ -1,5 +1,5 @@
 /**
- * Bundled apps — pre-built window registry entries for the 14 apps that ship
+ * Bundled apps — pre-built window registry entries for the 12 apps that ship
  * with `react-os-shell`. Consumers compose them into their own registry via
  * `createWindowRegistry`:
  *
@@ -9,12 +9,10 @@
  *
  *   const windows = createWindowRegistry(bundledApps, erpEntities);
  *
- * Subsets are also exported (`utilityApps`, `gameApps`) so a
+ * Subsets are also exported (`utilityApps`, `documentApps`, `webApps`) so a
  * consumer can pick-and-choose without importing every component.
  *
- * NOTE: 2 apps require consumer-supplied persistence (Notepad for stored
- * content, Minesweeper for leaderboard). They're exported individually
- * but absent from `bundledApps` — wire the prefs provider to opt them in.
+ * NOTE: Notepad requires consumer-supplied persistence for stored content.
  * WorldClock uses `useShellPrefs()` so it lives in `bundledApps`; without a
  * consumer-supplied prefs adapter the city list won't survive a reload.
  */
@@ -30,14 +28,6 @@ const PomodoroTimer = lazy(() => import('./PomodoroTimer'));
 const Notepad = lazy(() => import('./Notepad'));
 const WorldClock = lazy(() => import('./WorldClock'));
 const Stock = lazy(() => import('./Stock'));
-
-// ── Games ──
-const Chess = lazy(() => import('./Chess'));
-const Checkers = lazy(() => import('./Checkers'));
-const Sudoku = lazy(() => import('./Sudoku'));
-const Tetris = lazy(() => import('./Tetris'));
-const Game2048 = lazy(() => import('./Game2048'));
-const Minesweeper = lazy(() => import('./Minesweeper'));
 
 // ── Document apps ──
 const Preview = lazy(() => import('./Preview'));
@@ -58,15 +48,6 @@ export const utilityApps: WindowRegistry = {
   '/stock': { component: Stock, label: 'Stocks', size: 'sm', utility: true, widget: true, autoHeight: true, dimensions: [320, 360] },
 };
 
-export const gameApps: WindowRegistry = {
-  '/chess': { component: Chess, label: 'Chess', size: 'lg', compact: true },
-  '/checkers': { component: Checkers, label: 'Checkers', size: 'lg', compact: true },
-  '/sudoku': { component: Sudoku, label: 'Sudoku', size: 'sm', compact: true, dimensions: [360, 535] },
-  '/tetris': { component: Tetris, label: 'Tetris', size: 'md', compact: true, dimensions: [452, 618] },
-  '/2048': { component: Game2048, label: '2048', size: 'sm', compact: true },
-  '/minesweeper': { component: Minesweeper, label: 'Minesweeper', size: 'sm', compact: true },
-};
-
 export const documentApps: WindowRegistry = {
   '/preview': { component: Preview, label: 'Preview', size: '2xl', appStyle: true, multiInstance: true },
   '/documents': { component: Documents, label: 'Documents', size: 'xl', appStyle: true, multiInstance: true },
@@ -79,7 +60,6 @@ export const webApps: WindowRegistry = {
 
 export const bundledApps: WindowRegistry = {
   ...utilityApps,
-  ...gameApps,
   ...documentApps,
   ...webApps,
 };
@@ -93,12 +73,6 @@ export {
   PomodoroTimer,
   WorldClock,
   Stock,
-  Chess,
-  Checkers,
-  Sudoku,
-  Tetris,
-  Game2048,
-  Minesweeper,
   Preview,
   Documents,
   Files,

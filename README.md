@@ -18,7 +18,6 @@ A backend-less playground hosted on GitHub Pages. Wallpapers, themes, sticky not
 
 **Apps:**
 - **Utilities:** Calculator, Notepad, Spreadsheet, Weather, CurrencyConverter, PomodoroTimer, WorldClock, TodoList
-- **Games:** Chess, Checkers, Minesweeper, Sudoku, Tetris, 2048
 - **Documents / Web:** Preview, Documents, Files, Browser
 
 Most apps ship in the `bundledApps` registry; a few (WorldClock, Notepad) want consumer-supplied prefs wiring to persist content across reloads. The bundled `Customization` settings page is also exported separately for consumers to register at `/settings/customization`.
@@ -71,11 +70,11 @@ setShellAuthBridge({ user: { first_name: 'Demo' }, logout: () => {} });
 
 const navSections = [
   { to: '/', label: 'Home' },
-  { label: 'Games', items: bundledApps['/chess'] ? [
-    { to: '/chess', label: 'Chess' },
-    { to: '/tetris', label: 'Tetris' },
-    { to: '/2048', label: '2048' },
-  ] : [] },
+  { label: 'Utilities', items: [
+    { to: '/calculator', label: 'Calculator' },
+    { to: '/notepad', label: 'Notepad' },
+    { to: '/files', label: 'Files' },
+  ] },
 ];
 
 const queryClient = new QueryClient();
@@ -106,7 +105,7 @@ export default function App() {
 }
 ```
 
-That gives you the full desktop with all utility, game, document and web apps reachable through the start menu. Add your own entity windows by extending the registry, and wire the notification / bug-report / sticky-note systems through optional config callbacks when you want them.
+That gives you the full desktop with all utility, document and web apps reachable through the start menu. Add your own entity windows by extending the registry, and wire the notification / bug-report / sticky-note systems through optional config callbacks when you want them.
 
 ## Concepts
 
@@ -208,8 +207,8 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 | Export | Type |
 |---|---|
 | `bundledApps` | `WindowRegistry` — 12 ready-to-mount apps. |
-| `utilityApps`, `gameApps`, `documentApps`, `webApps` | Subsets of `bundledApps`. |
-| `Calculator`, `Spreadsheet`, `Weather`, `CurrencyConverter`, `PomodoroTimer`, `Chess`, `Checkers`, `Sudoku`, `Tetris`, `Game2048`, `TodoList`, `Browser` | Lazy components — use directly in custom registry entries. |
+| `utilityApps`, `documentApps`, `webApps` | Subsets of `bundledApps`. |
+| `Calculator`, `Spreadsheet`, `Weather`, `CurrencyConverter`, `PomodoroTimer`, `TodoList`, `Browser` | Lazy components — use directly in custom registry entries. |
 | `BUILTIN_APP_INFO` | Per-app metadata for the document/web apps (Spreadsheets, Notepad, Documents, Preview, Files, Browser): display name, independent app version and one-line description. Drives each app's "About" dialog (window title menu → About <App>), which also shows the shell version. |
 
 ### Misc

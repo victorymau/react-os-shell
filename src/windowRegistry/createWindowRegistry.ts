@@ -4,7 +4,7 @@
  * apps with the consumer's own entity windows.
  *
  *   const windows = createWindowRegistry(
- *     bundledApps,        // utility apps + games + Google apps from the package
+ *     bundledApps,        // utility + document + web apps from the package
  *     entityWindows,      // consumer-defined entity windows (e.g. Sales Order, Invoice)
  *   );
  *
