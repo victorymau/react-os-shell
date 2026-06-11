@@ -47,7 +47,7 @@ export const BUILTIN_APP_INFO = {
   },
   preview: {
     name: 'Preview',
-    version: '1.0.0',
+    version: '1.1.0',
     route: '/preview',
     description: 'Viewer for PDF documents, images, DXF drawings and 3D models.',
   },

@@ -389,8 +389,75 @@ interface PdfPanelProps {
 
 const ZOOM_PRESETS = [50, 75, 100, 125, 150, 200, 300, 400];
 
+// Trimmed copy of pdf.js's text-layer rules (pdf_viewer.css), under our own
+// class name so a consumer that loads the full viewer CSS doesn't
+// double-apply. The layer is a sheet of transparent spans positioned over
+// the canvas glyphs — that's what makes the rendered page selectable. Span
+// positions are % of page size; font-size derives from
+// --total-scale-factor, which the render effect sets to the viewport scale.
+// The .endOfContent sentinel plus the .selecting toggle keep a
+// drag-selection alive between lines and past the last line (same trick as
+// pdf.js's own TextLayerBuilder).
+const TEXT_LAYER_CSS = `
+.preview-pdf-textlayer {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  line-height: 1;
+  text-align: initial;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor, 1) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.preview-pdf-textlayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+.preview-pdf-textlayer > :not(.markedContent),
+.preview-pdf-textlayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.preview-pdf-textlayer .markedContent {
+  display: contents;
+}
+.preview-pdf-textlayer span[role="img"] {
+  user-select: none;
+  cursor: default;
+}
+.preview-pdf-textlayer ::selection {
+  background: rgba(0, 80, 255, 0.25);
+}
+.preview-pdf-textlayer br::selection {
+  background: transparent;
+}
+.preview-pdf-textlayer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: 0;
+  cursor: default;
+  user-select: none;
+}
+.preview-pdf-textlayer.selecting .endOfContent {
+  top: 0;
+}
+`;
+
 function PdfPanel({ url, filename, onDownload, onEmail }: PdfPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const textLayerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [pdf, setPdf] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [page, setPage] = useState(1);
@@ -441,6 +508,7 @@ function PdfPanel({ url, filename, onDownload, onEmail }: PdfPanelProps) {
     if (!pdf || !canvasRef.current) return;
     let cancelled = false;
     let task: { cancel: () => void; promise: Promise<void> } | null = null;
+    let textLayer: pdfjsLib.TextLayer | null = null;
     pdf.getPage(page).then(p => {
       if (cancelled || !canvasRef.current) return;
       const viewport = p.getViewport({ scale });
@@ -456,12 +524,40 @@ function PdfPanel({ url, filename, onDownload, onEmail }: PdfPanelProps) {
       const ctx = canvas.getContext('2d')!;
       task = p.render({ canvas, canvasContext: ctx, viewport });
       task.promise.catch(() => {});
+      // Selectable text layer — transparent spans over the canvas glyphs.
+      // Rebuilt per page/zoom render; pdf.js reads --total-scale-factor for
+      // span font-size and the container's own width/height.
+      const textEl = textLayerRef.current;
+      if (textEl) {
+        textEl.replaceChildren();
+        textEl.style.setProperty('--total-scale-factor', String(viewport.scale));
+        textLayer = new pdfjsLib.TextLayer({
+          textContentSource: p.streamTextContent(),
+          container: textEl,
+          viewport,
+        });
+        textLayer.render().then(() => {
+          if (cancelled) return;
+          const end = document.createElement('div');
+          end.className = 'endOfContent';
+          textEl.append(end);
+        }).catch(() => {});
+      }
     });
     return () => {
       cancelled = true;
       task?.cancel();
+      textLayer?.cancel();
     };
   }, [pdf, page, scale]);
+
+  // End a selection drag wherever the pointer is released — the .selecting
+  // class is added on pointerdown in the layer itself (see JSX below).
+  useEffect(() => {
+    const up = () => textLayerRef.current?.classList.remove('selecting');
+    window.addEventListener('pointerup', up);
+    return () => window.removeEventListener('pointerup', up);
+  }, []);
 
   const handlePrint = () => {
     if (!pdf) return;
@@ -611,7 +707,15 @@ function PdfPanel({ url, filename, onDownload, onEmail }: PdfPanelProps) {
           <div className="flex items-center justify-center h-full text-gray-400 text-sm">Loading PDF...</div>
         ) : (
           <div className="min-h-full flex items-center justify-center p-4">
-            <canvas ref={canvasRef} className="shadow-lg rounded" />
+            <style>{TEXT_LAYER_CSS}</style>
+            <div className="relative shadow-lg rounded">
+              <canvas ref={canvasRef} className="block rounded" />
+              <div
+                ref={textLayerRef}
+                className="preview-pdf-textlayer"
+                onPointerDown={e => e.currentTarget.classList.add('selecting')}
+              />
+            </div>
           </div>
         )}
       </div>
