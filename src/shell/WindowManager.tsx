@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient, { isShellApiClientConfigured } from '../api/client';
 import { WINDOW_REGISTRY, isPageEntry, isEntityEntry, type PageRegistryEntry, type ModalRegistryEntry } from '../windowRegistry/types';
 import Modal, { triggerSplitView, modalDepthRef, getActiveModalId, subscribeActive, activateModal, useWindowMenuItem, ExposeBackdrop } from './Modal';
+import WindowErrorBoundary, { WindowCrashedFallback } from './WindowErrorBoundary';
 import PartNumberDetailPopup from './PartNumberDetailPopup';
 import LoadingSpinner from './LoadingSpinner';
 import { navIcons } from '../shell-config/nav';
@@ -836,18 +837,32 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
       {/* Exposé backdrop — singleton overlay shown when exposé mode is on. */}
       <ExposeBackdrop />
 
-      {/* All open windows — pages and entities (hidden on auth pages) */}
+      {/* All open windows — pages and entities (hidden on auth pages).
+          Modal already guards its body content; this outer boundary is the
+          last resort for crashes outside the body — a registry title()/footer()
+          throwing on malformed data, or a rendersOwnModal component dying
+          before its Modal mounts — so one bad window can never unmount the
+          desktop. The fallback swaps the window for a plain Modal carrying the
+          same crash state; its close button still removes the window. */}
       {!isAuthPage && openWindows.map(item => (
-        item.type === 'page' ? (
-          <PageWindow key={item.id} item={item} onClose={() => closeEntity(item.id)} />
-        ) : (
-          <RestoredRegistryModal
-            key={item.id}
-            item={item}
-            onClose={() => closeEntity(item.id)}
-            onMinimize={() => {}}
-          />
-        )
+        <WindowErrorBoundary
+          key={item.id}
+          fallback={(error, reset) => (
+            <Modal open={true} onClose={() => closeEntity(item.id)} title={item.label} size="md" autoHeight windowKey={item.id}>
+              <WindowCrashedFallback error={error} onReload={reset} />
+            </Modal>
+          )}
+        >
+          {item.type === 'page' ? (
+            <PageWindow item={item} onClose={() => closeEntity(item.id)} />
+          ) : (
+            <RestoredRegistryModal
+              item={item}
+              onClose={() => closeEntity(item.id)}
+              onMinimize={() => {}}
+            />
+          )}
+        </WindowErrorBoundary>
       ))}
     </MinimizedContext.Provider>
   );

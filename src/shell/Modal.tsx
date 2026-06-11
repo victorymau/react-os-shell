@@ -7,6 +7,7 @@ import { glassStyle as getGlassStyle } from '../utils/glass';
 import { PopupMenu, PopupMenuItem, PopupMenuDivider } from './PopupMenu';
 import { useIsMobile } from './useIsMobile';
 import { getSwipingParentKey, setSwipingParentKey, subscribeSwipingParentKey } from './mobileSwipeStore';
+import WindowErrorBoundary from './WindowErrorBoundary';
 
 /** Context that passes the modal's unique ID to children */
 const ModalIdContext = createContext<string>('');
@@ -1742,7 +1743,12 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
           {...(widget ? { onPointerDown: startDrag, onContextMenu: (e: React.MouseEvent) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }); } } : {})}
           className={`${(autoHeight && !autoHeightResolved) ? 'flex-none' : 'flex-1 min-h-0'} flex flex-col ${widget ? 'p-0 cursor-move' : appStyle ? 'p-0' : flushBody ? 'p-0' : compact ? 'p-2' : 'p-4'} ${widget ? '' : 'backdrop-blur-sm'} ${(autoHeight && !autoHeightResolved) ? 'overflow-visible' : ((bodyScroll === false || appStyle || flushBody) ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain')} ${widget ? 'rounded-2xl select-none' : ''}`}
           style={{ ...(widget ? { touchAction: 'none' } : {}), backgroundColor: widget ? 'transparent' : (isActive ? `rgb(var(--window-content-rgb) / var(--active-content-opacity, 0.9))` : `rgb(var(--window-content-rgb) / var(--inactive-content-opacity, 0.8))`) }}>
-          {children}
+          {/* A throwing page/entity component must not unmount the desktop —
+              the boundary swaps the body for an inline crash state while the
+              window chrome (close/minimize) and all other windows keep running. */}
+          <WindowErrorBoundary>
+            {children}
+          </WindowErrorBoundary>
         </div>
         </ModalActionsContext.Provider>
         </ModalIdContext.Provider>
