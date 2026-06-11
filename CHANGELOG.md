@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [2.3.0] — 2026-06-11
+
+### Added
+- **`3xl` window size** — a 1408 px preset above `2xl` (1152 px), for dashboards and side-by-side editors that want more room without maximizing. Accepted everywhere `size` is: registry entries and `<Modal>` directly.
+- **`PopupMenu` `portal` prop.** Menus opened from *inside* a window were invisible: the window panel is a transformed, backdrop-filtered, `overflow-hidden` container, which re-anchors `position: fixed` descendants to itself and clips them. `portal` renders the menu into `document.body` so viewport coordinates work as written. Default off — existing call sites are unchanged.
+- **Preview: PDF text is now selectable.** PDF pages carry a pdf.js text layer — transparent text positioned over the rendered canvas — so you can drag-select and copy text like in a native PDF reader, at any zoom level and on any page. Scanned/image-only PDFs have no embedded text and so nothing to select. (Preview app → 1.1.0.)
+
+### Changed
+- **Demo start menu restructured.** The component showcases now lead the menu as flat top-level rows (List, Grid, Kanban, Form Controls, Window Styles, Sidebar, Top Nav, Breadcrumbs, Status Badges, and a new Keyboard Shortcuts entry that pops the `?` overlay), followed by Preferences with Help Center beneath it, and the bundled apps (Spreadsheets, Notepad, Documents, Preview, Files, Browser) tucked into the Utilities tray.
+- **Demo Window Styles:** added a **Giant (`3xl`)** card, and the widget example now paints its own frosted-glass background — widget windows are a transparent canvas by design (Weather, Calculator bring their own), so the unstyled demo body was unreadable over other windows.
+
+### Fixed
+- **Demo: the Form Controls "Open menu…" button did nothing** — the menu rendered clipped inside the window panel. It now uses the new `portal` prop.
+
 ## [2.2.0] — 2026-06-11
 
 ### Added

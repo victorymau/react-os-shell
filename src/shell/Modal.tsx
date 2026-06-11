@@ -251,7 +251,7 @@ interface ModalProps {
   icon?: React.ReactNode;
   /** Text to copy when the copy icon in the header is clicked (e.g. entity number) */
   copyText?: string;
-  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl';
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl';
   dirty?: boolean | 'auto';
   onNext?: () => void;
   onPrev?: () => void;
@@ -305,7 +305,7 @@ interface ModalProps {
 }
 
 const sizeDefaults: Record<string, number> = {
-  sm: 384, md: 512, lg: 672, xl: 896, '2xl': 1152,
+  sm: 384, md: 512, lg: 672, xl: 896, '2xl': 1152, '3xl': 1408,
 };
 
 // The user's "Default window size" preference (Settings → Behavior). Layout

@@ -17,7 +17,7 @@ import type { ReactNode, LazyExoticComponent } from 'react';
 export interface PageRegistryEntry {
   component: LazyExoticComponent<any>;
   label: string;
-  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl';
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl';
   allowPinOnTop?: boolean;
   /** Utility apps don't show as taskbar window tabs. */
   utility?: boolean;

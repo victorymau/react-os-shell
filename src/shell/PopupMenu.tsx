@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import { glassStyle, GLASS_DIVIDER } from '../utils/glass';
 
 /**
@@ -12,6 +13,13 @@ export interface PopupMenuProps {
   className?: string;
   onClose?: () => void;
   minWidth?: number;
+  /** Render into document.body instead of in place. Required when the menu
+   *  is opened from INSIDE a window: the window panel is a transformed /
+   *  backdrop-filtered `overflow-hidden` container, which both re-anchors
+   *  `position: fixed` descendants to itself and clips them — a menu
+   *  positioned at viewport coordinates ends up offset or invisible.
+   *  Portaling restores true viewport positioning. */
+  portal?: boolean;
 }
 
 function getDensity(): 'tight' | 'normal' {
@@ -19,7 +27,7 @@ function getDensity(): 'tight' | 'normal' {
 }
 
 /** Container for a popup menu — auto-clamps to stay within viewport */
-export function PopupMenu({ children, style, className = '', onClose, minWidth = 180 }: PopupMenuProps) {
+export function PopupMenu({ children, style, className = '', onClose, minWidth = 180, portal = false }: PopupMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -83,7 +91,7 @@ export function PopupMenu({ children, style, className = '', onClose, minWidth =
 
   const tight = getDensity() === 'tight';
 
-  return (
+  const menu = (
     <div ref={ref}
       className={`fixed z-[400] rounded-2xl ${tight ? 'py-1' : 'py-1.5'} ${className}`}
       style={{ minWidth, animation: 'popup-in 0.12s ease-out', ...glassStyle(), ...style }}>
@@ -91,6 +99,8 @@ export function PopupMenu({ children, style, className = '', onClose, minWidth =
       <style>{`@keyframes popup-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }`}</style>
     </div>
   );
+
+  return portal ? createPortal(menu, document.body) : menu;
 }
 
 /** A clickable menu item */

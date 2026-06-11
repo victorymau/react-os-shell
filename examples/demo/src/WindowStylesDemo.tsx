@@ -1,4 +1,4 @@
-import { useWindowManager } from 'react-os-shell';
+import { useWindowManager, glassStyle } from 'react-os-shell';
 
 /**
  * Window Styles — opens one real window per chrome variant the shell's
@@ -40,7 +40,15 @@ export function StandardWindow() {
 export function FullSizeWindow() {
   return (
     <Body title="Full size" flags={["size: '2xl'"]}>
-      <p>The largest size preset — used by the Spreadsheets and Browser apps. Sizes are presets (<Chip>sm</Chip> <Chip>md</Chip> <Chip>lg</Chip> <Chip>xl</Chip> <Chip>2xl</Chip>); the ⤢ button or a title-bar double-click takes any window truly full-screen.</p>
+      <p>The preset used by the Spreadsheets and Browser apps. Sizes are presets (<Chip>sm</Chip> <Chip>md</Chip> <Chip>lg</Chip> <Chip>xl</Chip> <Chip>2xl</Chip> <Chip>3xl</Chip>); the ⤢ button or a title-bar double-click takes any window truly full-screen.</p>
+    </Body>
+  );
+}
+
+export function GiantWindow() {
+  return (
+    <Body title="Giant (3xl)" flags={["size: '3xl'"]}>
+      <p>The biggest preset — 1408&nbsp;px wide, for dashboards and side-by-side editors that want more room than <Chip>2xl</Chip> (1152&nbsp;px) without going full-screen.</p>
     </Body>
   );
 }
@@ -55,12 +63,17 @@ export function CompactWindow() {
 
 export function WidgetWindow() {
   return (
-    <div className="p-4 text-sm text-gray-600 space-y-2">
-      <h3 className="text-sm font-semibold text-gray-900">Widget</h3>
-      <div className="flex flex-wrap gap-1">
-        <Chip>{'widget: true'}</Chip> <Chip>{'utility: true'}</Chip> <Chip>{'allowPinOnTop: true'}</Chip> <Chip>{'dimensions: [320, 220]'}</Chip>
+    // Widget windows are a transparent canvas — the widget paints its own
+    // background (Weather's sky gradient, Calculator's keypad). This one
+    // uses the shell's frosted glass so it stays readable over anything.
+    <div className="h-full rounded-2xl" style={glassStyle()}>
+      <div className="p-4 text-sm text-gray-600 space-y-2">
+        <h3 className="text-sm font-semibold text-gray-900">Widget</h3>
+        <div className="flex flex-wrap gap-1">
+          <Chip>{'widget: true'}</Chip> <Chip>{'utility: true'}</Chip> <Chip>{'allowPinOnTop: true'}</Chip>
+        </div>
+        <p>No title bar — drag anywhere on the body, right-click for close / pin, and no taskbar tab. The window itself is transparent; widgets bring their own background, like this glass.</p>
       </div>
-      <p>No title bar at all — drag anywhere on the body to move it, right-click for close / pin. Utility windows also skip the taskbar, like the Weather and Calculator widgets.</p>
     </div>
   );
 }
@@ -118,7 +131,8 @@ export function PinnedWindow() {
 
 const STYLES: { route: string; name: string; flags: string[]; blurb: string }[] = [
   { route: '/win-standard', name: 'Standard', flags: ["size: 'md'"], blurb: 'Full title bar, padded body, footer slot — the default.' },
-  { route: '/win-full', name: 'Full size', flags: ["size: '2xl'"], blurb: 'Largest preset; ⤢ maximizes any window the rest of the way.' },
+  { route: '/win-full', name: 'Full size', flags: ["size: '2xl'"], blurb: 'The big-app preset; ⤢ maximizes any window the rest of the way.' },
+  { route: '/win-3xl', name: 'Giant', flags: ["size: '3xl'"], blurb: 'Bigger than 2xl — 1408 px for dashboards and split views.' },
   { route: '/win-compact', name: 'Compact title', flags: ['compact: true'], blurb: 'Slim header with title + close only, no footer.' },
   { route: '/win-widget', name: 'Widget', flags: ['widget: true', 'utility: true'], blurb: 'No title bar — drag the body, right-click for actions, no taskbar tab.' },
   { route: '/win-app', name: 'App style', flags: ['appStyle: true'], blurb: 'Small title bar, zero padding — for apps with their own chrome.' },

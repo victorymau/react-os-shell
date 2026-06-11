@@ -172,7 +172,9 @@ export default function FormControlsDemo() {
         Open menu…
       </button>
       {menu && (
-        <PopupMenu style={{ left: menu.x, top: menu.y }} onClose={() => setMenu(null)} minWidth={180}>
+        // `portal` is required for menus opened from inside a window — the
+        // window panel re-anchors and clips `fixed` children otherwise.
+        <PopupMenu portal style={{ left: menu.x, top: menu.y }} onClose={() => setMenu(null)} minWidth={180}>
           <PopupMenuLabel>Sales order</PopupMenuLabel>
           <PopupMenuItem onClick={() => { toast.success('Duplicated.'); setMenu(null); }}>Duplicate</PopupMenuItem>
           <PopupMenuItem onClick={() => { toast.success('Exported as PDF.'); setMenu(null); }}>Export PDF</PopupMenuItem>
