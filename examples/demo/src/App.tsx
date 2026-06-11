@@ -26,6 +26,7 @@ import {
   DesktopHostProvider,
   BugReportProvider,
   BugReportConfigProvider,
+  DevIndicator,
   Modal,
   setShellAuthBridge,
   setShellWindowRegistry,
@@ -48,6 +49,8 @@ import { DEMO_STATUS_GROUPS } from './demoStatusGroups';
 // preference patches (window-menu "Add to Desktop", fav stars) to the demo's
 // localStorage prefs.
 import { demoApiClient, bindDemoApiPrefs } from './demoApiClient';
+// In-memory store behind the Suggestion-or-Bug flow + Bug Reports page.
+import { addDemoBugReport, resolveDemoBugReport, deleteDemoBugReport } from './demoBugStore';
 
 // Floating panel toggled with Alt+Shift+T to test toast / notification /
 // confirm / confirmDestructive / prompt visually. Eagerly imported because
@@ -70,6 +73,8 @@ const BadgesDemo = lazy(() => import('./BadgesDemo'));
 const FormControlsDemo = lazy(() => import('./FormControlsDemo'));
 const WindowStylesDemo = lazy(() => import('./WindowStylesDemo'));
 const ShortcutsDemo = lazy(() => import('./ShortcutsDemo'));
+const TableDemo = lazy(() => import('./TableDemo'));
+const BugReportsDemo = lazy(() => import('./BugReportsDemo'));
 // Per-style window bodies (named exports of the same module) — each is
 // registered under its own route with the matching chrome flags.
 const winStyle = (name: string) =>
@@ -151,9 +156,13 @@ setShellWindowRegistry(createWindowRegistry(bundledApps, {
   '/win-widget': { component: winStyle('WidgetWindow'), label: 'Widget window', widget: true, utility: true, allowPinOnTop: true, dimensions: [320, 220] },
   '/win-app': { component: winStyle('AppStyleWindow'), label: 'App-style window', size: 'lg', appStyle: true },
   '/win-flush': { component: winStyle('FlushBodyWindow'), label: 'Flush-body window', size: 'lg', flushBody: true },
-  '/win-auto': { component: winStyle('AutoHeightWindow'), label: 'Auto-height window', size: 'sm', autoHeight: true },
+  '/win-auto': { component: winStyle('AutoHeightWindow'), label: 'Auto-height window', size: 'sm', autoHeight: true, autoMinHeight: 280 },
   '/win-pinned': { component: winStyle('PinnedWindow'), label: 'Pinned window', size: 'sm', allowPinOnTop: true },
+  '/win-multi': { component: winStyle('MultiInstanceWindow'), label: 'Multi-instance window', size: 'sm', autoHeight: true, multiInstance: true },
+  '/win-pos': { component: winStyle('PositionedWindow'), label: 'Positioned window', size: 'sm', autoHeight: true, initialPosition: 'top-right' },
   '/shortcuts-demo': { component: ShortcutsDemo, label: 'Keyboard Shortcuts', size: 'sm', autoHeight: true },
+  '/table-demo': { component: TableDemo, label: 'Table', size: 'xl', flushBody: true },
+  '/bugs-demo': { component: BugReportsDemo, label: 'Bug Reports', size: 'xl', flushBody: true },
   // Entity windows opened by ⌘K search results (see searchDemo.tsx).
   person: DEMO_ENTITY_WINDOWS.person,
   project: DEMO_ENTITY_WINDOWS.project,
@@ -218,6 +227,7 @@ const lookupLabel = (to: string) =>
 
 const COMPONENT_ITEMS = [
   { to: '/list-demo', label: 'List' },
+  { to: '/table-demo', label: 'Table' },
   { to: '/grid-demo', label: 'Grid' },
   { to: '/kanban-demo', label: 'Kanban' },
   { to: '/form-demo', label: 'Form Controls' },
@@ -226,6 +236,7 @@ const COMPONENT_ITEMS = [
   { to: '/topnav-demo', label: 'Top Nav' },
   { to: '/breadcrumbs-demo', label: 'Breadcrumbs' },
   { to: '/badges-demo', label: 'Status Badges' },
+  { to: '/bugs-demo', label: 'Bug Reports' },
   { to: '/shortcuts-demo', label: 'Keyboard Shortcuts' },
 ];
 
@@ -283,6 +294,8 @@ const NAV_ICONS: Record<string, JSX.Element> = {
   '/form-demo': path('M3.75 6.75h16.5v4.5H3.75zM6.5 9h6M16 8l1.5 2L19 8M3.75 14.25h16.5v3H3.75z'),
   '/windows-demo': path('M7.5 7.5V5.25A1.5 1.5 0 019 3.75h10.5a1.5 1.5 0 011.5 1.5v9a1.5 1.5 0 01-1.5 1.5H17.5M3 9.75A1.5 1.5 0 014.5 8.25H15a1.5 1.5 0 011.5 1.5v9a1.5 1.5 0 01-1.5 1.5H4.5a1.5 1.5 0 01-1.5-1.5v-9zM3 12h13.5'),
   '/shortcuts-demo': path('M2.25 7.5A1.5 1.5 0 013.75 6h16.5a1.5 1.5 0 011.5 1.5v9a1.5 1.5 0 01-1.5 1.5H3.75a1.5 1.5 0 01-1.5-1.5v-9zM6 9.75h.01M9 9.75h.01M12 9.75h.01M15 9.75h.01M18 9.75h.01M6 12.75h.01M9 12.75h.01M12 12.75h.01M15 12.75h.01M18 12.75h.01M7.5 15.75h9'),
+  '/table-demo': path('M3.75 5.25h16.5v13.5H3.75zM3.75 9.75h16.5M9.5 9.75v9M15 9.75v9'),
+  '/bugs-demo': path('M12 12.75c1.148 0 2.278.08 3.383.237 1.037.146 1.866.966 1.866 2.013 0 3.728-2.35 6.75-5.25 6.75S6.75 18.728 6.75 15c0-1.046.83-1.867 1.866-2.013A24.204 24.204 0 0112 12.75zm0 0c2.883 0 5.647.508 8.207 1.44a23.91 23.91 0 01-1.152 6.06M12 12.75c-2.883 0-5.647.508-8.208 1.44.125 2.104.52 4.136 1.153 6.06M12 12.75a2.25 2.25 0 002.248-2.354M12 12.75a2.25 2.25 0 01-2.248-2.354M12 8.25c.995 0 1.971-.08 2.922-.236.403-.066.74-.358.795-.762a3.778 3.778 0 00-.399-2.25M12 8.25c-.995 0-1.97-.08-2.922-.236-.402-.066-.74-.358-.795-.762a3.734 3.734 0 01.4-2.253M12 8.25a2.25 2.25 0 00-2.248 2.146M12 8.25a2.25 2.25 0 012.248 2.146M8.683 5a6.032 6.032 0 01-1.155-1.002c.07-.63.27-1.222.574-1.747m.581 2.749A3.75 3.75 0 0115.318 5m0 0c.427-.283.815-.62 1.155-.999a4.471 4.471 0 00-.575-1.752M4.921 6a24.048 24.048 0 00-.392 3.314c1.668.546 3.416.914 5.223 1.082M19.08 6c.205 1.08.337 2.187.392 3.314a23.882 23.882 0 01-5.223 1.082'),
   '/help-demo': path('M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z'),
   '/badges-demo': path('M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.746 3.746 0 011.043 3.296A3.745 3.745 0 0121 12z'),
 };
@@ -356,15 +369,18 @@ const DEMO_NOTIFICATIONS: NotificationsConfig = {
 
 // Bug-report flow: the shell captures + annotates the screenshot and builds
 // the payload; the consumer's submit callback decides where it goes. The
-// demo "files" it as an in-app notification so the round trip is visible.
+// demo files it in the in-memory store (browsable via Components ▸ Bug
+// Reports, rendered by <BugReportDetail>) and raises a notification.
 const DEMO_BUG_CONFIG: BugReportConfig = {
   submit: async (p) => {
-    console.info('[demo] bug report payload', p);
+    const report = addDemoBugReport(p);
     pushDemoNotification(
-      p.reportType === 'bug' ? 'Bug report received' : 'Suggestion received',
+      p.reportType === 'bug' ? `Bug report received (${report.report_code})` : `Suggestion received (${report.report_code})`,
       p.description?.slice(0, 80) || '(no description)',
     );
   },
+  resolve: async (id, is_resolved, resolution_note) => resolveDemoBugReport(id, is_resolved, resolution_note),
+  delete: async (id) => deleteDemoBugReport(id),
 };
 
 // Pick a wallpaper once per page load; reused across renders.
@@ -536,6 +552,7 @@ export default function App() {
                               categories={START_MENU_CATEGORIES}
                               notifications={DEMO_NOTIFICATIONS}
                               search={DEMO_SEARCH}
+                              taskbarTrayLeft={<DevIndicator />}
                             />
                           }
                         />

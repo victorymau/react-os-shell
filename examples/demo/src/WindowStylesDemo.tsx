@@ -1,4 +1,4 @@
-import { useWindowManager, glassStyle } from 'react-os-shell';
+import { useWindowManager, glassStyle, toggleExposeMode } from 'react-os-shell';
 
 /**
  * Window Styles — opens one real window per chrome variant the shell's
@@ -115,8 +115,24 @@ export function FlushBodyWindow() {
 
 export function AutoHeightWindow() {
   return (
-    <Body title="Auto height" flags={['autoHeight: true', "size: 'sm'"]}>
-      <p>The window measures its content and sizes itself — no empty space below this text. Right for forms and simple tools with naturally-flowing content.</p>
+    <Body title="Auto height" flags={['autoHeight: true', 'autoMinHeight: 280', "size: 'sm'"]}>
+      <p>The window measures its content and sizes itself — no empty space below this text. <Chip>autoMinHeight</Chip> sets the floor (default 240&nbsp;px) so very short content still gets a usable window.</p>
+    </Body>
+  );
+}
+
+export function MultiInstanceWindow() {
+  return (
+    <Body title="Multi-instance" flags={['multiInstance: true', 'autoHeight: true']}>
+      <p>Every <Chip>openPage(route)</Chip> opens a <em>new</em> copy instead of refocusing the existing one — click the card's Open button a few times and watch the taskbar group the instances under one icon. The Spreadsheets, Documents and Browser apps work this way.</p>
+    </Body>
+  );
+}
+
+export function PositionedWindow() {
+  return (
+    <Body title="Initial position" flags={["initialPosition: 'top-right'", 'autoHeight: true']}>
+      <p>Skips the default center placement and opens anchored to the top-right corner — the hint the bundled Notepad uses so it lands like a notepad. <Chip>'top-left'</Chip> is the other preset.</p>
     </Body>
   );
 }
@@ -137,8 +153,10 @@ const STYLES: { route: string; name: string; flags: string[]; blurb: string }[] 
   { route: '/win-widget', name: 'Widget', flags: ['widget: true', 'utility: true'], blurb: 'No title bar — drag the body, right-click for actions, no taskbar tab.' },
   { route: '/win-app', name: 'App style', flags: ['appStyle: true'], blurb: 'Small title bar, zero padding — for apps with their own chrome.' },
   { route: '/win-flush', name: 'Flush body', flags: ['flushBody: true'], blurb: 'Standard chrome, edge-to-edge body for sidebar layouts.' },
-  { route: '/win-auto', name: 'Auto height', flags: ['autoHeight: true'], blurb: 'Window height hugs the content.' },
+  { route: '/win-auto', name: 'Auto height', flags: ['autoHeight: true', 'autoMinHeight: 280'], blurb: 'Window height hugs the content, with a floor.' },
   { route: '/win-pinned', name: 'Pin on top', flags: ['allowPinOnTop: true'], blurb: 'Title-bar pin keeps the window above everything.' },
+  { route: '/win-multi', name: 'Multi-instance', flags: ['multiInstance: true'], blurb: 'Each Open spawns another copy — the taskbar groups them.' },
+  { route: '/win-pos', name: 'Initial position', flags: ["initialPosition: 'top-right'"], blurb: 'Opens anchored to a corner instead of centered.' },
 ];
 
 export default function WindowStylesDemo() {
@@ -150,10 +168,20 @@ export default function WindowStylesDemo() {
         <p className="mt-1 text-sm text-gray-500 max-w-2xl">
           Every window in the shell is declared in the window registry with a
           handful of chrome flags. Each card opens a live window in that
-          style — stack a few up, minimize them, hit Exposé from the taskbar
-          right-click, or drag them around. (This launcher itself is a
-          standard <code className="text-xs bg-gray-100 rounded px-1">size: 'lg'</code> window.)
+          style — stack a few up, minimize them, drag them around. (This
+          launcher itself is a standard <code className="text-xs bg-gray-100 rounded px-1">size: 'lg'</code> window.)
         </p>
+        <button
+          onClick={() => {
+            // Make sure there's something to tile, then fan everything out.
+            openPage('/win-standard');
+            openPage('/win-compact');
+            setTimeout(() => toggleExposeMode(), 350);
+          }}
+          className="mt-2 px-2.5 py-1 text-xs rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 shadow-sm"
+        >
+          Try Exposé — tile every open window
+        </button>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {STYLES.map(s => (

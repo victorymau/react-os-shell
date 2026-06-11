@@ -44,8 +44,23 @@ function midpoint(siblings: Task[], toIndex: number): number {
   return 0;
 }
 
+let nextId = INITIAL.length + 1;
+
 export default function KanbanDemo() {
   const [tasks, setTasks] = useState<Task[]>(INITIAL);
+
+  const handleAdd = (toColumn: string) => {
+    setTasks(prev => {
+      // Drop the new card at the top of its column (one below the current min order).
+      const minOrder = prev
+        .filter(t => t.status === toColumn)
+        .reduce((m, t) => Math.min(m, t.order), 0);
+      return [
+        { id: `t${nextId++}`, title: 'New task', status: toColumn, order: minOrder - 1 },
+        ...prev,
+      ];
+    });
+  };
 
   const handleMove = (id: string, toColumn: string, toIndex: number) => {
     setTasks(prev => {
@@ -76,6 +91,7 @@ export default function KanbanDemo() {
           getId={t => t.id}
           sortInColumn={(a, b) => a.order - b.order}
           onMove={handleMove}
+          onAddItem={handleAdd}
           columnEmptyText="Drop tasks here"
           renderCard={t => <div className="text-sm leading-snug text-gray-800">{t.title}</div>}
         />

@@ -18,7 +18,7 @@ export type {
 } from './windowRegistry/types';
 
 // ── Shell components ──
-export { default as Modal, ModalActions, CopyButton, CancelButton, useWindowMenuItem, WindowTitle, useWindowTitle, useModalActive, useWidgetSettings, setWindowDefaultPosition, setWindowPosition, getWindowPosition, toggleExposeMode, exitExposeMode, setExposeHighlight, getExposeHighlight, subscribeExposeHighlight, commitExposeHighlight } from './shell/Modal';
+export { default as Modal, ModalActions, CopyButton, CancelButton, useWindowMenuItem, WindowTitle, useWindowTitle, useModalActive, useWidgetSettings, setWindowDefaultPosition, setWindowPosition, getWindowPosition, toggleExposeMode, exitExposeMode, setExposeHighlight, getExposeHighlight, subscribeExposeHighlight, commitExposeHighlight, registerModalEscapeInterceptor } from './shell/Modal';
 export { default as WindowErrorBoundary, WindowCrashedFallback } from './shell/WindowErrorBoundary';
 export { PopupMenu, PopupMenuItem, PopupMenuDivider, PopupMenuLabel } from './shell/PopupMenu';
 export { ConfirmProvider, confirm, confirmDestructive, prompt } from './shell/ConfirmDialog';

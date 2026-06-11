@@ -524,6 +524,29 @@ export function subscribeActive(cb: () => void) {
   activeListeners.add(cb);
   return () => { activeListeners.delete(cb); };
 }
+
+// ── Escape interceptors ────────────────────────────────────────────────────
+// Window content can claim an Escape press before the topmost-modal handler
+// closes the window — e.g. the DXF Preview's measure tool exits AutoCAD-style
+// (clear the command input, then the tool, and only a further Esc closes the
+// window). Interceptors run in registration order; the first to return true
+// consumes the event (the modal neither closes nor sees it). An interceptor
+// is global, so it must check it belongs to the *active* modal itself (via
+// `getActiveModalId()`) before consuming.
+const escapeInterceptors = new Set<(e: KeyboardEvent) => boolean>();
+/** Register an Escape interceptor; returns an unregister function. */
+export function registerModalEscapeInterceptor(fn: (e: KeyboardEvent) => boolean): () => void {
+  escapeInterceptors.add(fn);
+  return () => { escapeInterceptors.delete(fn); };
+}
+function runEscapeInterceptors(e: KeyboardEvent): boolean {
+  for (const fn of escapeInterceptors) {
+    try {
+      if (fn(e)) return true;
+    } catch { /* a broken interceptor must not block closing */ }
+  }
+  return false;
+}
 /** Hook: returns true if this modal ID is the frontmost */
 function useIsActiveModal(modalId: string): boolean {
   const activeId = useSyncExternalStore(subscribeActive, getActiveModalId);
@@ -1482,6 +1505,8 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     if (widget) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && activationOrder[activationOrder.length - 1] === modalId) {
+        // Window content gets first refusal (measure tools, command bars…).
+        if (runEscapeInterceptors(e)) { e.preventDefault(); e.stopPropagation(); return; }
         e.preventDefault(); e.stopPropagation(); guardedClose();
       }
     };

@@ -12,7 +12,7 @@ import { useState, useEffect, useRef, createContext, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import * as pdfjsLib from 'pdfjs-dist';
 import toast from '../shell/toast';
-import { WindowTitle, getActiveModalId } from '../shell/Modal';
+import { WindowTitle, getActiveModalId, registerModalEscapeInterceptor } from '../shell/Modal';
 import AboutApp from './_about';
 import ImageAnnotator, { type ImageAnnotatorHandle } from './ImageAnnotator';
 
@@ -747,6 +747,26 @@ interface DxfLayer {
   visible: boolean;
 }
 
+/** AutoCAD drawing/editing commands we recognise (so the muscle-memory
+ *  user gets a helpful "viewer is read-only" echo instead of a generic
+ *  unknown-command error). Alias → canonical name. */
+const DXF_EDIT_COMMANDS: Record<string, string> = {
+  l: 'LINE', line: 'LINE', pl: 'PLINE', pline: 'PLINE',
+  ex: 'EXTEND', extend: 'EXTEND', tr: 'TRIM', trim: 'TRIM',
+  e: 'ERASE', erase: 'ERASE', m: 'MOVE', move: 'MOVE',
+  co: 'COPY', cp: 'COPY', copy: 'COPY', o: 'OFFSET', offset: 'OFFSET',
+  f: 'FILLET', fillet: 'FILLET', cha: 'CHAMFER', chamfer: 'CHAMFER',
+  x: 'EXPLODE', explode: 'EXPLODE', mi: 'MIRROR', mirror: 'MIRROR',
+  ro: 'ROTATE', rotate: 'ROTATE', sc: 'SCALE', scale: 'SCALE',
+  s: 'STRETCH', stretch: 'STRETCH', ar: 'ARRAY', array: 'ARRAY',
+  rec: 'RECTANG', rectang: 'RECTANG', rectangle: 'RECTANG',
+  c: 'CIRCLE', circle: 'CIRCLE', a: 'ARC', arc: 'ARC',
+  el: 'ELLIPSE', ellipse: 'ELLIPSE', t: 'MTEXT', mt: 'MTEXT', mtext: 'MTEXT', text: 'TEXT',
+  b: 'BLOCK', block: 'BLOCK', i: 'INSERT', insert: 'INSERT', ha: 'HATCH', hatch: 'HATCH',
+};
+
+const DXF_CMD_HELP = 'Commands: DI distance · DIM/DLI linear dim · H / V force axis · <number> lock Δ · U undo pick · Z fit · LA layers · Esc exit';
+
 function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<any>(null);
@@ -758,22 +778,25 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
 
   // Measurement tool — DXF (2D) edition.
   //
-  // Two modes (toggled via a Point | ⊥ pill that appears next to the
-  // Measure button):
-  //   - Point: straight-line distance between two picks.
-  //   - ⊥:     the first pick must snap to a line; the second pick can
-  //            be anywhere; we report the perpendicular distance from the
-  //            second pick to the first line.
+  // Four modes (pill next to the Measure button, or typed commands):
+  //   - Auto:  AutoCAD DIMLINEAR — measures ΔX or ΔY, whichever delta is
+  //            larger between the two picks.
+  //   - H / V: force the axis (DIMLINEAR Horizontal / Vertical).
+  //   - Point: straight-line (Euclidean) distance, AutoCAD DIST.
   //
   // All visuals (markers, line, distance label, snap indicator) are HTML/
   // SVG overlays positioned via camera projection — fixed pixel size, so
   // they don't grow into giant orange blobs when the user zooms in.
-  // Snap-to-endpoint and snap-to-nearest-on-line are computed in screen
-  // space against a cached list of every line segment in the scene
-  // (built once on viewer load).
+  // Snapping (endpoint / node / midpoint / intersection / nearest-on-line)
+  // is computed in screen space against a cached list of every line
+  // segment and point in the scene (built once per measure session).
   const [measureEnabled, setMeasureEnabled] = useState(false);
-  const [measureMode, setMeasureMode] = useState<'point' | 'horizontal' | 'vertical'>('horizontal');
+  const [measureMode, setMeasureMode] = useState<'point' | 'horizontal' | 'vertical' | 'auto'>('auto');
   const [measureDistance, setMeasureDistance] = useState<number | null>(null);
+  /** Axis the current measurement actually resolved to — differs from
+   *  measureMode when mode is 'auto' (DIMLINEAR picks the dominant axis).
+   *  Drives the toolbar chip arrow/tooltip. */
+  const [measureResolved, setMeasureResolved] = useState<'point' | 'horizontal' | 'vertical' | null>(null);
   /** When set in H or V mode, the second pick's X (H) or Y (V) snaps to
    *  the first pick's coord + this value, sign-matched to whichever side
    *  of A the user clicked on. The displayed measurement then becomes
@@ -794,6 +817,20 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
   /** Exposed by the measure effect so other effects can ask it to redraw
    *  using the current refs (e.g. after mode / fixed-distance change). */
   const measureRedrawRef = useRef<(() => void) | null>(null);
+  /** Exposed by the measure effect — clears the current picks/markers so a
+   *  typed command (DI, DIM, …) starts a fresh measurement. */
+  const measureResetRef = useRef<(() => void) | null>(null);
+  /** Exposed by the measure effect — removes the last pick (command U). */
+  const measureUndoRef = useRef<(() => void) | null>(null);
+
+  // AutoCAD-style command bar (bottom of the panel). Typing anywhere on
+  // the drawing routes keystrokes into the input; Enter/Space executes,
+  // Enter on an empty line repeats the last command, Esc cancels.
+  const [cmdValue, setCmdValue] = useState('');
+  const [cmdEcho, setCmdEcho] = useState<string | null>(null);
+  const lastCmdRef = useRef('');
+  const cmdInputRef = useRef<HTMLInputElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<{
     /** Effective scene points used for the measurement, at most two.
      *  In a fixed-distance scenario, picks[1] is the *locked* position
@@ -817,12 +854,17 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
     /** AutoCAD-style extension lines from each pick to the dim line. */
     extLineA: SVGLineElement | null;
     extLineB: SVGLineElement | null;
+    /** Second dashed ref line — vertical axis, used by V and Auto modes. */
+    refLineV: SVGLineElement | null;
     markers: HTMLDivElement[];
     label: HTMLDivElement | null;
     snap: HTMLDivElement | null;
-    /** Cached scene-space segment endpoints — built once after the dxf
-     *  scene is loaded; used for snap detection on pointer move. */
-    segments: { ax: number; ay: number; bx: number; by: number }[];
+    /** Cached scene-space segment endpoints, flat [ax,ay,bx,by,…] — built
+     *  once per measure session; used for snap detection on pointer move.
+     *  Instance transforms (INSERT blocks) are baked in at build time. */
+    segs: Float64Array | null;
+    /** Cached POINT-entity coords, flat [x,y,…] — node snap targets. */
+    nodes: Float64Array | null;
   } | null>(null);
 
   useEffect(() => {
@@ -942,18 +984,35 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
   // constant size in pixels regardless of zoom, so they never balloon
   // into giant orange blobs as the user zooms in.
   //
-  // Snap-to-line / snap-to-endpoint is computed in *screen space* against
-  // a cached list of every line segment in the dxf-viewer scene (built
-  // once from `scene.traverse(LineSegments)`). On hover, the closest
-  // endpoint or the closest point on a segment within 12 px snaps the
-  // cursor — clicks then use that snapped position.
+  // Snapping is computed in *screen space* against a cached list of every
+  // line segment and POINT entity in the dxf-viewer scene. The cache walk
+  // must mirror dxf-viewer's GPU data layout exactly: positions are
+  // TWO-component (x,y) buffer attributes, long polylines are *indexed*
+  // (vertex pairs come from the index buffer), and INSERT block geometry
+  // is *instanced* — the per-insert 2×3 affine lives in
+  // instanceTransform0/1 (FULL) or instanceTransform (POINT translation)
+  // attributes and is applied in the vertex shader, never in matrixWorld.
+  // So the builder reads via BufferAttribute.getX/getY, follows the index
+  // buffer when present, and bakes every instance transform into the
+  // cached world-space coords.
   //
-  // Three modes via a Point | H | V pill that appears next to Measure:
-  //   - Point: straight-line (Euclidean) distance between two picks.
+  // Snap priority is AutoCAD-flavoured: a real geometric point beats
+  // "somewhere along a line" even when the line passes closer to the
+  // cursor — intersection/endpoint/node (closest wins, ties to
+  // intersection) > midpoint > nearest-on-line, all within an 18 px
+  // tolerance. Without the tiering, the projection of the cursor onto a
+  // hovered segment is always nearer than the segment's endpoint, which
+  // made endpoint snapping nearly impossible.
+  //
+  // Four modes via an Auto | H | V | Point pill next to Measure (also
+  // reachable from the command bar: DIM/DLI, H, V, DI):
+  //   - Auto:  AutoCAD DIMLINEAR — measures along the dominant axis of
+  //            the two picks (|Δx| ≥ |Δy| → horizontal, else vertical).
   //   - H:     distance along the X axis (|Δx|). Dim line drawn through
   //            pick A horizontally, ending at pick B's projected X.
   //   - V:     distance along the Y axis (|Δy|). Dim line drawn through
   //            pick A vertically, ending at pick B's projected Y.
+  //   - Point: straight-line (Euclidean) distance between two picks.
   //
   // All dimensions render AutoCAD DIMLINEAR-style — arrow heads at both
   // ends, plus an extension line dropping from the second pick to the
@@ -972,6 +1031,7 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
   // intentionally does not depend on measureMode / measureFixedDist; a
   // smaller effect calls measureRedrawRef.current() on those changes.
   // ──────────────────────────────────────────────────────────────────────
+  const layersKey = layers.map(l => (l.visible ? '1' : '0')).join('');
   useEffect(() => {
     const v = viewerRef.current;
     if (loading || error || !v) return;
@@ -991,6 +1051,7 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
     if (!measureEnabled) {
       teardown();
       setMeasureDistance(null);
+      setMeasureResolved(null);
       return;
     }
 
@@ -1022,14 +1083,21 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
     overlay.appendChild(svg);
 
     // Dashed extension of the dim-axis through the first pick. Drawn first
-    // so the solid dim line renders on top.
-    const refLineEl = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    refLineEl.setAttribute('stroke', '#ff8800');
-    refLineEl.setAttribute('stroke-width', '1');
-    refLineEl.setAttribute('stroke-dasharray', '6,4');
-    refLineEl.setAttribute('opacity', '0.55');
-    refLineEl.style.display = 'none';
-    svg.appendChild(refLineEl);
+    // so the solid dim line renders on top. Two of them — horizontal and
+    // vertical — Auto mode shows both until the second pick resolves the
+    // axis, H/V show their own.
+    const mkRefLine = () => {
+      const el = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      el.setAttribute('stroke', '#ff8800');
+      el.setAttribute('stroke-width', '1');
+      el.setAttribute('stroke-dasharray', '6,4');
+      el.setAttribute('opacity', '0.55');
+      el.style.display = 'none';
+      svg.appendChild(el);
+      return el;
+    };
+    const refLineEl = mkRefLine();
+    const refLineVEl = mkRefLine();
 
     // AutoCAD-style extension lines — thin solid lines from each pick to
     // the dim line. Drawn before the dim line so the dim line + arrows
@@ -1117,10 +1185,43 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
       poly.setAttribute('stroke-linejoin', 'round');
       g.appendChild(poly);
     });
-    const setSnapGlyph = (type: 'endpoint' | 'intersection' | 'line') => {
+    // Midpoint — triangle
+    const snapGlyphMidpoint = mkSnapGlyph((g) => {
+      const poly = document.createElementNS(SVGNS, 'polygon');
+      poly.setAttribute('points', '11,3 19,18 3,18');
+      poly.setAttribute('fill', 'rgba(255,255,255,0.9)');
+      poly.setAttribute('stroke', '#ff8800');
+      poly.setAttribute('stroke-width', '1.8');
+      poly.setAttribute('stroke-linejoin', 'round');
+      g.appendChild(poly);
+    });
+    // Node (POINT entity) — circle with an X through it
+    const snapGlyphNode = mkSnapGlyph((g) => {
+      const c = document.createElementNS(SVGNS, 'circle');
+      c.setAttribute('cx', '11'); c.setAttribute('cy', '11'); c.setAttribute('r', '7');
+      c.setAttribute('fill', 'rgba(255,255,255,0.9)');
+      c.setAttribute('stroke', '#ff8800');
+      c.setAttribute('stroke-width', '1.8');
+      g.appendChild(c);
+      const mkLn = (x1: number, y1: number, x2: number, y2: number) => {
+        const ln = document.createElementNS(SVGNS, 'line');
+        ln.setAttribute('x1', String(x1)); ln.setAttribute('y1', String(y1));
+        ln.setAttribute('x2', String(x2)); ln.setAttribute('y2', String(y2));
+        ln.setAttribute('stroke', '#ff8800');
+        ln.setAttribute('stroke-width', '1.6');
+        ln.setAttribute('stroke-linecap', 'round');
+        return ln;
+      };
+      g.appendChild(mkLn(6.5, 6.5, 15.5, 15.5));
+      g.appendChild(mkLn(15.5, 6.5, 6.5, 15.5));
+    });
+    type SnapType = 'endpoint' | 'intersection' | 'line' | 'midpoint' | 'node';
+    const setSnapGlyph = (type: SnapType) => {
       snapGlyphEndpoint.style.display = type === 'endpoint' ? '' : 'none';
       snapGlyphIntersection.style.display = type === 'intersection' ? '' : 'none';
       snapGlyphLine.style.display = type === 'line' ? '' : 'none';
+      snapGlyphMidpoint.style.display = type === 'midpoint' ? '' : 'none';
+      snapGlyphNode.style.display = type === 'node' ? '' : 'none';
     };
     overlay.appendChild(snapEl);
 
@@ -1128,9 +1229,11 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
       picks: [],
       rawSecondClick: null,
       overlay, svg, line: lineEl, fixedLine: fixedLineEl, fixedLabel: null, refLine: refLineEl,
+      refLineV: refLineVEl,
       extLineA, extLineB,
       markers: [], label: null, snap: snapEl,
-      segments: [],
+      segs: null,
+      nodes: null,
     };
 
     // ── THREE — needed for projection math ────────────────────────
@@ -1153,31 +1256,88 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
       return { x: (v3.x + 1) / 2 * w, y: (-v3.y + 1) / 2 * h };
     };
 
-    // Load THREE and build the snap-segment cache. dxf-viewer batches
-    // its line entities into a small number of LineSegments objects;
-    // we walk every one and collect the world-space endpoint pairs.
+    // Load THREE (needed for camera projection math) and build the snap
+    // cache. The walk must match dxf-viewer's GPU layout — see the block
+    // comment above: 2-component positions read via getX/getY (NOT raw
+    // array triplets), index buffer followed for INDEXED_LINES, and
+    // per-instance INSERT transforms baked in (they live in instance
+    // attributes and are applied in the vertex shader, so matrixWorld is
+    // always identity). traverseVisible skips layers hidden before the
+    // measure session started.
+    const MAX_SNAP_SEGS = 400_000;
     (async () => {
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         THREE = await import(/* @vite-ignore */ 'three' as any);
-        const segs = measureRef.current?.segments;
-        if (!segs) return;
-        const va = new THREE.Vector3(), vb = new THREE.Vector3();
-        scene.traverse((obj: any) => {
-          if (!obj?.isLineSegments) return;
-          const pos = obj.geometry?.attributes?.position;
-          if (!pos) return;
-          const arr: ArrayLike<number> = pos.array;
-          obj.updateMatrixWorld?.();
-          const m = obj.matrixWorld;
-          // LineSegments draws disjoint line pairs — vertices come in
-          // adjacent pairs (a, b), (c, d), ...
-          for (let i = 0; i < arr.length; i += 6) {
-            va.set(arr[i],     arr[i + 1], arr[i + 2]).applyMatrix4(m);
-            vb.set(arr[i + 3], arr[i + 4], arr[i + 5]).applyMatrix4(m);
-            segs.push({ ax: va.x, ay: va.y, bx: vb.x, by: vb.y });
+        const st = measureRef.current;
+        if (!st) return;
+        const segXY: number[] = [];
+        const nodeXY: number[] = [];
+        let truncated = false;
+        // Per-instance 2×3 affines [m00, m01, tx, m10, m11, ty] for a
+        // geometry; a single identity when the geometry isn't instanced.
+        const instanceXforms = (g: any): number[][] => {
+          const t0 = g?.attributes?.instanceTransform0;
+          const t1 = g?.attributes?.instanceTransform1;
+          if (t0 && t1) {
+            const out: number[][] = [];
+            const n = Math.min(t0.count, t1.count);
+            for (let k = 0; k < n; k++) {
+              out.push([t0.getX(k), t0.getY(k), t0.getZ(k), t1.getX(k), t1.getY(k), t1.getZ(k)]);
+            }
+            return out;
           }
-        });
+          const tp = g?.attributes?.instanceTransform;
+          if (tp) {
+            const out: number[][] = [];
+            for (let k = 0; k < tp.count; k++) out.push([1, 0, tp.getX(k), 0, 1, tp.getY(k)]);
+            return out;
+          }
+          return [[1, 0, 0, 0, 1, 0]];
+        };
+        const visit = (obj: any) => {
+          const isSeg = !!obj?.isLineSegments;
+          const isPts = !!obj?.isPoints;
+          if (!isSeg && !isPts) return;
+          const g = obj.geometry;
+          const pos = g?.attributes?.position;
+          if (!pos) return;
+          const xfs = instanceXforms(g);
+          if (isSeg) {
+            const idx = g.index;
+            const pairCount = Math.floor((idx ? idx.count : pos.count) / 2);
+            for (let p = 0; p < pairCount; p++) {
+              const ia = idx ? idx.getX(2 * p) : 2 * p;
+              const ib = idx ? idx.getX(2 * p + 1) : 2 * p + 1;
+              const ax = pos.getX(ia), ay = pos.getY(ia);
+              const bx = pos.getX(ib), by = pos.getY(ib);
+              if (!Number.isFinite(ax + ay + bx + by)) continue;
+              for (const m of xfs) {
+                if (segXY.length >= MAX_SNAP_SEGS * 4) { truncated = true; return; }
+                const tax = m[0] * ax + m[1] * ay + m[2], tay = m[3] * ax + m[4] * ay + m[5];
+                const tbx = m[0] * bx + m[1] * by + m[2], tby = m[3] * bx + m[4] * by + m[5];
+                if (tax === tbx && tay === tby) continue; // degenerate
+                segXY.push(tax, tay, tbx, tby);
+              }
+            }
+          } else {
+            for (let i = 0; i < pos.count; i++) {
+              const x = pos.getX(i), y = pos.getY(i);
+              if (!Number.isFinite(x + y)) continue;
+              for (const m of xfs) {
+                nodeXY.push(m[0] * x + m[1] * y + m[2], m[3] * x + m[4] * y + m[5]);
+              }
+            }
+          }
+        };
+        if (typeof scene.traverseVisible === 'function') scene.traverseVisible(visit);
+        else scene.traverse(visit);
+        st.segs = new Float64Array(segXY);
+        st.nodes = new Float64Array(nodeXY);
+        if (truncated) {
+          // eslint-disable-next-line no-console
+          console.warn(`[Preview] DXF snap cache truncated at ${MAX_SNAP_SEGS} segments — snapping may miss some geometry.`);
+        }
         ready = true;
       } catch {}
     })();
@@ -1209,76 +1369,88 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
 
     const findSnap = (cx: number, cy: number) => {
       const s = measureRef.current;
-      if (!s || !ready) return null;
-      let best: {
-        sx: number; sy: number;
-        type: 'endpoint' | 'line' | 'intersection';
-        dir?: { dx: number; dy: number };
-      } | null = null;
-      let bestD2 = SNAP_PX * SNAP_PX;
+      if (!s || !ready || !s.segs) return null;
+      // Scene→px affine, derived once per call from three probe points —
+      // exact for dxf-viewer's orthographic camera, and far cheaper than
+      // a Vector3.project per endpoint per mousemove.
+      const o = pxFromScene(0, 0);
+      const ex = pxFromScene(1, 0);
+      const ey = pxFromScene(0, 1);
+      const mxx = ex.x - o.x, mxy = ex.y - o.y;
+      const myx = ey.x - o.x, myy = ey.y - o.y;
+      const det = mxx * myy - myx * mxy;
+      if (!det) return null;
+      // Cursor in scene coords (inverse affine) + per-axis scene-space
+      // tolerance — a cheap bbox cull before any projection math.
+      const csx = ((cx - o.x) * myy - (cy - o.y) * myx) / det;
+      const csy = ((cy - o.y) * mxx - (cx - o.x) * mxy) / det;
+      const rx = SNAP_PX / (Math.hypot(mxx, mxy) || 1);
+      const ry = SNAP_PX / (Math.hypot(myx, myy) || 1);
+      const minX = csx - rx, maxX = csx + rx, minY = csy - ry, maxY = csy + ry;
 
-      // Pass 1: endpoint + nearest-point-on-line per segment. While
-      // walking, accumulate any segment whose nearest part falls inside
-      // the snap-tolerance radius around the cursor — those are the
-      // candidates for the pairwise intersection pass below. Storing the
-      // projected endpoints (ap.x/y, bp.x/y) avoids re-running
-      // pxFromScene per intersection candidate, which was the source of
-      // the lag.
-      //
-      // The candidate radius is the snap tolerance itself (12 px), not a
-      // larger value. Reasoning: if an intersection sits within SNAP_PX
-      // of the cursor, both contributing segments necessarily pass
-      // within SNAP_PX of the cursor too — so they will appear here.
-      const candidateD2 = SNAP_PX * SNAP_PX;
-      const cand: { seg: typeof s.segments[number]; apx: number; apy: number; bpx: number; bpy: number }[] = [];
-      for (const seg of s.segments) {
-        const ap = pxFromScene(seg.ax, seg.ay);
-        const bp = pxFromScene(seg.bx, seg.by);
-        const apx = ap.x, apy = ap.y, bpx = bp.x, bpy = bp.y;
-        // Cheap reject: if BOTH endpoints are far outside cursor's snap
-        // radius AND on the same side of the cursor along each axis,
-        // the segment can't be near the cursor.
-        const rejectX = (apx < cx - SNAP_PX && bpx < cx - SNAP_PX) || (apx > cx + SNAP_PX && bpx > cx + SNAP_PX);
-        const rejectY = (apy < cy - SNAP_PX && bpy < cy - SNAP_PX) || (apy > cy + SNAP_PX && bpy > cy + SNAP_PX);
-        if (rejectX || rejectY) continue;
-        const ldx = seg.bx - seg.ax, ldy = seg.by - seg.ay;
-        const llen = Math.sqrt(ldx * ldx + ldy * ldy) || 1;
-        const segDir = { dx: ldx / llen, dy: ldy / llen };
-        // Endpoint A
+      const T2 = SNAP_PX * SNAP_PX;
+      type Snap = { sx: number; sy: number; type: 'endpoint' | 'node' | 'midpoint' | 'line' | 'intersection' };
+      // Tiered bests — see the block comment up top for the priority
+      // rationale (endpoint must be reachable while hovering its own
+      // segment, so "nearest-on-line" lives in a lower tier).
+      let bestPt: Snap | null = null, dPt = T2;     // endpoint + node
+      let bestMid: Snap | null = null, dMid = T2;   // midpoint
+      let bestLine: Snap | null = null, dLine = T2; // nearest-on-line
+      let bestX: Snap | null = null, dX = T2;       // intersection
+      const cand: { ax: number; ay: number; bx: number; by: number; apx: number; apy: number; bpx: number; bpy: number }[] = [];
+
+      const segs = s.segs;
+      for (let i = 0; i < segs.length; i += 4) {
+        const ax = segs[i], ay = segs[i + 1], bx = segs[i + 2], by = segs[i + 3];
+        if ((ax < minX && bx < minX) || (ax > maxX && bx > maxX) ||
+            (ay < minY && by < minY) || (ay > maxY && by > maxY)) continue;
+        const apx = o.x + mxx * ax + myx * ay, apy = o.y + mxy * ax + myy * ay;
+        const bpx = o.x + mxx * bx + myx * by, bpy = o.y + mxy * bx + myy * by;
+        let near = false;
+        // Endpoints
         let dx = cx - apx, dy = cy - apy;
-        const dEpA2 = dx * dx + dy * dy;
-        if (dEpA2 < bestD2) { best = { sx: seg.ax, sy: seg.ay, type: 'endpoint', dir: segDir }; bestD2 = dEpA2; }
-        // Endpoint B
+        let d2 = dx * dx + dy * dy;
+        if (d2 < T2) { near = true; if (d2 < dPt) { dPt = d2; bestPt = { sx: ax, sy: ay, type: 'endpoint' }; } }
         dx = cx - bpx; dy = cy - bpy;
-        const dEpB2 = dx * dx + dy * dy;
-        if (dEpB2 < bestD2) { best = { sx: seg.bx, sy: seg.by, type: 'endpoint', dir: segDir }; bestD2 = dEpB2; }
+        d2 = dx * dx + dy * dy;
+        if (d2 < T2) { near = true; if (d2 < dPt) { dPt = d2; bestPt = { sx: bx, sy: by, type: 'endpoint' }; } }
+        // Midpoint
+        dx = cx - (apx + bpx) / 2; dy = cy - (apy + bpy) / 2;
+        d2 = dx * dx + dy * dy;
+        if (d2 < T2) { near = true; if (d2 < dMid) { dMid = d2; bestMid = { sx: (ax + bx) / 2, sy: (ay + by) / 2, type: 'midpoint' }; } }
         // Nearest point on segment (in screen space).
         const sdx = bpx - apx, sdy = bpy - apy;
         const len2 = sdx * sdx + sdy * sdy;
-        let dLine2 = Infinity;
         if (len2 > 0) {
           const t = ((cx - apx) * sdx + (cy - apy) * sdy) / len2;
           if (t > 0 && t < 1) {
-            const px = apx + t * sdx, py = apy + t * sdy;
-            dx = cx - px; dy = cy - py;
-            dLine2 = dx * dx + dy * dy;
-            if (dLine2 < bestD2) {
-              const sx = seg.ax + t * (seg.bx - seg.ax);
-              const sy = seg.ay + t * (seg.by - seg.ay);
-              best = { sx, sy, type: 'line', dir: segDir };
-              bestD2 = dLine2;
+            dx = cx - (apx + t * sdx); dy = cy - (apy + t * sdy);
+            d2 = dx * dx + dy * dy;
+            if (d2 < T2) {
+              near = true;
+              if (d2 < dLine) { dLine = d2; bestLine = { sx: ax + t * (bx - ax), sy: ay + t * (by - ay), type: 'line' }; }
             }
           }
         }
-        if (dEpA2 < candidateD2 || dEpB2 < candidateD2 || dLine2 < candidateD2) {
-          cand.push({ seg, apx, apy, bpx, bpy });
+        if (near) cand.push({ ax, ay, bx, by, apx, apy, bpx, bpy });
+      }
+
+      // POINT entities — node snaps, same tier as endpoints.
+      const nodes = s.nodes;
+      if (nodes) {
+        for (let i = 0; i < nodes.length; i += 2) {
+          const x = nodes[i], y = nodes[i + 1];
+          if (x < minX || x > maxX || y < minY || y > maxY) continue;
+          const dx = cx - (o.x + mxx * x + myx * y);
+          const dy = cy - (o.y + mxy * x + myy * y);
+          const d2 = dx * dx + dy * dy;
+          if (d2 < dPt) { dPt = d2; bestPt = { sx: x, sy: y, type: 'node' }; }
         }
       }
 
-      // Pass 2: pairwise intersection among candidates. Both endpoints
-      // and the intersection point are checked entirely in screen space
-      // (no pxFromScene), so this is just a few multiplies and adds per
-      // pair — fast even with a couple of dozen candidates.
+      // Pairwise intersections among the near segments — checked entirely
+      // in screen space; the scene-space crossing is recovered by linear
+      // interp on segment A (exact for the orthographic camera).
       for (let i = 0; i < cand.length; i++) {
         const A = cand[i];
         for (let j = i + 1; j < cand.length; j++) {
@@ -1287,20 +1459,19 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
           if (!ix) continue;
           const dx = cx - ix.px, dy = cy - ix.py;
           const d2 = dx * dx + dy * dy;
-          if (d2 >= SNAP_PX * SNAP_PX) continue;
-          // Override endpoint/line snaps unconditionally — intersection
-          // takes priority. Among intersections, keep the closest.
-          if (!best || best.type !== 'intersection' || d2 < bestD2) {
-            // Recover scene-space intersection by linear interp on A's
-            // scene endpoints (the projection is affine for ortho).
-            const sx = A.seg.ax + ix.t * (A.seg.bx - A.seg.ax);
-            const sy = A.seg.ay + ix.t * (A.seg.by - A.seg.ay);
-            best = { sx, sy, type: 'intersection' };
-            bestD2 = d2;
-          }
+          if (d2 >= T2 || d2 >= dX) continue;
+          dX = d2;
+          bestX = { sx: A.ax + ix.t * (A.bx - A.ax), sy: A.ay + ix.t * (A.by - A.ay), type: 'intersection' };
         }
       }
-      return best;
+
+      // Priority: intersection and endpoint/node co-rank, then midpoint,
+      // then nearest-on-line. Where two segments share a corner the
+      // "intersection" lands on the endpoint itself — prefer the endpoint
+      // glyph there (AutoCAD shows the square at corners), so the
+      // intersection only wins when it's clearly closer (> 1 px² margin).
+      const top = bestX && bestPt ? (dX < dPt - 1 ? bestX : bestPt) : (bestX ?? bestPt);
+      return top ?? bestMid ?? bestLine;
     };
 
     // ── Marker / label / line rendering (HTML/SVG, fixed-pixel) ──
@@ -1355,6 +1526,18 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
       }
     };
 
+    // Resolve the effective measure mode. 'auto' (AutoCAD DIMLINEAR)
+    // measures along the dominant axis of the two picks; everything else
+    // passes through. With fewer than two picks auto defaults to
+    // horizontal — callers that care about the unresolved state (ref
+    // lines) check the raw mode themselves.
+    const resolveMode = (a?: { x: number; y: number }, b?: { x: number; y: number }): 'point' | 'horizontal' | 'vertical' => {
+      const mode = measureModeRef.current;
+      if (mode !== 'auto') return mode;
+      if (!a || !b) return 'horizontal';
+      return Math.abs(b.x - a.x) >= Math.abs(b.y - a.y) ? 'horizontal' : 'vertical';
+    };
+
     // Endpoints of the *main* dim line (always rendered when picks=2).
     // In fixed mode this is the leg from R to B (perpendicular to the
     // fixed axis). Without a fixed distance it's the regular H / V / Point
@@ -1363,13 +1546,16 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
       const s = measureRef.current!;
       const a = s.picks[0];
       const b = s.picks[1];
-      const mode = measureModeRef.current;
+      const mode = resolveMode(a, b);
+      // Fixed distances only apply in *explicit* H/V — a value left over
+      // from H mode must not activate when the user switches to Auto.
+      const rawMode = measureModeRef.current;
       const fixed = measureFixedDistRef.current;
-      if (fixed !== null && Number.isFinite(fixed) && mode === 'horizontal') {
+      if (fixed !== null && Number.isFinite(fixed) && rawMode === 'horizontal') {
         // Fixed H: main leg is vertical at b.x, from a.y to b.y.
         return { from: { x: b.x, y: a.y }, to: { x: b.x, y: b.y } };
       }
-      if (fixed !== null && Number.isFinite(fixed) && mode === 'vertical') {
+      if (fixed !== null && Number.isFinite(fixed) && rawMode === 'vertical') {
         // Fixed V: main leg is horizontal at b.y, from a.x to b.x.
         return { from: { x: a.x, y: b.y }, to: { x: b.x, y: b.y } };
       }
@@ -1382,44 +1568,51 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
       const s = measureRef.current;
       if (!s) return;
       reconcileLockedPick();
-      const mode = measureModeRef.current;
+      const rawMode = measureModeRef.current;
       const fixed = measureFixedDistRef.current;
-      const fixedActive = fixed !== null && Number.isFinite(fixed) && (mode === 'horizontal' || mode === 'vertical');
+      const fixedActive = fixed !== null && Number.isFinite(fixed) && (rawMode === 'horizontal' || rawMode === 'vertical');
       // Markers
       if (s.markers[0]) positionMarker(s.markers[0], s.picks[0].x, s.picks[0].y);
       if (s.markers[1]) positionMarker(s.markers[1], s.picks[1].x, s.picks[1].y);
-      // Reference-axis preview — dashed line across the canvas through
-      // the first pick along the X or Y axis.
-      const refDir = mode === 'horizontal'
-        ? { dx: 1, dy: 0 }
-        : mode === 'vertical'
-          ? { dx: 0, dy: 1 }
-          : null;
-      if (refDir && s.picks.length >= 1 && s.refLine) {
+      // Reference-axis preview — dashed line(s) across the canvas through
+      // the first pick. H/V show their own axis; Auto shows both until
+      // the second pick resolves which one the dimension follows.
+      const drawRefLine = (el: SVGLineElement | null, dir: { dx: number; dy: number }, visible: boolean) => {
+        if (!el) return;
+        if (!visible || s.picks.length < 1) { el.style.display = 'none'; return; }
         const a = s.picks[0];
         const w = canvas.clientWidth, h = canvas.clientHeight;
         const screenSpan = Math.hypot(w, h) * 4;
         const ap = pxFromScene(a.x, a.y);
-        const probe = pxFromScene(a.x + refDir.dx, a.y + refDir.dy);
+        const probe = pxFromScene(a.x + dir.dx, a.y + dir.dy);
         const pxLen = Math.hypot(probe.x - ap.x, probe.y - ap.y) || 1;
         const sceneStep = screenSpan / pxLen;
-        const x0 = a.x - refDir.dx * sceneStep;
-        const y0 = a.y - refDir.dy * sceneStep;
-        const x1 = a.x + refDir.dx * sceneStep;
-        const y1 = a.y + refDir.dy * sceneStep;
-        const p0 = pxFromScene(x0, y0);
-        const p1 = pxFromScene(x1, y1);
-        s.refLine.setAttribute('x1', String(p0.x));
-        s.refLine.setAttribute('y1', String(p0.y));
-        s.refLine.setAttribute('x2', String(p1.x));
-        s.refLine.setAttribute('y2', String(p1.y));
-        s.refLine.style.display = '';
-      } else if (s.refLine) {
-        s.refLine.style.display = 'none';
+        const p0 = pxFromScene(a.x - dir.dx * sceneStep, a.y - dir.dy * sceneStep);
+        const p1 = pxFromScene(a.x + dir.dx * sceneStep, a.y + dir.dy * sceneStep);
+        el.setAttribute('x1', String(p0.x));
+        el.setAttribute('y1', String(p0.y));
+        el.setAttribute('x2', String(p1.x));
+        el.setAttribute('y2', String(p1.y));
+        el.style.display = '';
+      };
+      let showH = rawMode === 'horizontal';
+      let showV = rawMode === 'vertical';
+      if (rawMode === 'auto') {
+        if (s.picks.length >= 2) {
+          const r = resolveMode(s.picks[0], s.picks[1]);
+          showH = r === 'horizontal';
+          showV = r === 'vertical';
+        } else {
+          showH = true;
+          showV = true;
+        }
       }
+      drawRefLine(s.refLine, { dx: 1, dy: 0 }, showH);
+      drawRefLine(s.refLineV, { dx: 0, dy: 1 }, showV);
       // Dim line + chain dim (if fixed) + extension lines + label
       if (s.picks.length === 2) {
         const a = s.picks[0], b = s.picks[1];
+        const mode = resolveMode(a, b);
         const ends = computeMainDimEnds();
         const fp = pxFromScene(ends.from.x, ends.from.y);
         const tp = pxFromScene(ends.to.x, ends.to.y);
@@ -1588,28 +1781,51 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
       if (!s || s.picks.length !== 2) return;
       reconcileLockedPick();
       const a = s.picks[0], b = s.picks[1];
-      const mode = measureModeRef.current;
+      const rawMode = measureModeRef.current;
+      const mode = resolveMode(a, b);
       const fixed = measureFixedDistRef.current;
-      const fixedActive = fixed !== null && Number.isFinite(fixed) && (mode === 'horizontal' || mode === 'vertical');
+      const fixedActive = fixed !== null && Number.isFinite(fixed) && (rawMode === 'horizontal' || rawMode === 'vertical');
       let dist: number;
       let suffix = '';
-      if (fixedActive && mode === 'horizontal') {
-        dist = Math.abs(b.y - a.y);
+      let echo: string;
+      // Axis the *displayed* value follows — flips to the perpendicular
+      // axis in fixed-distance mode (the chip arrow/tooltip track this).
+      let shown: 'point' | 'horizontal' | 'vertical' = mode;
+      const adx = Math.abs(b.x - a.x), ady = Math.abs(b.y - a.y);
+      if (fixedActive && rawMode === 'horizontal') {
+        dist = ady;
         suffix = ' ↕';
-      } else if (fixedActive && mode === 'vertical') {
-        dist = Math.abs(b.x - a.x);
+        shown = 'vertical';
+        echo = `ΔY = ${formatMeasureDistance(ady)} with ΔX locked to ${formatMeasureDistance(Math.abs(fixed))}`;
+      } else if (fixedActive && rawMode === 'vertical') {
+        dist = adx;
         suffix = ' ↔';
+        shown = 'horizontal';
+        echo = `ΔX = ${formatMeasureDistance(adx)} with ΔY locked to ${formatMeasureDistance(Math.abs(fixed))}`;
       } else if (mode === 'horizontal') {
-        dist = Math.abs(b.x - a.x);
+        dist = adx;
         suffix = ' ↔';
+        echo = `Linear dimension = ${formatMeasureDistance(adx)} (ΔX)`;
       } else if (mode === 'vertical') {
-        dist = Math.abs(b.y - a.y);
+        dist = ady;
         suffix = ' ↕';
+        echo = `Linear dimension = ${formatMeasureDistance(ady)} (ΔY)`;
       } else {
-        const dx = b.x - a.x, dy = b.y - a.y;
-        dist = Math.sqrt(dx * dx + dy * dy);
+        dist = Math.hypot(b.x - a.x, b.y - a.y);
+        echo = `Distance = ${formatMeasureDistance(dist)}   ΔX = ${formatMeasureDistance(adx)}   ΔY = ${formatMeasureDistance(ady)}`;
+      }
+      // A non-finite distance means a corrupt pick slipped through (it
+      // shouldn't — the snap cache filters non-finite coords). Show
+      // nothing rather than a "NaN mm" label.
+      if (!Number.isFinite(dist)) {
+        setMeasureDistance(null);
+        setMeasureResolved(null);
+        if (s.label) s.label.style.opacity = '0';
+        return;
       }
       setMeasureDistance(dist);
+      setMeasureResolved(shown);
+      setCmdEcho(echo);
       const label = ensureLabel();
       label.style.opacity = '1';
       label.textContent = `${formatMeasureDistance(dist)}${suffix}`;
@@ -1622,25 +1838,49 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
       updateOverlay();
     };
 
+    // Hide every dim visual that only makes sense with two picks.
+    const hideDimVisuals = (s: NonNullable<typeof measureRef.current>) => {
+      s.line!.style.display = 'none';
+      if (s.fixedLine) s.fixedLine.style.display = 'none';
+      if (s.fixedLabel) s.fixedLabel.style.display = 'none';
+      if (s.extLineA) s.extLineA.style.display = 'none';
+      if (s.extLineB) s.extLineB.style.display = 'none';
+      if (s.label) s.label.style.opacity = '0';
+      setMeasureDistance(null);
+      setMeasureResolved(null);
+    };
+
+    const resetPicks = () => {
+      const s = measureRef.current;
+      if (!s) return;
+      for (const m of s.markers) m.parentElement?.removeChild(m);
+      s.markers = [];
+      s.picks = [];
+      s.rawSecondClick = null;
+      if (s.refLine) s.refLine.style.display = 'none';
+      if (s.refLineV) s.refLineV.style.display = 'none';
+      hideDimVisuals(s);
+    };
+    measureResetRef.current = resetPicks;
+
+    // Command U — drop the most recent pick, keep the other (if any).
+    measureUndoRef.current = () => {
+      const s = measureRef.current;
+      if (!s || s.picks.length === 0) return;
+      s.picks.pop();
+      const m = s.markers.pop();
+      m?.parentElement?.removeChild(m);
+      s.rawSecondClick = null;
+      hideDimVisuals(s);
+      updateOverlay();
+    };
+
     const doPick = (p: { x: number; y: number }) => {
       const s = measureRef.current;
       if (!s) return;
 
       // Third click → start fresh.
-      if (s.picks.length === 2) {
-        for (const m of s.markers) m.parentElement?.removeChild(m);
-        s.markers = [];
-        s.picks = [];
-        s.rawSecondClick = null;
-        s.line!.style.display = 'none';
-        if (s.fixedLine) s.fixedLine.style.display = 'none';
-        if (s.fixedLabel) s.fixedLabel.style.display = 'none';
-        if (s.refLine) s.refLine.style.display = 'none';
-        if (s.extLineA) s.extLineA.style.display = 'none';
-        if (s.extLineB) s.extLineB.style.display = 'none';
-        if (s.label) s.label.style.opacity = '0';
-        setMeasureDistance(null);
-      }
+      if (s.picks.length === 2) resetPicks();
 
       if (s.picks.length === 0) {
         s.picks.push({ x: p.x, y: p.y });
@@ -1678,13 +1918,21 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
       canvas.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('keydown', onKeyDown);
       measureRedrawRef.current = null;
+      measureResetRef.current = null;
+      measureUndoRef.current = null;
       teardown();
       setMeasureDistance(null);
+      setMeasureResolved(null);
     };
     // NOTE: measureMode / measureFixedDist intentionally *not* in deps —
     // switching mode or editing the fixed distance preserves picks and
-    // just triggers a redraw via the separate effect below.
-  }, [measureEnabled, loading, error]);
+    // just triggers a redraw via the separate effect below. Layer
+    // visibility *is* a dep (via layersKey): toggling a layer rebuilds the
+    // snap cache so hidden geometry stops attracting the cursor — at the
+    // cost of resetting in-progress picks, which a layer change
+    // invalidates anyway.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [measureEnabled, loading, error, layersKey]);
 
   // Redraw the measurement overlay when mode or fixed-distance changes,
   // using the picks that are already in measureRef. The main measure
@@ -1734,6 +1982,156 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
     } catch {}
   };
 
+  // ── AutoCAD-style command bar ───────────────────────────────────────
+  // Space and Enter both execute (AutoCAD treats space as enter); Enter
+  // on an empty line repeats the last command; Esc clears, then exits
+  // the measure tool. Typing anywhere over the drawing routes the
+  // keystroke into the input — see the keydown effect below.
+  const runCommand = (raw: string) => {
+    const exec = raw.trim() || lastCmdRef.current;
+    setCmdValue('');
+    if (!exec) return;
+    const cmd = exec.toLowerCase().split(/\s+/)[0];
+    const remember = () => { lastCmdRef.current = exec; };
+    const startMeasure = (mode: typeof measureMode, echo: string) => {
+      setMeasureEnabled(true);
+      setMeasureMode(mode);
+      measureResetRef.current?.();
+      setCmdEcho(echo);
+      remember();
+    };
+    // Bare number → lock the axis-aligned Δ of the second pick (H/V).
+    if (/^-?(\d+\.?\d*|\.\d+)$/.test(cmd)) {
+      if (measureEnabled && (measureMode === 'horizontal' || measureMode === 'vertical')) {
+        const n = parseFloat(cmd);
+        if (n) {
+          setMeasureFixedInput(cmd);
+          setMeasureFixedDist(n);
+          setCmdEcho(`Δ${measureMode === 'horizontal' ? 'X' : 'Y'} locked to ${formatMeasureDistance(Math.abs(n))} — the label shows the perpendicular distance`);
+        } else {
+          setMeasureFixedInput('');
+          setMeasureFixedDist(null);
+          setCmdEcho('Fixed distance cleared.');
+        }
+      } else {
+        setCmdEcho('Fixed distances apply in H or V mode — type H or V first.');
+      }
+      return;
+    }
+    switch (cmd) {
+      case 'di': case 'dist': case 'mea': case 'measuregeom':
+        startMeasure('point', 'DIST — click two points; straight-line distance (Esc to exit)');
+        break;
+      case 'dim': case 'dli': case 'dimlin': case 'dimlinear':
+        startMeasure('auto', 'DIMLINEAR — click two points; measures ΔX or ΔY, whichever is larger (H / V to force)');
+        break;
+      // H / V / AUTO switch the axis without dropping existing picks —
+      // same as clicking the pill.
+      case 'h': case 'hor': case 'horizontal':
+        setMeasureEnabled(true);
+        setMeasureMode('horizontal');
+        setCmdEcho('Horizontal — ΔX between the two picks');
+        remember();
+        break;
+      case 'v': case 'ver': case 'vertical':
+        setMeasureEnabled(true);
+        setMeasureMode('vertical');
+        setCmdEcho('Vertical — ΔY between the two picks');
+        remember();
+        break;
+      case 'au': case 'auto':
+        setMeasureEnabled(true);
+        setMeasureMode('auto');
+        setCmdEcho('Auto (DIMLINEAR) — measures along the dominant axis of the two picks');
+        remember();
+        break;
+      case 'measure':
+        setMeasureEnabled(!measureEnabled);
+        setCmdEcho(measureEnabled ? 'Measure off.' : 'Measure on — click two points.');
+        remember();
+        break;
+      case 'u': case 'undo':
+        measureUndoRef.current?.();
+        setCmdEcho('Last pick removed.');
+        remember();
+        break;
+      case 'z': case 'ze': case 'zoom': case 'fit': case 'zoomextents':
+        handleResetView();
+        setCmdEcho('Zoom extents.');
+        remember();
+        break;
+      case 'la': case 'layer': case 'layers':
+        setShowLayers(s => !s);
+        setCmdEcho('Layer panel toggled.');
+        remember();
+        break;
+      case 'off': case 'clear':
+        setMeasureFixedDist(null);
+        setMeasureFixedInput('');
+        measureResetRef.current?.();
+        setCmdEcho('Measurement cleared.');
+        remember();
+        break;
+      case '?': case 'help':
+        setCmdEcho(DXF_CMD_HELP);
+        break;
+      default: {
+        const editCmd = DXF_EDIT_COMMANDS[cmd];
+        if (editCmd) setCmdEcho(`${editCmd} is a drawing command — Preview is a read-only viewer. Measuring: DI, DIM, H, V (? for help)`);
+        else setCmdEcho(`Unknown command "${cmd.toUpperCase()}" — try DI, DIM, H, V, Z, LA (? for help)`);
+      }
+    }
+  };
+
+  // AutoCAD keyboard feel: any printable key typed while this panel's
+  // window is active (and no other field is focused) lands in the
+  // command input. Focusing during keydown is enough — the browser
+  // delivers the character to the newly focused input.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key.length !== 1 || e.key === ' ') return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      const root = rootRef.current;
+      if (!root) return;
+      const myModal = root.closest('[data-modal-id]') as HTMLElement | null;
+      if (myModal && getActiveModalId() !== myModal.dataset.modalId) return;
+      cmdInputRef.current?.focus();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // AutoCAD Esc cascade. The shell closes the topmost window on Escape
+  // (capture phase, so neither the command input nor a window-level
+  // listener can get there first) — intercept it while there's something
+  // to cancel: command-input text first, then the measure tool. A further
+  // Esc falls through and closes the window as usual.
+  const cmdValueRef = useRef(cmdValue);
+  const measureEnabledRef = useRef(measureEnabled);
+  useEffect(() => { cmdValueRef.current = cmdValue; }, [cmdValue]);
+  useEffect(() => { measureEnabledRef.current = measureEnabled; }, [measureEnabled]);
+  useEffect(() => {
+    return registerModalEscapeInterceptor(() => {
+      const root = rootRef.current;
+      if (!root) return false;
+      const myModal = root.closest('[data-modal-id]') as HTMLElement | null;
+      if (!myModal || getActiveModalId() !== myModal.dataset.modalId) return false;
+      if (cmdValueRef.current) {
+        setCmdValue('');
+        setCmdEcho('*Cancel*');
+        return true;
+      }
+      if (measureEnabledRef.current) {
+        setMeasureEnabled(false);
+        setCmdEcho('Measure off.');
+        return true;
+      }
+      return false;
+    });
+  }, []);
+
   const btn = 'px-2 py-1 rounded hover:bg-gray-200 transition-colors text-gray-600 flex items-center gap-1';
   const colorHex = (n?: number) => {
     if (typeof n !== 'number') return '#999';
@@ -1741,7 +2139,7 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div ref={rootRef} className="flex flex-col h-full">
       <PanelActions>
         <button
           onClick={() => setShowLayers(s => !s)}
@@ -1758,7 +2156,7 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
         <button
           onClick={() => setMeasureEnabled(m => !m)}
           className={btn + (measureEnabled ? ' bg-gray-200' : '')}
-          title={measureEnabled ? 'Stop measuring (Esc)' : 'Measure distance — click two points on the drawing'}
+          title={measureEnabled ? 'Stop measuring (Esc)' : 'Measure distance — click two points on the drawing, or type DI / DIM below'}
         >
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 14.25l6-6 6 6 4.5-4.5M9.75 8.25v3M12.75 11.25v3M15.75 14.25v3" />
@@ -1770,11 +2168,11 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
           <>
             <div className="flex items-stretch h-7 rounded border border-gray-200 overflow-hidden text-[11px] font-semibold">
               <button
-                onClick={() => setMeasureMode('point')}
-                className={`px-2 transition-colors ${measureMode === 'point' ? 'bg-orange-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-                title="Point — straight-line (Euclidean) distance between two picks"
+                onClick={() => setMeasureMode('auto')}
+                className={`px-2 transition-colors ${measureMode === 'auto' ? 'bg-orange-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                title="Auto — AutoCAD DIMLINEAR: measures ΔX or ΔY, whichever is larger between the two picks"
               >
-                Point
+                Auto
               </button>
               <button
                 onClick={() => setMeasureMode('horizontal')}
@@ -1789,6 +2187,13 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
                 title="Vertical — distance along the Y axis between two picks (AutoCAD DIMLINEAR vertical)"
               >
                 V
+              </button>
+              <button
+                onClick={() => setMeasureMode('point')}
+                className={`px-2 transition-colors ${measureMode === 'point' ? 'bg-orange-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                title="Point — straight-line (Euclidean) distance between two picks (AutoCAD DIST)"
+              >
+                Point
               </button>
             </div>
             {/* Fixed-distance input — locks the second pick's axis-aligned
@@ -1833,14 +2238,14 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
           <div
             className="px-2 py-1 text-[11px] font-mono font-semibold text-orange-600 bg-orange-50 border border-orange-200 rounded whitespace-nowrap"
             title={
-              measureMode === 'horizontal' ? 'Horizontal distance (Δx) between the two picked points'
-              : measureMode === 'vertical' ? 'Vertical distance (Δy) between the two picked points'
+              measureResolved === 'horizontal' ? `Horizontal distance (Δx) between the two picked points${measureMode === 'auto' ? ' — Auto resolved to the X axis' : ''}`
+              : measureResolved === 'vertical' ? `Vertical distance (Δy) between the two picked points${measureMode === 'auto' ? ' — Auto resolved to the Y axis' : ''}`
               : 'Straight-line distance between the two picked points'
             }
           >
             {formatMeasureDistance(measureDistance)}
-            {measureMode === 'horizontal' ? ' ↔'
-              : measureMode === 'vertical' ? ' ↕'
+            {measureResolved === 'horizontal' ? ' ↔'
+              : measureResolved === 'vertical' ? ' ↕'
               : ''}
           </div>
         )}
@@ -1905,6 +2310,8 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
             </span>
             <span className="text-white/40">•</span>
             <span>Fit to reset</span>
+            <span className="text-white/40">•</span>
+            <span>Type <span className="font-mono font-semibold">DI</span> / <span className="font-mono font-semibold">DIM</span> to measure</span>
           </div>
         )}
 
@@ -1914,6 +2321,43 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
         {error && (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-red-600 px-6 text-center">{error}</div>
         )}
+      </div>
+
+      {/* AutoCAD-style command bar. Typing over the drawing focuses the
+       *  input automatically; Enter/Space runs, Enter on empty repeats,
+       *  Esc cancels the input then the measure tool. */}
+      <div className="shrink-0 border-t border-gray-200 bg-gray-50">
+        {cmdEcho && (
+          <div className="px-2.5 pt-1 text-[11px] font-mono text-gray-500 truncate" title={cmdEcho}>{cmdEcho}</div>
+        )}
+        <div className="flex items-center gap-1.5 px-2.5 h-7">
+          <span className="text-[11px] font-mono font-semibold text-gray-400 select-none">&gt;</span>
+          <input
+            ref={cmdInputRef}
+            value={cmdValue}
+            onChange={(e) => setCmdValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                runCommand(cmdValue);
+              } else if (e.key === 'Escape') {
+                if (cmdValue) {
+                  // Esc with text: cancel the input only — don't let the
+                  // window-level handler kill the measure tool too.
+                  e.stopPropagation();
+                  setCmdValue('');
+                  setCmdEcho('*Cancel*');
+                } else {
+                  (e.target as HTMLInputElement).blur();
+                }
+              }
+            }}
+            placeholder="Type a command — DI, DIM, H, V, Z, LA (? for help)"
+            spellCheck={false}
+            autoComplete="off"
+            className="flex-1 min-w-0 bg-transparent text-[11px] font-mono text-gray-700 focus:outline-none placeholder:text-gray-300"
+          />
+        </div>
       </div>
     </div>
   );
@@ -1971,8 +2415,9 @@ function rgbToHex(c: { r?: number; g?: number; b?: number }) {
  *  conventionally in millimetres, so we surface mm with a sensible
  *  precision and switch to metres for >= 1000 mm. */
 function formatMeasureDistance(mm: number): string {
-  if (mm >= 1000) return `${(mm / 1000).toFixed(2)} m`;
-  if (mm >= 10)   return `${mm.toFixed(1)} mm`;
+  // Two decimals to match AutoCAD's dimension readout (e.g. 18.56 mm) —
+  // one decimal loses real precision on machined parts.
+  if (mm >= 1000) return `${(mm / 1000).toFixed(3)} m`;
   return `${mm.toFixed(2)} mm`;
 }
 

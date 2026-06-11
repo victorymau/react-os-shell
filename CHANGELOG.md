@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [2.5.0] — 2026-06-11
+
+### Added
+- **DXF Preview: AutoCAD-style command bar.** A command line sits at the bottom of the DXF panel — type anywhere over the drawing and the keystrokes route into it, AutoCAD-style. Space or Enter executes; Enter on an empty line repeats the last command; Esc cancels the input, then the measure tool. Commands: `DI`/`DIST` (straight-line distance), `DIM`/`DLI`/`DIMLINEAR` (linear dimension), `H`/`V` (force the axis without losing picks), `AUTO`, a bare number (lock the H/V Δ, same as the fixed-distance input), `U` (undo last pick), `Z`/`ZOOM`/`FIT` (zoom extents), `LA`/`LAYERS` (layer panel), `?` (help). Familiar drawing/editing commands (`L`, `EX`, `TR`, `CO`, …) answer with a "Preview is a read-only viewer" hint instead of a generic error. Results echo above the input — `DIST` prints the AutoCAD-style `Distance = … ΔX = … ΔY = …` breakdown. (Preview app → 1.2.0.)
+- **DXF Preview: Auto (DIMLINEAR) measure mode.** New default mode in the measure pill — like AutoCAD's DIMLINEAR it measures ΔX or ΔY, whichever delta between the two picks is larger. Both dashed axis guides show after the first pick until the second resolves the axis; H/V still force it. The toolbar chip arrow follows the resolved axis.
+- **DXF Preview: midpoint and node snaps.** The cursor now also snaps to segment midpoints (triangle glyph) and POINT entities (circle-with-X glyph), alongside the existing endpoint / intersection / nearest-on-line snaps.
+- **`registerModalEscapeInterceptor(fn)`** — window content can claim an Escape press before the shell's Esc-closes-the-topmost-window handler acts on it (return `true` to consume; interceptors must verify they belong to the active modal via `getActiveModalId()`). The DXF Preview uses it for the AutoCAD Esc cascade: first Esc clears the command input, the next exits the measure tool, and only a further Esc closes the window.
+- **Kanban: per-column "+ Add item" button.** Pass the new `onAddItem(toColumn)` prop and each column grows an add button at its foot, revealed on column hover (or keyboard focus) and hidden otherwise — it always reserves its row so revealing it never shifts the layout. The label is customisable via `addItemText` (default "Add item"). Backward-compatible: columns render exactly as before when `onAddItem` is omitted.
+
+### Fixed
+- **DXF Preview: snapping was broken on real drawings — phantom snap points in empty space, "NaN mm" labels, and almost no snaps on actual geometry.** The snap cache walked dxf-viewer's vertex buffers as 3-component XYZ triplets, but dxf-viewer packs **2-component XY** pairs — every cached segment paired one vertex's Y with the next vertex's X, and the stride-6 loop read past the end of the buffer (the NaN). The walk also ignored index buffers (`INDEXED_LINES` — any polyline over 3 vertices) and per-instance INSERT transforms, which dxf-viewer applies in the vertex shader rather than `matrixWorld` — so block geometry snapped at its definition coordinates instead of where it's actually drawn. The cache now reads positions through the BufferAttribute API, follows the index buffer, bakes instance transforms (full 2×3 affine and point-translation forms) into world coords, filters non-finite values, and skips layers that are hidden when the measure session starts.
+- **DXF Preview: endpoint snaps were nearly impossible to hit while hovering the segment itself.** "Nearest-on-line" always won the closest-distance contest (the cursor's projection onto a hovered line is by definition closer than the line's endpoint), so the endpoint glyph only appeared beyond the segment's end. Snap types are now tiered AutoCAD-style: intersection and endpoint/node co-rank (closest wins), then midpoint, then nearest-on-line.
+- **Measure labels show two decimals (`18.56 mm`).** Values ≥ 10 mm were rounded to one decimal (`18.6 mm`), losing real precision against AutoCAD's dimension readout. Applies to the DXF and 3D measure tools.
+
 ## [2.4.0] — 2026-06-11
 
 ### Added

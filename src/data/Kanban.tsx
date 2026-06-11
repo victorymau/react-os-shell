@@ -18,7 +18,8 @@ import type { ReactNode } from 'react';
  * (between two cards, in either the source or a different column), and the
  * target column highlights. The dragged card dims. The insertion point tracks
  * `dragenter` (once per card crossed) so the line stays stable rather than
- * flickering.
+ * flickering. Pass `onAddItem` to give each column a "+ Add item" button at its
+ * foot, revealed on column hover / keyboard focus.
  */
 export interface KanbanColumn {
   /** Stable column key — what `columnOf` returns and `onMove` receives. */
@@ -53,6 +54,13 @@ export interface KanbanProps<T> {
   emptyState?: ReactNode;
   /** Placeholder text inside an empty column. */
   columnEmptyText?: string;
+  /**
+   * When provided, each column gets a "+ Add item" button at its foot, revealed
+   * on column hover or keyboard focus, that fires with the column's `value`.
+   */
+  onAddItem?: (toColumn: string) => void;
+  /** Label for the per-column add button. */
+  addItemText?: string;
 }
 
 interface OverState {
@@ -73,6 +81,8 @@ export default function Kanban<T>({
   loadingText = 'Loading…',
   emptyState,
   columnEmptyText = 'Drop here',
+  onAddItem,
+  addItemText = 'Add item',
 }: KanbanProps<T>) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [over, setOver] = useState<OverState | null>(null);
@@ -173,7 +183,7 @@ export default function Kanban<T>({
           return (
             <div
               key={col.value}
-              className={`flex flex-col w-72 shrink-0 rounded-xl bg-gray-50 border transition-colors ${
+              className={`group flex flex-col w-72 shrink-0 rounded-xl bg-gray-50 border transition-colors ${
                 isOver ? 'border-blue-400 ring-2 ring-blue-300/60' : 'border-gray-200'
               }`}
               onDragOver={e => {
@@ -279,6 +289,22 @@ export default function Kanban<T>({
                   </div>
                 )}
               </div>
+              {onAddItem && (
+                <div className="p-2 pt-0">
+                  <button
+                    type="button"
+                    onClick={() => onAddItem(col.value)}
+                    // Hidden until the column is hovered or the button is keyboard-focused.
+                    // It always reserves its row so revealing it never shifts the layout.
+                    className="flex w-full items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-gray-500 opacity-0 transition hover:bg-gray-100 hover:text-gray-700 focus-visible:opacity-100 group-hover:opacity-100"
+                  >
+                    <span aria-hidden className="text-sm leading-none">
+                      +
+                    </span>
+                    {addItemText}
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}
