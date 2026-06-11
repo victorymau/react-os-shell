@@ -223,7 +223,7 @@ export default function Desktop({ profile }: { profile: any }) {
   };
 
   // State
-  const [dragging, setDragging] = useState<{ type: 'item' | 'folder'; idx: number; startX: number; startY: number; origX: number; origY: number } | null>(null);
+  const [dragging, setDragging] = useState<{ type: 'item' | 'folder' | 'trash'; idx: number; startX: number; startY: number; origX: number; origY: number } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; itemIdx?: number; folderIdx?: number } | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [rubberBand, setRubberBand] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null);
@@ -362,13 +362,15 @@ export default function Desktop({ profile }: { profile: any }) {
   const [localPositions, setLocalPositions] = useState<Record<string, { right: number; top: number }>>({});
   // When the drag starts on a selected icon, all selected icons move together.
   // dragEntriesRef holds one entry per moving icon: its element, type, index,
-  // and origin position (relative to the desktop).
-  type DragEntry = { key: string; type: 'item' | 'folder'; idx: number; origX: number; origY: number; el: HTMLElement | null };
+  // and origin position (relative to the desktop). The Trash rides along too
+  // when it's part of the selection — its entry stores the BOTTOM offset in
+  // `origY` (the icon is bottom-anchored), every other type stores the top.
+  type DragEntry = { key: string; type: 'item' | 'folder' | 'trash'; idx: number; origX: number; origY: number; el: HTMLElement | null };
   const dragEntriesRef = useRef<DragEntry[]>([]);
 
-  const startDrag = (type: 'item' | 'folder', idx: number, e: React.PointerEvent) => {
+  const startDrag = (type: 'item' | 'folder' | 'trash', idx: number, e: React.PointerEvent) => {
     if (e.button !== 0) return;
-    const primaryKey = `${type}-${idx}`;
+    const primaryKey = type === 'trash' ? 'trash' : `${type}-${idx}`;
     // If the icon being grabbed is in the current selection, every selected
     // icon comes along. Otherwise it's a single-icon drag and we replace
     // the selection with just this one.
@@ -391,6 +393,13 @@ export default function Desktop({ profile }: { profile: any }) {
         const pos = getFolderPos(f, i);
         const el = document.querySelector(`[data-desktop-icon="${key}"]`) as HTMLElement | null;
         entries.push({ key, type: 'folder', idx: i, origX: pos.right, origY: pos.top, el });
+      } else if (key === 'trash') {
+        const el = document.querySelector('[data-desktop-icon="trash"]') as HTMLElement | null;
+        if (!el) continue;
+        // Read the live inline offsets React set (right/bottom anchoring).
+        const right = parseFloat(el.style.right || '0') || 0;
+        const bottom = parseFloat(el.style.bottom || '0') || 0;
+        entries.push({ key, type: 'trash', idx: 0, origX: right, origY: bottom, el });
       }
     }
     dragEntriesRef.current = entries;
@@ -414,10 +423,16 @@ export default function Desktop({ profile }: { profile: any }) {
       // Apply delta to every dragged icon.
       for (const entry of entries) {
         if (!entry.el) continue;
-        // Moving right → decrease right offset; moving down → increase top offset
+        // Moving right → decrease right offset; moving down → increase top
+        // offset — except the Trash, whose origY is a BOTTOM offset, so
+        // moving down decreases it.
         entry.el.style.right = `${entry.origX - dx}px`;
-        entry.el.style.top = `${entry.origY + dy}px`;
-        entry.el.style.left = 'auto';
+        if (entry.type === 'trash') {
+          entry.el.style.bottom = `${entry.origY - dy}px`;
+        } else {
+          entry.el.style.top = `${entry.origY + dy}px`;
+          entry.el.style.left = 'auto';
+        }
         entry.el.style.zIndex = '100';
         entry.el.style.opacity = '0.7';
       }
@@ -451,14 +466,26 @@ export default function Desktop({ profile }: { profile: any }) {
       hoverFolderIdxRef.current = null;
       setHoverFolderIdx(null);
 
-      // Compute final positions for each dragged entry.
-      const computedPositions = entries.map(entry => {
+      // Compute final positions for each dragged entry. The Trash is
+      // bottom-anchored and never snaps — handled separately below.
+      const computedPositions = entries.filter(en => en.type !== 'trash').map(entry => {
         let finalRight = entry.origX - dx;
         let finalTop = Math.max(0, entry.origY + dy);
         if (snapEnabled) { const s = snapToGrid(finalRight, finalTop); finalRight = s.x; finalTop = s.y; }
         finalRight = Math.max(0, finalRight);
         return { entry, finalRight, finalTop };
       });
+
+      // Persist the trash's new corner offsets when it rode along.
+      const trashEntry = entries.find(en => en.type === 'trash');
+      if (trashEntry) {
+        saveShellPrefs({
+          desktop_trash_position: {
+            right: Math.max(0, trashEntry.origX - dx),
+            bottom: Math.max(0, trashEntry.origY - dy),
+          },
+        } as any);
+      }
 
       // Persist items.
       const itemMoves = computedPositions.filter(p => p.entry.type === 'item');
@@ -879,6 +906,14 @@ export default function Desktop({ profile }: { profile: any }) {
           if (e.button !== 0) return;
           e.preventDefault();
           e.stopPropagation();
+          // When the Trash is part of a multi-selection, the whole selection
+          // moves as one group through the shared drag pipeline (which knows
+          // the trash is bottom-anchored). Solo drags keep this dedicated
+          // path so the trash stays draggable on its own.
+          if (selected.has('trash') && selected.size > 1) {
+            startDrag('trash', 0, e);
+            return;
+          }
           const el = e.currentTarget as HTMLElement;
           const startX = e.clientX, startY = e.clientY;
           let moved = false;

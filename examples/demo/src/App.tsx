@@ -68,6 +68,11 @@ const GridDemo = lazy(() => import('./GridDemo'));
 const HelpCenterDemo = lazy(() => import('./HelpCenterDemo'));
 const BadgesDemo = lazy(() => import('./BadgesDemo'));
 const FormControlsDemo = lazy(() => import('./FormControlsDemo'));
+const WindowStylesDemo = lazy(() => import('./WindowStylesDemo'));
+// Per-style window bodies (named exports of the same module) — each is
+// registered under its own route with the matching chrome flags.
+const winStyle = (name: string) =>
+  lazy(() => import('./WindowStylesDemo').then(m => ({ default: (m as any)[name] })));
 
 setShellWindowRegistry(createWindowRegistry(bundledApps, {
   // The shell's menus (desktop right-click, profile menu) open
@@ -132,6 +137,20 @@ setShellWindowRegistry(createWindowRegistry(bundledApps, {
     label: 'Form Controls',
     size: 'lg',
   },
+  // Window-style showcase: a launcher plus one route per chrome variant.
+  '/windows-demo': {
+    component: WindowStylesDemo,
+    label: 'Window Styles',
+    size: 'lg',
+  },
+  '/win-standard': { component: winStyle('StandardWindow'), label: 'Standard window', size: 'md' },
+  '/win-full': { component: winStyle('FullSizeWindow'), label: 'Full size window', size: '2xl' },
+  '/win-compact': { component: winStyle('CompactWindow'), label: 'Compact window', size: 'sm', compact: true, dimensions: [340, 300] },
+  '/win-widget': { component: winStyle('WidgetWindow'), label: 'Widget window', widget: true, utility: true, allowPinOnTop: true, dimensions: [320, 220] },
+  '/win-app': { component: winStyle('AppStyleWindow'), label: 'App-style window', size: 'lg', appStyle: true },
+  '/win-flush': { component: winStyle('FlushBodyWindow'), label: 'Flush-body window', size: 'lg', flushBody: true },
+  '/win-auto': { component: winStyle('AutoHeightWindow'), label: 'Auto-height window', size: 'sm', autoHeight: true },
+  '/win-pinned': { component: winStyle('PinnedWindow'), label: 'Pinned window', size: 'sm', allowPinOnTop: true },
   // Entity windows opened by ⌘K search results (see searchDemo.tsx).
   person: DEMO_ENTITY_WINDOWS.person,
   project: DEMO_ENTITY_WINDOWS.project,
@@ -213,6 +232,7 @@ const NAV_SECTIONS = [
       { to: '/grid-demo', label: 'Grid' },
       { to: '/kanban-demo', label: 'Kanban' },
       { to: '/form-demo', label: 'Form Controls' },
+      { to: '/windows-demo', label: 'Window Styles' },
       { to: '/sidebar-demo', label: 'Sidebar' },
       { to: '/topnav-demo', label: 'Top Nav' },
       { to: '/breadcrumbs-demo', label: 'Breadcrumbs' },
@@ -262,6 +282,7 @@ const NAV_ICONS: Record<string, JSX.Element> = {
   '/breadcrumbs-demo': path('M5.25 4.5l7.5 7.5-7.5 7.5m6-15l7.5 7.5-7.5 7.5'),
   '/grid-demo': path('M3.75 5.25h16.5v13.5H3.75zM3.75 9.75h16.5M3.75 14.25h16.5M9.5 5.25v13.5M15 5.25v13.5'),
   '/form-demo': path('M3.75 6.75h16.5v4.5H3.75zM6.5 9h6M16 8l1.5 2L19 8M3.75 14.25h16.5v3H3.75z'),
+  '/windows-demo': path('M7.5 7.5V5.25A1.5 1.5 0 019 3.75h10.5a1.5 1.5 0 011.5 1.5v9a1.5 1.5 0 01-1.5 1.5H17.5M3 9.75A1.5 1.5 0 014.5 8.25H15a1.5 1.5 0 011.5 1.5v9a1.5 1.5 0 01-1.5 1.5H4.5a1.5 1.5 0 01-1.5-1.5v-9zM3 12h13.5'),
   '/help-demo': path('M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z'),
   '/badges-demo': path('M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.746 3.746 0 011.043 3.296A3.745 3.745 0 0121 12z'),
 };

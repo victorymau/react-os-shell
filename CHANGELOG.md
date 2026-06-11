@@ -4,15 +4,21 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [2.2.0] — 2026-06-11
+
+### Added
+- **`WindowErrorBoundary` + `WindowCrashedFallback`** exported for consumers who render window-like surfaces of their own outside the shell's window manager (see Fixed below for what the shell now does with them).
+- **Demo: Window Styles page.** Components ▸ Window Styles opens a launcher with one live window per chrome variant — standard, full-size (`2xl`), compact title bar, widget (no title bar, body-drag, no taskbar tab), app-style (zero padding, for self-chromed apps), flush body (standard chrome, edge-to-edge two-pane content), auto-height, and pin-on-top — each card listing the registry flags that produce it.
+
+### Fixed
+- **A crashing window no longer takes down the whole desktop.** A page or entity component that threw during render propagated to the root with no error boundary in between, unmounting the entire shell to a blank screen (observed live in a portal: a settings page choking on malformed data). Window content now renders inside an error boundary: the crashed window shows an inline "This window crashed" state with the error message and a **Reload window** button that remounts the content, its title bar — including close — keeps working, and the desktop, taskbar and every other window are unaffected. A second boundary around each open window catches crashes outside the body (e.g. a registry `title()` throwing on bad data, or a `rendersOwnModal` component dying before its window mounts) and replaces that window with a plain one carrying the same crash state.
+- **Trash now moves with a group selection.** Rubber-band or shift-select the Trash together with other icons and dragging any of them moves the whole selection — previously everything else moved and the Trash stayed behind. Grabbing the Trash itself while it's part of a selection drags the group too; on its own it still moves individually. (The Trash stays bottom-anchored and exempt from snap-to-grid, as before.)
+
 ## [2.1.0] — 2026-06-11
 
 ### Added
 - **`SearchableSelect`** — combobox-style form control, promoted from the EFFICIENT admin portal where it fronts every entity picker. Renders as a normal form input; focusing it turns it into a filter box over the supplied options (label + optional right-aligned `sublabel`, both searchable), with a frosted-glass dropdown that follows every color theme, viewport-aware left/right anchoring, Enter-picks-a-unique-match, Escape-to-close, a hover-revealed × to clear, duplicate-option dedupe, and a disabled state. Options: `allowFreeText` (Enter/blur commits typed text not in the list), `onSearchChange` (feed a debounced server-side query and keep streaming results through `options`), and `rightAdornment` (e.g. a `StatusBadge` riding inside the field's right edge, hidden while typing). Exported with `SearchableOption` / `SearchableSelectProps` types.
 - **Demo: Form Controls page.** New Components ▸ Form Controls window showing five `SearchableSelect` variants (basic, sublabels + status-pill adornment, free text, debounced async search over a fake 250-row server, disabled) plus a button-triggered `PopupMenu` example (labels, items, divider, danger item).
-- **`WindowErrorBoundary` + `WindowCrashedFallback`** exported for consumers who render window-like surfaces of their own outside the shell's window manager (see Fixed below for what the shell now does with them).
-
-### Fixed
-- **A crashing window no longer takes down the whole desktop.** A page or entity component that threw during render propagated to the root with no error boundary in between, unmounting the entire shell to a blank screen (observed live in a portal: a settings page choking on malformed data). Window content now renders inside an error boundary: the crashed window shows an inline "This window crashed" state with the error message and a **Reload window** button that remounts the content, its title bar — including close — keeps working, and the desktop, taskbar and every other window are unaffected. A second boundary around each open window catches crashes outside the body (e.g. a registry `title()` throwing on bad data, or a `rendersOwnModal` component dying before its window mounts) and replaces that window with a plain one carrying the same crash state.
 
 ## [2.0.1] — 2026-06-11
 
