@@ -18,11 +18,15 @@
  *   - Status-badge tone-downs (matches the 8 semantic groups in StatusBadge)
  *   - Scrollbar styling for editable grids and dark-mode containers
  *
- * Per-theme variants (pink / green / grey / blue) ship as extension
- * stylesheets the consumer can opt into separately — not included here.
+ * Per-theme accent variants (pink / green / grey / blue + custom accent)
+ * live in themes.css, imported below so every consumer gets the full set —
+ * useTheme() offers all of them in every portal, so the remaps must exist
+ * wherever styles.css is loaded. themes.css is also exported standalone
+ * ("react-os-shell/themes.css") for consumers that import granularly.
  */
 
 @import "tailwindcss";
+@import "./themes.css";
 
 /* Tailwind v4 doesn't scan node_modules by default — tell it to scan this
    package's compiled JS so utility classes used in shell components get
@@ -212,6 +216,7 @@
 [data-theme="dark"] [data-sticky-id] .text-black\/70 { color: rgba(230, 233, 245, 0.92) !important; }
 [data-theme="dark"] [data-sticky-id] .text-black\/30 { color: rgba(230, 233, 245, 0.45) !important; }
 [data-theme="dark"] [data-sticky-id] .text-black\/20 { color: rgba(230, 233, 245, 0.42) !important; }
+[data-theme="dark"] [data-sticky-id] .text-black\/15 { color: rgba(230, 233, 245, 0.35) !important; }
 [data-theme="dark"] [data-sticky-id] .hover\:text-black\/50:hover { color: rgba(230, 233, 245, 0.70) !important; }
 [data-theme="dark"] [data-sticky-id] .placeholder\:text-black\/30::placeholder { color: rgba(230, 233, 245, 0.45) !important; }
 [data-theme="dark"] [data-sticky-id] .bg-black\/10 { background-color: rgba(230, 233, 245, 0.16) !important; }
@@ -261,6 +266,186 @@
 [data-theme="dark"] .bg-yellow-100.text-yellow-800 { background-color: rgba(234, 179, 8, 0.18) !important; color: #fde68a !important; }
 [data-theme="dark"] .bg-orange-100.text-orange-800 { background-color: rgba(249, 115, 22, 0.18) !important; color: #fdba74 !important; }
 [data-theme="dark"] .bg-red-100.text-red-800 { background-color: rgba(239, 68, 68, 0.18) !important; color: #fca5a5 !important; }
+
+/* ── Extended dark-mode tint families ────────────────────────────────
+   Upstreamed 2026-06-13 from the admin portal's 2026-06-10 audit so all
+   consumers share one source of truth. Every hue used by chips/badges
+   (tag colors, group colors, status accents, deal stages), notice
+   banners, verdict panels, row tints and danger buttons gets the same
+   scale as the families above: -50 → 10% tint, -100 → 18%, -200 → ~30%,
+   borders -200 → 32% / -300 → 45%, and dark inks flip to the
+   -400/-300/-200 light end of their scale.
+   Deliberately NOT remapped: game surfaces that read as intentionally
+   light (Calculator LCD bg-slate-200/text-slate-600/800, 2048/Chess
+   tiles, weather gradients), the Customization theme-preview swatches
+   (bg-pink-50/90, bg-green-50/90, bg-blue-50/90, bg-gray-200/90,
+   bg-pink-200, bg-green-200 — they must show each theme's real colors),
+   and low white/black alphas used as glass highlights on wallpaper. */
+
+/* Red */
+[data-theme="dark"] .bg-red-50 { background-color: rgba(239, 68, 68, 0.10) !important; }
+[data-theme="dark"] .hover\:bg-red-50:hover { background-color: rgba(239, 68, 68, 0.16) !important; }
+[data-theme="dark"] .active\:bg-red-50:active { background-color: rgba(239, 68, 68, 0.16) !important; }
+[data-theme="dark"] .bg-red-50\/30 { background-color: rgba(239, 68, 68, 0.06) !important; }
+[data-theme="dark"] .bg-red-50\/50 { background-color: rgba(239, 68, 68, 0.08) !important; }
+[data-theme="dark"] .hover\:bg-red-100:hover { background-color: rgba(239, 68, 68, 0.22) !important; }
+[data-theme="dark"] .border-red-200 { border-color: rgba(239, 68, 68, 0.35) !important; }
+[data-theme="dark"] .border-red-300,
+[data-theme="dark"] .hover\:border-red-300:hover { border-color: rgba(239, 68, 68, 0.45) !important; }
+[data-theme="dark"] .text-red-600,
+[data-theme="dark"] .hover\:text-red-600:hover { color: #f87171 !important; }
+[data-theme="dark"] .hover\:text-red-700:hover { color: #fca5a5 !important; }
+[data-theme="dark"] .text-red-800,
+[data-theme="dark"] .hover\:text-red-800:hover { color: #fecaca !important; }
+[data-theme="dark"] .text-red-900 { color: #fecaca !important; }
+
+/* Amber */
+[data-theme="dark"] .bg-amber-50 { background-color: rgba(245, 158, 11, 0.10) !important; }
+[data-theme="dark"] .hover\:bg-amber-50:hover { background-color: rgba(245, 158, 11, 0.14) !important; }
+[data-theme="dark"] .bg-amber-50\/30 { background-color: rgba(245, 158, 11, 0.06) !important; }
+[data-theme="dark"] .bg-amber-50\/40 { background-color: rgba(245, 158, 11, 0.07) !important; }
+[data-theme="dark"] .bg-amber-50\/50 { background-color: rgba(245, 158, 11, 0.08) !important; }
+[data-theme="dark"] .hover\:bg-amber-100:hover { background-color: rgba(245, 158, 11, 0.24) !important; }
+[data-theme="dark"] .bg-amber-200 { background-color: rgba(245, 158, 11, 0.28) !important; }
+[data-theme="dark"] .border-amber-200 { border-color: rgba(245, 158, 11, 0.35) !important; }
+[data-theme="dark"] .border-amber-300,
+[data-theme="dark"] .hover\:border-amber-300:hover { border-color: rgba(245, 158, 11, 0.45) !important; }
+[data-theme="dark"] .text-amber-600,
+[data-theme="dark"] .hover\:text-amber-600:hover { color: #fbbf24 !important; }
+[data-theme="dark"] .text-amber-800 { color: #fde68a !important; }
+[data-theme="dark"] .text-amber-900 { color: #fde68a !important; }
+
+/* Yellow */
+[data-theme="dark"] .bg-yellow-50 { background-color: rgba(234, 179, 8, 0.10) !important; }
+[data-theme="dark"] .bg-yellow-50\/50 { background-color: rgba(234, 179, 8, 0.08) !important; }
+[data-theme="dark"] .border-yellow-200 { border-color: rgba(234, 179, 8, 0.35) !important; }
+[data-theme="dark"] .border-yellow-300 { border-color: rgba(234, 179, 8, 0.45) !important; }
+[data-theme="dark"] .text-yellow-600,
+[data-theme="dark"] .hover\:text-yellow-600:hover { color: #facc15 !important; }
+[data-theme="dark"] .text-yellow-900 { color: #fef08a !important; }
+
+/* Green / emerald */
+[data-theme="dark"] .bg-green-50 { background-color: rgba(34, 197, 94, 0.10) !important; }
+[data-theme="dark"] .hover\:bg-green-50:hover { background-color: rgba(34, 197, 94, 0.14) !important; }
+[data-theme="dark"] .bg-green-50\/40 { background-color: rgba(34, 197, 94, 0.06) !important; }
+[data-theme="dark"] .border-green-200 { border-color: rgba(34, 197, 94, 0.32) !important; }
+[data-theme="dark"] .border-green-300,
+[data-theme="dark"] .hover\:border-green-300:hover { border-color: rgba(34, 197, 94, 0.45) !important; }
+[data-theme="dark"] .text-green-600,
+[data-theme="dark"] .hover\:text-green-600:hover { color: #4ade80 !important; }
+[data-theme="dark"] .text-green-900,
+[data-theme="dark"] .hover\:text-green-800:hover { color: #bbf7d0 !important; }
+[data-theme="dark"] .bg-emerald-50 { background-color: rgba(16, 185, 129, 0.10) !important; }
+[data-theme="dark"] .hover\:bg-emerald-100:hover { background-color: rgba(16, 185, 129, 0.24) !important; }
+[data-theme="dark"] .border-emerald-200 { border-color: rgba(16, 185, 129, 0.32) !important; }
+[data-theme="dark"] .border-emerald-300 { border-color: rgba(16, 185, 129, 0.45) !important; }
+[data-theme="dark"] .text-emerald-600 { color: #34d399 !important; }
+[data-theme="dark"] .text-emerald-800 { color: #a7f3d0 !important; }
+
+/* Orange */
+[data-theme="dark"] .bg-orange-50 { background-color: rgba(249, 115, 22, 0.10) !important; }
+[data-theme="dark"] .hover\:bg-orange-50:hover { background-color: rgba(249, 115, 22, 0.14) !important; }
+[data-theme="dark"] .hover\:bg-orange-200:hover { background-color: rgba(249, 115, 22, 0.30) !important; }
+[data-theme="dark"] .border-orange-200 { border-color: rgba(249, 115, 22, 0.32) !important; }
+[data-theme="dark"] .border-orange-300,
+[data-theme="dark"] .hover\:border-orange-300:hover { border-color: rgba(249, 115, 22, 0.45) !important; }
+[data-theme="dark"] .text-orange-600 { color: #fb923c !important; }
+[data-theme="dark"] .text-orange-900 { color: #fed7aa !important; }
+
+/* Sky / teal / cyan */
+[data-theme="dark"] .bg-sky-50 { background-color: rgba(14, 165, 233, 0.10) !important; }
+[data-theme="dark"] .border-sky-300 { border-color: rgba(14, 165, 233, 0.45) !important; }
+[data-theme="dark"] .bg-teal-50 { background-color: rgba(20, 184, 166, 0.10) !important; }
+[data-theme="dark"] .bg-teal-100 { background-color: rgba(20, 184, 166, 0.18) !important; }
+[data-theme="dark"] .text-teal-600 { color: #2dd4bf !important; }
+[data-theme="dark"] .text-teal-700 { color: #5eead4 !important; }
+[data-theme="dark"] .text-teal-800 { color: #99f6e4 !important; }
+[data-theme="dark"] .text-cyan-600 { color: #22d3ee !important; }
+
+/* Purple / violet */
+[data-theme="dark"] .bg-purple-50 { background-color: rgba(168, 85, 247, 0.10) !important; }
+[data-theme="dark"] .hover\:bg-purple-50:hover { background-color: rgba(168, 85, 247, 0.14) !important; }
+[data-theme="dark"] .border-purple-200 { border-color: rgba(168, 85, 247, 0.32) !important; }
+[data-theme="dark"] .border-purple-300,
+[data-theme="dark"] .hover\:border-purple-300:hover { border-color: rgba(168, 85, 247, 0.45) !important; }
+[data-theme="dark"] .text-purple-600 { color: #c084fc !important; }
+[data-theme="dark"] .text-purple-800,
+[data-theme="dark"] .text-purple-900 { color: #e9d5ff !important; }
+[data-theme="dark"] .bg-violet-100 { background-color: rgba(139, 92, 246, 0.18) !important; }
+[data-theme="dark"] .border-violet-300 { border-color: rgba(139, 92, 246, 0.45) !important; }
+[data-theme="dark"] .text-violet-800 { color: #ddd6fe !important; }
+
+/* Pink / rose */
+[data-theme="dark"] .bg-pink-100 { background-color: rgba(236, 72, 153, 0.18) !important; }
+[data-theme="dark"] .border-pink-200 { border-color: rgba(236, 72, 153, 0.32) !important; }
+[data-theme="dark"] .border-pink-300 { border-color: rgba(236, 72, 153, 0.45) !important; }
+[data-theme="dark"] .text-pink-600 { color: #f472b6 !important; }
+[data-theme="dark"] .text-pink-800,
+[data-theme="dark"] .text-pink-900 { color: #fbcfe8 !important; }
+[data-theme="dark"] .bg-rose-100 { background-color: rgba(244, 63, 94, 0.18) !important; }
+[data-theme="dark"] .text-rose-700 { color: #fda4af !important; }
+[data-theme="dark"] .text-rose-800 { color: #fecdd3 !important; }
+
+/* Indigo / slate */
+[data-theme="dark"] .bg-indigo-50 { background-color: rgba(99, 102, 241, 0.15) !important; }
+[data-theme="dark"] .hover\:bg-indigo-100:hover { background-color: rgba(99, 102, 241, 0.25) !important; }
+[data-theme="dark"] .text-indigo-600 { color: #a5b4fc !important; }
+[data-theme="dark"] .border-indigo-300 { border-color: rgba(99, 102, 241, 0.45) !important; }
+[data-theme="dark"] .text-slate-700 { color: #cbd5e1 !important; } /* slate-600/800 left for the Calculator LCD */
+[data-theme="dark"] .border-slate-300 { border-color: rgba(148, 163, 184, 0.35) !important; }
+
+/* Blue — gaps beyond the accent remaps above. Hover/active steps sit one
+   ladder step above their resting tint (base .26 → active .30; the /30../50
+   alpha ladder steps 0.10/0.12/0.15 → hovers 0.12/0.15/0.18). */
+[data-theme="dark"] .bg-blue-200 { background-color: rgba(59, 130, 246, 0.35) !important; }
+[data-theme="dark"] .active\:bg-blue-200:active { background-color: rgba(59, 130, 246, 0.40) !important; }
+[data-theme="dark"] .bg-blue-200\/60 { background-color: rgba(59, 130, 246, 0.20) !important; }
+[data-theme="dark"] .hover\:bg-blue-100:hover { background-color: rgba(59, 130, 246, 0.26) !important; }
+[data-theme="dark"] .active\:bg-blue-50:active { background-color: rgba(59, 130, 246, 0.30) !important; }
+[data-theme="dark"] .hover\:bg-blue-50\/30:hover { background-color: rgba(59, 130, 246, 0.12) !important; }
+[data-theme="dark"] .hover\:bg-blue-50\/40:hover { background-color: rgba(59, 130, 246, 0.15) !important; }
+[data-theme="dark"] .hover\:bg-blue-50\/50:hover { background-color: rgba(59, 130, 246, 0.18) !important; }
+[data-theme="dark"] .border-blue-100 { border-color: rgba(59, 130, 246, 0.22) !important; }
+[data-theme="dark"] .border-blue-200,
+[data-theme="dark"] .hover\:border-blue-200:hover { border-color: rgba(59, 130, 246, 0.32) !important; }
+[data-theme="dark"] .border-blue-300,
+[data-theme="dark"] .hover\:border-blue-300:hover { border-color: rgba(59, 130, 246, 0.45) !important; }
+[data-theme="dark"] .border-blue-300\/50 { border-color: rgba(59, 130, 246, 0.25) !important; }
+[data-theme="dark"] .text-blue-900 { color: #bfdbfe !important; }
+[data-theme="dark"] .hover\:text-blue-600:hover { color: #93c5fd !important; }
+[data-theme="dark"] .hover\:text-blue-800:hover { color: #bfdbfe !important; }
+/* File-input buttons (file: compiles to ::file-selector-button) */
+[data-theme="dark"] .file\:bg-blue-50::file-selector-button { background-color: rgba(59, 130, 246, 0.26) !important; }
+[data-theme="dark"] .file\:text-blue-700::file-selector-button { color: #bfdbfe !important; }
+[data-theme="dark"] .hover\:file\:bg-blue-100:hover::file-selector-button { background-color: rgba(59, 130, 246, 0.26) !important; }
+
+/* Gray interaction-state variants (separate class names from the bare remaps) */
+[data-theme="dark"] .hover\:text-gray-600:hover,
+[data-theme="dark"] .hover\:text-gray-700:hover { color: #a6adc8 !important; }
+[data-theme="dark"] .hover\:text-gray-800:hover { color: #bac2de !important; }
+[data-theme="dark"] .hover\:text-gray-900:hover,
+[data-theme="dark"] .active\:text-gray-900:active { color: #cdd6f4 !important; }
+[data-theme="dark"] .active\:bg-gray-100:active { background-color: #313244 !important; }
+[data-theme="dark"] .active\:bg-gray-200:active { background-color: #45475a !important; }
+[data-theme="dark"] .active\:bg-gray-300:active,
+[data-theme="dark"] .hover\:bg-gray-300:hover { background-color: #585b70 !important; }
+[data-theme="dark"] .disabled\:bg-gray-100:disabled { background-color: #1e1e2e !important; }
+[data-theme="dark"] .disabled\:bg-gray-200:disabled { background-color: #313244 !important; }
+[data-theme="dark"] .hover\:bg-gray-200\/50:hover { background-color: rgba(69, 71, 90, 0.5) !important; }
+[data-theme="dark"] .even\:bg-gray-50\/50:nth-child(even) { background-color: rgba(24, 24, 37, 0.5) !important; }
+[data-theme="dark"] .border-gray-50,
+[data-theme="dark"] .divide-gray-50 > :not(:last-child) { border-color: #2a2a3c !important; }
+[data-theme="dark"] .border-gray-200\/50 { border-color: rgba(49, 50, 68, 0.6) !important; }
+[data-theme="dark"] .hover\:border-gray-200:hover { border-color: #313244 !important; }
+[data-theme="dark"] .hover\:border-gray-300:hover { border-color: #45475a !important; }
+
+/* White panel surfaces / solid black ink. hover-to-white means "emphasize",
+   which on dark glass means a solid panel tint; hover-to-black ink flips to
+   brighter, not darker (e.g. the taskbar bell). */
+[data-theme="dark"] .bg-white\/85 { background-color: rgba(30, 30, 46, 0.85) !important; }
+[data-theme="dark"] .hover\:bg-white:hover { background-color: #1e1e2e !important; }
+[data-theme="dark"] .text-black { color: #cdd6f4 !important; }
+[data-theme="dark"] .hover\:text-black:hover { color: #ffffff !important; }
 
 /* Scrollbar */
 /* Force visible scrollbars on editable grids (macOS hides them by default) */

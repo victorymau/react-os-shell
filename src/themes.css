@@ -1,0 +1,244 @@
+/**
+ * react-os-shell theme variants — accent + surface-tint remaps for the
+ * pink / green / grey / blue themes and the user-picked custom accent.
+ *
+ * useTheme() stamps `data-theme="<name>"` on <html> and, when the user
+ * picks a custom accent color, `data-custom-accent` plus the --accent-*
+ * shade scale. This file turns those attributes into looks by remapping
+ * the blue accent utilities (bg-blue-600 buttons, text-blue-700 links,
+ * focus rings, checkbox accents) and tinting the neutral gray surfaces.
+ *
+ * styles.css imports this file, so plain `import 'react-os-shell/styles.css'`
+ * already includes it. It is exported standalone ("react-os-shell/themes.css")
+ * only for consumers that build their CSS granularly.
+ *
+ * Dark-theme remaps are NOT here — they live in styles.css, because dark
+ * is a readability baseline rather than an accent variant.
+ *
+ * Upstreamed 2026-06-13 from the admin portal's index.css so all three
+ * EFFICIENT portals + the demo share one source of truth.
+ */
+
+/* ═══════════════════════════════════════════════════
+   Theme: Pink
+   Swaps the blue accent to pink/rose throughout
+   ═══════════════════════════════════════════════════ */
+
+/* Accent backgrounds */
+[data-theme="pink"] .bg-blue-600 { background-color: #db2777 !important; }
+[data-theme="pink"] .bg-blue-700 { background-color: #be185d !important; }
+[data-theme="pink"] .bg-blue-500 { background-color: #ec4899 !important; }
+[data-theme="pink"] .bg-blue-100 { background-color: #fce7f3 !important; }
+[data-theme="pink"] .bg-blue-50 { background-color: #fdf2f8 !important; }
+
+/* Accent text */
+[data-theme="pink"] .text-blue-600 { color: #db2777 !important; }
+[data-theme="pink"] .text-blue-700 { color: #be185d !important; }
+[data-theme="pink"] .text-blue-800 { color: #9d174d !important; }
+[data-theme="pink"] .text-blue-500 { color: #ec4899 !important; }
+
+/* Accent borders */
+[data-theme="pink"] .border-blue-600 { border-color: #db2777 !important; }
+[data-theme="pink"] .border-blue-500 { border-color: #ec4899 !important; }
+[data-theme="pink"] .border-blue-400 { border-color: #f472b6 !important; }
+[data-theme="pink"] .border-blue-300 { border-color: #f9a8d4 !important; }
+[data-theme="pink"] .border-blue-200 { border-color: #fbcfe8 !important; }
+
+/* Accent hover */
+[data-theme="pink"] .hover\:bg-blue-700:hover { background-color: #be185d !important; }
+[data-theme="pink"] .hover\:bg-blue-100:hover { background-color: #fce7f3 !important; }
+[data-theme="pink"] .hover\:bg-blue-50:hover { background-color: #fdf2f8 !important; }
+[data-theme="pink"] .hover\:text-blue-800:hover { color: #9d174d !important; }
+[data-theme="pink"] .hover\:border-blue-300:hover { border-color: #f9a8d4 !important; }
+
+/* Focus rings */
+[data-theme="pink"] .focus\:border-blue-500:focus { border-color: #ec4899 !important; }
+[data-theme="pink"] .focus\:ring-blue-500:focus { --tw-ring-color: #ec4899 !important; }
+
+/* Checkbox accent */
+[data-theme="pink"] input[type="checkbox"].text-blue-600 { accent-color: #db2777; }
+[data-theme="pink"] input[type="range"].accent-blue-600 { accent-color: #db2777; }
+
+/* Ring colors */
+[data-theme="pink"] .ring-blue-300 { --tw-ring-color: #f9a8d4 !important; }
+
+/* Pink tint on backgrounds */
+[data-theme="pink"] .bg-white { background-color: #fff5f9 !important; }
+[data-theme="pink"] .bg-gray-100 { background-color: #fce7f3 !important; }
+[data-theme="pink"] .bg-gray-50 { background-color: #fdf2f8 !important; }
+[data-theme="pink"] .bg-gray-200 { background-color: #fbcfe8 !important; }
+
+/* Pink tint on borders — kept light to distinguish from accent */
+[data-theme="pink"] .border-gray-200 { border-color: #fce7f3 !important; }
+[data-theme="pink"] .border-gray-300 { border-color: #fbcfe8 !important; }
+[data-theme="pink"] .border-gray-100 { border-color: #fdf2f8 !important; }
+[data-theme="pink"] .divide-gray-200 > :not(:last-child) { border-color: #fce7f3 !important; }
+[data-theme="pink"] .divide-gray-100 > :not(:last-child) { border-color: #fdf2f8 !important; }
+
+/* Pink hover states */
+[data-theme="pink"] .hover\:bg-gray-50:hover { background-color: #fdf2f8 !important; }
+[data-theme="pink"] .hover\:bg-gray-100:hover { background-color: #fce7f3 !important; }
+[data-theme="pink"] .hover\:bg-gray-200:hover { background-color: #fbcfe8 !important; }
+
+
+/* ═══════════════════════════════════════════════════
+   Theme: Green
+   Swaps the blue accent to green/emerald throughout
+   ═══════════════════════════════════════════════════ */
+
+/* Accent backgrounds */
+[data-theme="green"] .bg-blue-600 { background-color: #059669 !important; }
+[data-theme="green"] .bg-blue-700 { background-color: #047857 !important; }
+[data-theme="green"] .bg-blue-500 { background-color: #10b981 !important; }
+[data-theme="green"] .bg-blue-100 { background-color: #d1fae5 !important; }
+[data-theme="green"] .bg-blue-50 { background-color: #ecfdf5 !important; }
+
+/* Accent text */
+[data-theme="green"] .text-blue-600 { color: #059669 !important; }
+[data-theme="green"] .text-blue-700 { color: #047857 !important; }
+[data-theme="green"] .text-blue-800 { color: #065f46 !important; }
+[data-theme="green"] .text-blue-500 { color: #10b981 !important; }
+
+/* Accent borders */
+[data-theme="green"] .border-blue-600 { border-color: #059669 !important; }
+[data-theme="green"] .border-blue-500 { border-color: #10b981 !important; }
+[data-theme="green"] .border-blue-400 { border-color: #34d399 !important; }
+[data-theme="green"] .border-blue-300 { border-color: #6ee7b7 !important; }
+[data-theme="green"] .border-blue-200 { border-color: #a7f3d0 !important; }
+
+/* Accent hover */
+[data-theme="green"] .hover\:bg-blue-700:hover { background-color: #047857 !important; }
+[data-theme="green"] .hover\:bg-blue-100:hover { background-color: #d1fae5 !important; }
+[data-theme="green"] .hover\:bg-blue-50:hover { background-color: #ecfdf5 !important; }
+[data-theme="green"] .hover\:text-blue-800:hover { color: #065f46 !important; }
+[data-theme="green"] .hover\:border-blue-300:hover { border-color: #6ee7b7 !important; }
+
+/* Focus rings */
+[data-theme="green"] .focus\:border-blue-500:focus { border-color: #10b981 !important; }
+[data-theme="green"] .focus\:ring-blue-500:focus { --tw-ring-color: #10b981 !important; }
+
+/* Checkbox accent */
+[data-theme="green"] input[type="checkbox"].text-blue-600 { accent-color: #059669; }
+[data-theme="green"] input[type="range"].accent-blue-600 { accent-color: #059669; }
+
+/* Ring colors */
+[data-theme="green"] .ring-blue-300 { --tw-ring-color: #6ee7b7 !important; }
+
+/* Green tint on backgrounds */
+[data-theme="green"] .bg-white { background-color: #f5fef7 !important; }
+[data-theme="green"] .bg-gray-100 { background-color: #dcfce7 !important; }
+[data-theme="green"] .bg-gray-50 { background-color: #ecfdf5 !important; }
+[data-theme="green"] .bg-gray-200 { background-color: #bbf7d0 !important; }
+
+/* Green tint on borders — kept light to distinguish from accent */
+[data-theme="green"] .border-gray-200 { border-color: #dcfce7 !important; }
+[data-theme="green"] .border-gray-300 { border-color: #bbf7d0 !important; }
+[data-theme="green"] .border-gray-100 { border-color: #ecfdf5 !important; }
+[data-theme="green"] .divide-gray-200 > :not(:last-child) { border-color: #dcfce7 !important; }
+[data-theme="green"] .divide-gray-100 > :not(:last-child) { border-color: #ecfdf5 !important; }
+
+/* Green hover states */
+[data-theme="green"] .hover\:bg-gray-50:hover { background-color: #ecfdf5 !important; }
+[data-theme="green"] .hover\:bg-gray-100:hover { background-color: #dcfce7 !important; }
+[data-theme="green"] .hover\:bg-gray-200:hover { background-color: #bbf7d0 !important; }
+
+
+/* ═══════════════════════════════════════════════════
+   Theme: Grey
+   A darker, more contrasty neutral theme
+   ═══════════════════════════════════════════════════ */
+
+/* Grey tint on backgrounds */
+[data-theme="grey"] .bg-white { background-color: #f3f4f6 !important; }
+[data-theme="grey"] .bg-gray-100 { background-color: #e5e7eb !important; }
+[data-theme="grey"] .bg-gray-50 { background-color: #f3f4f6 !important; }
+[data-theme="grey"] .bg-gray-200 { background-color: #d1d5db !important; }
+
+/* Grey tint on borders */
+[data-theme="grey"] .border-gray-200 { border-color: #d1d5db !important; }
+[data-theme="grey"] .border-gray-300 { border-color: #9ca3af !important; }
+[data-theme="grey"] .border-gray-100 { border-color: #e5e7eb !important; }
+[data-theme="grey"] .divide-gray-200 > :not(:last-child) { border-color: #d1d5db !important; }
+[data-theme="grey"] .divide-gray-100 > :not(:last-child) { border-color: #e5e7eb !important; }
+
+/* Grey hover states */
+[data-theme="grey"] .hover\:bg-gray-50:hover { background-color: #e5e7eb !important; }
+[data-theme="grey"] .hover\:bg-gray-100:hover { background-color: #d1d5db !important; }
+[data-theme="grey"] .hover\:bg-gray-200:hover { background-color: #9ca3af !important; }
+
+/* Grey accent — dark gray buttons */
+[data-theme="grey"] .bg-blue-600 { background-color: #374151 !important; }
+[data-theme="grey"] .bg-blue-700 { background-color: #1f2937 !important; }
+[data-theme="grey"] .bg-blue-500 { background-color: #4b5563 !important; }
+[data-theme="grey"] .bg-blue-100 { background-color: #e5e7eb !important; }
+[data-theme="grey"] .bg-blue-50 { background-color: #f3f4f6 !important; }
+[data-theme="grey"] .text-blue-600 { color: #374151 !important; }
+[data-theme="grey"] .text-blue-700 { color: #1f2937 !important; }
+[data-theme="grey"] .text-blue-800 { color: #111827 !important; }
+[data-theme="grey"] .text-blue-500 { color: #4b5563 !important; }
+[data-theme="grey"] .border-blue-600 { border-color: #374151 !important; }
+[data-theme="grey"] .border-blue-500 { border-color: #4b5563 !important; }
+[data-theme="grey"] .border-blue-400 { border-color: #6b7280 !important; }
+[data-theme="grey"] .border-blue-300 { border-color: #9ca3af !important; }
+[data-theme="grey"] .border-blue-200 { border-color: #d1d5db !important; }
+[data-theme="grey"] .hover\:bg-blue-700:hover { background-color: #1f2937 !important; }
+[data-theme="grey"] .hover\:bg-blue-100:hover { background-color: #e5e7eb !important; }
+[data-theme="grey"] .hover\:bg-blue-50:hover { background-color: #f3f4f6 !important; }
+[data-theme="grey"] .focus\:border-blue-500:focus { border-color: #4b5563 !important; }
+[data-theme="grey"] .focus\:ring-blue-500:focus { --tw-ring-color: #4b5563 !important; }
+[data-theme="grey"] input[type="checkbox"].text-blue-600 { accent-color: #374151; }
+[data-theme="grey"] input[type="range"].accent-blue-600 { accent-color: #374151; }
+[data-theme="grey"] .ring-blue-300 { --tw-ring-color: #9ca3af !important; }
+
+
+/* ═══════════════════════════════════════════════════
+   Theme: Blue
+   Swaps the blue accent to a deeper blue, tints UI blue
+   ═══════════════════════════════════════════════════ */
+
+/* Blue tint on backgrounds */
+[data-theme="blue"] .bg-white { background-color: #f0f6ff !important; }
+[data-theme="blue"] .bg-gray-100 { background-color: #dbeafe !important; }
+[data-theme="blue"] .bg-gray-50 { background-color: #eff6ff !important; }
+[data-theme="blue"] .bg-gray-200 { background-color: #bfdbfe !important; }
+
+/* Blue tint on borders — kept light to distinguish from accent */
+[data-theme="blue"] .border-gray-200 { border-color: #dbeafe !important; }
+[data-theme="blue"] .border-gray-300 { border-color: #bfdbfe !important; }
+[data-theme="blue"] .border-gray-100 { border-color: #eff6ff !important; }
+[data-theme="blue"] .divide-gray-200 > :not(:last-child) { border-color: #dbeafe !important; }
+[data-theme="blue"] .divide-gray-100 > :not(:last-child) { border-color: #eff6ff !important; }
+
+/* Blue hover states */
+[data-theme="blue"] .hover\:bg-gray-50:hover { background-color: #eff6ff !important; }
+[data-theme="blue"] .hover\:bg-gray-100:hover { background-color: #dbeafe !important; }
+[data-theme="blue"] .hover\:bg-gray-200:hover { background-color: #bfdbfe !important; }
+
+
+/* ═══════════════════════════════════════════════════
+   Custom Accent Color
+   Overrides the blue accent when user picks a custom color.
+   useTheme() sets data-custom-accent + the --accent-* scale.
+   ═══════════════════════════════════════════════════ */
+[data-custom-accent] .bg-blue-600 { background-color: var(--accent-600) !important; }
+[data-custom-accent] .bg-blue-700 { background-color: var(--accent-700) !important; }
+[data-custom-accent] .bg-blue-500 { background-color: var(--accent-500) !important; }
+[data-custom-accent] .bg-blue-100 { background-color: var(--accent-100) !important; }
+[data-custom-accent] .bg-blue-50 { background-color: var(--accent-50) !important; }
+[data-custom-accent] .text-blue-600 { color: var(--accent-600) !important; }
+[data-custom-accent] .text-blue-700 { color: var(--accent-700) !important; }
+[data-custom-accent] .text-blue-800 { color: var(--accent-700) !important; }
+[data-custom-accent] .text-blue-500 { color: var(--accent-500) !important; }
+[data-custom-accent] .border-blue-600 { border-color: var(--accent-600) !important; }
+[data-custom-accent] .border-blue-500 { border-color: var(--accent-500) !important; }
+[data-custom-accent] .border-blue-400 { border-color: var(--accent-400) !important; }
+[data-custom-accent] .border-blue-300 { border-color: var(--accent-300) !important; }
+[data-custom-accent] .border-blue-200 { border-color: var(--accent-200) !important; }
+[data-custom-accent] .hover\:bg-blue-700:hover { background-color: var(--accent-700) !important; }
+[data-custom-accent] .hover\:bg-blue-100:hover { background-color: var(--accent-100) !important; }
+[data-custom-accent] .hover\:bg-blue-50:hover { background-color: var(--accent-50) !important; }
+[data-custom-accent] .focus\:border-blue-500:focus { border-color: var(--accent-500) !important; }
+[data-custom-accent] .focus\:ring-blue-500:focus { --tw-ring-color: var(--accent-500) !important; }
+[data-custom-accent] input[type="checkbox"].text-blue-600 { accent-color: var(--accent-600); }
+[data-custom-accent] input[type="range"].accent-blue-600 { accent-color: var(--accent-600); }
+[data-custom-accent] .ring-blue-300 { --tw-ring-color: var(--accent-300) !important; }

@@ -307,7 +307,13 @@ export default function Sidebar({
             {/* Top-level apps */}
             {topItems.map(renderItem)}
 
-            <div className="border-t border-white/15 my-1.5 mx-2" />
+            {/* Divider only when both sides have content — with every top-group
+                entry moved into the footer group the top group can be empty, and
+                an unconditional rule would collapse against the search box
+                (mirrors StartMenu's hasAppsGroup condition). */}
+            {topItems.length > 0 && (erpSections.length > 0 || systemSections.length > 0 || virtualSections.length > 0) && (
+              <div className="border-t border-white/15 my-1.5 mx-2" />
+            )}
 
             {/* ERP sections then system sections — same order as StartMenu's vertical layout. */}
             {erpSections.map(s => renderSectionAccordion(s, true))}

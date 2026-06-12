@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [2.8.0] — 2026-06-13
+
+### Added
+- **`themes.css` — the per-theme accent variants now ship with the package.** The pink / green / grey / blue accent + surface-tint remaps and the `data-custom-accent` custom-accent remaps (previously maintained only inside the admin portal's `index.css`) now live in the package as `themes.css`. `styles.css` imports it, so every consumer of `import 'react-os-shell/styles.css'` gets the full theme set with no extra wiring; it is also exported standalone as `react-os-shell/themes.css`. Fixes pink/green/grey/blue/custom-accent being half-applied (window tints only, no accent remap) in the customer and supplier portals.
+- **Extended dark-mode tint families in `styles.css`.** Upstreamed the admin portal's 2026-06-10 dark-mode audit: red / amber / yellow / green / emerald / orange / sky / teal / cyan / purple / violet / pink / rose `-50`/`-100`/`-200` surfaces and `-600…-900` inks, blue interaction gaps (`active:`, alpha-ladder hovers, `border-blue-*`, `file:` selector buttons), gray interaction-state variants (`hover:`/`active:`/`disabled:`/`even:`), `bg-white/85` + `hover:bg-white` panel surfaces, solid `text-black` ink remaps, and the sticky-note `text-black/15` ghost ink. Portals no longer need any local dark-mode rules — deleting their forks is the point of this release.
+
+### Changed
+- Hover/active steps in the upstreamed blue family were rescaled to sit one ladder step above the package's resting tints where the admin fork had diverged (`bg-blue-50` dark base is 0.26 here vs the fork's 0.18 — actives/`file:` buttons follow the 0.26 ladder).
+
+### Fixed
+- **Sidebar: no stray divider when the top nav group is empty.** The divider between top-level items and the ERP sections rendered unconditionally, so a nav config with every top-group entry in the footer group (the EFFICIENT portals) showed a stray rule collapsed against the search box. It now requires content on both sides, mirroring the StartMenu condition fixed in 0.7.4 — portals can drop their CSS workaround.
+
 ## [2.7.0] — 2026-06-12
 
 ### Added
