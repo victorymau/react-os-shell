@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [2.6.0] — 2026-06-12
+
+### Changed
+- **The desktop "Documents" folder is now "Recent Documents" — and a permanent system folder.** Like the Trash, it is a fixture of every desktop: it exists from first load (previously it only appeared after the first file preview) and it cannot be deleted or renamed — its context menu offers only Open. Previewed files keep dropping their shortcuts into it, and it still opens in the Files app. Existing desktops migrate automatically: a stored "Documents" folder keeps its position and contents but takes the new canonical name.
+
 ## [2.5.0] — 2026-06-11
 
 ### Added

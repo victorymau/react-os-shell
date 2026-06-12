@@ -30,7 +30,7 @@ import {
 } from './desktopIcons';
 
 const DOCUMENTS_FOLDER_ID = 'documents';
-const DOCUMENTS_FOLDER_NAME = 'Documents';
+const DOCUMENTS_FOLDER_NAME = 'Recent Documents';
 
 interface DesktopFolder {
   id: string;
@@ -132,7 +132,16 @@ export default function Desktop({ profile }: { profile: any }) {
   const { prefs: shellPrefs, save: saveShellPrefs } = useShellPrefs();
   const prefs = { ...(profile?.preferences || {}), ...shellPrefs };
   const favDocs: DesktopItem[] = prefs.favorite_documents || [];
-  const folders: DesktopFolder[] = prefs.desktop_folders || [];
+  // "Recent Documents" is a system folder: like the Trash it is always on the
+  // desktop and cannot be deleted or renamed. Injected at render rather than
+  // persisted so it exists from first load even on an empty profile; a stored
+  // copy (when present) contributes its position while the canonical name
+  // wins — which also migrates pre-2.6 desktops whose stored copy is still
+  // called "Documents".
+  const storedFolders: DesktopFolder[] = prefs.desktop_folders || [];
+  const folders: DesktopFolder[] = storedFolders.some(f => f.id === DOCUMENTS_FOLDER_ID)
+    ? storedFolders.map(f => f.id === DOCUMENTS_FOLDER_ID ? { ...f, name: DOCUMENTS_FOLDER_NAME } : f)
+    : [...storedFolders, { id: DOCUMENTS_FOLDER_ID, name: DOCUMENTS_FOLDER_NAME }];
   const snapEnabled: boolean = prefs.desktop_snap ?? false;
 
   // Sticky notes from notepad
@@ -264,18 +273,14 @@ export default function Desktop({ profile }: { profile: any }) {
   const liveStateRef = useRef({ folders, favDocs, saveFolders, saveDocs });
   liveStateRef.current = { folders, favDocs, saveFolders, saveDocs };
 
-  // When the user previews a file (via Files app or a Documents-folder
-  // shortcut), drop a dedup'd shortcut into the auto-created "Documents"
-  // folder. The folder is created on first preview and recreated if the
-  // user has deleted it since.
+  // When the user previews a file (via Files app or a Recent Documents
+  // shortcut), drop a dedup'd shortcut into the "Recent Documents" system
+  // folder. The folder always exists, so there is nothing to create here.
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<PreviewOpenedDetail>).detail;
       if (!detail?.filePath) return;
-      const { folders: fs, favDocs: docs, saveFolders: sf, saveDocs: sd } = liveStateRef.current;
-      if (!fs.some(f => f.id === DOCUMENTS_FOLDER_ID)) {
-        sf([...fs, { id: DOCUMENTS_FOLDER_ID, name: DOCUMENTS_FOLDER_NAME }]);
-      }
+      const { favDocs: docs, saveDocs: sd } = liveStateRef.current;
       const deduped = docs.filter(d =>
         !(d.entityType === 'preview-file' && d.filePath === detail.filePath),
       );
@@ -737,6 +742,7 @@ export default function Desktop({ profile }: { profile: any }) {
 
   const removeFolder = (idx: number) => {
     const folder = folders[idx];
+    if (folder.id === DOCUMENTS_FOLDER_ID) return; // system folder — undeletable
     // Move folder items back to desktop
     const updated = favDocs.map(d => d.folderId === folder.id ? { ...d, folderId: undefined } : d);
     saveDocs(updated);
@@ -1224,13 +1230,16 @@ export default function Desktop({ profile }: { profile: any }) {
           <PopupMenuItem onClick={() => { openDesktopFolder(folders[contextMenu.folderIdx!].id); setContextMenu(null); }}>
             Open
           </PopupMenuItem>
-          <PopupMenuItem onClick={() => { setRenamingFolder(folders[contextMenu.folderIdx!].id); setRenameValue(folders[contextMenu.folderIdx!].name); setContextMenu(null); }}>
-            Rename
-          </PopupMenuItem>
-          <PopupMenuDivider />
-          <PopupMenuItem danger onClick={() => removeFolder(contextMenu.folderIdx!)}>
-            Delete Folder
-          </PopupMenuItem>
+          {/* Recent Documents is a system folder — no rename, no delete. */}
+          {folders[contextMenu.folderIdx!].id !== DOCUMENTS_FOLDER_ID && <>
+            <PopupMenuItem onClick={() => { setRenamingFolder(folders[contextMenu.folderIdx!].id); setRenameValue(folders[contextMenu.folderIdx!].name); setContextMenu(null); }}>
+              Rename
+            </PopupMenuItem>
+            <PopupMenuDivider />
+            <PopupMenuItem danger onClick={() => removeFolder(contextMenu.folderIdx!)}>
+              Delete Folder
+            </PopupMenuItem>
+          </>}
         </PopupMenu>
       )}
 
