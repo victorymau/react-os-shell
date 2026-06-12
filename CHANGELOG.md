@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [2.7.0] — 2026-06-12
+
+### Added
+- **Pinned favorites on the taskbar.** Every app the user has favorited (the star on list-page titles → `prefs.favorite_pages`) now shows as an icon launcher right next to the start-menu button — click to open the app, right-click for Open / Remove from Favorites. Works on all four taskbar positions (icons wrap into rows on vertical taskbars); hidden in sidebar layout mode, where the sidebar replaces the start-menu role.
+- **"Add to Desktop" in every window menu.** The window menu (window icon click, or right-click on a taskbar tab) now always offers Add to / Remove from Desktop for app windows — including detail windows that render their own Modal (`rendersOwnModal`), which previously had no such item. The shortcut lands on the desktop as an icon, exactly like ones created from the document fav star.
+
+### Changed
+- **Desktop-shortcut toggles now persist through the ShellPrefs adapter** instead of PATCHing `/auth/me/` directly — so "Add to Desktop" also works for backend-less consumers (e.g. the demo's localStorage prefs). EFFICIENT portals are unaffected: their prefs adapter writes to the same `/auth/me/` preferences.
+
 ## [2.6.0] — 2026-06-12
 
 ### Changed

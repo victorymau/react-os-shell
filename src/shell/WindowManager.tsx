@@ -1,10 +1,10 @@
-import { createContext, useContext, useState, useCallback, useEffect, useLayoutEffect, useRef, useMemo, useSyncExternalStore, cloneElement, isValidElement, Suspense, type ReactNode, type ReactElement } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useLayoutEffect, useRef, useSyncExternalStore, cloneElement, isValidElement, Suspense, type ReactNode, type ReactElement } from 'react';
 import { useLocation } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient, { isShellApiClientConfigured } from '../api/client';
 import { WINDOW_REGISTRY, isPageEntry, isEntityEntry, type PageRegistryEntry, type ModalRegistryEntry } from '../windowRegistry/types';
-import Modal, { triggerSplitView, modalDepthRef, getActiveModalId, subscribeActive, activateModal, useWindowMenuItem, ExposeBackdrop } from './Modal';
+import Modal, { triggerSplitView, modalDepthRef, getActiveModalId, subscribeActive, activateModal, ExposeBackdrop, WindowShortcutProvider, type WindowShortcutSpec } from './Modal';
 import WindowErrorBoundary, { WindowCrashedFallback } from './WindowErrorBoundary';
 import PartNumberDetailPopup from './PartNumberDetailPopup';
 import LoadingSpinner from './LoadingSpinner';
@@ -101,66 +101,15 @@ function RestoredPartNumber({ partNumber, savedBox, onClose, onMinimize }: { par
   );
 }
 
-/** Universal fav star for any window — pages and entities. Saves to preferences.favorite_documents */
-function WindowFavStar({ item }: { item: MinimizedItem }) {
-  const queryClient = useQueryClient();
-  const { data: profile } = useQuery({ queryKey: ['my-profile-sidebar'], enabled: isShellApiClientConfigured(), queryFn: () => apiClient.get('/auth/me/').then(r => r.data) });
-  const favDocs: { entityType: string; entityId: string; label: string }[] = (profile?.preferences || {}).favorite_documents || [];
-
-  // For pages, use route as entityType='page' and entityId=route
-  const favType = item.type === 'page' ? 'page' : (item.entityType || '');
-  const favId = item.type === 'page' ? (item.route || '') : (item.entityId || '');
-  const favLabel = item.label;
-
-  const isFav = favDocs.some(d => d.entityType === favType && d.entityId === favId);
-
-  const toggle = () => {
-    const next = isFav
-      ? favDocs.filter(d => !(d.entityType === favType && d.entityId === favId))
-      : [...favDocs, { entityType: favType, entityId: favId, label: favLabel }];
-    apiClient.patch('/auth/me/', { preferences: { favorite_documents: next } }).then(() => {
-      queryClient.invalidateQueries({ queryKey: ['my-profile-sidebar'] });
-    });
-  };
-
-  if (!favId) return null;
-
-  return (
-    <button onClick={toggle} title={isFav ? 'Remove from desktop' : 'Add to desktop'}
-      className={`shrink-0 transition-colors ${isFav ? 'text-yellow-500 hover:text-yellow-600' : 'text-gray-300 hover:text-yellow-400'}`}>
-      <svg className="h-4 w-4" fill={isFav ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
-      </svg>
-    </button>
-  );
-}
-
-/** Adds "Add to Desktop" / "Remove from Desktop" to the window menu */
-function DesktopShortcutMenuItem({ item }: { item: MinimizedItem }) {
-  const queryClient = useQueryClient();
-  const { data: profile } = useQuery({ queryKey: ['my-profile-sidebar'], enabled: isShellApiClientConfigured(), queryFn: () => apiClient.get('/auth/me/').then(r => r.data) });
-  const favDocs: { entityType: string; entityId: string; label: string }[] = (profile?.preferences || {}).favorite_documents || [];
-  const favType = item.type === 'page' ? 'page' : (item.entityType || '');
-  const favId = item.type === 'page' ? (item.route || '') : (item.entityId || '');
-  const isFav = favDocs.some(d => d.entityType === favType && d.entityId === favId);
-
-  const toggle = useCallback(() => {
-    const next = isFav
-      ? favDocs.filter(d => !(d.entityType === favType && d.entityId === favId))
-      : [...favDocs, { entityType: favType, entityId: favId, label: item.label }];
-    apiClient.patch('/auth/me/', { preferences: { favorite_documents: next } }).then(() => {
-      queryClient.invalidateQueries({ queryKey: ['my-profile-sidebar'] });
-    });
-  }, [isFav, favDocs, favType, favId, item.label, queryClient]);
-
-  const icon = useMemo(() => (
-    <svg className="h-4 w-4" fill={isFav ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
-    </svg>
-  ), [isFav]);
-
-  useWindowMenuItem(isFav ? 'Remove from Desktop' : 'Add to Desktop', toggle, icon);
-  return null;
+/** Window → desktop-shortcut spec for the Modal window menu's "Add to
+ *  Desktop" item. Pages save as entityType 'page' keyed by route; entities
+ *  by registry key + id. Windows with no stable identity return null and
+ *  get no menu item. */
+function shortcutSpecFor(item: MinimizedItem): WindowShortcutSpec | null {
+  const entityType = item.type === 'page' ? 'page' : (item.entityType || '');
+  const entityId = item.type === 'page' ? (item.route || '') : (item.entityId || '');
+  if (!entityType || !entityId) return null;
+  return { entityType, entityId, label: item.label };
 }
 
 function PageWindow({ item, onClose }: { item: MinimizedItem; onClose: () => void }) {
@@ -170,7 +119,6 @@ function PageWindow({ item, onClose }: { item: MinimizedItem; onClose: () => voi
   const Component = entry.component;
   return (
     <Modal open={true} onClose={onClose} icon={navIcons[item.route!]} title={entry.label} size={entry.size || '2xl'} allowPinOnTop={entry.allowPinOnTop} initialPosition={entry.initialPosition} widget={entry.widget} compact={entry.compact} appStyle={entry.appStyle} flushBody={entry.flushBody} autoHeight={entry.autoHeight} autoMinHeight={entry.autoMinHeight} dimensions={entry.dimensions} windowKey={item.id} openedFromKey={item.openedFrom}>
-      <DesktopShortcutMenuItem item={item} />
       <Suspense fallback={<div className="flex items-center justify-center py-12"><LoadingSpinner /></div>}>
         <Component />
       </Suspense>
@@ -298,7 +246,6 @@ function RestoredRegistryModal({ item, onClose, onMinimize }: { item: MinimizedI
       autoMinHeight={entry.autoMinHeight}
       appStyle={entry.appStyle}
     >
-      <DesktopShortcutMenuItem item={item} />
       <Suspense fallback={<LoadingSpinner />}>
         {entry.selfFetching ? (
           entry.render(null, handleClose, item.entityId, editing, setEditing)
@@ -853,15 +800,17 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
             </Modal>
           )}
         >
-          {item.type === 'page' ? (
-            <PageWindow item={item} onClose={() => closeEntity(item.id)} />
-          ) : (
-            <RestoredRegistryModal
-              item={item}
-              onClose={() => closeEntity(item.id)}
-              onMinimize={() => {}}
-            />
-          )}
+          <WindowShortcutProvider spec={shortcutSpecFor(item)}>
+            {item.type === 'page' ? (
+              <PageWindow item={item} onClose={() => closeEntity(item.id)} />
+            ) : (
+              <RestoredRegistryModal
+                item={item}
+                onClose={() => closeEntity(item.id)}
+                onMinimize={() => {}}
+              />
+            )}
+          </WindowShortcutProvider>
         </WindowErrorBoundary>
       ))}
     </MinimizedContext.Provider>

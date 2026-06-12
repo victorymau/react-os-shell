@@ -37,6 +37,7 @@ import {
   type NavSection,
   type StartMenuCategories,
 } from '../shell-config/nav';
+import { WINDOW_REGISTRY, isPageEntry, type PageRegistryEntry } from '../windowRegistry/types';
 import type { ReactNode } from 'react';
 
 // Transitional re-exports — go away after each consumer migrates to importing
@@ -626,6 +627,93 @@ function TaskbarContextMenu({ x, y, position, size, onChangePosition, onChangeSi
   );
 }
 
+/** Pinned-favorites strip — every app the user has favorited
+ *  (prefs.favorite_pages, toggled via <FavoriteStar>) rendered as an
+ *  icon launcher next to the start-menu button. Click opens the app
+ *  window; right-click offers open / remove-from-favorites. */
+function TaskbarFavorites({ favorites, vertical, taskbarPosition, navSections, navIcons, onOpen, onToggleFavorite }: {
+  favorites: string[];
+  vertical: boolean;
+  taskbarPosition: string;
+  navSections: (NavSection | NavItem)[];
+  navIcons: Record<string, ReactNode>;
+  onOpen: (path: string) => void;
+  onToggleFavorite: (path: string) => void;
+}) {
+  const [menu, setMenu] = useState<{ x: number; y: number; path: string; label: string } | null>(null);
+
+  // path → label from the nav tree (incl. nested children), falling back to
+  // the window registry for favorites that aren't in the start menu.
+  const labelFor = useMemo(() => {
+    const map: Record<string, string> = {};
+    const walk = (items: NavItem[]) => {
+      for (const it of items) { map[it.to] = it.label; if (it.children) walk(it.children); }
+    };
+    for (const entry of navSections) {
+      if (isSection(entry)) walk((entry as NavSection).items);
+      else walk([entry as NavItem]);
+    }
+    return (path: string): string => {
+      if (map[path]) return map[path];
+      const reg = WINDOW_REGISTRY[path];
+      if (reg && isPageEntry(reg)) return (reg as PageRegistryEntry).label;
+      return path.replace(/^\//, '');
+    };
+  }, [navSections]);
+
+  if (favorites.length === 0) return null;
+
+  // Same anchoring rules as the taskbar context menu — open away from the
+  // taskbar edge so the menu never renders underneath it.
+  const menuStyle = (x: number, y: number): React.CSSProperties =>
+    taskbarPosition === 'top' ? { left: Math.min(x, window.innerWidth - 200), top: y + 4 } :
+    taskbarPosition === 'left' ? { left: x + 4, top: Math.min(y, window.innerHeight - 120) } :
+    taskbarPosition === 'right' ? { right: window.innerWidth - x + 4, top: Math.min(y, window.innerHeight - 120) } :
+    { left: Math.min(x, window.innerWidth - 200), bottom: window.innerHeight - y + 4 };
+
+  return (
+    <>
+      <div className={vertical
+        ? 'w-full px-2 flex flex-wrap items-center justify-center gap-1 shrink-0 max-h-[30vh] overflow-y-auto'
+        : 'flex items-center gap-1 shrink-0 max-w-[40vw] overflow-x-auto [scrollbar-width:none]'}>
+        {favorites.map(path => {
+          const label = labelFor(path);
+          const icon = navIcons[path];
+          return (
+            <button key={path} onClick={() => onOpen(path)} title={label}
+              onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY, path, label }); }}
+              className="flex items-center justify-center rounded-lg p-2 border bg-gray-50/40 border-gray-200/40 text-gray-600 hover:bg-gray-200/40 hover:text-gray-800 transition-colors shrink-0">
+              {icon && isValidElement(icon)
+                ? cloneElement(icon as ReactElement, { className: 'h-4 w-4' })
+                : <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" /></svg>}
+            </button>
+          );
+        })}
+      </div>
+      {menu && (
+        <PopupMenu portal minWidth={180} style={menuStyle(menu.x, menu.y)} onClose={() => setMenu(null)}>
+          <PopupMenuItem onClick={() => { setMenu(null); onOpen(menu.path); }}>
+            {(() => {
+              const icon = navIcons[menu.path];
+              return icon && isValidElement(icon)
+                ? cloneElement(icon as ReactElement, { className: 'h-4 w-4 text-gray-400' })
+                : <span className="w-4" />;
+            })()}
+            Open {menu.label}
+          </PopupMenuItem>
+          <PopupMenuDivider />
+          <PopupMenuItem danger onClick={() => { setMenu(null); onToggleFavorite(menu.path); }}>
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+            </svg>
+            Remove from Favorites
+          </PopupMenuItem>
+        </PopupMenu>
+      )}
+    </>
+  );
+}
+
 export default function Layout({
   productName = 'react-os-shell',
   productIcon = '/favicon.svg',
@@ -966,6 +1054,20 @@ export default function Layout({
             <span className="relative z-10 truncate">{productName}</span>
           </button>
         </div>}
+
+        {/* Pinned favorites — favorited apps as quick-launch icons next to
+            the start-menu button. Hidden (with the button) in sidebar mode. */}
+        {!sidebarMode && (
+          <TaskbarFavorites
+            favorites={favorites}
+            vertical={isVerticalTaskbar}
+            taskbarPosition={taskbarPosition}
+            navSections={navSections}
+            navIcons={navIcons}
+            onOpen={(path) => openPage(path)}
+            onToggleFavorite={toggleFavorite}
+          />
+        )}
 
         {/* Separator (only when the ERP button is also rendered) */}
         {!sidebarMode && <div className={isVerticalTaskbar ? 'h-px w-6 bg-gray-300 my-1' : 'w-px h-6 bg-gray-300 mx-1'} />}

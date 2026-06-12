@@ -8,9 +8,31 @@ import { PopupMenu, PopupMenuItem, PopupMenuDivider } from './PopupMenu';
 import { useIsMobile } from './useIsMobile';
 import { getSwipingParentKey, setSwipingParentKey, subscribeSwipingParentKey } from './mobileSwipeStore';
 import WindowErrorBoundary from './WindowErrorBoundary';
+import { useShellPrefs } from './ShellPrefs';
 
 /** Context that passes the modal's unique ID to children */
 const ModalIdContext = createContext<string>('');
+
+/** Desktop-shortcut spec for the window menu's "Add to Desktop" item —
+ *  the shape saved into `prefs.favorite_documents` (what <Desktop> renders
+ *  as icons). Pages use entityType 'page' keyed by route; entities use
+ *  their registry key + id. */
+export interface WindowShortcutSpec {
+  entityType: string;
+  entityId: string;
+  label: string;
+}
+
+const WindowShortcutContext = createContext<WindowShortcutSpec | null>(null);
+
+/** Wraps each top-level app window (see WindowManagerProvider) so its Modal
+ *  can offer "Add to Desktop" — including consumer components that render
+ *  their own Modal, which a child-component approach can't reach. The
+ *  outermost Modal consumes the spec and re-provides null, so nested
+ *  dialogs don't repeat the item. */
+export function WindowShortcutProvider({ spec, children }: { spec: WindowShortcutSpec | null; children: ReactNode }) {
+  return <WindowShortcutContext.Provider value={spec}>{children}</WindowShortcutContext.Provider>;
+}
 
 /**
  * Extract just the text from a title ReactNode for non-interactive
@@ -830,6 +852,20 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   const [touched, setTouched] = useState(false);
   const [pinnedOnTop, setPinnedOnTop] = useState(false);
   const [windowMenu, setWindowMenu] = useState<{ x: number; y: number } | null>(null);
+  // "Add to Desktop" — spec provided by the WindowManager around each open
+  // window; null for nested dialogs (the outermost Modal re-provides null
+  // below) and for Modals used outside the window system.
+  const shortcutSpec = useContext(WindowShortcutContext);
+  const { prefs: shellPrefs, save: saveShellPrefs } = useShellPrefs();
+  const favDocs: WindowShortcutSpec[] = shellPrefs.favorite_documents || [];
+  const isOnDesktop = !!shortcutSpec && favDocs.some(d => d.entityType === shortcutSpec.entityType && d.entityId === shortcutSpec.entityId);
+  const toggleDesktopShortcut = useCallback(() => {
+    if (!shortcutSpec) return;
+    const next = isOnDesktop
+      ? favDocs.filter(d => !(d.entityType === shortcutSpec.entityType && d.entityId === shortcutSpec.entityId))
+      : [...favDocs, { entityType: shortcutSpec.entityType, entityId: shortcutSpec.entityId, label: shortcutSpec.label }];
+    saveShellPrefs({ favorite_documents: next });
+  }, [shortcutSpec, isOnDesktop, favDocs, saveShellPrefs]);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   // Widget anchoring: 'left' or 'right' — determines which edge the widget is fixed to
   const [widgetAnchor, setWidgetAnchor] = useState<'left' | 'right'>(initialPosition === 'top-right' ? 'right' : 'left');
@@ -1899,6 +1935,14 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
           {pinnedOnTop ? 'Unpin from Top' : 'Pin on Top'}
         </PopupMenuItem>
       )}
+      {shortcutSpec && (
+        <PopupMenuItem onClick={() => { setWindowMenu(null); toggleDesktopShortcut(); }}>
+          <svg className={`h-4 w-4 ${isOnDesktop ? 'text-yellow-500' : 'text-gray-400'}`} fill={isOnDesktop ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+          </svg>
+          {isOnDesktop ? 'Remove from Desktop' : 'Add to Desktop'}
+        </PopupMenuItem>
+      )}
       {/* Custom menu items registered by child components */}
       {(_extraMenuItems[modalId] || []).length > 0 && (<>
         {(_extraMenuItems[modalId] || []).map((item, i) => (
@@ -1916,6 +1960,11 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     </PopupMenu>
   );
 
-  // Always portal to body — ensures DOM persists when hidden/minimized
-  return createPortal(<>{content}{windowMenuEl}</>, document.body);
+  // Always portal to body — ensures DOM persists when hidden/minimized.
+  // Re-providing a null shortcut spec stops dialogs nested inside this
+  // window from also offering "Add to Desktop" for it.
+  return createPortal(
+    <WindowShortcutContext.Provider value={null}>{content}{windowMenuEl}</WindowShortcutContext.Provider>,
+    document.body,
+  );
 }
