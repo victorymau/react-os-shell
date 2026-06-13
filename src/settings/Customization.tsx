@@ -2,6 +2,7 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 import { ModalActions } from '../shell/Modal';
 import { useDesktopHost } from '../shell/Desktop';
 import { useShellPrefs } from '../shell/ShellPrefs';
+import { applyThemePrefs, resolveTheme } from '../hooks/useTheme';
 import { SOUND_PACKS, SOUND_PACK_KEYS, SOUND_TYPES, SOUND_TYPE_LABELS, getSoundConfig, setSoundForType, setAllSounds, soundsEnabled, previewSound, type SoundType } from '../utils/sounds';
 
 // Preview tiles use literal hex values via arbitrary Tailwind syntax so that the
@@ -19,14 +20,6 @@ const THEMES = [
 
 // Default wallpaper list (consumer-overridable via DesktopHostProvider).
 const DEFAULT_WALLPAPERS: { src: string; label: string }[] = [];
-
-/** Resolve what data-theme is actually active (for preview rendering) */
-function resolveTheme(key: string): string {
-  if (key === 'system') {
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-  }
-  return key;
-}
 
 function getVersion() {
   const now = new Date();
@@ -65,7 +58,38 @@ export default function Customization({ omit, section }: CustomizationProps = {}
   const WALLPAPERS = host.wallpapers && host.wallpapers.length > 0 ? host.wallpapers : DEFAULT_WALLPAPERS;
   const { prefs, save } = useShellPrefs();
 
-  const currentTheme: string = prefs.theme || 'system';
+  // Appearance writes (theme / accent / custom colors) persist through save(),
+  // which on a backend-backed adapter round-trips to the server before `prefs`
+  // reflects the new value — sometimes tens of seconds. Mirror the change
+  // locally so the picker's selected state + live preview update on click;
+  // applyThemePrefs (in setAppearance) repaints the desktop the same frame.
+  // Each override is dropped once `prefs` catches up to it.
+  const [optimisticAppearance, setOptimisticAppearance] = useState<Record<string, any>>({});
+  const pref = (key: string) => (key in optimisticAppearance ? optimisticAppearance[key] : prefs[key]);
+  useEffect(() => {
+    setOptimisticAppearance(prev => {
+      const next: Record<string, any> = {};
+      let settled = false;
+      for (const k of Object.keys(prev)) {
+        if (prefs[k] === prev[k]) settled = true;   // server caught up → drop override
+        else next[k] = prev[k];
+      }
+      return settled ? next : prev;
+    });
+  }, [prefs]);
+
+  // Apply an appearance patch to <html> immediately (no save round-trip wait),
+  // reflect it in the optimistic mirror, then persist it in the background.
+  const APPEARANCE_KEYS = ['theme', 'accent_color', 'custom_bg_color', 'custom_title_color', 'custom_window_color', 'custom_button_color'] as const;
+  const setAppearance = (patch: Record<string, any>) => {
+    const snapshot: Record<string, any> = { ...patch };
+    for (const k of APPEARANCE_KEYS) if (!(k in snapshot)) snapshot[k] = pref(k);
+    applyThemePrefs(snapshot);
+    setOptimisticAppearance(prev => ({ ...prev, ...patch }));
+    save(patch);
+  };
+
+  const currentTheme: string = pref('theme') || 'system';
   const resolved = resolveTheme(currentTheme);
   const rawBg: string = prefs.desktop_bg || (WALLPAPERS.length > 0 ? 'random' : 'none');
   const randomPickRef = useRef(WALLPAPERS.length > 0 ? WALLPAPERS[Math.floor(Math.random() * WALLPAPERS.length)].src : 'none');
@@ -168,20 +192,18 @@ export default function Customization({ omit, section }: CustomizationProps = {}
           {[...THEMES, { key: 'custom', label: 'Custom', bar1: 'bg-gray-200', bar2: 'bg-gray-200' }].map(t => {
             const isCustom = t.key === 'custom';
             const r = isCustom ? 'light' : resolveTheme(t.key);
-            const customColor = prefs.accent_color || '#8b5cf6';
+            const customColor = pref('accent_color') || '#8b5cf6';
             const tAccent = isCustom ? '' : previewColor(r, 'bg-[#2563eb]', 'bg-[#3b82f6]', 'bg-[#db2777]', 'bg-[#16a34a]', 'bg-[#374151]', 'bg-[#1d4ed8]');
             const tBg = isCustom ? 'bg-[#ffffff] border-[#d1d5db]' : previewColor(r, 'bg-[#ffffff] border-[#d1d5db]', 'bg-[#1e1e2e] border-[#45475a]', 'bg-[#fdf2f8] border-[#f9a8d4]', 'bg-[#f0fdf4] border-[#86efac]', 'bg-[#e5e7eb] border-[#9ca3af]', 'bg-[#eff6ff] border-[#93c5fd]');
             return (
               <button key={t.key} onClick={() => {
                 if (isCustom) {
-                  savePref('theme', 'light');
-                  if (!prefs.accent_color) savePref('accent_color', '#8b5cf6');
+                  setAppearance(pref('accent_color') ? { theme: 'light' } : { theme: 'light', accent_color: '#8b5cf6' });
                 } else {
-                  savePref('theme', t.key);
-                  savePref('accent_color', null);
+                  setAppearance({ theme: t.key, accent_color: null });
                 }
               }}
-                className={`flex flex-col items-center gap-1.5 rounded-lg border-2 p-3 transition-all ${(isCustom ? !!prefs.accent_color : currentTheme === t.key && !prefs.accent_color) ? 'border-blue-500 shadow-md' : 'border-gray-200 hover:border-gray-300'}`}>
+                className={`flex flex-col items-center gap-1.5 rounded-lg border-2 p-3 transition-all ${(isCustom ? !!pref('accent_color') : currentTheme === t.key && !pref('accent_color')) ? 'border-blue-500 shadow-md' : 'border-gray-200 hover:border-gray-300'}`}>
                 <div className={`w-20 h-14 rounded ${tBg} border overflow-hidden flex flex-col`}>
                   {t.key === 'system' ? (
                     <div className="flex-1 flex">
@@ -229,14 +251,14 @@ export default function Customization({ omit, section }: CustomizationProps = {}
                     </>
                   )}
                 </div>
-                <span className={`text-xs font-medium ${(isCustom ? !!prefs.accent_color : currentTheme === t.key && !prefs.accent_color) ? 'text-blue-600' : 'text-gray-600'}`}>{t.label}</span>
+                <span className={`text-xs font-medium ${(isCustom ? !!pref('accent_color') : currentTheme === t.key && !pref('accent_color')) ? 'text-blue-600' : 'text-gray-600'}`}>{t.label}</span>
               </button>
             );
           })}
         </div>
 
         {/* Custom color pickers — only visible when Custom theme is selected */}
-        {prefs.accent_color && (
+        {pref('accent_color') && (
           <div className="mt-3 space-y-2">
             {([
               { key: 'custom_bg_color', label: 'Background Color', defaultVal: '#f3f4f6' },
@@ -248,12 +270,12 @@ export default function Customization({ omit, section }: CustomizationProps = {}
               <div key={item.key} className="flex items-center gap-3">
                 <span className="text-sm text-gray-700 w-40 shrink-0">{item.label}</span>
                 <label className="w-8 h-8 rounded-lg border-2 border-gray-300 overflow-hidden cursor-pointer flex items-center justify-center shrink-0"
-                  style={{ backgroundColor: prefs[item.key] || item.defaultVal }}>
-                  <input type="color" value={prefs[item.key] || item.defaultVal}
-                    onChange={e => savePref(item.key, e.target.value)}
+                  style={{ backgroundColor: pref(item.key) || item.defaultVal }}>
+                  <input type="color" value={pref(item.key) || item.defaultVal}
+                    onChange={e => setAppearance({ [item.key]: e.target.value })}
                     className="opacity-0 absolute w-0 h-0" />
                 </label>
-                <span className="text-xs text-gray-500 font-mono">{prefs[item.key] || item.defaultVal}</span>
+                <span className="text-xs text-gray-500 font-mono">{pref(item.key) || item.defaultVal}</span>
               </div>
             ))}
           </div>

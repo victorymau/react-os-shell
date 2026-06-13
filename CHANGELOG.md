@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [2.8.1] — 2026-06-13
+
+### Fixed
+- **Theme switching no longer waits on the prefs save round-trip.** Picking a theme/accent/custom color in Customization now stamps `data-theme` + the `--accent-*`/custom-color CSS vars onto `<html>` synchronously on click, then persists through `save()` in the background — so the desktop repaints on the same frame. Previously the repaint was gated on `prefs` reflecting the new value, which on a backend-backed adapter (the admin/supplier portals PATCH `/auth/me/` then refetch) could lag by the full server round-trip — sometimes tens of seconds — leaving the user staring at the old theme. The picker's own selected-ring + live preview are mirrored locally too, so they update instantly rather than after the save settles. `useTheme()` still reconciles from `prefs` for first paint and cross-tab/system changes; the new imperative path is exported as `applyThemePrefs`.
+
 ## [2.8.0] — 2026-06-13
 
 ### Added

@@ -38,6 +38,97 @@ function hslToHex(h: number, s: number, l: number): string {
   return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`;
 }
 
+/** Resolve a stored theme to the attribute value <html> actually carries
+ *  ('system' follows the OS dark-mode media query). */
+export function resolveTheme(theme: string | null | undefined): string {
+  const t = theme || 'system';
+  if (t === 'system') return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  return t;
+}
+
+/** Stamp the custom-accent shade scale (or clear it) on <html>. */
+function applyAccent(accentColor: string | null) {
+  const root = document.documentElement;
+  if (accentColor && /^#[0-9a-fA-F]{6}$/.test(accentColor)) {
+    const [h, s, l] = hexToHsl(accentColor);
+    root.setAttribute('data-custom-accent', 'true');
+    root.style.setProperty('--accent-600', accentColor);
+    root.style.setProperty('--accent-700', hslToHex(h, s, Math.max(l - 10, 5)));
+    root.style.setProperty('--accent-500', hslToHex(h, s, Math.min(l + 10, 95)));
+    root.style.setProperty('--accent-400', hslToHex(h, s, Math.min(l + 20, 95)));
+    root.style.setProperty('--accent-300', hslToHex(h, Math.min(s + 10, 100), Math.min(l + 30, 92)));
+    root.style.setProperty('--accent-200', hslToHex(h, Math.min(s + 15, 100), Math.min(l + 38, 94)));
+    root.style.setProperty('--accent-100', hslToHex(h, Math.min(s + 20, 100), Math.min(l + 42, 96)));
+    root.style.setProperty('--accent-50', hslToHex(h, Math.min(s + 20, 100), Math.min(l + 46, 98)));
+  } else {
+    root.removeAttribute('data-custom-accent');
+    ['--accent-600', '--accent-700', '--accent-500', '--accent-400', '--accent-300', '--accent-200', '--accent-100', '--accent-50'].forEach(p => root.style.removeProperty(p));
+  }
+}
+
+/** Stamp the custom theme colors (bg, title, window, button) on <html>.
+ *  Only active alongside a custom accent — clears the button/bg vars otherwise. */
+function applyCustomColors(
+  accentColor: string | null,
+  customBgColor: string | null,
+  customTitleColor: string | null,
+  customWindowColor: string | null,
+  customButtonColor: string | null,
+) {
+  const root = document.documentElement;
+  if (accentColor) {
+    // Helper to convert hex to "r g b" for rgba usage
+    const hexToRgb = (hex: string) => {
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      return `${r} ${g} ${b}`;
+    };
+    if (customBgColor) root.style.setProperty('--custom-bg-color', customBgColor);
+    if (customTitleColor) {
+      root.style.setProperty('--window-header-rgb', hexToRgb(customTitleColor));
+      root.style.setProperty('--window-footer-rgb', hexToRgb(customTitleColor));
+    }
+    if (customWindowColor) root.style.setProperty('--window-content-rgb', hexToRgb(customWindowColor));
+    if (customButtonColor) {
+      root.style.setProperty('--custom-button-color', customButtonColor);
+      const [h, s, l] = hexToHsl(customButtonColor);
+      root.style.setProperty('--custom-button-hover', hslToHex(h, s, Math.max(l - 10, 5)));
+    }
+  } else {
+    ['--custom-bg-color', '--custom-button-color', '--custom-button-hover'].forEach(p => root.style.removeProperty(p));
+  }
+}
+
+/**
+ * Imperatively apply a theme/accent/custom-color prefs snapshot to <html>.
+ *
+ * useTheme() already reconciles these from prefs, but it does so via effects
+ * that only fire once prefs actually changes — and a backend-backed prefs
+ * adapter (the admin/supplier portals PATCH /auth/me/ and refetch) can take
+ * seconds to settle, leaving the repaint stalled the whole time. The shell's
+ * <Customization> calls this on every theme/accent/color click so the switch
+ * lands on the same frame, then persists through save() in the background.
+ */
+export function applyThemePrefs(p: {
+  theme?: string | null;
+  accent_color?: string | null;
+  custom_bg_color?: string | null;
+  custom_title_color?: string | null;
+  custom_window_color?: string | null;
+  custom_button_color?: string | null;
+}) {
+  document.documentElement.setAttribute('data-theme', resolveTheme(p.theme));
+  applyAccent(p.accent_color ?? null);
+  applyCustomColors(
+    p.accent_color ?? null,
+    p.custom_bg_color ?? null,
+    p.custom_title_color ?? null,
+    p.custom_window_color ?? null,
+    p.custom_button_color ?? null,
+  );
+}
+
 export function useTheme() {
   const { prefs } = useShellPrefs();
   const systemDark = useSyncExternalStore(subscribeMediaQuery, getSystemIsDark);
@@ -57,50 +148,11 @@ export function useTheme() {
   }, [resolved]);
 
   // Custom accent color
-  useEffect(() => {
-    const root = document.documentElement;
-    if (accentColor && /^#[0-9a-fA-F]{6}$/.test(accentColor)) {
-      const [h, s, l] = hexToHsl(accentColor);
-      root.setAttribute('data-custom-accent', 'true');
-      root.style.setProperty('--accent-600', accentColor);
-      root.style.setProperty('--accent-700', hslToHex(h, s, Math.max(l - 10, 5)));
-      root.style.setProperty('--accent-500', hslToHex(h, s, Math.min(l + 10, 95)));
-      root.style.setProperty('--accent-400', hslToHex(h, s, Math.min(l + 20, 95)));
-      root.style.setProperty('--accent-300', hslToHex(h, Math.min(s + 10, 100), Math.min(l + 30, 92)));
-      root.style.setProperty('--accent-200', hslToHex(h, Math.min(s + 15, 100), Math.min(l + 38, 94)));
-      root.style.setProperty('--accent-100', hslToHex(h, Math.min(s + 20, 100), Math.min(l + 42, 96)));
-      root.style.setProperty('--accent-50', hslToHex(h, Math.min(s + 20, 100), Math.min(l + 46, 98)));
-    } else {
-      root.removeAttribute('data-custom-accent');
-      ['--accent-600', '--accent-700', '--accent-500', '--accent-400', '--accent-300', '--accent-200', '--accent-100', '--accent-50'].forEach(p => root.style.removeProperty(p));
-    }
-  }, [accentColor]);
+  useEffect(() => { applyAccent(accentColor); }, [accentColor]);
 
   // Custom theme colors (bg, title, window, button)
   useEffect(() => {
-    const root = document.documentElement;
-    if (accentColor) {
-      // Helper to convert hex to "r g b" for rgba usage
-      const hexToRgb = (hex: string) => {
-        const r = parseInt(hex.slice(1, 3), 16);
-        const g = parseInt(hex.slice(3, 5), 16);
-        const b = parseInt(hex.slice(5, 7), 16);
-        return `${r} ${g} ${b}`;
-      };
-      if (customBgColor) root.style.setProperty('--custom-bg-color', customBgColor);
-      if (customTitleColor) {
-        root.style.setProperty('--window-header-rgb', hexToRgb(customTitleColor));
-        root.style.setProperty('--window-footer-rgb', hexToRgb(customTitleColor));
-      }
-      if (customWindowColor) root.style.setProperty('--window-content-rgb', hexToRgb(customWindowColor));
-      if (customButtonColor) {
-        root.style.setProperty('--custom-button-color', customButtonColor);
-        const [h, s, l] = hexToHsl(customButtonColor);
-        root.style.setProperty('--custom-button-hover', hslToHex(h, s, Math.max(l - 10, 5)));
-      }
-    } else {
-      ['--custom-bg-color', '--custom-button-color', '--custom-button-hover'].forEach(p => root.style.removeProperty(p));
-    }
+    applyCustomColors(accentColor, customBgColor, customTitleColor, customWindowColor, customButtonColor);
   }, [accentColor, customBgColor, customTitleColor, customWindowColor, customButtonColor]);
 
   return { theme: saved, resolved };
