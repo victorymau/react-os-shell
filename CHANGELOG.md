@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [2.9.0] — 2026-06-14
+
+### Changed
+- **`toast.info` now renders a brief top-center toast, not the persistent
+  notification card.** Every `toast.info` call site was using it for transient
+  "nothing happened / no match" feedback, but the card lingered top-right for
+  10s with a bell + "NOTIFICATION" header — far heavier than the message. `info`
+  now joins `success`/`error` as a brief auto-dismissing toast (neutral blue
+  info icon, ~4.5s — a touch longer than success/error since info messages tend
+  to be a full sentence). Toasts also wrap long messages now instead of forcing
+  a single nowrap line.
+
+### Added
+- **`toast.notify(message, opts?)`** — the persistent top-right notification
+  card (the old `toast.info` presentation), kept for the rare alert that's worth
+  lingering on. Reach for it deliberately; default to `toast.info`/`success`/`error`.
+
 ## [2.8.1] — 2026-06-13
 
 ### Fixed
