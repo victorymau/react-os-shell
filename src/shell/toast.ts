@@ -1,8 +1,14 @@
 /**
- * Two notification systems:
+ * Two presentations:
  *
- * 1. toast.success/error — operation feedback, top-center, auto-dismiss 3s
- * 2. toast.info — system notification, top-right, stays 10s, dismissible
+ * 1. toast.success / error / info — brief operation feedback, top-center,
+ *    auto-dismiss (success/error ~3s, info ~4.5s). The everyday "what just
+ *    happened" feedback — most messages want this.
+ * 2. toast.notify — system notification, top-right card, stays 10s, dismissible.
+ *    For an alert worth lingering on; reach for it deliberately, not by default.
+ *
+ * (Historically `toast.info` rendered the top-right notification card; it now
+ * renders a brief toast — that persistent card moved to `toast.notify`.)
  */
 
 const TOAST_CONTAINER_ID = 'toast-container';
@@ -40,19 +46,23 @@ const GLASS_COMMON = `
 
 // ── Toast (operation feedback) — top-center, brief ──
 
-function showToast(variant: 'success' | 'error', message: string) {
+function showToast(variant: 'success' | 'error' | 'info', message: string,
+                   opts?: { duration?: number }) {
   import('../utils/sounds').then(s => {
     if (variant === 'success') s.playSuccess();
-    else s.playError();
+    else if (variant === 'error') s.playError();
+    else s.playNotification();
   }).catch(() => {});
 
   const container = getOrCreate(TOAST_CONTAINER_ID, 'fixed top-4 left-1/2 -translate-x-1/2 z-[9999] flex flex-col gap-2 items-center pointer-events-none');
   const o = getMenuOpacity();
-  const isSuccess = variant === 'success';
-  const color = isSuccess ? '#22c55e' : '#ef4444';
-  const icon = isSuccess
-    ? '<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="' + color + '" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>'
-    : '<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="' + color + '" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>';
+  const color = variant === 'success' ? '#22c55e' : variant === 'error' ? '#ef4444' : '#3b82f6';
+  const icons = {
+    success: '<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="' + color + '" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>',
+    error: '<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="' + color + '" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>',
+    info: '<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="' + color + '" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>',
+  };
+  const icon = icons[variant];
 
   const el = document.createElement('div');
   el.className = 'pointer-events-auto';
@@ -63,7 +73,7 @@ function showToast(variant: 'success' | 'error', message: string) {
     transition: opacity ${FADE_MS}ms ease, transform ${FADE_MS}ms ease;
     display: flex; align-items: center; gap: 8px;
     font-size: 13px; font-weight: 500; color: rgb(55,65,81);
-    white-space: nowrap;
+    max-width: min(90vw, 460px);
   `;
   el.innerHTML = icon;
   const span = document.createElement('span');
@@ -73,11 +83,14 @@ function showToast(variant: 'success' | 'error', message: string) {
   container.appendChild(el);
   requestAnimationFrame(() => { el.style.opacity = '1'; el.style.transform = 'translateY(0) scale(1)'; });
 
+  // Info messages are usually a sentence ("no matches — check X"); give them a
+  // beat longer to read than the terse success/error confirmations.
+  const duration = opts?.duration ?? (variant === 'info' ? 4500 : 3000);
   setTimeout(() => {
     el.style.opacity = '0';
     el.style.transform = 'translateY(-10px) scale(0.95)';
     setTimeout(() => el.remove(), FADE_MS);
-  }, 3000);
+  }, duration);
 }
 
 // ── Notification (system alert) — top-right, stays longer ──
@@ -130,7 +143,9 @@ function showNotification(message: string, opts?: { duration?: number }) {
 const toast = {
   success: (message: string) => showToast('success', message),
   error: (message: string) => showToast('error', message),
-  info: (message: string, opts?: { duration?: number }) => showNotification(message, opts),
+  info: (message: string, opts?: { duration?: number }) => showToast('info', message, opts),
+  // Persistent top-right notification card (the old toast.info presentation).
+  notify: (message: string, opts?: { duration?: number }) => showNotification(message, opts),
 };
 
 export default toast;
