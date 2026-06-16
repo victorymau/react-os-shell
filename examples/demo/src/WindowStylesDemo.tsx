@@ -121,6 +121,23 @@ export function AutoHeightWindow() {
   );
 }
 
+// REPRO: an autoHeight window whose root is a fill-height layout
+// (header / flex-1 scroll region / footer). Before the fix this collapsed to
+// the autoMinHeight floor; now it opens at the size-ladder height and the
+// inner region scrolls.
+export function AutoHeightFillWindow() {
+  return (
+    <div className="flex h-full flex-col text-sm">
+      <div className="shrink-0 border-b border-gray-200 px-4 py-2 font-semibold text-gray-900">Fill-height header</div>
+      <div className="flex-1 min-h-0 overflow-auto p-4 space-y-2 text-gray-600">
+        <p>This window's root uses <Chip>h-full</Chip> with a <Chip>flex-1</Chip> scroll region — the common detail-modal layout. It must open at the ladder height, not collapse to a sliver.</p>
+        {Array.from({ length: 30 }, (_, i) => <div key={i} className="rounded bg-gray-50 px-3 py-2">Row {i + 1}</div>)}
+      </div>
+      <div className="shrink-0 border-t border-gray-200 px-4 py-2 text-gray-500">Fill-height footer</div>
+    </div>
+  );
+}
+
 export function MultiInstanceWindow() {
   return (
     <Body title="Multi-instance" flags={['multiInstance: true', 'autoHeight: true']}>
@@ -154,6 +171,7 @@ const STYLES: { route: string; name: string; flags: string[]; blurb: string }[] 
   { route: '/win-app', name: 'App style', flags: ['appStyle: true'], blurb: 'Small title bar, zero padding — for apps with their own chrome.' },
   { route: '/win-flush', name: 'Flush body', flags: ['flushBody: true'], blurb: 'Standard chrome, edge-to-edge body for sidebar layouts.' },
   { route: '/win-auto', name: 'Auto height', flags: ['autoHeight: true', 'autoMinHeight: 280'], blurb: 'Window height hugs the content, with a floor.' },
+  { route: '/win-auto-fill', name: 'Auto height (fill)', flags: ['autoHeight: true', "size: 'md'"], blurb: 'A fill-height root (header / flex-1 / footer) opens at the ladder height instead of collapsing.' },
   { route: '/win-pinned', name: 'Pin on top', flags: ['allowPinOnTop: true'], blurb: 'Title-bar pin keeps the window above everything.' },
   { route: '/win-multi', name: 'Multi-instance', flags: ['multiInstance: true'], blurb: 'Each Open spawns another copy — the taskbar groups them.' },
   { route: '/win-pos', name: 'Initial position', flags: ["initialPosition: 'top-right'"], blurb: 'Opens anchored to a corner instead of centered.' },

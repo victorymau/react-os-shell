@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [2.9.2] — 2026-06-16
+
+### Fixed
+- **`autoHeight` windows no longer collapse to a tiny sliver when their content
+  fills its container.** The measurement rendered the body content-sized
+  (`flex-none`, `height: auto`) on first paint — fine for a naturally-flowing
+  form or table, but the common detail-modal layout (a `h-full` root with a
+  `flex-1` scroll region between a header and footer) has no intrinsic height, so
+  it collapsed to ~0 and the window froze at the `autoMinHeight` floor (~240px).
+  Entity detail windows across all three portals opt into `autoHeight`, so they
+  opened as clipped, near-empty slivers. The panel now always renders at a
+  definite height (seeded from the normal size ladder) and the measurement
+  distinguishes content that *fills* its container from content that doesn't: a
+  fill-height layout keeps the ladder height (and scrolls internally) instead of
+  collapsing, while naturally-flowing content still shrinks to hug its content.
+
 ## [2.9.1] — 2026-06-16
 
 ### Fixed

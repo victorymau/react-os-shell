@@ -37,9 +37,10 @@ export interface PageRegistryEntry {
   flushBody?: boolean;
   /** Custom window dimensions [width, height] in pixels. */
   dimensions?: [number, number];
-  /** Auto-size window height to its content. Combine with naturally-flowing
-   *  content (forms, settings, simple tools); avoid for windows whose root
-   *  uses `h-full` / `flex-1` since those would collapse. */
+  /** Auto-size window height to its content. Naturally-flowing content (forms,
+   *  settings, simple tools) shrinks the window to hug it; a fill-height root
+   *  (`h-full` / `flex-1` between a fixed header and footer) keeps the normal
+   *  size-ladder height and scrolls internally rather than collapsing. */
   autoHeight?: boolean;
   /** Floor for `autoHeight` (px). Defaults to 240. */
   autoMinHeight?: number;

@@ -306,10 +306,11 @@ interface ModalProps {
    *  `<SidebarLayout>`). Implies `bodyScroll: false`. */
   flushBody?: boolean;
   /** Auto-size height based on content. Window's height adapts to whatever the
-   *  body renders; combined with `autoMinHeight` to prevent collapse and capped
-   *  to the available viewport so nothing overflows the screen. Only set this
-   *  for windows whose root content uses natural (block / shrink-to-fit) sizing
-   *  — windows whose root uses `h-full` / `flex-1` would collapse here. */
+   *  body renders; floored by `autoMinHeight` and capped to the available
+   *  viewport so nothing overflows the screen. Naturally-flowing content (a
+   *  form, a table) shrinks the window to hug it; a fill-height root (`h-full` /
+   *  `flex-1` between a fixed header and footer) keeps the normal size-ladder
+   *  height and scrolls internally rather than collapsing. */
   autoHeight?: boolean;
   /** Minimum height (px) when `autoHeight` is on. Defaults to 240. */
   autoMinHeight?: number;
@@ -871,6 +872,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   const [widgetAnchor, setWidgetAnchor] = useState<'left' | 'right'>(initialPosition === 'top-right' ? 'right' : 'left');
   const closingRef = useRef(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const actionsRef = useRef<HTMLDivElement>(null);
   const actionsLeftRef = useRef<HTMLDivElement>(null);
   const [hasActions, setHasActions] = useState(false);
@@ -1156,20 +1158,22 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     return openMaximized ? calcMaximized() : calcWindowed();
   });
   // `autoHeight` is a *one-shot* "size to content at open time" hint, not a
-  // continuous CSS rule. We render with `height: auto` (plus the viewport-
-  // aware max-height cap) on the first paint, measure the actual rendered
-  // height in useLayoutEffect, freeze that into `box.h`, and then behave as
-  // a normal fixed-size window from there on. So dragging or resizing the
-  // browser doesn't re-shrink the window, and the user can manually resize
-  // smaller/larger like any other window. Persisted positions short-circuit
-  // the measurement step — if `boxKey` already maps to a saved h, we keep
-  // it.
-  // `autoHeight` windows always re-measure their content height on open so
-  // they stay content-aware. A stale saved height must not short-circuit this
-  // — e.g. a seeded default, or a height frozen earlier while the flex body
-  // was filling the panel (which made content-sized widgets open far too
-  // tall). Position and width are still restored from the saved box below;
-  // only the height is recomputed from the rendered content.
+  // continuous CSS rule. The panel always renders at a *definite* height
+  // (`box.h`, seeded from the normal windowed size ladder), and the layout
+  // effect below measures the content and adjusts `box.h` to hug it — then
+  // freezes, so the window behaves as a normal fixed-size window from there
+  // on (drag/resize don't re-shrink it). `autoHeight` windows always
+  // re-measure on open so they stay content-aware; the saved box restores
+  // position + width but its `h` is only a placeholder.
+  //
+  // Crucially we measure against a definite panel height rather than
+  // `height: auto`. A naturally-flowing detail (a table, a form) hugs its
+  // content either way, but content whose root fills its parent — the common
+  // `header / flex-1 scroll region / footer` detail layout — collapses to
+  // nothing under a content-sized parent and used to freeze at the
+  // `autoMinHeight` floor (a useless ~240px sliver). Keeping the panel
+  // definite lets such content fill the ladder height; the measurement only
+  // shrinks the window when the content genuinely *doesn't* fill it.
   const [autoHeightResolved, setAutoHeightResolved] = useState(() => !autoHeight);
   // Always-maximized layout: when the Layout sets `--layout-mode: sidebar`
   // on <html>, every non-widget Modal becomes immovable and locked to
@@ -1198,33 +1202,62 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   const boxRef = useRef(box);
   boxRef.current = box;
 
-  // autoHeight measurement. While unresolved the panel renders at `height:
-  // auto` with a content-sized (flex-none) body, so its measured box reflects
-  // the natural content height. A single first-paint measurement is unreliable
-  // — the open animation, the lazy/Suspense widget body, and async data each
-  // settle over several frames, so measuring once can lock in the fallback's
-  // height (a loading spinner) or a mid-animation value. We instead track the
-  // panel with a ResizeObserver:
+  // autoHeight measurement. The panel renders at a definite height the whole
+  // time; here we measure the body's content and nudge `box.h` so the window
+  // hugs it. A single first-paint measurement is unreliable — the open
+  // animation, the lazy/Suspense body, and async data each settle over
+  // several frames, so we track the body with a ResizeObserver:
   //   • Widgets stay content-sized for their whole life (never freeze), so a
   //     widget grows/shrinks with its content — a World Clock gains height as
   //     each city's weather loads or when the user adds a city, a Currency
   //     widget hugs its rows. Widgets aren't user-resizable, so there's nothing
   //     to preserve by freezing.
-  //   • Other autoHeight windows (e.g. settings dialogs) measure-then-freeze
-  //     once the height holds steady, then behave as normal fixed-size windows
-  //     (draggable/resizable, no reactivity to box.y / viewport / content).
+  //   • Other autoHeight windows (e.g. settings dialogs, entity details)
+  //     measure-then-freeze once the height holds steady, then behave as
+  //     normal fixed-size windows (draggable/resizable, no further reactivity).
+  //
+  // The measurement distinguishes content that *fills* its container from
+  // content that doesn't, so it never collapses a fill-height layout:
+  //   1. With the body temporarily content-sized, read its natural outer
+  //      height (`bodyNatural`) and the content root's own height.
+  //   2. Restore the body to its definite flex height and re-read the content
+  //      root. If the content root grew, it's a fill-height layout (flex-1 /
+  //      h-full) — keep the ladder height so it doesn't collapse. Otherwise
+  //      the content is naturally-flowing — size the window to chrome +
+  //      `bodyNatural`, clamped between the floor and the viewport.
   useLayoutEffect(() => {
     if (autoHeightResolved) return;
-    const el = panelRef.current;
-    if (!el) return;
+    const panel = panelRef.current;
+    const body = bodyRef.current;
+    if (!panel || !body) return;
+    const floor = autoMinHeight ?? (widget ? 0 : 240);
+    const taskbarH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--taskbar-height')) || 0;
     let lastH = 0;
     let freezeTimer: ReturnType<typeof setTimeout> | null = null;
     const measure = () => {
-      const h = el.getBoundingClientRect().height;
-      if (h <= 0) return;
-      if (Math.abs(h - lastH) > 1) {
-        lastH = h;
-        setBox(prev => (Math.abs(prev.h - h) > 1 ? { ...prev, h } : prev));
+      const content = body.firstElementChild as HTMLElement | null;
+      if (!content || panel.offsetHeight <= 0) return;
+      const chrome = panel.offsetHeight - body.offsetHeight; // title bar + footer
+      // Pass 1: let the body size to its content and note the natural heights.
+      const prevFlex = body.style.flex, prevOverflow = body.style.overflowY, prevHeight = body.style.height;
+      body.style.flex = '0 0 auto';
+      body.style.height = 'auto';
+      body.style.overflowY = 'visible';
+      const bodyNatural = body.offsetHeight;
+      const contentNatural = content.offsetHeight;
+      // Pass 2: restore the definite flex height and see if the content grew.
+      body.style.flex = prevFlex;
+      body.style.height = prevHeight;
+      body.style.overflowY = prevOverflow;
+      const contentFilled = content.offsetHeight;
+      const fillsContainer = contentFilled > contentNatural + 4;
+      const viewportCap = Math.max(floor, window.innerHeight - taskbarH - Math.max(0, boxRef.current.y) - 24);
+      const target = fillsContainer
+        ? Math.min(boxRef.current.h, viewportCap)
+        : Math.min(Math.max(floor, chrome + bodyNatural), viewportCap);
+      if (Math.abs(target - lastH) > 1) {
+        lastH = target;
+        setBox(prev => (Math.abs(prev.h - target) > 1 ? { ...prev, h: target } : prev));
         if (!widget) {
           if (freezeTimer) clearTimeout(freezeTimer);
           freezeTimer = setTimeout(() => setAutoHeightResolved(true), 140);
@@ -1232,10 +1265,17 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
       }
     };
     measure();
+    // The body is a definite flex height, so a ResizeObserver on it would miss
+    // content that changes *inside* a fixed-size body — a Suspense fallback
+    // swapping to the loaded detail, async rows arriving, a widget gaining a
+    // row. Observe the body's subtree for those, and the body itself for the
+    // box.h changes our own setBox drives.
     const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => { ro.disconnect(); if (freezeTimer) clearTimeout(freezeTimer); };
-  }, [autoHeightResolved, widget]);
+    ro.observe(body);
+    const mo = new MutationObserver(measure);
+    mo.observe(body, { childList: true, subtree: true, characterData: true });
+    return () => { ro.disconnect(); mo.disconnect(); if (freezeTimer) clearTimeout(freezeTimer); };
+  }, [autoHeightResolved, widget, autoMinHeight]);
 
   // When sidebar mode is toggled at runtime, snap existing windows to the
   // maximized box so they instantly fill the new work area. When it's
@@ -1678,16 +1718,12 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
           ...(zIndex < 0 ? { display: 'none' } : {}),
           ...((!isActive && !pinnedOnTop && !(swipingParentKey && windowKey === swipingParentKey)) ? { display: 'none' } : {}),
         } : {
-          zIndex: pinnedOnTop ? 999 : zIndex + 1, width: box.w, height: (autoHeight && !autoHeightResolved) ? 'auto' : box.h, top: box.y,
-          ...((autoHeight && !autoHeightResolved) ? {
-            // First-paint-only: render the content at its natural height
-            // (clamped to viewport via maxHeight) so the layout effect below
-            // can measure it. After measurement the height is frozen into
-            // box.h and these constraints are dropped — the window stops
-            // reacting to viewport / drag changes from there on.
-            minHeight: `${autoMinHeight ?? (widget ? 0 : 240)}px`,
-            maxHeight: `calc(100vh - ${Math.max(0, box.y)}px - var(--taskbar-height, 0px) - 24px)`,
-          } : {}),
+          // The panel is always a definite height — even while an `autoHeight`
+          // window is still measuring (box.h is seeded from the size ladder).
+          // The measurement effect adjusts box.h to hug the content; rendering
+          // at a definite height the whole way through means fill-height
+          // content (flex-1 / h-full) never collapses to the floor.
+          zIndex: pinnedOnTop ? 999 : zIndex + 1, width: box.w, height: box.h, top: box.y,
           ...(widget && widgetAnchor === 'right' ? { right: window.innerWidth - box.x - box.w } : { left: box.x }),
           ...(zIndex < 0 && !pinnedOnTop ? { display: 'none' } : {}),
           ...(exposeStyle ?? {}),
@@ -1801,8 +1837,9 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
         <ModalIdContext.Provider value={modalId}>
         <ModalActionsContext.Provider value={{ rightRef: actionsRef as React.RefObject<HTMLDivElement | null>, leftRef: actionsLeftRef as React.RefObject<HTMLDivElement | null>, notify: () => setHasActions(true), active: isActive, isDirty }}>
         <div
+          ref={bodyRef}
           {...(widget ? { onPointerDown: startDrag, onContextMenu: (e: React.MouseEvent) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }); } } : {})}
-          className={`${(autoHeight && !autoHeightResolved) ? 'flex-none' : 'flex-1 min-h-0'} flex flex-col ${widget ? 'p-0 cursor-move' : appStyle ? 'p-0' : flushBody ? 'p-0' : compact ? 'p-2' : 'p-4'} ${widget ? '' : 'backdrop-blur-sm'} ${(autoHeight && !autoHeightResolved) ? 'overflow-visible' : ((bodyScroll === false || appStyle || flushBody) ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain')} ${widget ? 'rounded-2xl select-none' : ''}`}
+          className={`flex-1 min-h-0 flex flex-col ${widget ? 'p-0 cursor-move' : appStyle ? 'p-0' : flushBody ? 'p-0' : compact ? 'p-2' : 'p-4'} ${widget ? '' : 'backdrop-blur-sm'} ${(bodyScroll === false || appStyle || flushBody) ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain'} ${widget ? 'rounded-2xl select-none' : ''}`}
           style={{ ...(widget ? { touchAction: 'none' } : {}), backgroundColor: widget ? 'transparent' : (isActive ? `rgb(var(--window-content-rgb) / var(--active-content-opacity, 0.9))` : `rgb(var(--window-content-rgb) / var(--inactive-content-opacity, 0.8))`) }}>
           {/* A throwing page/entity component must not unmount the desktop —
               the boundary swaps the body for an inline crash state while the
