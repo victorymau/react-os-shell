@@ -1229,6 +1229,23 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   //      h-full) — keep the ladder height so it doesn't collapse. Otherwise
   //      the content is naturally-flowing — size the window to chrome +
   //      `bodyNatural`, clamped between the floor and the viewport.
+  //
+  // Two things make this robust against content that arrives *after* the first
+  // paint — the common case where a detail component fetches its own data and
+  // renders a small spinner before swapping in the real, taller content:
+  //   • We freeze (commit the height and stop reacting) only once we've
+  //     measured real content — a height *above the floor*. While the body
+  //     still measures at the floor (a loading spinner / pre-data placeholder)
+  //     we keep observing, so the window grows to the loaded content instead of
+  //     locking at a collapsed sliver. Without this, a fetch slower than the
+  //     freeze delay froze the window at the spinner height on first open
+  //     (a reopen, with the data cached, rendered tall content immediately and
+  //     looked fine — the tell-tale of this race).
+  //   • The ResizeObserver tracks the live *content root*, not the body (which
+  //     is a fixed flex height and so never resizes when content changes
+  //     inside it). That catches async rows, late images, and font swaps; a
+  //     MutationObserver on the body re-points it when the root element itself
+  //     is replaced (spinner → content).
   useLayoutEffect(() => {
     if (autoHeightResolved) return;
     const panel = panelRef.current;
@@ -1238,9 +1255,18 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     const taskbarH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--taskbar-height')) || 0;
     let lastH = 0;
     let freezeTimer: ReturnType<typeof setTimeout> | null = null;
+    let observed: Element | null = null;
     const measure = () => {
       const content = body.firstElementChild as HTMLElement | null;
       if (!content || panel.offsetHeight <= 0) return;
+      // Keep the ResizeObserver pointed at the current content root so growth
+      // inside the fixed-height body (data swapping in, images/fonts loading)
+      // re-triggers measurement.
+      if (content !== observed) {
+        if (observed) ro.unobserve(observed);
+        ro.observe(content);
+        observed = content;
+      }
       const chrome = panel.offsetHeight - body.offsetHeight; // title bar + footer
       // Pass 1: let the body size to its content and note the natural heights.
       const prevFlex = body.style.flex, prevOverflow = body.style.overflowY, prevHeight = body.style.height;
@@ -1259,23 +1285,31 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
       const target = fillsContainer
         ? Math.min(boxRef.current.h, viewportCap)
         : Math.min(Math.max(floor, chrome + bodyNatural), viewportCap);
-      if (Math.abs(target - lastH) > 1) {
+      const changed = Math.abs(target - lastH) > 1;
+      if (changed) {
         lastH = target;
         setBox(prev => (Math.abs(prev.h - target) > 1 ? { ...prev, h: target } : prev));
-        if (!widget) {
+      }
+      // Freeze (commit the height and stop reacting) only once real content —
+      // taller than the floor — has settled. Re-evaluated on every measure so
+      // the freeze is *disarmed* whenever the body sits at the floor (a loading
+      // spinner / pre-data placeholder, or a brief open-animation transient).
+      // Otherwise an early transient above the floor could arm the timer and
+      // lock the window at the collapsed floor height before the real, taller
+      // content arrives — the bug where a detail window opened as a sliver on
+      // first (uncached) open but was fine on reopen. Fill-height content
+      // reports the ladder height (> floor), so it still freezes promptly.
+      if (!widget) {
+        if (target <= floor) {
+          if (freezeTimer) { clearTimeout(freezeTimer); freezeTimer = null; }
+        } else if (changed || freezeTimer === null) {
           if (freezeTimer) clearTimeout(freezeTimer);
-          freezeTimer = setTimeout(() => setAutoHeightResolved(true), 140);
+          freezeTimer = setTimeout(() => setAutoHeightResolved(true), 160);
         }
       }
     };
-    measure();
-    // The body is a definite flex height, so a ResizeObserver on it would miss
-    // content that changes *inside* a fixed-size body — a Suspense fallback
-    // swapping to the loaded detail, async rows arriving, a widget gaining a
-    // row. Observe the body's subtree for those, and the body itself for the
-    // box.h changes our own setBox drives.
     const ro = new ResizeObserver(measure);
-    ro.observe(body);
+    measure();
     const mo = new MutationObserver(measure);
     mo.observe(body, { childList: true, subtree: true, characterData: true });
     return () => { ro.disconnect(); mo.disconnect(); if (freezeTimer) clearTimeout(freezeTimer); };

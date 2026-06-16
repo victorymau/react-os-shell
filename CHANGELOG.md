@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [2.9.4] — 2026-06-17
+
+### Fixed
+- **`autoHeight` windows no longer open as a collapsed sliver on first open
+  when their content loads asynchronously.** A detail window whose component
+  fetches its own data renders a small spinner first, then swaps in the real,
+  taller content. The 2.9.2/2.9.3 measurement froze the window ~140ms after
+  the first stable measurement — which, on an uncached first open, was the
+  spinner — so the window locked at the `autoMinHeight` floor (~240px) before
+  the data arrived; reopening (with the data cached, so full content rendered
+  immediately) looked fine. Two changes fix the race:
+  - **The freeze is disarmed whenever the content sits at the floor** (a
+    loading placeholder, or a brief open-animation transient), evaluated on
+    every measure — so an early transient can no longer lock the collapsed
+    height. The window freezes only once real content, taller than the floor,
+    has settled. Fill-height content reports the ladder height, so it still
+    freezes promptly.
+  - **The ResizeObserver now tracks the live content root** (re-pointed via a
+    MutationObserver when the root element is replaced) rather than the
+    fixed-height body, so content that grows after first paint — async rows,
+    late images, font swaps — re-triggers measurement instead of being missed.
+
 ## [2.9.3] — 2026-06-16
 
 ### Fixed

@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { useWindowManager, glassStyle, toggleExposeMode } from 'react-os-shell';
 
 /**
@@ -121,6 +122,31 @@ export function AutoHeightWindow() {
   );
 }
 
+// REPRO: an autoHeight window whose detail component fetches its own data and
+// renders a small spinner first, then swaps in tall content (mirrors the
+// supplier-portal QCReportDetail). The autoHeight measurement must not freeze
+// at the spinner height — first open should hug the loaded content just like a
+// reopen does. Uses a timer to stand in for the network round-trip.
+export function DelayedLoadWindow() {
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setLoaded(true), 600); return () => clearTimeout(t); }, []);
+  if (!loaded) return <div className="flex items-center justify-center py-12 text-sm text-gray-400">Loading…</div>;
+  return (
+    <div className="space-y-4 text-sm">
+      <div className="rounded-xl border border-gray-200 overflow-hidden">
+        <div className="flex"><div className="w-32 bg-gray-50 px-3 py-2 text-gray-500">PO</div><div className="px-3 py-2 text-blue-600">PO#27931</div></div>
+        <div className="flex border-t border-gray-200"><div className="w-32 bg-gray-50 px-3 py-2 text-gray-500">INSPECTOR</div><div className="px-3 py-2">Jay Yuan</div></div>
+      </div>
+      {Array.from({ length: 12 }, (_, i) => (
+        <div key={i} className="rounded-lg border border-gray-200 p-3">
+          <div className="font-medium text-gray-900">NG item {i + 1} — WGTSIX12067518GBBE{40 + i}</div>
+          <p className="text-gray-500 mt-1">Deviation noted on inspection; awaiting disposition. This row stands in for the tall content that arrives after the fetch resolves.</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // REPRO: an autoHeight window whose root is a fill-height layout
 // (header / flex-1 scroll region / footer). Before the fix this collapsed to
 // the autoMinHeight floor; now it opens at the size-ladder height and the
@@ -172,6 +198,7 @@ const STYLES: { route: string; name: string; flags: string[]; blurb: string }[] 
   { route: '/win-flush', name: 'Flush body', flags: ['flushBody: true'], blurb: 'Standard chrome, edge-to-edge body for sidebar layouts.' },
   { route: '/win-auto', name: 'Auto height', flags: ['autoHeight: true', 'autoMinHeight: 280'], blurb: 'Window height hugs the content, with a floor.' },
   { route: '/win-auto-fill', name: 'Auto height (fill)', flags: ['autoHeight: true', "size: 'md'"], blurb: 'A fill-height root (header / flex-1 / footer) opens at the ladder height instead of collapsing.' },
+  { route: '/win-auto-delayed', name: 'Auto height (delayed load)', flags: ['autoHeight: true', 'multiInstance: true'], blurb: 'Content fetches async (spinner then tall content). First open must hug the loaded content, not freeze at the spinner height.' },
   { route: '/win-pinned', name: 'Pin on top', flags: ['allowPinOnTop: true'], blurb: 'Title-bar pin keeps the window above everything.' },
   { route: '/win-multi', name: 'Multi-instance', flags: ['multiInstance: true'], blurb: 'Each Open spawns another copy — the taskbar groups them.' },
   { route: '/win-pos', name: 'Initial position', flags: ["initialPosition: 'top-right'"], blurb: 'Opens anchored to a corner instead of centered.' },
