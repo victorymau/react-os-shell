@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [2.9.1] — 2026-06-16
+
+### Fixed
+- **Start-menu flyout submenus no longer overflow the taskbar or run off the
+  bottom of the screen.** A section flyout (e.g. "System") with more items than
+  the menu itself is tall was clamped to the *main menu's* bounding box, so when
+  it didn't fit it pinned to the top and spilled past the bottom — over the
+  taskbar and below the viewport, making the lowest items unreachable. Flyouts
+  (and 3rd-level sub-flyouts) now clamp into the usable viewport span — the
+  screen minus the taskbar edge and an 8px gutter — and, when a section still
+  has more items than fit above the taskbar, cap at that height and scroll
+  instead of overflowing.
+- **System Preferences sidebar items now match the rest of the shell's sidebar
+  style.** The Preferences section list (`SystemPreferences`) rendered each item
+  as a square, edge-to-edge highlight, so the active row was a flush rectangle
+  unlike the rounded, inset pills the OS-shell sidebar uses everywhere else.
+  Items are now `rounded-lg` with a small horizontal inset (`px-1`), so the
+  active row reads as a pill consistent with `Sidebar.tsx`.
+
 ## [2.9.0] — 2026-06-14
 
 ### Changed

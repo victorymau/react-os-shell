@@ -68,7 +68,7 @@ export default function SystemPreferences({
       className={className}
       sidebarClassName="border-r border-gray-200 bg-gray-50"
       sidebar={
-        <nav className="py-1.5">
+        <nav className="px-1 py-1.5 space-y-0.5">
           {sections.map(item => {
             const isActive = item.key === selected;
             return (
@@ -76,7 +76,7 @@ export default function SystemPreferences({
                 key={item.key}
                 type="button"
                 onClick={() => setSelected(item.key)}
-                className={`w-full text-left px-3 py-2.5 text-sm transition-colors flex items-start gap-2.5 ${
+                className={`w-full text-left rounded-lg px-3 py-2.5 text-sm transition-colors flex items-start gap-2.5 ${
                   isActive ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-700'
                 }`}
               >
