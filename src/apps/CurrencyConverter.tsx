@@ -91,10 +91,15 @@ export default function CurrencyConverter() {
        *  taskbar uses so the widget matches it across all themes
        *  (gray-100-ish on light, Catppuccin mantle in dark). Tailwind
        *  gray-* text/border classes auto-invert in dark via the existing
-       *  `[data-theme="dark"]` overrides in styles.css. */}
-      <div className="flex flex-col h-full"
+       *  `[data-theme="dark"]` overrides in styles.css.
+       *
+       *  A plain naturally-flowing div — deliberately no `h-full`/`flex-1`, so
+       *  the window's `autoHeight` measurement hugs these rows instead of
+       *  reading the root as fill-height and pinning the window to its full
+       *  `dimensions` height (320×480) with empty space below the rows. */}
+      <div
         style={{ backgroundColor: `rgb(var(--taskbar-bg-rgb, 243 244 246) / ${appearance.activeOpacity / 100})`, backdropFilter: appearance.activeBlur > 0 ? `blur(${appearance.activeBlur}px)` : undefined }}>
-        <div className="px-4 py-3 space-y-1 flex-1">
+        <div className="px-4 py-3 space-y-1">
           {loading && <div className="text-xs text-gray-400 text-center py-4">Loading rates...</div>}
           {pairs.map(([from, to], idx) => {
             const rate = allRates[from]?.[to];

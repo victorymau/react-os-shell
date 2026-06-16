@@ -1210,8 +1210,12 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   //   • Widgets stay content-sized for their whole life (never freeze), so a
   //     widget grows/shrinks with its content — a World Clock gains height as
   //     each city's weather loads or when the user adds a city, a Currency
-  //     widget hugs its rows. Widgets aren't user-resizable, so there's nothing
-  //     to preserve by freezing.
+  //     widget hugs its rows. This holds only while a widget's root is
+  //     naturally-flowing: a fill-height widget root (`h-full` / `flex-1`)
+  //     would still trip the fill-detection below and pin to the ladder
+  //     height, so widget roots must hug their own content rather than fill.
+  //     Widgets aren't user-resizable, so there's nothing to preserve by
+  //     freezing.
   //   • Other autoHeight windows (e.g. settings dialogs, entity details)
   //     measure-then-freeze once the height holds steady, then behave as
   //     normal fixed-size windows (draggable/resizable, no further reactivity).

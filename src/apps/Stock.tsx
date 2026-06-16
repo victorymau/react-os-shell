@@ -79,10 +79,15 @@ export default function Stock() {
   return (
     <>
       {/* Theme-aware panel — mirrors the taskbar's `--taskbar-bg-rgb` so the
-       *  widget matches it across themes; gray-* classes auto-invert in dark. */}
-      <div className="flex flex-col h-full"
+       *  widget matches it across themes; gray-* classes auto-invert in dark.
+       *
+       *  A plain naturally-flowing div — deliberately no `h-full`/`flex-1`, so
+       *  the window's `autoHeight` measurement hugs these rows instead of
+       *  reading the root as fill-height and pinning the window to its full
+       *  `dimensions` height (320×360) with empty space below the rows. */}
+      <div
         style={{ backgroundColor: `rgb(var(--taskbar-bg-rgb, 243 244 246) / ${appearance.activeOpacity / 100})`, backdropFilter: appearance.activeBlur > 0 ? `blur(${appearance.activeBlur}px)` : undefined }}>
-        <div className="px-4 py-3 flex-1">
+        <div className="px-4 py-3">
           {symbols.length === 0 ? (
             <div className="text-xs text-gray-500 text-center py-6">No symbols yet — add some in settings.</div>
           ) : (

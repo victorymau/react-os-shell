@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [2.9.3] — 2026-06-16
+
+### Fixed
+- **The Currency Converter and Stock dashboard widgets hug their content again,
+  instead of opening pinned to their full height with empty space below their
+  rows.** The [2.9.2] `autoHeight` fix renders the panel at a definite height
+  and classifies content as fill-height (keep the ladder height, scroll
+  internally) vs naturally-flowing (shrink to hug). Both widgets' roots used
+  `h-full` with a `flex-1` inner region, so the new fill-detection read them as
+  fill-height and pinned them to their `dimensions` height (320×480 and
+  320×360). Those classes were vestigial — a widget has no footer to pin
+  against, so nothing needed to fill — and are now removed, leaving plain
+  naturally-flowing roots (matching the World Clock and Weather widgets) that
+  hug their rows and still grow as rows/data load. The shell's fill-detection is
+  unchanged, so the [2.9.2] fix for genuine detail windows is unaffected.
+
 ## [2.9.2] — 2026-06-16
 
 ### Fixed
