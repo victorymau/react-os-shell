@@ -46,23 +46,6 @@ export type { BreadcrumbsProps, BreadcrumbItem } from './shell/Breadcrumbs';
 export { default as NotificationBell } from './shell/NotificationBell';
 export type { NotificationsConfig, ShellNotification } from './shell/NotificationBell';
 
-// ── Bug-report system ──
-export {
-  BugReportProvider,
-  BugReportConfigProvider,
-  useBugReport,
-  openBugReportDialog,
-} from './shell/BugReportDialog';
-export type {
-  BugReport,
-  BugReportConfig,
-  BugReportSubmitPayload,
-  BugReportSubmission,
-  BugReportExtraField,
-  BugReportExtraSelectField,
-  ReportType,
-} from './shell/BugReportDialog';
-export { default as BugReportDetail } from './shell/BugReportDetail';
 
 // ── Status badges ──
 export { default as StatusBadge, StatusBadgeProvider } from './shell/StatusBadge';
@@ -146,7 +129,6 @@ export { setShellAuthBridge } from './contexts/AuthContext';
 
 // ── Utilities ──
 export { glassStyle, GLASS_DIVIDER, GLASS_INPUT_BG } from './utils/glass';
-export { reportBug } from './utils/reportBug';
 export { formatDate } from './utils/date';
 
 // ── Hooks (theming, hotkeys, modal nav) ──

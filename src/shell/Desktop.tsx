@@ -8,8 +8,6 @@ import { APP_VERSION } from '../version';
 import changelog, { type ChangelogEntry } from '../changelog';
 import toast from './toast';
 import { PopupMenu, PopupMenuItem, PopupMenuDivider } from './PopupMenu';
-import { reportBug } from '../utils/reportBug';
-import { useBugReport } from './BugReportDialog';
 import { formatDate } from '../utils/date';
 import {
   openPreviewFile,
@@ -122,7 +120,6 @@ export function useDesktopHost(): DesktopHostConfig {
 export default function Desktop({ profile }: { profile: any }) {
   const queryClient = useQueryClient();
   const { openEntity, openPage } = useWindowManager();
-  const bugReport = useBugReport();
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Read desktop preferences from the consumer prefs adapter so they stay
@@ -1201,13 +1198,6 @@ export default function Desktop({ profile }: { profile: any }) {
               About {host.productName ?? 'this app'}
             </PopupMenuItem>
           )}
-          {bugReport && <>
-            <PopupMenuDivider />
-            <PopupMenuItem onClick={() => { setContextMenu(null); reportBug(bugReport.submit); }}>
-              <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg>
-              Suggestion or Bug
-            </PopupMenuItem>
-          </>}
         </PopupMenu>
       )}
 
