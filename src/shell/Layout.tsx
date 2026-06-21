@@ -14,8 +14,6 @@ import Desktop from './Desktop';
 import useClickOutside from '../hooks/useClickOutside';
 import { playStartup } from '../utils/sounds';
 import { glassStyle as getGlassStyle } from '../utils/glass';
-import { reportBug } from '../utils/reportBug';
-import { useBugReport } from './BugReportDialog';
 import StartupAnimation from './StartupAnimation';
 import LogoutAnimation from './LogoutAnimation';
 import StartMenu from './StartMenu';
@@ -578,10 +576,9 @@ function CalendarPopup({ now, config, close }: { now: Date; config?: ClockCalend
   );
 }
 
-function TaskbarContextMenu({ x, y, position, size, onChangePosition, onChangeSize, onClose, onReportBug }: {
+function TaskbarContextMenu({ x, y, position, size, onChangePosition, onChangeSize, onClose }: {
   x: number; y: number; position: string; size: string;
   onChangePosition: (v: string) => void; onChangeSize: (v: string) => void; onClose: () => void;
-  onReportBug?: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useClickOutside(ref, onClose);
@@ -615,14 +612,6 @@ function TaskbarContextMenu({ x, y, position, size, onChangePosition, onChangeSi
           {s.charAt(0).toUpperCase() + s.slice(1)}
         </button>
       ))}
-      {onReportBug && <>
-        <div className="border-t border-white/20 my-1 mx-3" />
-        <button onClick={() => { onClose(); onReportBug(); }}
-          className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors rounded-lg mx-1 flex items-center gap-2" style={{ width: 'calc(100% - 8px)' }}>
-          <span className="w-3.5 shrink-0" />
-          Suggestion or Bug
-        </button>
-      </>}
     </div>
   );
 }
@@ -727,7 +716,6 @@ export default function Layout({
   taskbarTrayLeft,
   clockCalendar,
 }: LayoutProps = {}) {
-  const bugReport = useBugReport();
   const { user, logout, hasAnyPerm } = useAuth();
   const { openPage, openEntity, openWindows } = useWindowManager();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -1115,7 +1103,6 @@ export default function Layout({
           onChangePosition={v => { savePref('taskbar_position', v); setTaskbarMenu(null); }}
           onChangeSize={v => { savePref('taskbar_size', v); setTaskbarMenu(null); }}
           onClose={() => setTaskbarMenu(null)}
-          onReportBug={bugReport ? () => reportBug(bugReport.submit) : undefined}
         />
       )}
 
