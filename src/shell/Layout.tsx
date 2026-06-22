@@ -10,7 +10,7 @@ import { getPomoSnapshot, subscribePomo } from './pomodoroStore';
 import { useShellPrefs } from './ShellPrefs';
 import { useWindowManager } from './WindowManager';
 import { useTheme } from '../hooks/useTheme';
-import Desktop from './Desktop';
+import Desktop, { useDesktopHost } from './Desktop';
 import useClickOutside from '../hooks/useClickOutside';
 import { playStartup } from '../utils/sounds';
 import { glassStyle as getGlassStyle } from '../utils/glass';
@@ -576,9 +576,10 @@ function CalendarPopup({ now, config, close }: { now: Date; config?: ClockCalend
   );
 }
 
-function TaskbarContextMenu({ x, y, position, size, onChangePosition, onChangeSize, onClose }: {
+function TaskbarContextMenu({ x, y, position, size, onChangePosition, onChangeSize, onClose, onReportBug }: {
   x: number; y: number; position: string; size: string;
   onChangePosition: (v: string) => void; onChangeSize: (v: string) => void; onClose: () => void;
+  onReportBug?: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useClickOutside(ref, onClose);
@@ -612,6 +613,14 @@ function TaskbarContextMenu({ x, y, position, size, onChangePosition, onChangeSi
           {s.charAt(0).toUpperCase() + s.slice(1)}
         </button>
       ))}
+      {onReportBug && <>
+        <div className="border-t border-white/20 my-1 mx-3" />
+        <button onClick={() => { onClose(); onReportBug(); }}
+          className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors rounded-lg mx-1 flex items-center gap-2" style={{ width: 'calc(100% - 8px)' }}>
+          <svg className="h-3.5 w-3.5 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg>
+          Suggestion or Bug
+        </button>
+      </>}
     </div>
   );
 }
@@ -716,6 +725,7 @@ export default function Layout({
   taskbarTrayLeft,
   clockCalendar,
 }: LayoutProps = {}) {
+  const host = useDesktopHost();
   const { user, logout, hasAnyPerm } = useAuth();
   const { openPage, openEntity, openWindows } = useWindowManager();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -1103,6 +1113,7 @@ export default function Layout({
           onChangePosition={v => { savePref('taskbar_position', v); setTaskbarMenu(null); }}
           onChangeSize={v => { savePref('taskbar_size', v); setTaskbarMenu(null); }}
           onClose={() => setTaskbarMenu(null)}
+          onReportBug={host.onReportBug}
         />
       )}
 
