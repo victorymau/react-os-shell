@@ -105,6 +105,11 @@ export interface DesktopHostConfig {
   /** Desktop right-click menu items to hide (all shown by default). Pass keys
    *  here when the consumer surfaces them elsewhere — e.g. under Preferences. */
   hiddenContextMenuItems?: DesktopContextMenuItem[];
+  /** Open the consumer's own "report a bug / suggestion" UI. When set, the
+   *  desktop and taskbar right-click menus show a "Suggestion or Bug" item that
+   *  calls this. Lets a consumer that files feedback natively (the shell itself
+   *  dropped bug reporting in v3.0.0) surface the familiar right-click entry. */
+  onReportBug?: () => void;
 }
 
 const DesktopHostContext = createContext<DesktopHostConfig>({});
@@ -1198,6 +1203,13 @@ export default function Desktop({ profile }: { profile: any }) {
               About {host.productName ?? 'this app'}
             </PopupMenuItem>
           )}
+          {host.onReportBug && <>
+            <PopupMenuDivider />
+            <PopupMenuItem onClick={() => { setContextMenu(null); host.onReportBug!(); }}>
+              <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg>
+              Suggestion or Bug
+            </PopupMenuItem>
+          </>}
         </PopupMenu>
       )}
 

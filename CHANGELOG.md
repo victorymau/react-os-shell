@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.1.0] — 2026-06-23
+
+### Added
+- **`DesktopHostConfig.onReportBug`** — an optional callback that, when set,
+  restores a **"Suggestion or Bug"** item to the desktop **and** taskbar
+  right-click menus and invokes the host's own handler. The shell dropped its
+  built-in bug-report dialog in v3.0.0; this lets a consumer that files feedback
+  natively surface the familiar right-click entry again without re-introducing
+  the shell's dialog. Purely additive — consumers that don't set it are
+  unchanged (no menu item shown).
+
 ## [2.9.4] — 2026-06-17
 
 ### Fixed
