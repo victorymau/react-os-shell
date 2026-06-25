@@ -56,7 +56,7 @@ export interface ImageAnnotatorHandle {
   save: () => Promise<void>;
 }
 
-interface ImageAnnotatorProps {
+export interface ImageAnnotatorProps {
   src: string;
   filename: string;
   /** Standalone-mode: when provided, an Apply pill is rendered in the

@@ -91,6 +91,13 @@ export { default as SoundsPanel } from './settings/SoundsPanel';
 export { default as SystemPreferences } from './settings/SystemPreferences';
 export type { SystemPreferencesProps, SystemPreferencesSection } from './settings/SystemPreferences';
 
+// ── Standalone image annotator (the same markup tool embedded in the Preview
+//    app). Pass `src` + `filename` plus the standalone `onApply`/`onCancel`
+//    pair to embed it outside Preview (e.g. a bug-report dialog) and receive
+//    the flattened PNG back. ──
+export { default as ImageAnnotator } from './apps/ImageAnnotator';
+export type { ImageAnnotatorHandle, ImageAnnotatorProps } from './apps/ImageAnnotator';
+
 // ── Pageless data grid primitives ──
 export { default as EntityList } from './data/EntityList';
 export type { EntityListColumn, EntityListProps } from './data/EntityList';
