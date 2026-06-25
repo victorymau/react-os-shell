@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.1.1] — 2026-06-26
+
+### Fixed
+- **The DXF Preview "Measure" tool no longer silently breaks in consumers that
+  install `dxf-viewer` without a top-level `three`.** The measure overlay needs
+  `THREE.Vector3` to project scene coordinates to screen pixels, and the DXF
+  path used to reach it via `import('three')`. Under a consumer using pnpm's
+  strict `node_modules` — where `three` is only a transitive dependency of
+  `dxf-viewer` and isn't resolvable at the top level — that bare import was left
+  external and rejected at runtime: `pxFromScene` fell back to `{0,0}`, so the
+  measure line and label collapsed to a zero-length segment at the origin
+  (invisible, even though the measured value still displayed). The fix drops the
+  separate `three` resolution entirely and instead plucks the `Vector3`
+  constructor from `dxf-viewer`'s own loaded scene/camera (both `Object3D`-
+  derived, so `.position` is a `Vector3` from the bundled THREE) — the same
+  scene-pluck trick the 3D model path already uses. `project`/`unproject` only
+  read the camera's matrices, so a cross-instance `Vector3` is safe here. DXF
+  measuring now works with only `dxf-viewer` installed; `three` is no longer
+  required.
+
 ## [3.1.0] — 2026-06-23
 
 ### Added

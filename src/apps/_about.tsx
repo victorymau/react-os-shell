@@ -47,7 +47,7 @@ export const BUILTIN_APP_INFO = {
   },
   preview: {
     name: 'Preview',
-    version: '1.2.0',
+    version: '1.2.1',
     route: '/preview',
     description: 'Viewer for PDF documents, images, DXF drawings and 3D models — CAD-style measuring with object snap and an AutoCAD-like command bar.',
   },

@@ -1236,39 +1236,53 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
       nodes: null,
     };
 
-    // ── THREE — needed for projection math ────────────────────────
-    let THREE: any = null;
+    // ── THREE.Vector3 for projection math — plucked from the scene ─
+    //
+    // We need THREE.Vector3 to project/unproject through the camera, but
+    // we must NOT `import('three')`. Under a consumer that installs
+    // dxf-viewer without a top-level `three` (e.g. pnpm strict
+    // node_modules, where `three` is only a transitive dep of
+    // dxf-viewer), the bare import is left external and rejects at
+    // runtime — THREE stays null, pxFromScene returns its {0,0} fallback,
+    // and the whole measure overlay collapses to a zero-length segment at
+    // the origin (EFFICIENT BG#00184). Instead pluck the Vector3
+    // constructor from dxf-viewer's own scene/camera (both Object3D-
+    // derived, so `.position` is guaranteed to be a Vector3 from the
+    // bundled THREE). project/unproject only read camera.projectionMatrix
+    // / matrixWorldInverse, so a cross-instance Vector3 is safe here —
+    // unlike the 3D Raycaster instanceof case, which is why that path
+    // routes through OV's own picking instead.
+    const Vector3Ctor: any =
+      camera?.position?.constructor ?? scene?.position?.constructor ?? null;
     let ready = false;
 
     // Unproject canvas (CSS) px → scene coords (matches dxf-viewer's
     // private _CanvasToSceneCoord).
     const sceneFromPx = (cx: number, cy: number) => {
-      if (!THREE) return null;
+      if (!Vector3Ctor) return null;
       const w = canvas.clientWidth, h = canvas.clientHeight;
-      const v3 = new THREE.Vector3(cx * 2 / w - 1, -cy * 2 / h + 1, 1).unproject(camera);
+      const v3 = new Vector3Ctor(cx * 2 / w - 1, -cy * 2 / h + 1, 1).unproject(camera);
       return { x: v3.x, y: v3.y };
     };
     // Project scene coords → canvas (CSS) px.
     const pxFromScene = (sx: number, sy: number) => {
-      if (!THREE) return { x: 0, y: 0 };
-      const v3 = new THREE.Vector3(sx, sy, 0).project(camera);
+      if (!Vector3Ctor) return { x: 0, y: 0 };
+      const v3 = new Vector3Ctor(sx, sy, 0).project(camera);
       const w = canvas.clientWidth, h = canvas.clientHeight;
       return { x: (v3.x + 1) / 2 * w, y: (-v3.y + 1) / 2 * h };
     };
 
-    // Load THREE (needed for camera projection math) and build the snap
-    // cache. The walk must match dxf-viewer's GPU layout — see the block
-    // comment above: 2-component positions read via getX/getY (NOT raw
-    // array triplets), index buffer followed for INDEXED_LINES, and
+    // Build the snap cache. The walk must match dxf-viewer's GPU layout —
+    // see the block comment above: 2-component positions read via getX/getY
+    // (NOT raw array triplets), index buffer followed for INDEXED_LINES, and
     // per-instance INSERT transforms baked in (they live in instance
     // attributes and are applied in the vertex shader, so matrixWorld is
     // always identity). traverseVisible skips layers hidden before the
-    // measure session started.
+    // measure session started. No THREE needed here — every read goes
+    // through the BufferAttribute's own getX/getY accessors.
     const MAX_SNAP_SEGS = 400_000;
-    (async () => {
+    (() => {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        THREE = await import(/* @vite-ignore */ 'three' as any);
         const st = measureRef.current;
         if (!st) return;
         const segXY: number[] = [];
