@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.3.1] — 2026-06-26
+
+### Fixed
+- **`examples/demo` builds again.** The bundled demo still imported the
+  `BugReport*` providers, hooks and the `<BugReportDetail>` viewer that were
+  removed from the shell in v3.0.0, so Vite's esbuild dependency scan failed
+  with `No matching export in "../../dist/index.js" for import
+  "BugReportProvider"` (and four other symbols) — breaking both `npm run dev`
+  and `vite build`, and with them the GitHub Pages demo deploy. Dropped the
+  dead BugReport surface from the demo: removed the provider wrappers from
+  `App.tsx`, deleted the Bug Reports window (and its start-menu / registry
+  registration) and its in-memory store, and stripped the `useBugReport` /
+  `reportBug` usage from the Status Badges demo (keeping `StatusBadge`). Also
+  added `three` to the demo's dependencies so `dxf-viewer`'s `import('three')`
+  resolves under a strict `node_modules` (the same fix the EFFICIENT portals
+  applied), un-breaking the Preview app's DXF path. Demo-only — the published
+  package is unchanged from 3.3.0.
+
 ## [3.3.0] — 2026-06-26
 
 ### Added

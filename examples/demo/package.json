@@ -17,7 +17,8 @@
     "react-dom": "^18.3.0",
     "react-hook-form": "^7.53.0",
     "react-os-shell": "file:../..",
-    "react-router-dom": "^6.27.0"
+    "react-router-dom": "^6.27.0",
+    "three": "^0.161.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.0",
