@@ -14,6 +14,16 @@
     "ShortcutHelp": { "cardMode": "single", "primaryStory": "Overlay" },
     "BehaviorPanel": { "cardMode": "column" },
     "Customization": { "cardMode": "column" },
-    "TopNav": { "cardMode": "column" }
+    "TopNav": { "cardMode": "column" },
+
+    "DashboardTemplate": { "cardMode": "single", "viewport": "1120x760" },
+    "DataTablePage": { "cardMode": "single", "viewport": "1024x620" },
+    "FormLayoutPage": { "cardMode": "single", "viewport": "880x760" },
+    "CheckoutTemplate": { "cardMode": "single", "viewport": "1120x820" },
+    "GalleryTemplate": { "cardMode": "single", "viewport": "1024x620" },
+    "EmailTemplate": { "cardMode": "single", "viewport": "1120x600" },
+    "ChatTemplate": { "cardMode": "single", "viewport": "1024x600" },
+    "AuthScreen": { "cardMode": "single", "viewport": "880x560", "primaryStory": "Login" },
+    "ErrorPage": { "cardMode": "single", "viewport": "760x480", "primaryStory": "NotFound" }
   }
 }

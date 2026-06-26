@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.6.0] — 2026-06-26
+
+### Added
+- **Page templates.** Zero-prop starter screens composed from the primitives and
+  charts, exported from the main barrel: `DashboardTemplate`, `DataTablePage`,
+  `FormLayoutPage`, `CheckoutTemplate`, `EmailTemplate`, `ChatTemplate`,
+  `GalleryTemplate`, `AuthScreen` (login/register/forgot) and `ErrorPage`
+  (403/404/500). They use static table/list markup (not the React-Query data
+  components) so they render without any provider. Ships authored design-sync
+  previews for each (with `config.json` viewport/cardMode overrides), a **Page
+  Templates** demo window, and the `.design-sync` conventions/NOTES + README +
+  Help Center docs covering all three waves. Additive only.
+
 ## [3.5.0] — 2026-06-26
 
 ### Added

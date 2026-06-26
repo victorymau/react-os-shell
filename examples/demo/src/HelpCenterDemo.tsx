@@ -67,6 +67,25 @@ The Components menu in the start menu opens isolated demos:
 - **Sidebar / Top Nav / Breadcrumbs** — layout chrome
 - **Status Badges** — one palette for every status in the system
 `),
+  doc('primitives', 'components', 'Components', 'UI primitives & page templates', `
+## Building blocks for full screens
+
+The **UI Primitives** window shows the standalone, pre-styled controls:
+
+- **Buttons & forms** — Button, Input, Textarea, Select, Checkbox, Radio, FormField, Label
+- **Display** — Card / StatCard, Avatar, Banner, Tabs, Accordion, Tooltip, Pagination
+- **Charts** — dependency-free Sparkline, BarChart and DonutChart
+
+All are controlled the kit way (\`value\`/\`onChange\`) and follow the active
+accent and dark theme.
+
+## Page templates
+
+The **Page Templates** window switches between ready-made screens composed from
+those primitives — Dashboard, Data table, Form, Checkout, Email, Chat, Gallery,
+Auth and Error pages. Import a template directly or read it as a composition
+reference.
+`),
   doc('roadmap', 'components', 'Components', 'Roadmap (draft)', `
 ## Ideas under consideration
 
