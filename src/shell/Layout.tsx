@@ -53,8 +53,9 @@ export interface LayoutProps {
   productName?: string;
   /** Icon URL rendered next to the brand label. Defaults to `/favicon.svg`. */
   productIcon?: string;
-  /** Wallpaper image URLs for the desktop background. When omitted, the
-   *  desktop renders with no image (just the dark fallback). */
+  /** Wallpaper image URLs for the desktop background. When omitted, falls back
+   *  to the wallpapers registered on the `DesktopHostProvider` (the same pool the
+   *  Customization picker shows); with neither, the desktop renders no image. */
   wallpapers?: string[];
   /** Override the default nav sections shown in the start menu. */
   navSections?: (NavSection | NavItem)[];
@@ -735,7 +736,12 @@ export default function Layout({
   const profile: any = user || {};
 
   useTheme();
-  const { favorites, toggle: toggleFavorite, isFavorite, desktopBg, setDesktopBg } = useFavorites(wallpapers);
+  // Fall back to the host-registered wallpaper pool (the same source the
+  // Customization picker reads) when no explicit `wallpapers` prop is given —
+  // otherwise a host-only consumer gets an empty pool and `desktop_bg: 'random'`
+  // (also the default for a user who's never picked one) collapses to 'none'.
+  const { favorites, toggle: toggleFavorite, isFavorite, desktopBg, setDesktopBg } =
+    useFavorites(wallpapers ?? host.wallpapers?.map(w => w.src));
 
   const { prefs, save: savePrefs } = useShellPrefs();
 
