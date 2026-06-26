@@ -215,9 +215,10 @@ setShellApiClient(demoApiClient);
 
 const queryClient = new QueryClient();
 
-// The component showcases ARE the demo, so they lead the start menu as flat
-// top-level rows. Preferences + Help Center follow under a divider, and the
-// bundled document/web apps tuck into the Utilities tray.
+// The component showcases are grouped into labeled category sub-menus
+// (Components / Data / Layout & navigation), mirroring how the bundled
+// document/web apps tuck into the Utilities tray. Preferences + Help Center +
+// Keyboard Shortcuts stay as flat top-level rows.
 const UTILITY_TRAY_ROUTES = ['/spreadsheet', '/notepad', '/documents', '/preview', '/files', '/browser'];
 const lookupLabel = (to: string) =>
   (utilityApps as any)[to]?.label
@@ -225,29 +226,34 @@ const lookupLabel = (to: string) =>
   ?? (webApps as any)[to]?.label
   ?? to;
 
-const COMPONENT_ITEMS = [
-  { to: '/list-demo', label: 'List' },
-  { to: '/table-demo', label: 'Table' },
-  { to: '/grid-demo', label: 'Grid' },
-  { to: '/kanban-demo', label: 'Kanban' },
-  { to: '/form-demo', label: 'Form Controls' },
-  { to: '/primitives-demo', label: 'UI Primitives' },
-  { to: '/templates-demo', label: 'Page Templates' },
-  { to: '/windows-demo', label: 'Window Styles' },
-  { to: '/sidebar-demo', label: 'Sidebar' },
-  { to: '/topnav-demo', label: 'Top Nav' },
-  { to: '/breadcrumbs-demo', label: 'Breadcrumbs' },
-  { to: '/badges-demo', label: 'Status Badges' },
-  { to: '/shortcuts-demo', label: 'Keyboard Shortcuts' },
-];
-
 const NAV_SECTIONS = [
-  // Components first — divider after the last one.
-  ...COMPONENT_ITEMS.map((it, i) =>
-    i === COMPONENT_ITEMS.length - 1 ? { ...it, dividerAfter: true } : it,
-  ),
-  { to: '/settings/customization', label: 'Preferences' },
-  { to: '/help-demo', label: 'Help Center' },
+  {
+    label: 'Components',
+    items: [
+      { to: '/primitives-demo', label: 'UI Primitives' },
+      { to: '/form-demo', label: 'Form Controls' },
+      { to: '/templates-demo', label: 'Page Templates' },
+      { to: '/badges-demo', label: 'Status Badges' },
+    ],
+  },
+  {
+    label: 'Data',
+    items: [
+      { to: '/list-demo', label: 'List' },
+      { to: '/table-demo', label: 'Table' },
+      { to: '/grid-demo', label: 'Grid' },
+      { to: '/kanban-demo', label: 'Kanban' },
+    ],
+  },
+  {
+    label: 'Layout & navigation',
+    items: [
+      { to: '/sidebar-demo', label: 'Sidebar' },
+      { to: '/topnav-demo', label: 'Top Nav' },
+      { to: '/breadcrumbs-demo', label: 'Breadcrumbs' },
+      { to: '/windows-demo', label: 'Window Styles' },
+    ],
+  },
   {
     // Widgets (Calculator, Weather, Currency, Pomodoro, World Clock, Stocks)
     // are added/removed from the desktop's Widget Manager panel (right-click
@@ -261,9 +267,12 @@ const NAV_SECTIONS = [
         .map(([to, e]) => ({ to, label: (e as any).label })),
     ],
   },
+  { to: '/settings/customization', label: 'Preferences' },
+  { to: '/help-demo', label: 'Help Center' },
+  { to: '/shortcuts-demo', label: 'Keyboard Shortcuts', dividerAfter: true },
 ];
 
-const START_MENU_CATEGORIES = { erp: [], system: ['Utilities'] };
+const START_MENU_CATEGORIES = { erp: [], system: ['Components', 'Data', 'Layout & navigation', 'Utilities'] };
 
 // Per-route icons rendered next to each start-menu item. Keep paths tight —
 // they re-render at h-4 w-4 inside the menu.
@@ -307,6 +316,8 @@ setShellNavIcons(NAV_ICONS);
 // Section header icons (matched by section label).
 const SECTION_ICONS: Record<string, JSX.Element> = {
   Components: path('M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z'),
+  Data: path('M3.75 5.25h16.5v13.5H3.75zM3.75 9.75h16.5M9.5 9.75v9M15 9.75v9'),
+  'Layout & navigation': path('M9 4.5v15m-4.875 0h15.75c.621 0 1.125-.504 1.125-1.125V5.625c0-.621-.504-1.125-1.125-1.125H4.125C3.504 4.5 3 5.004 3 5.625v12.75c0 .621.504 1.125 1.125 1.125z'),
   Utilities: path('M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437L12 10.5'),
   Settings: path('M10.343 3.94c.09-.542.56-.94 1.11-.94h1.093c.55 0 1.02.398 1.11.94l.149.894c.07.424.384.764.78.93.398.164.855.142 1.205-.108l.737-.527a1.125 1.125 0 011.45.12l.773.774c.39.389.44 1.002.12 1.45l-.527.737c-.25.35-.272.806-.107 1.204.165.397.505.71.93.78l.893.15c.543.09.94.56.94 1.109v1.094c0 .55-.397 1.02-.94 1.11l-.893.149c-.425.07-.765.383-.93.78-.165.398-.143.854.107 1.204l.527.738c.32.447.269 1.06-.12 1.45l-.774.773a1.125 1.125 0 01-1.449.12l-.738-.527c-.35-.25-.806-.272-1.203-.107-.397.165-.71.505-.781.929l-.149.894c-.09.542-.56.94-1.11.94h-1.094c-.55 0-1.019-.398-1.11-.94l-.148-.894c-.071-.424-.384-.764-.781-.93-.398-.164-.854-.142-1.204.108l-.738.527c-.447.32-1.06.269-1.45-.12l-.773-.774a1.125 1.125 0 01-.12-1.45l.527-.737c.25-.35.272-.806.108-1.204-.165-.397-.506-.71-.93-.78l-.894-.15c-.542-.09-.94-.56-.94-1.109v-1.094c0-.55.398-1.02.94-1.11l.894-.149c.424-.07.765-.383.93-.78.165-.398.143-.854-.108-1.204l-.526-.738a1.125 1.125 0 01.12-1.45l.773-.773a1.125 1.125 0 011.45-.12l.737.527c.35.25.807.272 1.204.107.397-.165.71-.505.78-.929l.15-.894z M15 12a3 3 0 11-6 0 3 3 0 016 0z'),
 };
