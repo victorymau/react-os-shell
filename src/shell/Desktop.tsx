@@ -424,6 +424,31 @@ export default function Desktop({ profile }: { profile: any }) {
     // (scale + glow) and so we can short-circuit the right-overlap test
     // on drop.
     const isSingleItemDrag = entries.length === 1 && entries[0].type === 'item';
+
+    // Drag-to-pin helpers: a single page shortcut dropped onto the taskbar
+    // pins it to the taskbar strip (prefs.favorite_pages — see Layout.tsx,
+    // which tags the bar with data-taskbar-dropzone). Returns the route to pin,
+    // or null when the drag isn't a lone page shortcut.
+    const draggedPageRoute = (): string | null => {
+      if (!isSingleItemDrag) return null;
+      const itm = desktopItems[entries[0].idx];
+      return itm?.entityType === 'page' ? itm.entityId : null;
+    };
+    const taskbarEl = (): HTMLElement | null =>
+      document.querySelector('[data-taskbar-dropzone]') as HTMLElement | null;
+    const pointOverTaskbar = (x: number, y: number): boolean => {
+      const tb = taskbarEl();
+      if (!tb) return false;
+      const r = tb.getBoundingClientRect();
+      return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+    };
+    const setTaskbarDropHint = (on: boolean) => {
+      const tb = taskbarEl();
+      if (!tb) return;
+      tb.style.outline = on ? '2px solid var(--accent-600, #7c3aed)' : '';
+      tb.style.outlineOffset = on ? '-2px' : '';
+    };
+
     const move = (e: PointerEvent) => {
       const dx = e.clientX - dragging.startX;
       const dy = e.clientY - dragging.startY;
@@ -457,6 +482,8 @@ export default function Desktop({ profile }: { profile: any }) {
         }
         hoverFolderIdxRef.current = nextHover;
         setHoverFolderIdx(prev => (prev === nextHover ? prev : nextHover));
+        // Light the taskbar when a page shortcut is dragged over it.
+        setTaskbarDropHint(draggedPageRoute() != null && pointOverTaskbar(e.clientX, e.clientY));
       }
     };
     const up = (e: PointerEvent) => {
@@ -468,6 +495,29 @@ export default function Desktop({ profile }: { profile: any }) {
         entry.el.style.zIndex = '';
         entry.el.style.opacity = '';
       }
+
+      // Drag-to-pin: a lone page shortcut released over the taskbar gets pinned
+      // to the taskbar strip (prefs.favorite_pages) instead of being moved.
+      const pinRoute = draggedPageRoute();
+      if (pinRoute && pointOverTaskbar(e.clientX, e.clientY)) {
+        setTaskbarDropHint(false);
+        // Snap the icon back to where it started — no position change persisted.
+        for (const entry of entries) {
+          if (!entry.el) continue;
+          entry.el.style.left = 'auto';
+          entry.el.style.right = `${entry.origX}px`;
+          entry.el.style.top = `${entry.origY}px`;
+        }
+        const pages: string[] = Array.isArray(shellPrefs.favorite_pages) ? shellPrefs.favorite_pages : [];
+        if (!pages.includes(pinRoute)) saveShellPrefs({ favorite_pages: [...pages, pinRoute] } as any);
+        hoverFolderIdxRef.current = null;
+        setHoverFolderIdx(null);
+        setDragging(null);
+        dragEntriesRef.current = [];
+        return;
+      }
+      setTaskbarDropHint(false);
+
       const liveHoverIdx = hoverFolderIdxRef.current;
       const hoveredFolder = liveHoverIdx != null ? folders[liveHoverIdx] : null;
       hoverFolderIdxRef.current = null;
@@ -569,7 +619,7 @@ export default function Desktop({ profile }: { profile: any }) {
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
     return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
-  }, [dragging, snapEnabled, favDocs, folders, desktopItems]);
+  }, [dragging, snapEnabled, favDocs, folders, desktopItems, shellPrefs]);
 
   // Clear local position overrides when profile data updates
   // Cache key has to include positions too — otherwise "Snap to Grid"

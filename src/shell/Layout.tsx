@@ -1025,6 +1025,9 @@ export default function Layout({
           backgroundColor: `rgb(var(--taskbar-bg-rgb, 243 244 246) / ${taskbarOpacity})`,
           ...(isVerticalTaskbar ? {} : { left: sidebarWidth }),
         }}
+        // Hit-test target for drag-to-pin: dropping a page shortcut from the
+        // desktop over the taskbar pins it to favorite_pages (see Desktop.tsx).
+        data-taskbar-dropzone
         onContextMenu={e => { e.preventDefault(); setTaskbarMenu({ x: e.clientX, y: e.clientY }); }}>
         {/* ERP button — toggles Start Menu. Hidden in sidebar mode where
             the persistent left sidebar replaces the start-menu role. */}

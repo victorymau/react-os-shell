@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.3.0] — 2026-06-26
+
+### Added
+- **Drag a desktop app shortcut onto the taskbar to pin it there.** A page
+  shortcut on the desktop can now be dragged over the taskbar and dropped to add
+  it to the taskbar strip (`prefs.favorite_pages`) — the taskbar lights up while
+  a draggable page hovers over it. Previously the strip could only be populated
+  from the host's Favorites settings; the shell offered no add-to-taskbar gesture
+  of its own (only a right-click "Remove from Favorites" on existing pins).
+  Dropping a shortcut that's already pinned is a no-op, and the icon snaps back
+  to its place on the desktop (the drag pins rather than moves it). Implemented
+  inside the desktop's existing pointer-drag pipeline, so multi-select drags,
+  drop-into-folder and reordering are unaffected; the taskbar is tagged
+  `data-taskbar-dropzone` as the hit-test target.
+
 ## [3.1.1] — 2026-06-26
 
 ### Fixed
