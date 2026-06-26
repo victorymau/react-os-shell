@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.3.2] — 2026-06-26
+
+### Fixed
+- **Random / default desktop wallpaper now renders.** `Layout` resolved its
+  background-image pool from the `wallpapers` *prop* only, while the
+  Customization picker reads the pool from the `DesktopHostProvider`. A consumer
+  that registers wallpapers on the host (as the EFFICIENT portals do) but omits
+  the prop got an empty pool, so `desktop_bg: 'random'` — which is also the
+  default when a user has never picked a wallpaper — collapsed to `'none'` and
+  no background drew at all. `Layout` now falls back to `host.wallpapers` when
+  the prop is omitted, so the rendered background matches the picker's pool.
+
 ## [3.3.1] — 2026-06-26
 
 ### Fixed
