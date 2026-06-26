@@ -14,7 +14,11 @@ A backend-less playground hosted on GitHub Pages. Wallpapers, themes, sticky not
 
 ## What's in the box
 
-**Shell:** `<Layout>`, `<StartMenu>`, `<Desktop>` (with sticky notes + folders), `<WindowManager>`, `<Modal>` (standard / compact / widget styles), `<PopupMenu>`, `<ConfirmDialog>`, `<GlobalSearch>` (Cmd-K), `<ShortcutHelp>`, `<NotificationBell>`, `<BugReportDetail>`, `<StatusBadge>`, `<SearchableSelect>`, frosted-glass theming.
+**Shell:** `<Layout>`, `<StartMenu>`, `<Desktop>` (with sticky notes + folders), `<WindowManager>`, `<Modal>` (standard / compact / widget styles), `<PopupMenu>`, `<ConfirmDialog>`, `<GlobalSearch>` (Cmd-K), `<ShortcutHelp>`, `<NotificationBell>`, `<StatusBadge>`, `<SearchableSelect>`, frosted-glass theming.
+
+**UI primitives:** `<Button>`, `<Input>`, `<Textarea>`, `<Select>`, `<Checkbox>`, `<Radio>`, `<FormField>`, `<Label>`, `<Card>` / `<StatCard>`, `<Avatar>` / `<AvatarGroup>`, `<Banner>`, `<Tabs>`, `<Accordion>`, `<Tooltip>`, `<Pagination>`, and dependency-free `<Sparkline>` / `<BarChart>` / `<DonutChart>` charts.
+
+**Page templates:** ready-made screens composed from the primitives — `<DashboardTemplate>`, `<DataTablePage>`, `<FormLayoutPage>`, `<CheckoutTemplate>`, `<EmailTemplate>`, `<ChatTemplate>`, `<GalleryTemplate>`, `<AuthScreen>`, `<ErrorPage>`.
 
 **Apps:**
 - **Utilities:** Calculator, Notepad, Spreadsheet, Weather, CurrencyConverter, PomodoroTimer, WorldClock, TodoList
@@ -172,6 +176,14 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 | `BugReportDetail` | Used inside an entity-window registry entry; reads from `<BugReportConfigProvider>`. |
 | `StatusBadge` | Coloured pill rendering a status string. Map status→semantic group via `<StatusBadgeProvider groups={{...}}>`. |
 | `SidebarLayout` | Two-pane layout with a drag-to-resize sidebar (`storageKey` persists the width). Pair with a `flushBody` window so the sidebar runs edge-to-edge. |
+| `Button`, `Input`, `Textarea`, `Select`, `Checkbox`, `Radio`, `FormField`, `Label` | Form controls — controlled (`value`/`onChange`); `Input`/`Textarea` forward native props for react-hook-form. |
+| `Card`, `StatCard` | Surface panel (optional header/footer) + dashboard metric tile. |
+| `Avatar`, `AvatarGroup` | User avatar with initials fallback + status dot; overlapping stack with +N overflow. |
+| `Banner` | Static in-flow alert (`tone`: info / success / warning / danger). |
+| `Tabs`, `Accordion`, `Tooltip` | Controlled tab strip, collapsible sections, frosted hover tooltip. |
+| `Pagination` | Numbered page control (pairs with tables; complements `ListFooter`). |
+| `Sparkline`, `BarChart`, `DonutChart` | Dependency-free inline-SVG charts (`currentColor`-themed). |
+| `DashboardTemplate`, `DataTablePage`, `FormLayoutPage`, `CheckoutTemplate`, `EmailTemplate`, `ChatTemplate`, `GalleryTemplate`, `AuthScreen`, `ErrorPage` | Zero-prop starter page templates composed from the primitives. |
 
 ### Providers + setters
 

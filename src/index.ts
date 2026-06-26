@@ -152,6 +152,19 @@ export { default as BarChart } from './charts/BarChart';
 export { default as DonutChart } from './charts/DonutChart';
 export type { SparklineProps, BarChartProps, DonutChartProps, DonutSegment } from './charts/types';
 
+// ── Page templates (starter screens; see src/templates) ──
+export { default as DashboardTemplate } from './templates/DashboardTemplate';
+export { default as DataTablePage } from './templates/DataTablePage';
+export { default as FormLayoutPage } from './templates/FormLayoutPage';
+export { default as CheckoutTemplate } from './templates/CheckoutTemplate';
+export { default as EmailTemplate } from './templates/EmailTemplate';
+export { default as ChatTemplate } from './templates/ChatTemplate';
+export { default as GalleryTemplate } from './templates/GalleryTemplate';
+export { default as AuthScreen } from './templates/AuthScreen';
+export type { AuthScreenProps } from './templates/AuthScreen';
+export { default as ErrorPage } from './templates/ErrorPage';
+export type { ErrorPageProps } from './templates/ErrorPage';
+
 // ── Package version (tsup-injected at build time) ──
 export { VERSION } from './version';
 

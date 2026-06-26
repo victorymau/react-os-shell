@@ -4,7 +4,7 @@
 
 ## Setup & providers
 
-Most primitives (StatusBadge, Breadcrumbs, TopNav, Kanban, EditableGrid, SidebarLayout, SearchableSelect, Markdown, PopupMenu, HelpCenter, Modal) render standalone. Some read React context — wrap only what you use:
+Most primitives render standalone — including the full UI-primitive set: **Button, Input, Textarea, Select, Checkbox, Radio, FormField, Label** (form controls), **Card / StatCard, Avatar / AvatarGroup, Banner, Tabs, Accordion, Tooltip** (display & layout), **Pagination**, and the **Sparkline / BarChart / DonutChart** charts — plus StatusBadge, Breadcrumbs, TopNav, Kanban, EditableGrid, SidebarLayout, SearchableSelect, Markdown, PopupMenu, HelpCenter, Modal. None of the primitives need a provider. Some components read React context — wrap only what you use:
 
 - **`StatusBadgeProvider groups={{...}}`** — required by `StatusBadge`. Maps status strings → one of 9 semantic groups (`success | active | queued | info | pending | warning | danger | draft | neutral`).
 - **`ShellPrefsProvider value={{ prefs, save }}`** — feeds `Customization`, `BehaviorPanel`, `SystemPreferences`. Without it they render defaults only.
@@ -27,6 +27,24 @@ The kit is built with **Tailwind v4 utility classes**, and the shipped styleshee
 **Hard constraint:** designs receive only this compiled stylesheet, so utilities the library never uses are NOT available — in particular **arbitrary values** (`h-[440px]`, `bg-[#abc]`) and unused color scales (e.g. `bg-amber-600`) produce NO style. For custom one-off sizing/colors use an **inline `style={{…}}`** instead. For full-height fill, components rooted in `flex-1`/`h-full` need a real height on their wrapper — give it `style={{ height: N }}`.
 
 The glass menus/panels read DS tokens `--window-*`, `--menu-*`, `--taskbar-*` (defined in the stylesheet); don't redefine them.
+
+## Form controls
+
+`Button` (`variant`: `primary | secondary | ghost | danger`), `Input`, `Textarea`, `Select` (native, short lists — `SearchableSelect` is the searchable/free-text one), `Checkbox`, `Radio`, and the `FormField` wrapper (label + control + `hint`/`error`). Controlled the kit way: `value` + `onChange(value)` (`onChange(checked)` for checkbox/radio); `Input`/`Textarea` forward native props so `react-hook-form` `register()` spreads onto them. `primary` buttons and the check/radio fills follow the active accent automatically.
+
+## Page templates
+
+Full-screen starters for common app pages, each a zero-prop component composed from the primitives above — import and adapt them, or read them as composition references:
+
+- `DashboardTemplate` — stat cards + charts + recent-activity table.
+- `DataTablePage` — toolbar + data table + `Pagination`.
+- `FormLayoutPage` — grouped `Card`s of `FormField`s (settings form).
+- `CheckoutTemplate` — checkout form + order summary.
+- `EmailTemplate` / `ChatTemplate` — master-detail via `SidebarLayout` (fill height: give the wrapper `style={{ height: N }}`).
+- `GalleryTemplate` — media grid with `Tabs` filter.
+- `AuthScreen` (`mode`: `login | register | forgot`) and `ErrorPage` (`code`: `403 | 404 | 500`).
+
+These use static table/list markup (not the React-Query data components) so they render without any provider.
 
 ## Where the truth is
 
