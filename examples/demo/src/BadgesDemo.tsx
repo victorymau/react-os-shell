@@ -1,4 +1,4 @@
-import { StatusBadge, useBugReport, reportBug, type SemanticGroup } from 'react-os-shell';
+import { StatusBadge, type SemanticGroup } from 'react-os-shell';
 import { DEMO_STATUS_GROUPS } from './demoStatusGroups';
 
 /**
@@ -6,10 +6,6 @@ import { DEMO_STATUS_GROUPS } from './demoStatusGroups';
  * concept reads the same color everywhere regardless of which entity the
  * status string came from. The mapping below is exactly what App.tsx feeds
  * <StatusBadgeProvider>; unmapped strings fall back to neutral.
- *
- * Also hosts the bug-report trigger so the <BugReportProvider> flow (screen
- * capture → annotate → describe → submit) is reachable without right-clicking
- * the desktop.
  */
 
 const GROUP_BLURBS: Record<SemanticGroup, string> = {
@@ -29,8 +25,6 @@ const GROUP_ORDER: SemanticGroup[] = [
 ];
 
 export default function BadgesDemo() {
-  const bugReport = useBugReport();
-
   const byGroup = new Map<SemanticGroup, string[]>();
   for (const [status, group] of Object.entries(DEMO_STATUS_GROUPS)) {
     byGroup.set(group as SemanticGroup, [...(byGroup.get(group as SemanticGroup) ?? []), status]);
@@ -73,24 +67,6 @@ export default function BadgesDemo() {
             ))}
           </tbody>
         </table>
-      </div>
-
-      <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 max-w-2xl">
-        <h3 className="text-sm font-semibold text-gray-800">Suggestion or Bug dialog</h3>
-        <p className="mt-1 text-xs text-gray-500">
-          The shell's bug-report flow: captures the tab (your browser will ask
-          to share the screen — annotate the shot if you like), then hands the
-          payload to the consumer's <code className="bg-gray-100 rounded px-1">submit</code> callback.
-          The demo's callback just raises a notification — check the bell after
-          sending. Also available from the desktop right-click menu.
-        </p>
-        <button
-          onClick={() => bugReport && reportBug(bugReport.submit)}
-          disabled={!bugReport}
-          className="mt-3 px-3 py-1.5 text-xs rounded bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-40"
-        >
-          Report a bug or suggestion…
-        </button>
       </div>
     </div>
   );
