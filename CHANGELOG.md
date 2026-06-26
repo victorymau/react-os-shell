@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.5.0] — 2026-06-26
+
+### Added
+- **Dependency-free charts.** `Sparkline`, `BarChart` and `DonutChart` — inline
+  SVG/CSS with no charting dependency; color follows `currentColor`, so a parent
+  `text-*` class themes them (and they sidestep the design-sync compiled-CSS
+  constraint entirely). Authored design-sync previews for each, and the **UI
+  Primitives** demo window now includes a charts section. Additive only.
+
 ## [3.4.0] — 2026-06-26
 
 ### Added

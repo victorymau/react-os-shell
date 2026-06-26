@@ -2,13 +2,13 @@ import { useState } from 'react';
 import {
   Button, Input, Textarea, Select, Checkbox, Radio, FormField,
   Card, StatCard, Avatar, AvatarGroup, Banner, Tabs, Accordion, Tooltip,
-  Pagination,
+  Pagination, Sparkline, BarChart, DonutChart,
 } from 'react-os-shell';
 
 /**
- * Showcase for the v3.4.0 UI primitives — form controls plus the display/layout
- * primitives. Mirrors the design-sync previews so they can be eyeballed in the
- * running shell (light + dark themes).
+ * Showcase for the v3.4.0 UI primitives — form controls, display/layout
+ * primitives, and the dependency-free charts. Mirrors the design-sync previews
+ * so they can be eyeballed in the running shell (light + dark themes).
  */
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -18,6 +18,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
     </section>
   );
 }
+
+const SERIES = [4, 6, 5, 8, 7, 11, 9, 13, 12, 16, 14, 18];
 
 export default function PrimitivesDemo() {
   const [tab, setTab] = useState('overview');
@@ -120,6 +122,17 @@ export default function PrimitivesDemo() {
           <div className="flex items-center gap-4">
             <Tooltip content="Saves to the cloud"><Button variant="secondary" size="sm">Hover me</Button></Tooltip>
             <Pagination page={page} pageCount={12} onPageChange={setPage} showEdges />
+          </div>
+        </Section>
+
+        <Section title="Charts (dependency-free SVG)">
+          <div className="flex flex-wrap items-center gap-8">
+            <div className="text-blue-600"><Sparkline data={SERIES} width={160} height={40} fill="rgba(37,99,235,0.12)" /></div>
+            <div className="w-48 text-emerald-600"><BarChart data={SERIES} height={120} /></div>
+            <DonutChart
+              size={120} thickness={16} centerLabel={<span className="text-gray-900">100%</span>}
+              segments={[{ label: 'Direct', value: 45 }, { label: 'Search', value: 30 }, { label: 'Social', value: 15 }, { label: 'Email', value: 10 }]}
+            />
           </div>
         </Section>
       </div>

@@ -146,6 +146,12 @@ export type { AccordionProps, AccordionItem } from './shell/Accordion';
 export { default as Tooltip } from './shell/Tooltip';
 export type { TooltipProps } from './shell/Tooltip';
 
+// ── Charts (dependency-free SVG) ──
+export { default as Sparkline } from './charts/Sparkline';
+export { default as BarChart } from './charts/BarChart';
+export { default as DonutChart } from './charts/DonutChart';
+export type { SparklineProps, BarChartProps, DonutChartProps, DonutSegment } from './charts/types';
+
 // ── Package version (tsup-injected at build time) ──
 export { VERSION } from './version';
 
