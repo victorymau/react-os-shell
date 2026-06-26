@@ -69,6 +69,8 @@ const FormControlsDemo = lazy(() => import('./FormControlsDemo'));
 const WindowStylesDemo = lazy(() => import('./WindowStylesDemo'));
 const ShortcutsDemo = lazy(() => import('./ShortcutsDemo'));
 const TableDemo = lazy(() => import('./TableDemo'));
+// v3.4.0 — UI primitives gallery.
+const PrimitivesDemo = lazy(() => import('./PrimitivesDemo'));
 // Per-style window bodies (named exports of the same module) — each is
 // registered under its own route with the matching chrome flags.
 const winStyle = (name: string) =>
@@ -158,6 +160,7 @@ setShellWindowRegistry(createWindowRegistry(bundledApps, {
   '/win-pos': { component: winStyle('PositionedWindow'), label: 'Positioned window', size: 'sm', autoHeight: true, initialPosition: 'top-right' },
   '/shortcuts-demo': { component: ShortcutsDemo, label: 'Keyboard Shortcuts', size: 'sm', autoHeight: true },
   '/table-demo': { component: TableDemo, label: 'Table', size: 'xl', flushBody: true },
+  '/primitives-demo': { component: PrimitivesDemo, label: 'UI Primitives', size: 'xl' },
   // Entity windows opened by ⌘K search results (see searchDemo.tsx).
   person: DEMO_ENTITY_WINDOWS.person,
   project: DEMO_ENTITY_WINDOWS.project,
@@ -226,6 +229,7 @@ const COMPONENT_ITEMS = [
   { to: '/grid-demo', label: 'Grid' },
   { to: '/kanban-demo', label: 'Kanban' },
   { to: '/form-demo', label: 'Form Controls' },
+  { to: '/primitives-demo', label: 'UI Primitives' },
   { to: '/windows-demo', label: 'Window Styles' },
   { to: '/sidebar-demo', label: 'Sidebar' },
   { to: '/topnav-demo', label: 'Top Nav' },
@@ -291,6 +295,7 @@ const NAV_ICONS: Record<string, JSX.Element> = {
   '/table-demo': path('M3.75 5.25h16.5v13.5H3.75zM3.75 9.75h16.5M9.5 9.75v9M15 9.75v9'),
   '/help-demo': path('M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z'),
   '/badges-demo': path('M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.746 3.746 0 011.043 3.296A3.745 3.745 0 0121 12z'),
+  '/primitives-demo': path('M6 6.75A.75.75 0 016.75 6h3a.75.75 0 01.75.75v3a.75.75 0 01-.75.75h-3A.75.75 0 016 9.75v-3zM13.5 6.75A.75.75 0 0114.25 6h3a.75.75 0 01.75.75v3a.75.75 0 01-.75.75h-3a.75.75 0 01-.75-.75v-3zM6 14.25a.75.75 0 01.75-.75h3a.75.75 0 01.75.75v3a.75.75 0 01-.75.75h-3a.75.75 0 01-.75-.75v-3zM13.5 14.25a.75.75 0 01.75-.75h3a.75.75 0 01.75.75v3a.75.75 0 01-.75.75h-3a.75.75 0 01-.75-.75v-3z'),
 };
 
 setShellNavIcons(NAV_ICONS);
