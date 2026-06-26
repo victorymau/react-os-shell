@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.6.1] — 2026-06-27
+
+### Fixed
+- **First-run widgets now stack in the top-left corner instead of the centre.**
+  A brand-new account (no saved window session) seeds the default desktop
+  widgets — Weather, Currency Converter, World Clock — down the left edge,
+  mirroring the Widget Manager's placement, rather than letting Modal's
+  no-saved-position fallback pile them on top of each other in the middle of the
+  screen. Seeding runs through `setWindowDefaultPosition` before the widgets
+  mount, so it never disturbs a returning user who has already dragged things
+  around.
+
 ## [3.6.0] — 2026-06-26
 
 ### Added
