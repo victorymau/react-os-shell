@@ -12,6 +12,7 @@
 import { useState, useRef, useMemo, useLayoutEffect, type ReactNode, type RefObject } from 'react';
 import useClickOutside from '../hooks/useClickOutside';
 import { glassStyle } from '../utils/glass';
+import { INPUT_BASE } from '../forms/styles';
 
 export interface SearchableOption {
   value: string;
@@ -84,11 +85,9 @@ function ClearButton({ onClear, ariaLabel = 'Clear selection' }: { onClear: () =
   );
 }
 
-// Base styling for the trigger input — matches the shell's other form
-// controls and picks up the dark-theme input remaps from styles.css.
-const INPUT_BASE =
-  'block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-800 ' +
-  'placeholder:text-gray-400 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/30';
+// Trigger input styling is shared with the other form controls — see
+// `src/forms/styles.ts` (INPUT_BASE), which also picks up the dark-theme
+// input remaps from styles.css.
 
 export default function SearchableSelect({
   value, onChange, options, placeholder, emptyOptionLabel = '— None —', className = '',

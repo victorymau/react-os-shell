@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.4.0] — 2026-06-26
+
+### Added
+- **UI primitives — buttons, form controls, and layout/display components.**
+  The kit gains a set of standalone, pre-styled primitives so full application
+  screens can be built without dropping to bare HTML: `Button`
+  (primary/secondary/ghost/danger, loading + icon slots), the form controls
+  `Input`, `Textarea`, `Select` (native — `SearchableSelect` remains the
+  searchable/free-text one), `Checkbox`, `Radio`, `FormField` and `Label`, plus
+  `Card`/`StatCard`, `Avatar`/`AvatarGroup`, `Banner` (static in-flow alert),
+  `Tabs`, `Accordion`, `Tooltip` and `Pagination`. All are controlled the kit
+  way (`value`/`onChange`; `Input`/`Textarea` forward native props so
+  react-hook-form's `register()` spreads onto them), provider-free, and
+  theme-aware (primary buttons and the check/radio fills follow the active
+  accent in light and dark mode).
+- design-sync previews for every new primitive (all authored cards, not floor
+  cards), and a **UI Primitives** demo window in the start menu.
+
+  First of three waves (primitives → charts → page templates). Purely additive
+  — no existing exports changed.
+
 ## [3.3.2] — 2026-06-26
 
 ### Fixed
