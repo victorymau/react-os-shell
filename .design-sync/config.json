@@ -1,0 +1,19 @@
+{
+  "pkg": "react-os-shell",
+  "globalName": "ReactOsShell",
+  "shape": "package",
+  "buildCmd": "npm run build && node .ds-sync/node_modules/@tailwindcss/cli/dist/index.mjs -i dist/styles.css -o dist/_compiled.css --minify",
+  "cssEntry": "dist/_compiled.css",
+  "readmeHeader": ".design-sync/conventions.md",
+  "overrides": {
+    "Modal": { "cardMode": "single", "viewport": "720x560" },
+    "PopupMenu": { "cardMode": "single", "primaryStory": "ContextMenu" },
+    "PopupMenuItem": { "cardMode": "single", "primaryStory": "ItemStates" },
+    "PopupMenuLabel": { "cardMode": "single", "primaryStory": "SectionedMenu" },
+    "PopupMenuDivider": { "cardMode": "single", "primaryStory": "DividedSections" },
+    "ShortcutHelp": { "cardMode": "single", "primaryStory": "Overlay" },
+    "BehaviorPanel": { "cardMode": "column" },
+    "Customization": { "cardMode": "column" },
+    "TopNav": { "cardMode": "column" }
+  }
+}

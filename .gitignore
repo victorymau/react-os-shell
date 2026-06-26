@@ -14,3 +14,10 @@ examples/demo/tsconfig.tsbuildinfo
 examples/demo/src/*.js
 *.tsbuildinfo
 .claude/
+.ds-sync/
+ds-bundle/
+.design-sync/.cache/
+.design-sync/learnings/
+.design-sync/node_modules
+dist/_compiled.css
+ds-bundle-out/
