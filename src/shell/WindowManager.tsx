@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient, { isShellApiClientConfigured } from '../api/client';
 import { WINDOW_REGISTRY, isPageEntry, isEntityEntry, type PageRegistryEntry, type ModalRegistryEntry } from '../windowRegistry/types';
-import Modal, { triggerSplitView, modalDepthRef, getActiveModalId, subscribeActive, activateModal, ExposeBackdrop, WindowShortcutProvider, type WindowShortcutSpec } from './Modal';
+import Modal, { triggerSplitView, modalDepthRef, getActiveModalId, subscribeActive, activateModal, ExposeBackdrop, WindowShortcutProvider, setWindowDefaultPosition, type WindowShortcutSpec } from './Modal';
 import WindowErrorBoundary, { WindowCrashedFallback } from './WindowErrorBoundary';
 import PartNumberDetailPopup from './PartNumberDetailPopup';
 import LoadingSpinner from './LoadingSpinner';
@@ -641,6 +641,50 @@ const DEFAULT_WIDGETS: MinimizedItem[] = [
   { id: 'page:/world-clock', type: 'page', label: 'World Clock', route: '/world-clock' },
 ];
 
+/**
+ * Lay the first-run default widgets out in a tidy top-left column — mirroring
+ * the Widget Manager's placement — so a brand-new account opens with its widgets
+ * stacked down the left edge instead of piled in the centre (which is what
+ * Modal's `calcWindowed` no-saved-position fallback does). We seed the shared
+ * window-position store *before* the widgets mount, so each Modal restores from
+ * it on open. `setWindowDefaultPosition` is a no-op once a real saved position
+ * exists, so this never disturbs a returning user who has dragged things around.
+ *
+ * Every default widget is `autoHeight`, so it re-measures to its content on open
+ * — the heights here are only first-paint estimates for a non-overlapping stack.
+ */
+function seedDefaultWidgetPositions(widgets: MinimizedItem[]) {
+  const PAD = 20, GAP = 16, MAX_AUTO_H = 220;
+  const cs = getComputedStyle(document.documentElement);
+  const tbH = parseInt(cs.getPropertyValue('--taskbar-height')) || 0;
+  const tbW = parseInt(cs.getPropertyValue('--taskbar-width')) || 0;
+  const tbPos = cs.getPropertyValue('--taskbar-position').trim() || 'bottom';
+  const sidebarW = parseInt(cs.getPropertyValue('--sidebar-width')) || 0;
+  const leftStart = (tbPos === 'left' ? tbW : 0) + sidebarW + PAD;
+  const topStart = (tbPos === 'top' ? tbH : 0) + PAD;
+  const maxBottom = window.innerHeight - (tbPos === 'bottom' ? tbH : 0) - PAD;
+  const rightLimit = window.innerWidth - PAD;
+
+  let x = leftStart, y = topStart;
+  for (const item of widgets) {
+    if (!item.route) continue;
+    const e = WINDOW_REGISTRY[item.route];
+    if (!e || !isPageEntry(e)) continue;
+    const entry = e as PageRegistryEntry;
+    const w = entry.dimensions?.[0] ?? 320;
+    const h = entry.dimensions?.[1] ?? 240;
+    const stackH = entry.autoHeight ? Math.min(h, MAX_AUTO_H) : h;
+    // Wrap to a fresh column when this one is full — but only if the next column
+    // still fits on-screen, so a widget never gets pushed off the right edge.
+    if (y > topStart && y + stackH > maxBottom && x + (w + GAP) + w <= rightLimit) {
+      x += w + GAP;
+      y = topStart;
+    }
+    setWindowDefaultPosition(item.id, { x, y, w, h });
+    y += stackH + GAP;
+  }
+}
+
 function restoreWindowState(): MinimizedItem[] {
   try {
     if (window.location.pathname === '/login') return [];
@@ -648,6 +692,9 @@ function restoreWindowState(): MinimizedItem[] {
     const stored = localStorage.getItem(SESSION_KEY);
     if (stored) return JSON.parse(stored);
   } catch { /* corrupt data */ }
+  // First run for this account — no saved session yet. Seed a top-left stack so
+  // the default widgets don't open piled in the centre of the desktop.
+  seedDefaultWidgetPositions(DEFAULT_WIDGETS);
   return DEFAULT_WIDGETS;
 }
 
