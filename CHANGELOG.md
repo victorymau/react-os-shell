@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.4.0] — 2026-06-26
+
+### Added
+- **UI primitives — buttons, form controls, and layout/display components.**
+  The kit gains a set of standalone, pre-styled primitives so full application
+  screens can be built without dropping to bare HTML: `Button`
+  (primary/secondary/ghost/danger, loading + icon slots), the form controls
+  `Input`, `Textarea`, `Select` (native — `SearchableSelect` remains the
+  searchable/free-text one), `Checkbox`, `Radio`, `FormField` and `Label`, plus
+  `Card`/`StatCard`, `Avatar`/`AvatarGroup`, `Banner` (static in-flow alert),
+  `Tabs`, `Accordion`, `Tooltip` and `Pagination`. All are controlled the kit
+  way (`value`/`onChange`; `Input`/`Textarea` forward native props so
+  react-hook-form's `register()` spreads onto them), provider-free, and
+  theme-aware (primary buttons and the check/radio fills follow the active
+  accent in light and dark mode).
+- **Dependency-free charts.** `Sparkline`, `BarChart` and `DonutChart` — inline
+  SVG/CSS with no charting dependency; color follows `currentColor`, so a
+  parent `text-*` class themes them.
+- **Page templates.** Zero-prop starter screens composed from the
+  primitives: `DashboardTemplate`, `DataTablePage`, `FormLayoutPage`,
+  `CheckoutTemplate`, `EmailTemplate`, `ChatTemplate`, `GalleryTemplate`,
+  `AuthScreen` (login/register/forgot) and `ErrorPage` (403/404/500). They use
+  static table/list markup so they render without any provider.
+- **design-sync coverage.** Authored `.design-sync` previews for every new
+  primitive and template (all render as authored cards, not floor cards), so
+  the Claude Design import builds with the real components.
+- Demo: new **UI Primitives** and **Page Templates** windows in the start menu.
+
+  Purely additive — no existing exports changed.
+
 ## [3.3.1] — 2026-06-26
 
 ### Fixed

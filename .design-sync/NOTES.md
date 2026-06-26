@@ -49,6 +49,14 @@ Repo-specific gotchas for future syncs.
 - `single`: Modal, PopupMenu, PopupMenuItem, PopupMenuLabel, PopupMenuDivider, ShortcutHelp (fixed/portal overlays that overflow a grid cell).
 - `column`: BehaviorPanel, Customization, TopNav (wider than a grid cell — one story per row).
 
+## UI primitives + page templates (v3.4.0 — feat/ui-primitives-templates)
+- Added ~20 provider-free primitives (`Button, Input, Textarea, Select, Checkbox, Radio, FormField, Label`; `Card`/`StatCard`, `Avatar`/`AvatarGroup`, `Banner`, `Tabs`, `Accordion`, `Tooltip`; `Pagination`; SVG charts `Sparkline`/`BarChart`/`DonutChart`) plus 9 admin-style page templates (`DashboardTemplate, DataTablePage, FormLayoutPage, CheckoutTemplate, EmailTemplate, ChatTemplate, GalleryTemplate, AuthScreen, ErrorPage`). All are authored previews (none are floor cards — they take no provider/react-query).
+- **Delivery decision — page templates are MAIN-BARREL exports** (not a `/templates` subpath). Reason: the converter appears to enumerate the main barrel for card slots, and a template's Tailwind classes only land in `_compiled.css` if the component is bundled (the `@source "./**/*.js"` scan). Exporting from the barrel guarantees both. Tree-shaking (`tsup treeshake:true`) means consumers who don't import them pay nothing. Could move to a `react-os-shell/templates` subpath later IF the external converter is confirmed to scan subpaths — verify by reading `.ds-sync/lib/preview-rebuild.mjs` (absent in this checkout).
+- **Templates avoid the React-Query floor-card trap** by using static `<table>`/list markup instead of `ResizableTable`/`EntityList`. If you later add the `ShellQueryProvider` (see "Action required" below), templates can switch to the real data components.
+- Charts are dependency-free inline SVG/CSS (no charting peer dep) → color via `currentColor`/inline style, so they sidestep the compiled-CSS/arbitrary-value constraint entirely.
+- `config.json` overrides: every template is `cardMode: single` with a large `viewport` (pages overflow a grid cell, same rationale as Modal); `AuthScreen`/`ErrorPage` set `primaryStory` (Login / NotFound).
+- **`.ds-sync/` converter is NOT present in this checkout**, so previews were not rendered/captured here — verified instead via `npm run typecheck` + `npm run build` (all 29 new exports present in `dist/index.d.ts`) and the demo. Re-run `cfg.buildCmd` + the capture flow at sync time.
+
 ## Output dir note (this run)
 - This session built into `./ds-bundle-out` instead of the conventional `./ds-bundle` because a stale shell handle locked the (empty) `ds-bundle` dir on Windows (EBUSY rmdir). The `--out` path is a CLI arg, so this is harmless; a future re-sync can use `./ds-bundle` once the lock is gone. The locked empty `ds-bundle/` dir can be deleted after closing stray terminals.
 

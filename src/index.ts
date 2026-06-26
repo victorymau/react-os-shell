@@ -110,6 +110,60 @@ export { useColumnConfig } from './data/useColumnConfig';
 export { useInfiniteScroll } from './data/useInfiniteScroll';
 export { useSort } from './data/useSort';
 export type { ColumnDef, SortState, PaginatedResponse } from './data/types';
+export { default as Pagination } from './data/Pagination';
+export type { PaginationProps } from './data/Pagination';
+
+// ── Form controls ──
+export { default as Button } from './forms/Button';
+export type { ButtonProps, ButtonVariant, ButtonSize } from './forms/Button';
+export { default as Input } from './forms/Input';
+export type { InputProps } from './forms/Input';
+export { default as Textarea } from './forms/Textarea';
+export type { TextareaProps } from './forms/Textarea';
+export { default as Select } from './forms/Select';
+export type { SelectProps, SelectOption } from './forms/Select';
+export { default as Checkbox } from './forms/Checkbox';
+export type { CheckboxProps } from './forms/Checkbox';
+export { default as Radio } from './forms/Radio';
+export type { RadioProps } from './forms/Radio';
+export { default as FormField } from './forms/FormField';
+export type { FormFieldProps } from './forms/FormField';
+export { default as Label } from './forms/Label';
+export type { LabelProps } from './forms/Label';
+export { INPUT_BASE, inputClasses } from './forms/styles';
+
+// ── Display & layout primitives ──
+export { default as Card, StatCard } from './shell/Card';
+export type { CardProps, StatCardProps } from './shell/Card';
+export { default as Avatar, AvatarGroup } from './shell/Avatar';
+export type { AvatarProps, AvatarGroupProps, AvatarSize, AvatarStatus } from './shell/Avatar';
+export { default as Banner } from './shell/Banner';
+export type { BannerProps, BannerTone } from './shell/Banner';
+export { default as Tabs } from './shell/Tabs';
+export type { TabsProps, TabItem } from './shell/Tabs';
+export { default as Accordion } from './shell/Accordion';
+export type { AccordionProps, AccordionItem } from './shell/Accordion';
+export { default as Tooltip } from './shell/Tooltip';
+export type { TooltipProps } from './shell/Tooltip';
+
+// ── Charts (dependency-free SVG) ──
+export { default as Sparkline } from './charts/Sparkline';
+export { default as BarChart } from './charts/BarChart';
+export { default as DonutChart } from './charts/DonutChart';
+export type { SparklineProps, BarChartProps, DonutChartProps, DonutSegment } from './charts/types';
+
+// ── Page templates (starter screens; see src/templates) ──
+export { default as DashboardTemplate } from './templates/DashboardTemplate';
+export { default as DataTablePage } from './templates/DataTablePage';
+export { default as FormLayoutPage } from './templates/FormLayoutPage';
+export { default as CheckoutTemplate } from './templates/CheckoutTemplate';
+export { default as EmailTemplate } from './templates/EmailTemplate';
+export { default as ChatTemplate } from './templates/ChatTemplate';
+export { default as GalleryTemplate } from './templates/GalleryTemplate';
+export { default as AuthScreen } from './templates/AuthScreen';
+export type { AuthScreenProps } from './templates/AuthScreen';
+export { default as ErrorPage } from './templates/ErrorPage';
+export type { ErrorPageProps } from './templates/ErrorPage';
 
 // ── Package version (tsup-injected at build time) ──
 export { VERSION } from './version';
