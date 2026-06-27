@@ -157,6 +157,22 @@ export { default as FilterBar, useFilters } from './shell/FilterBar';
 export type { FilterOption } from './shell/FilterBar';
 export { SidebarNavItem, SidebarGroupLabel } from './shell/SidebarNav';
 
+// ── Portal-promoted components (phase 2/3 — app concerns lifted to props) ──
+export { default as BulkImportGrid } from './shell/BulkImportGrid';
+export type { BulkImportGridProps, BulkColumn, BulkColumnKind } from './shell/BulkImportGrid';
+export { mergeBulkItems, findDuplicateKeys } from './utils/mergeBulkItems';
+export type { BulkRow, DuplicateGroup, MergeBulkResult, MergeBulkOptions } from './utils/mergeBulkItems';
+export { default as ContainerFillChart } from './shell/ContainerFillChart';
+export type { ContainerFillChartProps, ContainerFillItem } from './shell/ContainerFillChart';
+export { default as ServerStatusIndicator } from './shell/ServerStatusIndicator';
+export type { ServerStatusIndicatorProps, ServerStatusUser, HealthCheckResult } from './shell/ServerStatusIndicator';
+export { default as ChangePasswordForm } from './shell/ChangePasswordForm';
+export type { ChangePasswordFormProps } from './shell/ChangePasswordForm';
+export { default as PdfActionButton } from './shell/PdfActionButton';
+export type { PdfActionButtonProps } from './shell/PdfActionButton';
+export { default as MilestoneTimeline } from './shell/MilestoneTimeline';
+export type { Milestone, MilestoneKind, MilestoneTimelineProps } from './shell/MilestoneTimeline';
+
 // ── Charts (dependency-free SVG) ──
 export { default as Sparkline } from './charts/Sparkline';
 export { default as BarChart } from './charts/BarChart';
