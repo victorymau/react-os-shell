@@ -15,6 +15,7 @@
     "BehaviorPanel": { "cardMode": "column" },
     "Customization": { "cardMode": "column" },
     "TopNav": { "cardMode": "column" },
+    "Pagination": { "cardMode": "column" },
 
     "DashboardTemplate": { "cardMode": "single", "viewport": "1120x760" },
     "DataTablePage": { "cardMode": "single", "viewport": "1024x620" },

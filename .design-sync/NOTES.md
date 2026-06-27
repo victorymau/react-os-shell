@@ -44,10 +44,13 @@ Repo-specific gotchas for future syncs.
 - **`[RENDER_THIN] Modal` (height 0px) is BENIGN** — Modal portals to `document.body`, so the per-cell height measures 0, but the actual `.html` renders the full window (title bar + form + footer, confirmed by screenshot). `cardMode: single` is set. Do not "fix".
 - **`[RENDER_ERRORS] WindowErrorBoundary` (Failed to load widget data, HTTP 500) is BENIGN** — the preview deliberately throws inside the boundary to render the crash card; the pageerror is that caught throw, root is non-empty.
 - **NotificationBell** uses React Query internally (same root cause as DocFavStar/ResizableTable) → floor card.
+- **`[RENDER_THIN] Sparkline` is BENIGN** (added 2026-06-27) — the charts (Sparkline/BarChart/DonutChart) are inline SVG with no text, so the text-based thin check trips; the screenshots show real charts (blue line + green area for Sparkline). Do not "fix".
+- **`Tooltip` shows only its trigger buttons** in a static capture (noted 2026-06-27) — the bubble is hover/focus-gated and the component exposes no `open`/`defaultOpen` prop, so it can't be forced open without a hand-written lookalike (which the converter forbids). The real component works in live designs where hover fires. Known static-render limitation, graded `good`.
+- **`Customization > Appearance`** renders a live mini-desktop mockup containing desktop app-icon thumbnails (noted 2026-06-27); one icon's image asset isn't in the bundle, so the static capture shows a broken-image glyph. The theme picker (the cell's actual subject) renders fine. Capture/asset artifact, not a styling defect; graded `good`.
 
 ## cardMode overrides applied (presentation-only)
 - `single`: Modal, PopupMenu, PopupMenuItem, PopupMenuLabel, PopupMenuDivider, ShortcutHelp (fixed/portal overlays that overflow a grid cell).
-- `column`: BehaviorPanel, Customization, TopNav (wider than a grid cell — one story per row).
+- `column`: BehaviorPanel, Customization, TopNav, Pagination (wider than a grid cell — one story per row). [Pagination added 2026-06-27 — its "Middle" variant (first/prev/…/next/last controls) tripped `[GRID_OVERFLOW]` in a grid cell.]
 
 ## UI primitives + page templates (v3.4.0 — feat/ui-primitives-templates)
 - Added ~20 provider-free primitives (`Button, Input, Textarea, Select, Checkbox, Radio, FormField, Label`; `Card`/`StatCard`, `Avatar`/`AvatarGroup`, `Banner`, `Tabs`, `Accordion`, `Tooltip`; `Pagination`; SVG charts `Sparkline`/`BarChart`/`DonutChart`) plus 9 admin-style page templates (`DashboardTemplate, DataTablePage, FormLayoutPage, CheckoutTemplate, EmailTemplate, ChatTemplate, GalleryTemplate, AuthScreen, ErrorPage`). All are authored previews (none are floor cards — they take no provider/react-query).
