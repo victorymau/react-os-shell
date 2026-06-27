@@ -145,6 +145,17 @@ export { default as Accordion } from './shell/Accordion';
 export type { AccordionProps, AccordionItem } from './shell/Accordion';
 export { default as Tooltip } from './shell/Tooltip';
 export type { TooltipProps } from './shell/Tooltip';
+export { default as ColoredBadge } from './shell/ColoredBadge';
+export type { ColoredBadgeProps } from './shell/ColoredBadge';
+export { default as EmptyState } from './shell/EmptyState';
+export type { EmptyStateProps } from './shell/EmptyState';
+export { default as PageHeader } from './shell/PageHeader';
+export type { PageHeaderProps } from './shell/PageHeader';
+export { default as LoadingSpinner } from './shell/Spinner';
+export type { LoadingSpinnerProps } from './shell/Spinner';
+export { default as FilterBar, useFilters } from './shell/FilterBar';
+export type { FilterOption } from './shell/FilterBar';
+export { SidebarNavItem, SidebarGroupLabel } from './shell/SidebarNav';
 
 // ── Charts (dependency-free SVG) ──
 export { default as Sparkline } from './charts/Sparkline';

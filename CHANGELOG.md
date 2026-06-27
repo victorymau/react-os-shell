@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.7.0] — 2026-06-28
+
+### Added
+- **Shared UI primitives promoted from the EFFICIENT portals** (phase 1 of the
+  portal-component consolidation), so admin/customer/supplier stop maintaining
+  divergent copies:
+  - `ColoredBadge` — color-class pill (generic counterpart to `StatusBadge`).
+  - `LoadingSpinner` — centered animated ring with `size`/`padding` props
+    (distinct from the grids' internal "Loading…" text).
+  - `FilterBar` + `useFilters` + `FilterOption` — horizontal filter row with a
+    glass searchable dropdown for long option lists.
+  - `EmptyState` — empty-list placeholder; superset API accepting both the
+    `title`/`description` and `message`/`hint`/`frameless` prop shapes the
+    portals previously used, with one unified look.
+  - `PageHeader` — page title + muted description + right-aligned actions;
+    accepts both `description`/`actions` and `subtitle`/`children` shapes.
+  - `SidebarNavItem` + `SidebarGroupLabel` — presentational sidebar building
+    blocks (count fetching stays in the consuming app).
+
 ## [3.6.1] — 2026-06-27
 
 ### Fixed
