@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.8.0] — 2026-06-28
+
+### Added
+- **More shared components promoted from the EFFICIENT portals** (phase 2/3 of
+  the consolidation) — app concerns lifted to props so the shell stays
+  product-agnostic:
+  - `BulkImportGrid` (+ `mergeBulkItems`/`findDuplicateKeys` helpers) — CSV/grid
+    bulk-import with column mapping, duplicate review, and optional sum-merge;
+    `columns` carry a generic `kind` (`key`/`price`/`qty`/`text`) instead of
+    hardcoded part-number fields.
+  - `ContainerFillChart` — shipping-container fill visualization; per-unit volume
+    is supplied via a `getVolume(item)` callback (no fetching in the shell).
+  - `ServerStatusIndicator` — health-poll tray badge + popover; `healthCheck`/
+    `healthUrl` and `user` are injected by the host.
+  - `ChangePasswordForm` — password form with validation/success screen; the host
+    supplies `onSubmit(old, new)` (API + re-login stay app-side).
+  - `PdfActionButton` — Preview/Download/Email dropdown built on the Preview app;
+    transport-agnostic via a `fetchPdf()` resolver, with an optional `onEmail`.
+  - `MilestoneTimeline` (+ generic `Milestone`/`MilestoneKind` types) — date-laid
+    timeline; consumers map their domain data to the generic `Milestone` shape.
+
 ## [3.7.0] — 2026-06-28
 
 ### Added
