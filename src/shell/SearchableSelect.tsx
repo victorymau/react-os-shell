@@ -158,13 +158,19 @@ export default function SearchableSelect({
   }, [options]);
 
   const filtered = useMemo(() => {
+    // Server-search mode (parent wired `onSearchChange`): the options ARE the
+    // server's results for the typed text, so show them verbatim. Re-filtering
+    // here on label/sublabel would silently hide valid matches the server made
+    // on other fields (e.g. a row matched by a field that isn't the label),
+    // making the search look capped.
+    if (onSearchChange) return dedupedOptions;
     const q = search.trim().toLowerCase();
     if (!q) return dedupedOptions;
     return dedupedOptions.filter(o =>
       o.label.toLowerCase().includes(q) ||
       (o.sublabel?.toLowerCase().includes(q) ?? false)
     );
-  }, [dedupedOptions, search]);
+  }, [dedupedOptions, search, onSearchChange]);
 
   return (
     <div ref={wrapRef} className="relative group">

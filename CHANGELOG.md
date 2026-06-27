@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.8.1] — 2026-06-28
+
+### Fixed
+- **`SearchableSelect` server-search mode no longer client-filters.** When a
+  parent wires `onSearchChange` (feeding server-side results for the typed
+  text), the option list is now shown verbatim instead of being re-filtered on
+  label/sublabel — which previously hid valid matches the server made on other
+  fields, making the search look capped. (Brings the shell in line with the
+  EFFICIENT admin portal's local copy so it can adopt the shared component.)
+
 ## [3.8.0] — 2026-06-28
 
 ### Added
