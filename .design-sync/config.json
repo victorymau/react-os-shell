@@ -16,6 +16,9 @@
     "Customization": { "cardMode": "column" },
     "TopNav": { "cardMode": "column" },
     "Pagination": { "cardMode": "column" },
+    "BulkImportGrid": { "cardMode": "single", "viewport": "960x560" },
+    "MilestoneTimeline": { "cardMode": "column" },
+    "ContainerFillChart": { "cardMode": "column" },
 
     "DashboardTemplate": { "cardMode": "single", "viewport": "1120x760" },
     "DataTablePage": { "cardMode": "single", "viewport": "1024x620" },
