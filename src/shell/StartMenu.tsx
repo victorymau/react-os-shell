@@ -343,7 +343,13 @@ export default function StartMenu({
   };
 
   return (
-    <div ref={menuRef} className="fixed z-[260]" style={posStyle}>
+    /* z-[1100]: sit above the entire window stack — normal windows climb to
+       50 + idx*10 + 1 and pinned-on-top windows render at 999 (see Modal.tsx),
+       which previously painted over the open Start menu (BG#00259). 1100 clears
+       both. Deliberately kept BELOW Exposé / mission-control (zIndex 2000–9999
+       in Modal.tsx) and the transient full-screen overlay tier (toasts,
+       startup, logout — z-[9999]), which should still cover the menu. */
+    <div ref={menuRef} className="fixed z-[1100]" style={posStyle}>
       <div className="flex">
         {/* Main menu */}
         <div className={`${sizeConfig.w} rounded-2xl flex ${isVertical ? 'flex-col-reverse' : 'flex-col'} overflow-hidden`}
