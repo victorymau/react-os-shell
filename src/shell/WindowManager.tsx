@@ -381,7 +381,7 @@ export function ThumbCard({ id, label, maxW, maxH, titleAbove = false, onClick, 
       {onClose && (
         <button
           onClick={(e) => { e.stopPropagation(); onClose(); }}
-          className="absolute top-1 right-1 h-4 w-4 rounded-full bg-black/40 hover:bg-red-500/90 text-white flex items-center justify-center"
+          className="absolute top-1 right-1 h-4 w-4 rounded-full bg-black/70 ring-1 ring-white/70 hover:bg-red-500 text-white flex items-center justify-center"
           title="Close window"
         >
           <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
