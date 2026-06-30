@@ -1554,6 +1554,17 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   }, []);
 
   const reset = () => { setMaximized(true); setBox(calcMaximized()); };
+
+  // Minimize is only safe to offer when the window can actually be restored.
+  // The shell re-opens a minimized window through its taskbar tab, which the
+  // WindowManager renders only for windows it tracks and re-activates by
+  // `windowKey`. Ad-hoc modals a page renders itself (local edit/detail forms,
+  // and `rendersOwnModal` detail windows) carry no `windowKey`, so they get no
+  // taskbar tab; minimizing one drops it out of the activation order
+  // (getZForModal → -1 → display:none) with no way back, stranding the window.
+  // Suppress the minimize affordance for those so a window can never be lost.
+  const canMinimize = !!windowKey;
+
   const handleMinimize = () => {
     const saved = { ...boxRef.current, maximized };
     if (onMinimize) {
@@ -1826,7 +1837,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
                     <svg className="h-3 w-3" fill={pinnedOnTop ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 3.75V16.5L12 14.25 7.5 16.5V3.75m9 0H18A2.25 2.25 0 0120.25 6v12A2.25 2.25 0 0118 20.25H6A2.25 2.25 0 013.75 18V6A2.25 2.25 0 016 3.75h1.5m9 0h-9" /></svg>
                   </button>
                 )}
-                <button onClick={() => _minimizeModal(modalId)} title="Minimize" className="text-gray-400 hover:text-gray-600 px-1 py-0.5 rounded hover:bg-gray-200 text-xs leading-none">─</button>
+                {canMinimize && <button onClick={() => _minimizeModal(modalId)} title="Minimize" className="text-gray-400 hover:text-gray-600 px-1 py-0.5 rounded hover:bg-gray-200 text-xs leading-none">─</button>}
                 {!alwaysMaximized && (
                   <button onClick={() => { if (maximized) { setMaximized(false); setBox(calcWindowed()); } else { reset(); } }} title={maximized ? 'Windowed' : 'Maximize'} className="text-gray-400 hover:text-gray-600 px-1 py-0.5 rounded hover:bg-gray-200 text-xs leading-none">{maximized ? '❐' : '⤢'}</button>
                 )}
@@ -1858,7 +1869,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
                   <svg className="h-3.5 w-3.5" fill={pinnedOnTop ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 3.75V16.5L12 14.25 7.5 16.5V3.75m9 0H18A2.25 2.25 0 0120.25 6v12A2.25 2.25 0 0118 20.25H6A2.25 2.25 0 013.75 18V6A2.25 2.25 0 016 3.75h1.5m9 0h-9" /></svg>
                 </button>
               )}
-              <button onClick={() => _minimizeModal(modalId)} title="Minimize" className="text-gray-400 hover:text-gray-600 text-xs px-2 py-1 rounded hover:bg-gray-200">─</button>
+              {canMinimize && <button onClick={() => _minimizeModal(modalId)} title="Minimize" className="text-gray-400 hover:text-gray-600 text-xs px-2 py-1 rounded hover:bg-gray-200">─</button>}
               {!alwaysMaximized && (
                 <button onClick={() => { if (maximized) { setMaximized(false); setBox(calcWindowed()); } else { reset(); } }} title={maximized ? 'Windowed' : 'Maximize'} className="text-gray-400 hover:text-gray-600 text-xs px-2 py-1 rounded hover:bg-gray-200">{maximized ? '❐' : '⤢'}</button>
               )}
@@ -1987,10 +1998,12 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   const windowMenuEl = windowMenu && (
     <PopupMenu style={{ left: windowMenu.x, top: windowMenu.y }} onClose={() => setWindowMenu(null)} minWidth={160}>
       {!widget && !compact && (<>
-        <PopupMenuItem onClick={() => { _minimizeModal(modalId); setWindowMenu(null); }}>
-          <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 12h-15" /></svg>
-          Minimize
-        </PopupMenuItem>
+        {canMinimize && (
+          <PopupMenuItem onClick={() => { _minimizeModal(modalId); setWindowMenu(null); }}>
+            <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 12h-15" /></svg>
+            Minimize
+          </PopupMenuItem>
+        )}
         {!alwaysMaximized && (maximized ? (
           <PopupMenuItem onClick={() => { setMaximized(false); setBox(calcWindowed()); setWindowMenu(null); }}>
             <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 4.5v15m6-15v15M4.5 9h15M4.5 15h15" /></svg>

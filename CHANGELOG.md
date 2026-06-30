@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.8.2] — 2026-06-30
+
+### Fixed
+- **Minimizing a window with no taskbar tab no longer strands it.** The window
+  title bar (and right-click window menu) only offer the minimize control when
+  the window is one the `WindowManager` tracks — i.e. it carries a `windowKey`
+  and therefore has a taskbar tab that can re-activate it. Modals a page opens
+  itself (local edit/detail forms such as Storefront → Categories, and
+  `rendersOwnModal` detail windows) have no `windowKey` and no taskbar tab;
+  previously their minimize button dropped the panel out of the activation
+  order (`display:none`) with no way to bring it back, losing the window and
+  any unsaved input. Such windows no longer show a minimize affordance.
+
 ## [3.8.1] — 2026-06-28
 
 ### Fixed
