@@ -4,7 +4,16 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
-## [3.8.2] — 2026-07-01
+## [3.8.3] — 2026-07-01
+
+### Fixed
+- **The Start menu now stays above all application windows.** It was pinned at
+  `z-[260]`, but normal windows climb past that as more are opened and
+  pinned-on-top windows render at `z-index: 999`, so they painted over an open
+  Start menu. The desktop menu root is now `z-[1100]` — above the whole window
+  stack (its flyouts ride the same stacking context) — while still sitting below
+  Exposé / mission-control and the transient overlay tier (toasts, startup,
+  logout). (EFFICIENT BG#00259.)
 
 ### Fixed
 - **Window-thumbnail close (✕) button is now clearly visible over any
