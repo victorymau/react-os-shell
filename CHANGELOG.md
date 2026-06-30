@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.8.2] — 2026-07-01
+
+### Fixed
+- **Window-thumbnail close (✕) button is now clearly visible over any
+  snapshot.** The close button on the taskbar hover preview and mobile app
+  switcher (`ThumbCard`) had a 40%-opacity resting background (`bg-black/40`),
+  so it faded into light or busy window snapshots and was hard to find until
+  hovered. It now uses a more opaque `bg-black/70` with a subtle white ring
+  (`ring-1 ring-white/70`) so it reads clearly regardless of the thumbnail
+  content, and a fully solid red hover. (EFFICIENT SG#00240.)
+
 ## [3.8.1] — 2026-06-28
 
 ### Fixed
