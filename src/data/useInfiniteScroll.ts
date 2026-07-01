@@ -87,8 +87,22 @@ export function useInfiniteScroll<T>({
   // Defensive: drop any null/undefined entries that creep in from a malformed
   // page payload (e.g. backend serializer returns null for soft-deleted
   // records). Otherwise downstream `.map(r => r.id)` blows up the whole list.
+  //
+  // Then de-dupe by `id` across pages. Offset pagination over a non-unique
+  // ordering key — or a background refetch of the already-loaded pages while
+  // the underlying data shifts — can hand back the same record on two pages;
+  // flattening them would render that row twice (the duplicate-row bug). Keep
+  // the first occurrence. Items without an `id` can't be de-duped, so keep them.
+  const seenIds = new Set<unknown>();
   const allItems = (query.data?.pages.flatMap((page) => page?.results ?? []) ?? [])
-    .filter((x): x is T => x != null);
+    .filter((x): x is T => x != null)
+    .filter((x) => {
+      const id = (x as { id?: unknown }).id;
+      if (id == null) return true;
+      if (seenIds.has(id)) return false;
+      seenIds.add(id);
+      return true;
+    });
   const totalCount = query.data?.pages[0]?.count ?? 0;
 
   return {
