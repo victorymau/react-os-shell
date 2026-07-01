@@ -48,7 +48,15 @@ export default function useTableNav<T>(
     }
   }, [items.length]);
 
-  // Track normal checkbox clicks to set the anchor for Shift+click
+  // Track normal checkbox clicks to set the anchor for Shift+click.
+  // MUST be a capture-phase listener: the checkbox's own onClick calls
+  // e.stopPropagation() (so toggling doesn't also open the row), and since
+  // React delegates events at the root container — which sits *below*
+  // document — that stopPropagation blocks any bubble-phase document listener.
+  // Capture runs top-down before the event reaches the checkbox, so the anchor
+  // is recorded even though bubbling is later stopped. Without this, the anchor
+  // stayed -1 and "click A, Shift+click B" only toggled A and B individually
+  // instead of selecting the range between them.
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (!isActiveRef.current) return;
@@ -63,8 +71,8 @@ export default function useTableNav<T>(
         setFocusIdx(idx);
       }
     };
-    document.addEventListener('click', handler);
-    return () => document.removeEventListener('click', handler);
+    document.addEventListener('click', handler, true);
+    return () => document.removeEventListener('click', handler, true);
   }, []);
 
   useEffect(() => {

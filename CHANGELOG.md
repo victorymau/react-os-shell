@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.8.4] — 2026-07-01
+
+### Fixed
+- **Shift-click now range-selects rows in `EntityList` again.** Ticking one row
+  then Shift-clicking another is meant to select every row in between, but it
+  only toggled the two clicked rows. The selection *anchor* was recorded by a
+  bubble-phase `document` click listener in `useTableNav`, while the row
+  checkbox's own `onClick` calls `stopPropagation()` (so a tick doesn't also
+  open the row). React delegates events at the root container, which sits below
+  `document`, so that `stopPropagation` blocked the bubble listener and the
+  anchor never updated. The listener now runs in the **capture phase**, so it
+  records the anchor before the event reaches the checkbox — keyboard
+  Shift+Space range-select and the existing Shift-click-on-row-body path are
+  unchanged. (EFFICIENT list range-selection fix.)
+
 ## [3.8.3] — 2026-07-01
 
 ### Fixed
