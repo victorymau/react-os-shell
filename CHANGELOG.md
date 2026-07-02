@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.8.5] — 2026-07-01
+
+### Fixed
+- **`useInfiniteScroll` now de-dupes rows by `id` across pages.** Offset
+  pagination over a non-unique ordering key — or a background refetch of the
+  already-loaded pages while the underlying data shifts (e.g. a live balance
+  changing between the page-1 and page-3 fetches) — can hand back the same
+  record on two pages. The hook flattened every page's `results` with no
+  de-dupe, so that record rendered twice. Seen on the EFFICIENT admin Customers
+  list sorted by BALANCE: one customer appeared both at the top and near the
+  bottom. The flatten now keeps the first occurrence of each `id`; items with
+  no `id` are left untouched. (Pairs with the backend `pk`-tiebreaker fix that
+  removes the server-side cause.)
+
 ## [3.8.4] — 2026-07-01
 
 ### Fixed
