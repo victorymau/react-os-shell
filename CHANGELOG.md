@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.8.6] — 2026-07-02
+
+### Fixed
+- **Dragging or resizing a window over an overlapping window no longer stutters
+  or freezes.** The drag (`startDrag`) and resize (`startResizeCorner`) handlers
+  register their `pointermove`/`pointerup` listeners on `window` but never took
+  pointer capture, so as soon as the cursor crossed an overlapping window whose
+  body is an `<iframe>` (e.g. an embedded editor preview), the browser routed
+  the pointer stream into that iframe's own document — the parent listeners fell
+  silent, the window froze mid-drag and could stick to the cursor. Each gesture
+  now (1) calls `setPointerCapture` on the grabbed handle, (2) mounts a
+  transparent full-viewport shield so events never reach a background iframe and
+  background windows don't react to the moving pointer, and (3) flags `<body>`
+  (`rosh-gesturing`) to drop the per-frame `backdrop-blur` that re-samples the
+  overlapped window and to promote each window to its own compositor layer so
+  moving the foreground window doesn't repaint the ones behind it. Resize also
+  now writes `left/top/width/height` straight to the DOM per frame (syncing
+  React state once on drop, like drag already did) instead of re-rendering — and
+  reflowing a heavy `<iframe>` body — every animation frame. (EFFICIENT
+  overlapping-window drag/resize lag fix.)
+
 ## [3.8.5] — 2026-07-01
 
 ### Fixed
