@@ -533,6 +533,60 @@ function hideSnapPreview() {
   snapPreviewEl.style.display = 'none';
 }
 
+// ── Pointer-gesture shield (drag/resize) ──────────────────────────────
+// A window drag/resize must keep receiving pointer events for the WHOLE
+// gesture. The move/up listeners live on `window`, which only sees events
+// dispatched within this document. Without pointer capture, the instant the
+// cursor crosses an overlapping window whose body is an <iframe> (e.g. an
+// embedded editor preview), the browser routes pointermove/pointerup into that
+// iframe's own document — the parent listeners fall silent, so the drag freezes
+// and can stick to the cursor ("the background window interferes with the
+// active window"). For the gesture's duration we therefore:
+//   1. capture the pointer on the grabbed handle so events stay in this doc;
+//   2. mount a transparent full-viewport shield so the pointer never reaches a
+//      background iframe even if capture is unavailable, and background windows
+//      don't react to the moving cursor; and
+//   3. flag <body> so backdrop-blur (which re-samples the overlapped window
+//      every frame) is dropped and every window is promoted to its own
+//      compositor layer, so moving the foreground window doesn't repaint the
+//      windows behind it.
+const GESTURE_STYLE_ID = 'rosh-gesture-style';
+function ensureGestureStyle() {
+  if (typeof document === 'undefined' || document.getElementById(GESTURE_STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = GESTURE_STYLE_ID;
+  style.textContent =
+    'body.rosh-gesturing .backdrop-blur-sm{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}' +
+    'body.rosh-gesturing [data-modal-panel]{will-change:transform}';
+  document.head.appendChild(style);
+}
+
+const RESIZE_CURSOR: Record<'se' | 'sw' | 'ne' | 'nw' | 'n' | 's' | 'e' | 'w', string> = {
+  se: 'nwse-resize', nw: 'nwse-resize', sw: 'nesw-resize', ne: 'nesw-resize',
+  n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize',
+};
+
+/** Begin a drag/resize pointer gesture on `handle`: capture the pointer, mount
+ *  a transparent shield with `cursor`, and suppress per-frame blur repaints.
+ *  Returns an idempotent cleanup to call from the pointerup handler. */
+function beginPointerGesture(handle: HTMLElement, pointerId: number, cursor: string): () => void {
+  ensureGestureStyle();
+  try { handle.setPointerCapture(pointerId); } catch { /* capture unsupported for this input */ }
+  document.body.classList.add('rosh-gesturing');
+  const shield = document.createElement('div');
+  shield.setAttribute('data-drag-shield', '');
+  shield.style.cssText = `position:fixed;inset:0;z-index:2147483647;cursor:${cursor};background:transparent;touch-action:none`;
+  document.body.appendChild(shield);
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    try { handle.releasePointerCapture(pointerId); } catch { /* already released on pointerup */ }
+    shield.remove();
+    document.body.classList.remove('rosh-gesturing');
+  };
+}
+
 // Listen for deactivate-all event from taskbar
 window.addEventListener('deactivate-all-modals', deactivateAllModals);
 function getZForModal(id: string): number {
@@ -1406,6 +1460,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     // the title bar still activates the window but doesn't drag it.
     if (alwaysMaximized) { e.preventDefault(); return; }
     e.preventDefault();
+    const endGesture = beginPointerGesture(e.currentTarget as HTMLElement, e.pointerId, 'move');
     const sx = e.clientX, sy = e.clientY;
     const panel = panelRef.current;
     const rect = panel?.getBoundingClientRect();
@@ -1463,6 +1518,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
+      endGesture();
       hideSnapPreview();
       const finalBox = { ...boxRef.current };
 
@@ -1490,6 +1546,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   const startResizeCorner = useCallback((e: React.PointerEvent, corner: 'se' | 'sw' | 'ne' | 'nw' | 'n' | 's' | 'e' | 'w') => {
     if (e.button !== 0) return;
     e.preventDefault(); e.stopPropagation();
+    const endGesture = beginPointerGesture(e.currentTarget as HTMLElement, e.pointerId, RESIZE_CURSOR[corner]);
     const sx = e.clientX, sy = e.clientY;
     const panel = panelRef.current;
     // Always use the live rendered rect as the origin so we don't drift
@@ -1537,7 +1594,16 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
       if (!pending) return;
       const next = pending; pending = null;
       boxRef.current = next;
-      setBox(next);
+      // Write straight to the DOM per frame. Routing every frame through
+      // setBox re-rendered the whole window — reflowing a heavy <iframe> body
+      // on each animation frame. React state is synced once on pointer-up
+      // (mirrors the drag path, which also keeps inline styles mid-gesture).
+      if (panel) {
+        panel.style.left = `${next.x}px`;
+        panel.style.top = `${next.y}px`;
+        panel.style.width = `${next.w}px`;
+        panel.style.height = `${next.h}px`;
+      }
     };
     const move = (ev: PointerEvent) => {
       pending = compute(ev.clientX - sx, ev.clientY - sy);
@@ -1548,6 +1614,8 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
       window.removeEventListener('pointerup', up);
       if (raf) cancelAnimationFrame(raf);
       flush();
+      endGesture();
+      setBox({ ...boxRef.current });
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
