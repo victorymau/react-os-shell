@@ -31,7 +31,7 @@ type CircleAnno = { id: string; type: 'circle'; x: number; y: number; w: number;
 type ArrowAnno  = { id: string; type: 'arrow';  x1: number; y1: number; x2: number; y2: number; color: string; stroke: number };
 type MosaicAnno = { id: string; type: 'mosaic'; x: number; y: number; w: number; h: number };
 type DrawAnno   = { id: string; type: 'draw';   points: { x: number; y: number }[]; color: string; stroke: number };
-type TextAnno   = { id: string; type: 'text';   x: number; y: number; text: string; color: string; size: number; font: string; bold: boolean; italic: boolean; underline: boolean };
+type TextAnno   = { id: string; type: 'text';   x: number; y: number; text: string; color: string; size: number; font: string; bold: boolean; italic: boolean; underline: boolean; borderColor: string | null; background: string | null; padding: number };
 type Annotation = RectAnno | CircleAnno | ArrowAnno | MosaicAnno | DrawAnno | TextAnno;
 
 const COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#000000', '#ffffff'];
@@ -43,6 +43,7 @@ const FONTS = [
 ];
 const STROKE_DEFAULT = 4;
 const TEXT_SIZE_DEFAULT = 24;
+const TEXT_PADDING_DEFAULT = 6;
 const RECT_RADIUS_DEFAULT = 12;
 const MOSAIC_BLOCK = 12;
 const ZOOM_MIN = 0.25;
@@ -85,6 +86,9 @@ const ImageAnnotator = forwardRef<ImageAnnotatorHandle, ImageAnnotatorProps>(fun
   const [textBold, setTextBold] = useState(true);
   const [textItalic, setTextItalic] = useState(false);
   const [textUnderline, setTextUnderline] = useState(false);
+  const [textBorderColor, setTextBorderColor] = useState<string | null>(null);
+  const [textBg, setTextBg] = useState<string | null>(null);
+  const [textPadding, setTextPadding] = useState(TEXT_PADDING_DEFAULT);
   const [rectRadius, setRectRadius] = useState(RECT_RADIUS_DEFAULT);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -132,6 +136,9 @@ const ImageAnnotator = forwardRef<ImageAnnotatorHandle, ImageAnnotatorProps>(fun
         setTextBold(selected.bold);
         setTextItalic(selected.italic);
         setTextUnderline(selected.underline);
+        setTextBorderColor(selected.borderColor);
+        setTextBg(selected.background);
+        setTextPadding(selected.padding);
       }
     }
   }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -283,6 +290,11 @@ const ImageAnnotator = forwardRef<ImageAnnotatorHandle, ImageAnnotatorProps>(fun
       return;
     }
     if (tool === 'text') {
+      // If a text box is already being edited, commit it first. Previously this
+      // overwrote `pendingText` outright, so clicking elsewhere on the image
+      // (which races the textarea's blur-commit) silently discarded whatever
+      // had been typed. Commit-then-stop keeps the typed text on the image.
+      if (pendingText) { commitText(); return; }
       const p = evToImage(e);
       setPendingText({ x: p.x, y: p.y, value: '' });
       return;
@@ -387,11 +399,35 @@ const ImageAnnotator = forwardRef<ImageAnnotatorHandle, ImageAnnotatorProps>(fun
       (a.id === selectedId && a.type === 'text') ? { ...a, [which]: next } : a,
     ));
   };
+  const setTextBorderColorAndApply = (c: string | null) => {
+    setTextBorderColor(c);
+    if (!selectedId) return;
+    setAnnotations(prev => prev.map(a =>
+      (a.id === selectedId && a.type === 'text') ? { ...a, borderColor: c } : a,
+    ));
+  };
+  const setTextBgAndApply = (c: string | null) => {
+    setTextBg(c);
+    if (!selectedId) return;
+    setAnnotations(prev => prev.map(a =>
+      (a.id === selectedId && a.type === 'text') ? { ...a, background: c } : a,
+    ));
+  };
+  const setTextPaddingAndApply = (p: number) => {
+    setTextPadding(p);
+    if (!selectedId) return;
+    setAnnotations(prev => prev.map(a =>
+      (a.id === selectedId && a.type === 'text') ? { ...a, padding: p } : a,
+    ));
+  };
 
   // ── text input ─────────────────────────────────────────────────────────────
-  const commitText = () => {
+  const commitText = (explicitValue?: string) => {
     if (!pendingText) return;
-    const value = pendingText.value;
+    // Prefer the live textarea value handed in by the editor: relying on the
+    // `pendingText.value` state alone can lose the last keystroke(s) when the
+    // commit races a state flush (blur / Enter / clicking elsewhere).
+    const value = explicitValue ?? pendingText.value;
     if (!value.trim()) {
       if (pendingText.editingId) {
         setAnnotations(prev => prev.filter(a => a.id !== pendingText.editingId));
@@ -418,6 +454,9 @@ const ImageAnnotator = forwardRef<ImageAnnotatorHandle, ImageAnnotatorProps>(fun
         bold: textBold,
         italic: textItalic,
         underline: textUnderline,
+        borderColor: textBorderColor,
+        background: textBg,
+        padding: textPadding,
       };
       setAnnotations(prev => [...prev, anno]);
       setSelectedId(anno.id);
@@ -610,6 +649,48 @@ const ImageAnnotator = forwardRef<ImageAnnotatorHandle, ImageAnnotatorProps>(fun
               <input type="range" min={10} max={96} step={1} value={textSize} onChange={(e) => setTextSizeAndApply(Number(e.target.value))} className="w-16 accent-blue-500" />
               <span className="tabular-nums w-7 text-right">{textSize}</span>
             </label>
+
+            {/* Text-box border / fill / padding. Border + fill are off by
+                default (plain label); adding either makes the padding matter. */}
+            <label className="flex items-center gap-1 text-gray-600">
+              <span>Border</span>
+              {textBorderColor ? (
+                <>
+                  <input
+                    type="color"
+                    value={textBorderColor}
+                    onChange={(e) => setTextBorderColorAndApply(e.target.value)}
+                    title="Text-box border color"
+                    className="h-5 w-6 rounded border border-gray-300 bg-white p-0 cursor-pointer"
+                  />
+                  <button onClick={() => setTextBorderColorAndApply(null)} title="Remove border" className="px-0.5 text-gray-400 hover:text-gray-700">✕</button>
+                </>
+              ) : (
+                <button onClick={() => setTextBorderColorAndApply(color)} title="Add a border" className="px-1.5 py-0.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-100">Add</button>
+              )}
+            </label>
+            <label className="flex items-center gap-1 text-gray-600">
+              <span>Fill</span>
+              {textBg ? (
+                <>
+                  <input
+                    type="color"
+                    value={textBg}
+                    onChange={(e) => setTextBgAndApply(e.target.value)}
+                    title="Text-box background color"
+                    className="h-5 w-6 rounded border border-gray-300 bg-white p-0 cursor-pointer"
+                  />
+                  <button onClick={() => setTextBgAndApply(null)} title="Remove fill" className="px-0.5 text-gray-400 hover:text-gray-700">✕</button>
+                </>
+              ) : (
+                <button onClick={() => setTextBgAndApply('#ffffff')} title="Add a background fill" className="px-1.5 py-0.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-100">Add</button>
+              )}
+            </label>
+            <label className="flex items-center gap-1.5 text-gray-600">
+              <span>Pad</span>
+              <input type="range" min={0} max={40} step={1} value={textPadding} onChange={(e) => setTextPaddingAndApply(Number(e.target.value))} className="w-14 accent-blue-500" />
+              <span className="tabular-nums w-6 text-right">{textPadding}</span>
+            </label>
           </>
         )}
 
@@ -698,6 +779,9 @@ const ImageAnnotator = forwardRef<ImageAnnotatorHandle, ImageAnnotatorProps>(fun
                 bold={textBold}
                 italic={textItalic}
                 underline={textUnderline}
+                borderColor={textBorderColor}
+                background={textBg}
+                padding={textPadding}
                 scale={scale}
                 onChange={(value) => setPendingText({ ...pendingText, value })}
                 onCommit={commitText}
@@ -790,23 +874,39 @@ function AnnotationView({ anno, selected, preview, zoom = 1, onPointerDown, onDo
   } else {
     // text
     const font = FONTS.find(f => f.id === anno.font)?.css ?? FONTS[0].css;
+    const pad = anno.padding ?? 0;
+    const hasBox = !!anno.borderColor || !!anno.background;
+    const box = boundingBox(anno);
+    const borderW = anno.borderColor ? Math.max(1, Math.round(anno.size / 12)) : 0;
+    // Interactive/double-click handlers live on the <g> so the whole box (not
+    // just the glyphs) is a hit target — much easier to select a bordered label.
     body = (
-      <text
-        x={anno.x} y={anno.y + anno.size}
-        fill={anno.color}
-        fontSize={anno.size}
-        fontWeight={anno.bold ? 700 : 400}
-        fontStyle={anno.italic ? 'italic' : 'normal'}
-        textDecoration={anno.underline ? 'underline' : undefined}
-        fontFamily={font}
-        style={{ userSelect: 'none' }}
-        {...interactive}
-        {...dblc}
-      >
-        {anno.text.split('\n').map((line, i) => (
-          <tspan key={i} x={anno.x} dy={i === 0 ? 0 : anno.size * 1.2}>{line}</tspan>
-        ))}
-      </text>
+      <g {...interactive} {...dblc}>
+        {hasBox && (
+          <rect
+            x={box.x - pad} y={box.y - pad}
+            width={Math.max(0, box.w) + pad * 2} height={Math.max(0, box.h) + pad * 2}
+            rx={Math.min(8, pad)} ry={Math.min(8, pad)}
+            fill={anno.background ?? 'none'}
+            stroke={anno.borderColor ?? 'none'}
+            strokeWidth={borderW}
+          />
+        )}
+        <text
+          x={anno.x} y={anno.y + anno.size}
+          fill={anno.color}
+          fontSize={anno.size}
+          fontWeight={anno.bold ? 700 : 400}
+          fontStyle={anno.italic ? 'italic' : 'normal'}
+          textDecoration={anno.underline ? 'underline' : undefined}
+          fontFamily={font}
+          style={{ userSelect: 'none' }}
+        >
+          {anno.text.split('\n').map((line, i) => (
+            <tspan key={i} x={anno.x} dy={i === 0 ? 0 : anno.size * 1.2}>{line}</tspan>
+          ))}
+        </text>
+      </g>
     );
   }
 
@@ -904,7 +1004,7 @@ function CropOverlay({ rect, imageSize }: { rect: { x: number; y: number; w: num
 }
 
 function PendingTextEditor({
-  pendingText, color, size, font, bold, italic, underline, scale, onChange, onCommit, onCancel,
+  pendingText, color, size, font, bold, italic, underline, borderColor, background, padding, scale, onChange, onCommit, onCancel,
 }: {
   pendingText: { x: number; y: number; value: string; editingId?: string };
   color: string;
@@ -913,9 +1013,12 @@ function PendingTextEditor({
   bold: boolean;
   italic: boolean;
   underline: boolean;
+  borderColor: string | null;
+  background: string | null;
+  padding: number;
   scale: number;
   onChange: (value: string) => void;
-  onCommit: () => void;
+  onCommit: (value?: string) => void;
   onCancel: () => void;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -926,6 +1029,11 @@ function PendingTextEditor({
     });
     return () => cancelAnimationFrame(id);
   }, []);
+  // Always commit the CURRENT DOM value, not the (possibly one-keystroke-stale)
+  // state prop — this is what stops the last characters, or the whole label,
+  // from vanishing on blur / Enter.
+  const commit = () => onCommit(ref.current?.value);
+  const borderW = borderColor ? Math.max(1, Math.round(size / 12)) : 0;
   return (
     <div
       style={{
@@ -941,14 +1049,14 @@ function PendingTextEditor({
         ref={ref}
         value={pendingText.value}
         onChange={(e) => onChange(e.target.value)}
-        onBlur={onCommit}
+        onBlur={commit}
         onKeyDown={(e) => {
           if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
-          else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onCommit(); }
+          else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commit(); }
         }}
         placeholder="Type then Enter…"
         rows={1}
-        className="bg-white/95 border border-blue-400 rounded px-1 py-0.5 outline-none resize-none shadow-md"
+        className="outline-none resize-none shadow-md"
         style={{
           color,
           fontSize: `${size * scale}px`,
@@ -957,6 +1065,12 @@ function PendingTextEditor({
           fontStyle: italic ? 'italic' : 'normal',
           textDecoration: underline ? 'underline' : undefined,
           minWidth: 80,
+          // Mirror the committed box so the editor is WYSIWYG. With no custom
+          // border, show a dashed hint so the edit box stays visible.
+          padding: `${padding * scale}px`,
+          borderRadius: `${Math.min(8, padding) * scale}px`,
+          border: borderColor ? `${borderW * scale}px solid ${borderColor}` : '1px dashed #60a5fa',
+          background: background ?? 'rgba(255,255,255,0.95)',
         }}
       />
     </div>
