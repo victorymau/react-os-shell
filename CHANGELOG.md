@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.9.0] — 2026-07-03
+
+### Added
+- **Image annotator text labels can now be given a box** — a border colour, a
+  background fill, and adjustable padding. When a text tool or text annotation is
+  active, the toolbar gains **Border** / **Fill** (each off by default, add via a
+  colour swatch, clear with ✕) and a **Pad** slider. The box renders behind the
+  glyphs as a rounded `<rect>` in the SVG layer, so it exports and copies with the
+  rest of the annotation, and the in-place editor mirrors it (WYSIWYG). Adding a
+  box also makes the whole label — not just the thin glyphs — a click target, so
+  bordered labels are far easier to select and move.
+
+### Fixed
+- **Annotator text no longer disappears when you click elsewhere or press Enter.**
+  Committing a text label now reads the live `<textarea>` value (instead of the
+  possibly-stale React state), and starting a second label first *commits* the one
+  in progress rather than silently overwriting it. Previously, clicking away while
+  a text box was open raced the textarea's blur-commit against a `pendingText`
+  reset and often discarded whatever had been typed.
+
 ## [3.8.6] — 2026-07-02
 
 ### Fixed
