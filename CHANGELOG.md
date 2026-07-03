@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.10.0] — 2026-07-04
+
+### Added
+- **`SidebarLayout` pinned action slots.** New optional `sidebarTop` and
+  `sidebarBottom` props render a node pinned above / below the sidebar's
+  scrolling middle (`sidebar`) — the standard list-window pattern of a primary
+  "New X" button at the top and an "Export CSV" button flush to the bottom. The
+  padding, the bottom divider, and the grow-to-fill middle live in the shell, so
+  every list page is laid out identically. Fully backward-compatible: panes with
+  neither slot render exactly as before.
+- **`SidebarActionButton`** — a full-width action button for those slots, with
+  `variant="primary"` (solid blue create) / `"secondary"` (white outline) and an
+  optional `hotkey` chip, so the button markup isn't copy-pasted across every
+  list page.
+
 ## [3.9.0] — 2026-07-03
 
 ### Added

@@ -35,6 +35,8 @@ export { default as EditableGrid } from './shell/EditableGrid';
 export type { GridColumn, CellStyle, EditableGridProps } from './shell/EditableGrid';
 export { default as SidebarLayout } from './shell/SidebarLayout';
 export type { SidebarLayoutProps } from './shell/SidebarLayout';
+export { default as SidebarActionButton } from './shell/SidebarActionButton';
+export type { SidebarActionButtonProps } from './shell/SidebarActionButton';
 export { default as SearchableSelect } from './shell/SearchableSelect';
 export type { SearchableOption, SearchableSelectProps } from './shell/SearchableSelect';
 export { default as TopNav } from './shell/TopNav';

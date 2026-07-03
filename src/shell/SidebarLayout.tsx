@@ -17,8 +17,18 @@ import type { ReactNode, PointerEvent as ReactPointerEvent } from 'react';
  * </SidebarLayout>
  */
 export interface SidebarLayoutProps {
-  /** Content of the left sidebar pane. */
+  /** Content of the left sidebar pane. When `sidebarTop`/`sidebarBottom` are
+   *  set this is the scrolling middle region (the filter nav); otherwise it is
+   *  the whole pane. */
   sidebar: ReactNode;
+  /** Optional node pinned at the TOP of the sidebar, above `sidebar`, in a
+   *  padded non-scrolling region (e.g. a primary "New X" `SidebarActionButton`).
+   *  The list-window convention: primary create action lives here. */
+  sidebarTop?: ReactNode;
+  /** Optional node pinned at the BOTTOM of the sidebar, below `sidebar`, in a
+   *  padded, top-bordered non-scrolling region (e.g. an "Export CSV" button).
+   *  The middle `sidebar` grows to fill, so this stays flush to the bottom. */
+  sidebarBottom?: ReactNode;
   /** Content of the main pane (opposite the sidebar). */
   children: ReactNode;
   /** Which side the sidebar sits on. Default `'left'`. When `'right'`, the
@@ -47,6 +57,8 @@ const clamp = (n: number, lo: number, hi: number) => Math.min(Math.max(n, lo), h
 
 export default function SidebarLayout({
   sidebar,
+  sidebarTop,
+  sidebarBottom,
   children,
   side = 'left',
   storageKey,
@@ -112,10 +124,25 @@ export default function SidebarLayout({
   }, [onMove, onUp]);
 
   const edge = sideRight ? 'left-0' : 'right-0';
+  // With a top/bottom slot the pane becomes a 3-region flex column: a padded
+  // pinned header, the scrolling middle (`sidebar`, grows to fill), and a
+  // padded, top-bordered pinned footer. Without slots it renders exactly as
+  // before (the whole pane scrolls) so existing consumers are unaffected.
+  const hasSlots = sidebarTop != null || sidebarBottom != null;
   const sidebarPane = (
     <div className="relative flex h-full shrink-0 flex-col" style={{ width }}>
-      <div className={`flex h-full flex-col overflow-y-auto ${sidebarClassName}`}>
-        {sidebar}
+      <div className={`flex h-full flex-col ${hasSlots ? 'overflow-hidden' : 'overflow-y-auto'} ${sidebarClassName}`}>
+        {sidebarTop != null && (
+          <div className="shrink-0 px-2 pt-3 pb-2">{sidebarTop}</div>
+        )}
+        {hasSlots ? (
+          <div className="min-h-0 flex-1 overflow-y-auto">{sidebar}</div>
+        ) : (
+          sidebar
+        )}
+        {sidebarBottom != null && (
+          <div className="mt-auto shrink-0 border-t border-gray-200 px-2 py-3">{sidebarBottom}</div>
+        )}
       </div>
       {/* Resize handle — pinned to the sidebar's inner edge, fixed while it scrolls. */}
       <div
