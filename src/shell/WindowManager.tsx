@@ -535,20 +535,26 @@ function TaskbarWindows({ openWindows, onRemove, onCloseAll, onSplitView, onActi
   const tabWindows = openWindows.filter(item => !item.route || !(WINDOW_REGISTRY[item.route] as PageRegistryEntry)?.utility);
   if (!target || tabWindows.length === 0) return null;
 
-  // Group multi-instance windows by route so the taskbar shows one icon
-  // per app type with a count badge instead of N identical tabs.
+  // Group windows into one taskbar button with a count badge instead of N
+  // tabs. Same-route `multiInstance` copies stack; windows that declare a
+  // shared `taskbarGroup.key` also stack ACROSS routes (e.g. the Storefront
+  // console + the editors it opens), taking the group's label + icon.
   type Group = { key: string; route?: string; label: string; items: MinimizedItem[] };
   const groups: Group[] = [];
   const idx = new Map<string, number>();
   for (const item of tabWindows) {
-    const key = item.route ?? `entity:${item.id}`;
+    const entry = item.route ? (WINDOW_REGISTRY[item.route] as PageRegistryEntry | undefined) : undefined;
+    const grp = entry?.taskbarGroup;
+    const key = grp?.key ?? item.route ?? `entity:${item.id}`;
     const i = idx.get(key);
     if (i !== undefined) {
       groups[i].items.push(item);
     } else {
       idx.set(key, groups.length);
-      const registryLabel = item.route ? (WINDOW_REGISTRY[item.route] as PageRegistryEntry)?.label : undefined;
-      groups.push({ key, route: item.route, label: registryLabel ?? item.label, items: [item] });
+      // A cross-route group shows its own label + icon; a plain route group
+      // shows the window's registry label + its own route icon (as before).
+      const label = grp?.label ?? entry?.label ?? item.label;
+      groups.push({ key, route: grp?.icon ?? item.route, label, items: [item] });
     }
   }
 
