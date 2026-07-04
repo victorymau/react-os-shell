@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.11.3] — 2026-07-04
+
+### Fixed
+- **`SearchableSelect` dropdown now follows its window when the window is
+  dragged.** After 3.11.2 portaled the options list to `document.body` and
+  positioned it `fixed`, the list tracked the trigger on scroll and resize but
+  not when the shell window was moved: dragging a window with a picker open
+  left the dropdown stranded at its open-time spot while the window (and the
+  trigger) slid away. Window drags move the trigger via a CSS `transform` on an
+  ancestor, which fires neither `scroll` nor `resize`, so the position never
+  recomputed. The hook now also polls the trigger's rect on each animation
+  frame while the menu is open and recomputes when it shifts (with a rect
+  dirty-check to keep the idle loop cheap), so the menu stays glued to its
+  trigger through a drag or any other transform-/animation-driven move.
+
 ## [3.11.2] — 2026-07-04
 
 ### Fixed

@@ -83,18 +83,22 @@ interface MenuPos {
 /**
  * Compute the menu's fixed-viewport position from the trigger rect while the
  * dropdown is open, re-running on scroll (capture, so nested form-scroll
- * containers count) and resize so it tracks a moving trigger. Anchors below
- * the trigger by default, flips above when below is cramped and above has more
- * room, and flips to right-aligned when the max width wouldn't fit to the
- * right of the trigger's left edge.
+ * containers count), resize, and every animation frame the trigger moves so it
+ * tracks a moving trigger. Anchors below the trigger by default, flips above
+ * when below is cramped and above has more room, and flips to right-aligned
+ * when the max width wouldn't fit to the right of the trigger's left edge.
  */
 function useDropdownPosition(triggerRef: RefObject<HTMLElement | null>, open: boolean): MenuPos | null {
   const [pos, setPos] = useState<MenuPos | null>(null);
   useLayoutEffect(() => {
     if (!open) { setPos(null); return; }
+    // Remember the last trigger rect the rAF poll acted on, so the idle loop
+    // recomputes only when the trigger has actually moved.
+    let lastLeft = NaN, lastTop = NaN, lastRight = NaN, lastBottom = NaN;
     const compute = () => {
       const rect = triggerRef.current?.getBoundingClientRect();
       if (!rect) return;
+      lastLeft = rect.left; lastTop = rect.top; lastRight = rect.right; lastBottom = rect.bottom;
       const spaceBelow = window.innerHeight - rect.bottom - MENU_GAP - VIEWPORT_MARGIN;
       const spaceAbove = rect.top - MENU_GAP - VIEWPORT_MARGIN;
       const placeAbove = spaceBelow < Math.min(MENU_MAX_HEIGHT, 160) && spaceAbove > spaceBelow;
@@ -110,9 +114,24 @@ function useDropdownPosition(triggerRef: RefObject<HTMLElement | null>, open: bo
       setPos(next);
     };
     compute();
+    // Dragging a shell window moves the trigger via a CSS transform on an
+    // ancestor — that fires neither scroll nor resize, so the listeners below
+    // never see it and the menu would hang at its open-time spot while the
+    // window slides out from under it. Poll the trigger rect each animation
+    // frame and recompute when it shifts, so the menu tracks the window
+    // through a drag (and any other transform-/animation-driven move). The
+    // rect dirty-check keeps the idle loop cheap when nothing is moving.
+    let raf = requestAnimationFrame(function tick() {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (rect && (rect.left !== lastLeft || rect.top !== lastTop || rect.right !== lastRight || rect.bottom !== lastBottom)) {
+        compute();
+      }
+      raf = requestAnimationFrame(tick);
+    });
     window.addEventListener('scroll', compute, true);
     window.addEventListener('resize', compute);
     return () => {
+      cancelAnimationFrame(raf);
       window.removeEventListener('scroll', compute, true);
       window.removeEventListener('resize', compute);
     };
