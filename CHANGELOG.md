@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.14.0] — 2026-07-05
+
+> Note: the fix and addition below first shipped to npm as `3.12.0` (published
+> from a branch before `taskbarGroup` landed as `3.13.0`). `3.14.0` is the first
+> main-line release to carry them together with `taskbarGroup`.
+
+### Fixed
+- **Pressing (or holding) a window no longer strips the frosted glass off the
+  other windows.** A drag/resize gesture drops `backdrop-blur` on every window
+  for its duration (so moving the foreground window doesn't force a per-frame
+  re-sample repaint of the windows behind it). That suppression was engaged on
+  **pointer-down**, before any movement — so a mere press-and-hold, or even a
+  plain click, on a window's title bar or resize edge instantly flattened the
+  frosted "wallpaper-through-glass" look on every other open window until the
+  press ended. The gesture (pointer capture, drag shield, and the blur
+  suppression) is now deferred until the pointer actually moves past a small
+  threshold, so a press/click that isn't a drag leaves every window's frosted
+  glass intact while the real drag optimisation is unchanged.
+
+### Added
+- **Entity detail windows now honour `dimensions`.** `ModalRegistryEntry` gains
+  an optional `dimensions: [width, height]` (matching `PageRegistryEntry`), and
+  the entity-window renderer forwards it to the `Modal`. Like the page path,
+  explicit `dimensions` set a fixed open size (clamped to the viewport) and
+  override any stale per-window size the shell persisted to `localStorage` —
+  so a content-heavy detail window can be pinned to a large default rather than
+  reopening at whatever size it was last dragged to.
+
 ## [3.13.0] — 2026-07-05
 
 > Note: `3.12.0` was published without this change, so `taskbarGroup` ships as **3.13.0**.
