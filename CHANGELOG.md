@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.14.1] — 2026-07-05
+
+### Fixed
+- **Two open windows for records that share a display label can now each be
+  closed independently.** A window's internal id was derived from the human
+  `label` passed to `openEntity` (e.g. a wheel finish used its design name), not
+  from the record identity. Two *different* records that share that label — two
+  wheel finishes on the same design, say — therefore opened with the **same
+  `id`**, even though the dedup guard (which keys on `entityType` + `entityId`)
+  correctly let both through. That collision produced duplicate React keys in
+  the window render loop and a shared `windowKey`/`boxKey` in the modal store,
+  so closing one window filtered both out of state but stranded the other's
+  portal panel on screen with a close button that no longer matched anything —
+  an un-closeable window. Window ids are now keyed by `entityType:entityId` (the
+  same identity the dedup already uses), so no two live windows can share an id.
+  A restored session is also healed on load: a window persisted under the old
+  label-based id that collides with another is re-keyed to its entity identity
+  (and a genuine duplicate dropped), so an existing stuck pair resolves on the
+  next reload instead of being restored just as broken. (EFFICIENT
+  duplicate-record window close fix.)
+
 ## [3.14.0] — 2026-07-05
 
 > Note: the fix and addition below first shipped to npm as `3.12.0` (published
