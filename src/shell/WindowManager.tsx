@@ -242,6 +242,7 @@ function RestoredRegistryModal({ item, onClose, onMinimize }: { item: MinimizedI
       windowKey={item.id}
       openedFromKey={item.openedFrom}
       size={(entry.size || '2xl') as any}
+      dimensions={entry.dimensions}
       autoHeight={entry.autoHeight}
       autoMinHeight={entry.autoMinHeight}
       appStyle={entry.appStyle}

@@ -71,6 +71,10 @@ export interface ModalRegistryEntry {
   footer?: (entity: any) => ReactNode;
   /** Modal size. */
   size?: string;
+  /** Custom open dimensions [width, height] in px (clamped to the viewport).
+   *  Overrides the size ladder and any stale per-window size the shell
+   *  persisted — use for content-heavy detail windows that must open large. */
+  dimensions?: [number, number];
   /** If true, the component fetches its own data — pass ID, not entity. */
   selfFetching?: boolean;
   /** If true, the component renders its own Modal — skip outer Modal wrapper. */

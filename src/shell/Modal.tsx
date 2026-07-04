@@ -573,6 +573,13 @@ const RESIZE_CURSOR: Record<'se' | 'sw' | 'ne' | 'nw' | 'n' | 's' | 'e' | 'w', s
   n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize',
 };
 
+// Pointer travel (px) before a title-bar / resize press counts as a real
+// drag. Below this a press-and-hold (or a plain click) is NOT a gesture, so
+// `beginPointerGesture` — and its backdrop-blur suppression that flattens
+// every frosted window — never engages. Prevents "pressing a window strips the
+// frosted glass off the others" while keeping the perf optimisation for drags.
+const DRAG_THRESHOLD = 4;
+
 /** Begin a drag/resize pointer gesture on `handle`: capture the pointer, mount
  *  a transparent shield with `cursor`, and suppress per-frame blur repaints.
  *  Returns an idempotent cleanup to call from the pointerup handler. */
@@ -1473,7 +1480,14 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     // the title bar still activates the window but doesn't drag it.
     if (alwaysMaximized) { e.preventDefault(); return; }
     e.preventDefault();
-    const endGesture = beginPointerGesture(e.currentTarget as HTMLElement, e.pointerId, 'move');
+    // The gesture (pointer capture, drag shield, and the backdrop-blur
+    // suppression that flattens every frosted window) is deferred until the
+    // pointer actually moves past DRAG_THRESHOLD — a press-and-hold or a plain
+    // click on the title bar must not strip the frosted glass off other
+    // windows. `null` until the first real move; started in `move`, ended in `up`.
+    const dragHandle = e.currentTarget as HTMLElement;
+    const dragPointerId = e.pointerId;
+    let endGesture: (() => void) | null = null;
     const sx = e.clientX, sy = e.clientY;
     const panel = panelRef.current;
     const rect = panel?.getBoundingClientRect();
@@ -1510,6 +1524,11 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     let currentZone: SnapZone | null = null;
 
     const move = (ev: PointerEvent) => {
+      // Promote to a real drag gesture on the first move past the threshold.
+      if (!endGesture) {
+        if (Math.abs(ev.clientX - sx) < DRAG_THRESHOLD && Math.abs(ev.clientY - sy) < DRAG_THRESHOLD) return;
+        endGesture = beginPointerGesture(dragHandle, dragPointerId, 'move');
+      }
       const nx = ox + ev.clientX - sx;
       const ny = Math.max(0, oy + ev.clientY - sy);
       if (panel) {
@@ -1531,7 +1550,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
-      endGesture();
+      endGesture?.();
       hideSnapPreview();
       const finalBox = { ...boxRef.current };
 
@@ -1559,7 +1578,11 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   const startResizeCorner = useCallback((e: React.PointerEvent, corner: 'se' | 'sw' | 'ne' | 'nw' | 'n' | 's' | 'e' | 'w') => {
     if (e.button !== 0) return;
     e.preventDefault(); e.stopPropagation();
-    const endGesture = beginPointerGesture(e.currentTarget as HTMLElement, e.pointerId, RESIZE_CURSOR[corner]);
+    // Deferred until the pointer moves past DRAG_THRESHOLD (see startDrag) so a
+    // stray press on a resize edge doesn't flatten every frosted window.
+    const resizeHandle = e.currentTarget as HTMLElement;
+    const resizePointerId = e.pointerId;
+    let endGesture: (() => void) | null = null;
     const sx = e.clientX, sy = e.clientY;
     const panel = panelRef.current;
     // Always use the live rendered rect as the origin so we don't drift
@@ -1619,6 +1642,11 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
       }
     };
     const move = (ev: PointerEvent) => {
+      // Promote to a real resize gesture on the first move past the threshold.
+      if (!endGesture) {
+        if (Math.abs(ev.clientX - sx) < DRAG_THRESHOLD && Math.abs(ev.clientY - sy) < DRAG_THRESHOLD) return;
+        endGesture = beginPointerGesture(resizeHandle, resizePointerId, RESIZE_CURSOR[corner]);
+      }
       pending = compute(ev.clientX - sx, ev.clientY - sy);
       if (!raf) raf = requestAnimationFrame(flush);
     };
@@ -1627,7 +1655,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
       window.removeEventListener('pointerup', up);
       if (raf) cancelAnimationFrame(raf);
       flush();
-      endGesture();
+      endGesture?.();
       setBox({ ...boxRef.current });
     };
     window.addEventListener('pointermove', move);
