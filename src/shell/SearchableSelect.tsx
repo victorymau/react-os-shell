@@ -8,9 +8,15 @@
  * server-backed lists, wire `onSearchChange` to a debounced query and keep
  * feeding the latest page through `options` — the component keeps working
  * as a dumb view over whatever options it's given.
+ *
+ * The dropdown is portaled to `document.body` and positioned `fixed` at the
+ * trigger's viewport rect. Rendering it in place would let any scrolling /
+ * `overflow-hidden` ancestor (every form's scroll container, a window panel)
+ * clip it — the classic "the list is cut off by the modal footer" bug. See
+ * `PopupMenu`'s `portal` prop for the same reasoning.
  */
-import { useState, useRef, useMemo, useLayoutEffect, type ReactNode, type RefObject } from 'react';
-import useClickOutside from '../hooks/useClickOutside';
+import { useState, useRef, useMemo, useEffect, useLayoutEffect, type ReactNode, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 import { glassStyle } from '../utils/glass';
 import { INPUT_BASE } from '../forms/styles';
 
@@ -56,17 +62,62 @@ export interface SearchableSelectProps {
   rightAdornment?: ReactNode;
 }
 
-/** Flip the dropdown to right-anchored when its max width wouldn't fit
- *  between the trigger's left edge and the viewport's right edge. */
-function useDropdownAlignment(triggerRef: RefObject<HTMLElement | null>, open: boolean, maxWidth: number): boolean {
-  const [alignRight, setAlignRight] = useState(false);
+/** `max-w-[28rem]` on the menu, as a number for the fit math. */
+const POPUP_MAX_WIDTH = 448;
+/** Menu's own max height (former `max-h-60` = 15rem). Capped smaller when the
+ *  viewport is tight. */
+const MENU_MAX_HEIGHT = 240;
+/** Gap between the trigger and the menu, and the viewport safety margin. */
+const MENU_GAP = 4;
+const VIEWPORT_MARGIN = 8;
+
+interface MenuPos {
+  left?: number;
+  right?: number;
+  top?: number;
+  bottom?: number;
+  minWidth: number;
+  maxHeight: number;
+}
+
+/**
+ * Compute the menu's fixed-viewport position from the trigger rect while the
+ * dropdown is open, re-running on scroll (capture, so nested form-scroll
+ * containers count) and resize so it tracks a moving trigger. Anchors below
+ * the trigger by default, flips above when below is cramped and above has more
+ * room, and flips to right-aligned when the max width wouldn't fit to the
+ * right of the trigger's left edge.
+ */
+function useDropdownPosition(triggerRef: RefObject<HTMLElement | null>, open: boolean): MenuPos | null {
+  const [pos, setPos] = useState<MenuPos | null>(null);
   useLayoutEffect(() => {
-    if (!open) return;
-    const rect = triggerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    setAlignRight(window.innerWidth - rect.left < maxWidth);
-  }, [open, maxWidth, triggerRef]);
-  return alignRight;
+    if (!open) { setPos(null); return; }
+    const compute = () => {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const spaceBelow = window.innerHeight - rect.bottom - MENU_GAP - VIEWPORT_MARGIN;
+      const spaceAbove = rect.top - MENU_GAP - VIEWPORT_MARGIN;
+      const placeAbove = spaceBelow < Math.min(MENU_MAX_HEIGHT, 160) && spaceAbove > spaceBelow;
+      const maxHeight = Math.max(96, Math.min(MENU_MAX_HEIGHT, placeAbove ? spaceAbove : spaceBelow));
+      const next: MenuPos = { minWidth: rect.width, maxHeight };
+      if (window.innerWidth - rect.left < POPUP_MAX_WIDTH) {
+        next.right = Math.max(VIEWPORT_MARGIN, window.innerWidth - rect.right);
+      } else {
+        next.left = Math.max(VIEWPORT_MARGIN, rect.left);
+      }
+      if (placeAbove) next.bottom = window.innerHeight - rect.top + MENU_GAP;
+      else next.top = rect.bottom + MENU_GAP;
+      setPos(next);
+    };
+    compute();
+    window.addEventListener('scroll', compute, true);
+    window.addEventListener('resize', compute);
+    return () => {
+      window.removeEventListener('scroll', compute, true);
+      window.removeEventListener('resize', compute);
+    };
+  }, [open, triggerRef]);
+  return pos;
 }
 
 /** Hover-revealed × that clears the selection. The parent is `relative
@@ -104,6 +155,7 @@ export default function SearchableSelect({
   };
   const wrapRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const adornRef = useRef<HTMLDivElement>(null);
 
   // Reserve input padding for the right adornment so long labels truncate
@@ -119,10 +171,7 @@ export default function SearchableSelect({
     setAdornPad(w ? w + (value && !disabled ? 32 : 8) + 6 : null);
   });
 
-  // Flip popup alignment if `max-w-[28rem]` (below) wouldn't fit to the
-  // right of the trigger — keep the constant in sync with the class.
-  const POPUP_MAX_WIDTH = 448;
-  const alignRight = useDropdownAlignment(triggerRef, open, POPUP_MAX_WIDTH);
+  const menuPos = useDropdownPosition(triggerRef, open);
 
   // Cached lookup so the closed-state display can show the current
   // selection's label without scanning options on every keystroke. In
@@ -134,13 +183,24 @@ export default function SearchableSelect({
     return allowFreeText ? value : '';
   }, [options, value, allowFreeText]);
 
-  useClickOutside(wrapRef, () => {
-    if (allowFreeText && search.trim() && search.trim() !== value) {
-      onChange(search.trim());
-    }
-    setOpen(false);
-    setSearch('');
-  });
+  // Close on outside pointer-down. The menu is portaled to `document.body`
+  // (outside `wrapRef`), so the check has to treat clicks inside EITHER the
+  // trigger wrap or the portaled menu as "inside" — otherwise scrolling the
+  // menu or clicking a wide option would dismiss it.
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (wrapRef.current?.contains(t) || menuRef.current?.contains(t)) return;
+      if (allowFreeText && search.trim() && search.trim() !== value) {
+        onChange(search.trim());
+      }
+      setOpen(false);
+      setSearch('');
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open, allowFreeText, search, value, onChange]);
 
   // Dedupe by `value` — call sites occasionally feed option lists that
   // contain the same id twice (a server returning a row twice across pages,
@@ -219,12 +279,25 @@ export default function SearchableSelect({
           {rightAdornment}
         </div>
       )}
-      {open && (
+      {open && createPortal(
         <div
-          className={`absolute z-[200] mt-1 rounded-2xl overflow-hidden ${alignRight ? 'right-0' : 'left-0'} min-w-full max-w-[28rem] w-max`}
-          style={glassStyle()}
+          ref={menuRef}
+          className="fixed z-[400] rounded-2xl overflow-hidden"
+          style={{
+            left: menuPos?.left,
+            right: menuPos?.right,
+            top: menuPos?.top,
+            bottom: menuPos?.bottom,
+            minWidth: menuPos?.minWidth,
+            maxWidth: POPUP_MAX_WIDTH,
+            width: 'max-content',
+            // Hidden for the first paint until the layout effect measures the
+            // trigger, so the menu never flashes at (0,0).
+            visibility: menuPos ? undefined : 'hidden',
+            ...glassStyle(),
+          }}
         >
-          <div className="max-h-60 overflow-y-auto">
+          <div className="overflow-y-auto" style={{ maxHeight: menuPos?.maxHeight ?? MENU_MAX_HEIGHT }}>
             {filtered.length === 0 ? (
               <p className="px-3 py-3 text-sm text-gray-400 text-center">No matches</p>
             ) : (
@@ -241,7 +314,8 @@ export default function SearchableSelect({
               ))
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

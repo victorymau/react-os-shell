@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.11.2] — 2026-07-04
+
+### Fixed
+- **`SearchableSelect` dropdown no longer clipped by a scrolling ancestor.** The
+  options list is now portaled to `document.body` and positioned `fixed` at the
+  trigger's viewport rect instead of being rendered in place with
+  `position: absolute`. In place, any `overflow` ancestor — every form's scroll
+  container, a window panel — clipped the list, so a picker near the bottom of a
+  form (e.g. a customer's Default Payment Term) had its options cut off by the
+  modal footer. The menu now floats above surrounding chrome, flips above the
+  trigger when the space below is cramped, caps its height to the viewport, and
+  tracks the trigger on scroll/resize. Same reasoning as `PopupMenu`'s `portal`
+  prop.
+
 ## [3.11.1] — 2026-07-04
 
 ### Fixed
