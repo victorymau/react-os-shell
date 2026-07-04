@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.11.1] — 2026-07-04
+
+### Fixed
+- **Windows keep their frosted glass while being dragged/resized.** The
+  per-gesture optimization (3.8.5) that drops `backdrop-filter` to avoid
+  per-frame backdrop re-sampling was too broad — it stripped the glass from the
+  very window under the cursor, so a window turned flat/opaque the moment you
+  started moving it. The blur-drop now spares the window being dragged (marked
+  `.rosh-gesture-window`) and still sheds the backdrop-filter on the other,
+  static windows and chrome, so the grabbed window stays glassy with no repaint
+  regression.
+
 ## [3.11.0] — 2026-07-04
 
 ### Added
@@ -33,7 +45,6 @@ All notable changes to this project will be documented in this file. The format 
   `onReorder(from, to)`. Shares the dropzone look and `mediaFileName` with the
   single field. This is the primitive for gallery slots (product/part pictures,
   media zones, attachment thumbs).
-
 ## [3.10.0] — 2026-07-04
 
 ### Added
