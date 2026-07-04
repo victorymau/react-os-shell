@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.13.0] — 2026-07-05
+
+> Note: `3.12.0` was published without this change, so `taskbarGroup` ships as **3.13.0**.
+
+### Added
+- **Cross-route taskbar grouping (`taskbarGroup`).** A `PageRegistryEntry` may
+  now declare `taskbarGroup: { key, label, icon? }`. Windows sharing the same
+  `key` collapse into a SINGLE taskbar button — even across different routes —
+  showing the group `label` and a window count, with the hover preview listing
+  the individual windows. Previously the taskbar grouped strictly by route, so
+  only same-route `multiInstance` copies could stack (e.g. a hub window and the
+  editors it opens now share one button). Fully backward-compatible: entries
+  without `taskbarGroup` group by route exactly as before.
+
 ## [3.11.3] — 2026-07-04
 
 ### Fixed
@@ -74,6 +88,7 @@ All notable changes to this project will be documented in this file. The format 
   `onReorder(from, to)`. Shares the dropzone look and `mediaFileName` with the
   single field. This is the primitive for gallery slots (product/part pictures,
   media zones, attachment thumbs).
+
 ## [3.10.0] — 2026-07-04
 
 ### Added

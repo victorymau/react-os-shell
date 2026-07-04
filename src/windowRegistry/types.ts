@@ -48,6 +48,13 @@ export interface PageRegistryEntry {
    *  activating an existing one. Each instance gets a unique window id and
    *  the taskbar groups them under a single icon. */
   multiInstance?: boolean;
+  /** Collapse this window with other windows that share the same
+   *  `taskbarGroup.key` into ONE taskbar button — even across DIFFERENT routes
+   *  — showing the group `label` and a window count. Without it, windows group
+   *  by route only (so only same-route `multiInstance` copies stack). `icon` is
+   *  a navIcon route key for the grouped button's icon. Use for a family of
+   *  related windows, e.g. a hub + the editors it opens. */
+  taskbarGroup?: { key: string; label: string; icon?: string };
   /** navIcon route key for window title icon (e.g. '/orders'). */
   icon?: string;
 }
