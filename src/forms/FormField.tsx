@@ -33,9 +33,9 @@ export default function FormField({
       )}
       {children}
       {error ? (
-        <p className="mt-1 text-[11px] text-red-600">{error}</p>
+        <p id={htmlFor ? `${htmlFor}-error` : undefined} className="mt-1 text-[11px] text-red-600">{error}</p>
       ) : hint ? (
-        <p className="mt-1 text-[11px] text-gray-400">{hint}</p>
+        <p id={htmlFor ? `${htmlFor}-hint` : undefined} className="mt-1 text-[11px] text-gray-400">{hint}</p>
       ) : null}
     </div>
   );

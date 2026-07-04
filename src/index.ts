@@ -132,6 +132,8 @@ export { default as FormField } from './forms/FormField';
 export type { FormFieldProps } from './forms/FormField';
 export { default as Label } from './forms/Label';
 export type { LabelProps } from './forms/Label';
+export { default as MediaUploadField, mediaFileName } from './forms/MediaUploadField';
+export type { MediaUploadFieldProps } from './forms/MediaUploadField';
 export { INPUT_BASE, inputClasses } from './forms/styles';
 
 // ── Display & layout primitives ──

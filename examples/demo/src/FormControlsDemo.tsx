@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import {
   SearchableSelect,
   StatusBadge,
+  MediaUploadField,
   PopupMenu,
   PopupMenuItem,
   PopupMenuDivider,
@@ -9,6 +10,10 @@ import {
   toast,
   type SearchableOption,
 } from 'react-os-shell';
+
+// A seeded image so the "filled" preview (Replace / Remove) is visible without
+// picking a file first. Any of the demo wallpapers works.
+const SAMPLE_IMAGE = `${import.meta.env.BASE_URL}wallpaper-wanaka.jpg`;
 
 /**
  * Demo for the shell's form-control primitives:
@@ -80,6 +85,26 @@ export default function FormControlsDemo() {
   const [partOptions, setPartOptions] = useState<SearchableOption[]>([]);
   const [searching, setSearching] = useState(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  // MediaUploadField demo state. `bgVideo` / `logo` start empty (CTA state);
+  // `cardImage` is seeded so the filled preview + Replace/Remove is visible.
+  const [bgVideo, setBgVideo] = useState('');
+  const [cardImage, setCardImage] = useState(SAMPLE_IMAGE);
+  const [logo, setLogo] = useState('');
+  const [busyImage, setBusyImage] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  // Simulate a portal's injected picker: normally this opens the app's media
+  // library / upload modal; here it just drops in the sample image after a beat
+  // (and shows the busy state while "uploading").
+  const fakePick = () => {
+    toast.success('A real portal opens its media library here (onPick).');
+    setBusy(true);
+    setTimeout(() => {
+      setBusyImage(SAMPLE_IMAGE);
+      setBusy(false);
+    }, 1200);
+  };
 
   // Async mode: debounce the typed text, then "fetch" matching parts.
   const onPartSearch = (text: string) => {
@@ -182,6 +207,62 @@ export default function FormControlsDemo() {
           <PopupMenuItem danger onClick={() => { toast.error('Cancelled.'); setMenu(null); }}>Cancel order</PopupMenuItem>
         </PopupMenu>
       )}
+
+      <div className="mt-8 mb-4 border-t border-gray-200 pt-5">
+        <h2 className="text-base font-semibold text-gray-900">MediaUploadField</h2>
+        <p className="mt-1 text-sm text-gray-500">
+          The kit's standard media slot — the server-wide pattern for image /
+          video uploads. Empty is a dashed dropzone (glyph + prompt + a
+          “Choose from library or upload” link); once set it previews the asset
+          with <span className="font-medium">Replace</span> /{' '}
+          <span className="font-medium">Remove</span>. It owns no picker modal —
+          each portal injects its own library via{' '}
+          <code className="text-xs bg-gray-100 rounded px-1 py-0.5">onPick</code>.
+          The first three below use the built-in native-file fallback, so you can
+          click or drag a file straight in.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
+        <MediaUploadField
+          label="Background video"
+          accept="video/*"
+          placeholder="Upload a background video"
+          acceptHint="MP4 · WEBM · up to 20 MB"
+          height={128}
+          value={bgVideo}
+          onChange={setBgVideo}
+        />
+
+        <MediaUploadField
+          label="Category image"
+          hint="Seeded so the filled state is visible — try Replace or drag a new file in."
+          accept="image/*"
+          value={cardImage}
+          onChange={setCardImage}
+        />
+
+        <MediaUploadField
+          label="Logo (fit: contain)"
+          accept="image/*"
+          fit="contain"
+          height={96}
+          placeholder="Upload a logo"
+          acceptHint="SVG · PNG"
+          value={logo}
+          onChange={setLogo}
+        />
+
+        <MediaUploadField
+          label="Injected picker (onPick)"
+          hint="onPick would open the portal's media library; here it fakes an upload."
+          accept="image/*"
+          value={busyImage}
+          busy={busy}
+          onChange={setBusyImage}
+          onPick={fakePick}
+        />
+      </div>
     </div>
   );
 }
