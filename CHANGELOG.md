@@ -24,6 +24,15 @@ All notable changes to this project will be documented in this file. The format 
   Also exports **`mediaFileName(url)`** — the shared filename-from-URL helper
   (strips the upload hash prefix, URL-decodes) so a field and its picker show the
   same name. See it under **Form Controls** in the demo.
+- **`MediaUploadGrid` — the multi-image sibling of `MediaUploadField`.** The same
+  dashed dropzone when empty, then a thumbnail grid with an **＋ Add** tile, a
+  per-thumb remove **✕**, optional **drag-to-reorder**, and an optional **Cover**
+  badge on the first item. Presentational and controlled (`items` in) — it owns
+  no picker/upload/ordering: adding is injected via `onPick(droppedFile?)` (click
+  or file-drop onto the zone), removing via `onRemove(id)`, reordering via
+  `onReorder(from, to)`. Shares the dropzone look and `mediaFileName` with the
+  single field. This is the primitive for gallery slots (product/part pictures,
+  media zones, attachment thumbs).
 
 ## [3.10.0] — 2026-07-04
 

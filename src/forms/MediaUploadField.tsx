@@ -23,6 +23,7 @@
 import { useEffect, useId, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react';
 import Button from './Button';
 import FormField from './FormField';
+import { isVideoUrl, mediaFileName, Spinner, UploadGlyph } from './mediaShared';
 
 export interface MediaUploadFieldProps {
   /** The current media URL. Empty string (or null/undefined) = the CTA state. */
@@ -89,47 +90,9 @@ export interface MediaUploadFieldProps {
   disabled?: boolean;
 }
 
-/**
- * Derive a human filename from a media URL: drop the query string, strip a
- * 32-hex upload prefix, and URL-decode. Exported so a field and its picker modal
- * show the same name (single source of truth).
- *
- *   "/media/uploads/9f3…a1_My Clip.mp4?v=2"  →  "My Clip.mp4"
- */
-export function mediaFileName(url: string): string {
-  const path = (url || '').split('?')[0].split('#')[0];
-  const last = path.substring(path.lastIndexOf('/') + 1);
-  try {
-    return decodeURIComponent(last.replace(/^[0-9a-f]{32}_/i, '')) || last;
-  } catch {
-    return last;
-  }
-}
-
-const VIDEO_EXT_RE = /\.(mp4|webm|ogg|ogv|mov|m4v)(\?|#|$)/i;
-
-function Spinner({ className = 'h-5 w-5' }: { className?: string }) {
-  return (
-    <svg className={`${className} animate-spin text-gray-400`} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-    </svg>
-  );
-}
-
-/** Upload-arrow glyph — muted grey, matching the kit's line-icon style. */
-function UploadGlyph() {
-  return (
-    <svg
-      viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6}
-      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="h-6 w-6"
-    >
-      <path d="M12 15V4" />
-      <path d="M8 8l4-4 4 4" />
-      <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
-    </svg>
-  );
-}
+/** Re-exported from the shared media helpers so `import { mediaFileName }` from
+ *  this module (and the package root) keeps working. */
+export { mediaFileName } from './mediaShared';
 
 export default function MediaUploadField({
   value,
@@ -179,7 +142,7 @@ export default function MediaUploadField({
   // Extension first; then the MIME captured for an extensionless blob; then the
   // accept-kind heuristic. The blob check is what makes video preview correct in
   // the native fallback where the URL carries no extension.
-  const isVideo = !!value && (VIDEO_EXT_RE.test(value) || value === videoBlobUrl || (acceptsVideo && !acceptsImage));
+  const isVideo = !!value && (isVideoUrl(value, accept) || value === videoBlobUrl);
   const kindWord = acceptsVideo && !acceptsImage ? 'video' : acceptsImage && !acceptsVideo ? 'image' : 'file';
   const dimLine = placeholder ?? `Upload ${kindWord === 'image' ? 'an image' : `a ${kindWord}`}`;
 
