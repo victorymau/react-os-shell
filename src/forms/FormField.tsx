@@ -10,6 +10,9 @@ export interface FormFieldProps {
   label?: ReactNode;
   /** id of the control, for label-for wiring. */
   htmlFor?: string;
+  /** id for the `<label>` element itself, so a non-labelable control (e.g. a
+   *  `role="group"` wrapper) can name itself via `aria-labelledby`. */
+  labelId?: string;
   /** Greyed helper text below the control. */
   hint?: ReactNode;
   /** Red error text below the control — overrides `hint` when present. */
@@ -21,21 +24,21 @@ export interface FormFieldProps {
 }
 
 export default function FormField({
-  label, htmlFor, hint, error, required, className = '', children,
+  label, htmlFor, labelId, hint, error, required, className = '', children,
 }: FormFieldProps) {
   return (
     <div className={className}>
       {label && (
-        <label htmlFor={htmlFor} className="mb-1 block text-xs font-medium text-gray-600">
+        <label id={labelId} htmlFor={htmlFor} className="mb-1 block text-xs font-medium text-gray-600">
           {label}
           {required && <span className="ml-0.5 text-red-500">*</span>}
         </label>
       )}
       {children}
       {error ? (
-        <p className="mt-1 text-[11px] text-red-600">{error}</p>
+        <p id={htmlFor ? `${htmlFor}-error` : undefined} className="mt-1 text-[11px] text-red-600">{error}</p>
       ) : hint ? (
-        <p className="mt-1 text-[11px] text-gray-400">{hint}</p>
+        <p id={htmlFor ? `${htmlFor}-hint` : undefined} className="mt-1 text-[11px] text-gray-400">{hint}</p>
       ) : null}
     </div>
   );
