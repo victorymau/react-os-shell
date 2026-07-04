@@ -547,16 +547,23 @@ function hideSnapPreview() {
 //      background iframe even if capture is unavailable, and background windows
 //      don't react to the moving cursor; and
 //   3. flag <body> so backdrop-blur (which re-samples the overlapped window
-//      every frame) is dropped and every window is promoted to its own
-//      compositor layer, so moving the foreground window doesn't repaint the
-//      windows behind it.
+//      every frame) is dropped on the *static* windows/chrome, and every
+//      window is promoted to its own compositor layer, so moving the
+//      foreground window doesn't repaint the windows behind it. The window
+//      actually being dragged/resized is marked `.rosh-gesture-window` and
+//      keeps its frosted glass — that's the one the user is looking at, and a
+//      single moving glass surface re-samples cheaply.
 const GESTURE_STYLE_ID = 'rosh-gesture-style';
 function ensureGestureStyle() {
   if (typeof document === 'undefined' || document.getElementById(GESTURE_STYLE_ID)) return;
   const style = document.createElement('style');
   style.id = GESTURE_STYLE_ID;
   style.textContent =
-    'body.rosh-gesturing .backdrop-blur-sm{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}' +
+    // Drop the frosted blur on every glass surface EXCEPT the one inside the
+    // window currently being dragged/resized (`.rosh-gesture-window`), so the
+    // grabbed window keeps its glass while the static windows/chrome shed the
+    // per-frame re-sample.
+    'body.rosh-gesturing .backdrop-blur-sm:not(.rosh-gesture-window *){backdrop-filter:none!important;-webkit-backdrop-filter:none!important}' +
     'body.rosh-gesturing [data-modal-panel]{will-change:transform}';
   document.head.appendChild(style);
 }
@@ -573,6 +580,11 @@ function beginPointerGesture(handle: HTMLElement, pointerId: number, cursor: str
   ensureGestureStyle();
   try { handle.setPointerCapture(pointerId); } catch { /* capture unsupported for this input */ }
   document.body.classList.add('rosh-gesturing');
+  // Spare the window under this gesture from the blur-drop above so it keeps
+  // its frosted glass while moving/resizing; only the other (static) windows
+  // and chrome shed their backdrop-filter for the gesture's duration.
+  const gestureWindow = handle.closest('[data-modal-panel]') as HTMLElement | null;
+  gestureWindow?.classList.add('rosh-gesture-window');
   const shield = document.createElement('div');
   shield.setAttribute('data-drag-shield', '');
   shield.style.cssText = `position:fixed;inset:0;z-index:2147483647;cursor:${cursor};background:transparent;touch-action:none`;
@@ -583,6 +595,7 @@ function beginPointerGesture(handle: HTMLElement, pointerId: number, cursor: str
     done = true;
     try { handle.releasePointerCapture(pointerId); } catch { /* already released on pointerup */ }
     shield.remove();
+    gestureWindow?.classList.remove('rosh-gesture-window');
     document.body.classList.remove('rosh-gesturing');
   };
 }
