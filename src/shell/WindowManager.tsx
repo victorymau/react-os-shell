@@ -238,7 +238,7 @@ function RestoredRegistryModal({ item, onClose, onMinimize }: { item: MinimizedI
       icon={entityIcon}
       title={titleContent}
       footer={footerContent}
-      copyText={item.id}
+      copyText={item.label}
       windowKey={item.id}
       openedFromKey={item.openedFrom}
       size={(entry.size || '2xl') as any}
@@ -692,12 +692,38 @@ function seedDefaultWidgetPositions(widgets: MinimizedItem[]) {
   }
 }
 
+/** Heal a restored session against the legacy id-collision bug. Builds before
+ *  3.14.1 derived a modal window's `id` from its (non-unique) label, so two
+ *  records sharing a label persisted with the same `id` — duplicate React keys
+ *  left one window un-closeable, and a plain reload restored it just as broken.
+ *  Re-key any collided modal to its stable entity identity (matching what
+ *  `openEntity` now emits) and drop any that still collide (the same entity
+ *  persisted twice), so a reload resolves a stuck pair instead of resurrecting
+ *  it. Non-collided windows keep their stored id so their saved box/z-order is
+ *  preserved. */
+function healWindowIds(items: MinimizedItem[]): MinimizedItem[] {
+  const counts = new Map<string, number>();
+  for (const it of items) counts.set(it.id, (counts.get(it.id) ?? 0) + 1);
+  const seen = new Set<string>();
+  const out: MinimizedItem[] = [];
+  for (const it of items) {
+    let id = it.id;
+    if ((counts.get(it.id) ?? 0) > 1 && it.type === 'modal' && it.entityType && it.entityId) {
+      id = `${it.entityType}:${it.entityId}`;
+    }
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(id === it.id ? it : { ...it, id });
+  }
+  return out;
+}
+
 function restoreWindowState(): MinimizedItem[] {
   try {
     if (window.location.pathname === '/login') return [];
     if (!localStorage.getItem('access_token')) return [];
     const stored = localStorage.getItem(SESSION_KEY);
-    if (stored) return JSON.parse(stored);
+    if (stored) return healWindowIds(JSON.parse(stored));
   } catch { /* corrupt data */ }
   // First run for this account — no saved session yet. Seed a top-left stack so
   // the default widgets don't open piled in the centre of the desktop.
@@ -745,11 +771,22 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
 
   const openEntity = useCallback((entityType: string, entityId: string, snapshot?: any, label?: string, route?: string) => {
     if (!WINDOW_REGISTRY[entityType] || !isEntityEntry(WINDOW_REGISTRY[entityType])) return;
-    const id = label || entityId;
+    // The window's identity must equal the dedup identity (entityType + entityId),
+    // NOT the human `label`. Two different records that share a label — e.g. two
+    // wheel finishes on the same design ("Yakama") — would otherwise both get
+    // `id = label`, so they collided: duplicate React keys in the render map and a
+    // shared `windowKey`/`boxKey`. Closing one then filtered both out of state but
+    // left the other's portal panel stranded, its close button a no-op. Keying by
+    // the entity identity guarantees no two live windows can share an id (that's
+    // exactly what the `existing` dedup below already enforces).
+    const id = `${entityType}:${entityId}`;
     const openedFrom = currentlyActiveWindowKey();
     // If already open, just activate it
     setOpenWindows(prev => {
-      const existing = prev.find(m => m.entityId === entityId && m.entityType === entityType);
+      // Compare entityId as a string so a numeric id from one call site and the
+      // string form from another (`42` vs '42') still dedup to one window — and
+      // stay consistent with `id` above, which coerces both to the same string.
+      const existing = prev.find(m => m.entityType === entityType && String(m.entityId) === String(entityId));
       if (existing) {
         activateAfterMount(existing.id);
         return prev;
