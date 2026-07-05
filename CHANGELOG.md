@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.14.2] — 2026-07-05
+
+### Fixed
+- **Windows keep their frosted glass while another window is being dragged.**
+  3.14.0 stopped a *press/hold* from flattening other windows, but during an
+  actual drag/resize the shell still dropped `backdrop-blur` on the static
+  windows (3.14.x kept only the grabbed window frosted) — so starting to move a
+  window flickered the wallpaper-through-glass look off all the others. The
+  per-frame re-sample that suppression guarded against comes from the *moving*
+  window (its backdrop shifts every frame); a static window behind it doesn't
+  re-sample, so its blur is essentially free to keep. Backdrop-blur is now left
+  on for **every** window during a gesture — only the compositor-layer promotion
+  (`will-change: transform`) remains — so no window loses its frosted glass mid-drag.
+
 ## [3.14.1] — 2026-07-05
 
 ### Fixed
