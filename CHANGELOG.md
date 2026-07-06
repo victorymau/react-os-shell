@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.16.1] — 2026-07-07
+
+### Fixed
+- **Detail dialogs no longer open behind the window that spawned them.** An
+  inline `<Modal>` opened from a list (e.g. an entity detail popup) has no
+  `windowKey`, so it was being slotted back into a stale saved z-order keyed by
+  `copyText` — dropping it *behind* the currently active window, which looked
+  like nothing had opened. Keyless modals are now raised to the front on open,
+  matching what `WindowManager.activateAfterMount` already does for
+  `windowKey`-managed windows. Refresh-time z-order restore for real app
+  windows is unaffected.
+
 ## [3.16.0] — 2026-07-06
 
 ### Added

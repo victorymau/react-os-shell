@@ -1142,6 +1142,15 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     modalDepthRef.inc();
     modalStack.push(modalId);
     mountModal(modalId, boxKey);
+    // Inline dialogs (a list's detail Modal, a confirm) have no `windowKey`, so
+    // they never pass through WindowManager's `activateAfterMount` and never
+    // survive a refresh. mountModal would otherwise slot them into a stale
+    // saved z-order (from a prior open, keyed by `copyText`) — dropping them
+    // BEHIND the window they were opened from, which reads as "nothing opened".
+    // A user-initiated open must come to the front, so raise keyless modals
+    // here. WindowManager-managed windows (windowKey set) are fronted by
+    // activateAfterMount instead and must keep their restored order on refresh.
+    if (!windowKey) activateModal(modalId);
     isNested.current = false; // All modals are independent top-level windows
     setZIndex(getZForModal(modalId));
     // Listen for reorder events to update z-index
