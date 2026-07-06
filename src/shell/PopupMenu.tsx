@@ -4,7 +4,7 @@ import { glassStyle, GLASS_DIVIDER } from '../utils/glass';
 
 /**
  * Unified popup menu component — used for all context menus, dropdowns, and flyouts.
- * Reads --menu-density CSS variable: 'tight' or 'normal' (default).
+ * Reads --menu-density CSS variable: 'tight', 'normal' (default), or 'large'.
  */
 
 export interface PopupMenuProps {
@@ -22,7 +22,7 @@ export interface PopupMenuProps {
   portal?: boolean;
 }
 
-function getDensity(): 'tight' | 'normal' {
+function getDensity(): 'tight' | 'normal' | 'large' {
   return (getComputedStyle(document.documentElement).getPropertyValue('--menu-density')?.trim() as any) || 'normal';
 }
 
@@ -89,11 +89,11 @@ export function PopupMenu({ children, style, className = '', onClose, minWidth =
     });
   });
 
-  const tight = getDensity() === 'tight';
+  const density = getDensity();
 
   const menu = (
     <div ref={ref}
-      className={`fixed z-[400] rounded-2xl ${tight ? 'py-1' : 'py-1.5'} ${className}`}
+      className={`fixed z-[400] rounded-2xl ${density === 'tight' ? 'py-1' : density === 'large' ? 'py-2' : 'py-1.5'} ${className}`}
       style={{ minWidth, animation: 'popup-in 0.12s ease-out', ...glassStyle(), ...style }}>
       {children}
       <style>{`@keyframes popup-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }`}</style>
@@ -111,7 +111,13 @@ export function PopupMenuItem({ onClick, children, className = '', danger, disab
   danger?: boolean;
   disabled?: boolean;
 }) {
-  const tight = getDensity() === 'tight';
+  const density = getDensity();
+  // Vertical gap between items. `normal` sits a little tighter than the raw
+  // size padding; `large` adds a bit more room. Floored at the tight value so
+  // the reduced `normal` never drops below `tight` at the smallest menu size.
+  const itemPadY = density === 'tight' ? '0.25rem'
+    : density === 'large' ? '0.6rem'
+    : 'max(0.25rem, calc(var(--menu-padding-y, 0.5rem) - 0.1rem))';
   return (
     <button
       onClick={onClick}
@@ -127,8 +133,8 @@ export function PopupMenuItem({ onClick, children, className = '', danger, disab
         fontSize: 'var(--menu-font-size, 14px)',
         paddingLeft: 'var(--menu-padding-x, 1rem)',
         paddingRight: 'var(--menu-padding-x, 1rem)',
-        paddingTop: tight ? '0.25rem' : 'var(--menu-padding-y, 0.5rem)',
-        paddingBottom: tight ? '0.25rem' : 'var(--menu-padding-y, 0.5rem)',
+        paddingTop: itemPadY,
+        paddingBottom: itemPadY,
       }}
     >
       {children}
@@ -138,21 +144,22 @@ export function PopupMenuItem({ onClick, children, className = '', danger, disab
 
 /** A divider line between menu items */
 export function PopupMenuDivider() {
-  const tight = getDensity() === 'tight';
-  return <div className={`border-t ${GLASS_DIVIDER} ${tight ? 'my-0.5' : 'my-1'} mx-3`} />;
+  const density = getDensity();
+  return <div className={`border-t ${GLASS_DIVIDER} ${density === 'tight' ? 'my-0.5' : density === 'large' ? 'my-1.5' : 'my-1'} mx-3`} />;
 }
 
 /** A section header label */
 export function PopupMenuLabel({ children }: { children: ReactNode }) {
-  const tight = getDensity() === 'tight';
+  const density = getDensity();
+  const labelPadY = density === 'tight' ? '0.125rem' : density === 'large' ? '0.375rem' : '0.25rem';
   return (
     <div
       className="text-[10px] font-medium text-gray-400 uppercase tracking-wider"
       style={{
         paddingLeft: 'var(--menu-padding-x, 1rem)',
         paddingRight: 'var(--menu-padding-x, 1rem)',
-        paddingTop: tight ? '0.125rem' : '0.25rem',
-        paddingBottom: tight ? '0.125rem' : '0.25rem',
+        paddingTop: labelPadY,
+        paddingBottom: labelPadY,
       }}
     >
       {children}

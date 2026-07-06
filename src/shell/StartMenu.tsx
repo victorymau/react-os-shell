@@ -19,6 +19,8 @@ interface StartMenuProps {
   openWindows: { route?: string; label: string }[];
   profile: any; user: any; onLogout: () => void; onNavigate: (path: string) => void;
   taskbarPosition: 'top' | 'bottom' | 'left' | 'right'; taskbarH: number; taskbarW?: number;
+  /** Gap (px) between the menu and the taskbar edge; set per taskbar size by Layout. */
+  taskbarGap?: number;
   size?: 'small' | 'medium' | 'large';
   /** Override the default nav sections (sections + top-level items). */
   navSections?: (NavSection | NavItem)[];
@@ -34,7 +36,7 @@ const ITEM_H = 36; // approximate height per menu item in px
 
 export default function StartMenu({
   open, onClose, openPage, profile, user, onLogout,
-  taskbarPosition, taskbarH, taskbarW = 0, size = 'medium',
+  taskbarPosition, taskbarH, taskbarW = 0, taskbarGap = 4, size = 'medium',
   navSections = defaultNavSections,
   navIcons = defaultNavIcons,
   sectionIcons = defaultSectionIcons,
@@ -242,10 +244,10 @@ export default function StartMenu({
   ] : [];
 
   const posStyle: React.CSSProperties =
-    taskbarPosition === 'top' ? { top: taskbarH + 8, left: 8 } :
-    taskbarPosition === 'left' ? { top: 8, left: taskbarW + 8 } :
-    taskbarPosition === 'right' ? { top: 8, right: taskbarW + 8 } :
-    { bottom: taskbarH + 8, left: 8 };
+    taskbarPosition === 'top' ? { top: taskbarH + taskbarGap, left: 8 } :
+    taskbarPosition === 'left' ? { top: 8, left: taskbarW + taskbarGap } :
+    taskbarPosition === 'right' ? { top: 8, right: taskbarW + taskbarGap } :
+    { bottom: taskbarH + taskbarGap, left: 8 };
 
   const iconEl = (path: string) => {
     const icon = navIcons[path];
@@ -268,14 +270,19 @@ export default function StartMenu({
     ? hoveredVirtual.items
     : (hoveredData ? getVisibleItems(hoveredData) : []);
 
-  // Density from CSS variable
+  // Density from CSS variable — three tiers controlling the vertical gap between
+  // rows: tight < normal < large. `normal` is the default and sits a little
+  // tighter than `large`.
   const menuDensity = typeof document !== 'undefined' ? (getComputedStyle(document.documentElement).getPropertyValue('--menu-density')?.trim() || 'normal') : 'normal';
-  const tight = menuDensity === 'tight';
+  const density: 'tight' | 'normal' | 'large' = menuDensity === 'tight' || menuDensity === 'large' ? menuDensity : 'normal';
 
-  // Size-dependent styles (adjusted for density)
-  const sizeConfig = tight
-    ? { small: { w: 'w-52', fw: 'w-44', text: 'text-xs', py: 'py-1', px: 'px-3', mw: 208, itemH: 24 }, medium: { w: 'w-56', fw: 'w-48', text: 'text-xs', py: 'py-1', px: 'px-3', mw: 224, itemH: 26 }, large: { w: 'w-64', fw: 'w-52', text: 'text-sm', py: 'py-1.5', px: 'px-3', mw: 256, itemH: 30 } }[size]
-    : { small: { w: 'w-56', fw: 'w-48', text: 'text-xs', py: 'py-1.5', px: 'px-3', mw: 224, itemH: 30 }, medium: { w: 'w-64', fw: 'w-56', text: 'text-sm', py: 'py-2', px: 'px-4', mw: 256, itemH: 36 }, large: { w: 'w-72', fw: 'w-60', text: 'text-sm', py: 'py-2.5', px: 'px-4', mw: 288, itemH: 40 } }[size];
+  // Size-dependent styles, adjusted for density.
+  const sizeConfigByDensity = {
+    tight:  { small: { w: 'w-52', fw: 'w-44', text: 'text-xs', py: 'py-1',   px: 'px-3', mw: 208, itemH: 24 }, medium: { w: 'w-56', fw: 'w-48', text: 'text-xs', py: 'py-1',   px: 'px-3', mw: 224, itemH: 26 }, large: { w: 'w-64', fw: 'w-52', text: 'text-sm', py: 'py-1.5', px: 'px-3', mw: 256, itemH: 30 } },
+    normal: { small: { w: 'w-56', fw: 'w-48', text: 'text-xs', py: 'py-1.5', px: 'px-3', mw: 224, itemH: 30 }, medium: { w: 'w-64', fw: 'w-56', text: 'text-sm', py: 'py-1.5', px: 'px-4', mw: 256, itemH: 32 }, large: { w: 'w-72', fw: 'w-60', text: 'text-sm', py: 'py-2',   px: 'px-4', mw: 288, itemH: 36 } },
+    large:  { small: { w: 'w-56', fw: 'w-48', text: 'text-xs', py: 'py-2', px: 'px-3', mw: 224, itemH: 32 }, medium: { w: 'w-64', fw: 'w-56', text: 'text-sm', py: 'py-2', px: 'px-4', mw: 256, itemH: 36 }, large: { w: 'w-72', fw: 'w-60', text: 'text-sm', py: 'py-2', px: 'px-4', mw: 288, itemH: 36 } },
+  };
+  const sizeConfig = sizeConfigByDensity[density][size];
   const menuGlass = glassStyle();
   const itemCls = `w-full flex items-center gap-2 rounded-lg ${sizeConfig.px} ${sizeConfig.py} ${sizeConfig.text}`;
 

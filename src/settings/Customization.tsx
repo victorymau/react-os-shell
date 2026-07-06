@@ -442,6 +442,7 @@ export default function Customization({ omit, section }: CustomizationProps = {}
               {([
                 { key: 'tight', label: 'Tight' },
                 { key: 'normal', label: 'Normal' },
+                { key: 'large', label: 'Large' },
               ]).map(s => (
                 <button key={s.key} onClick={() => savePref('menu_density', s.key)}
                   className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${

@@ -761,9 +761,11 @@ export default function Layout({
   const desktopDblClick: string = prefs.desktop_dblclick || 'deactivate';
 
   const isVerticalTaskbar = taskbarPosition === 'left' || taskbarPosition === 'right';
-  const taskbarH = isVerticalTaskbar ? 0 : (taskbarSize === 'small' ? 40 : taskbarSize === 'large' ? 72 : 56);
+  const taskbarH = isVerticalTaskbar ? 0 : (taskbarSize === 'small' ? 42 : taskbarSize === 'large' ? 72 : 56);
   const taskbarW = isVerticalTaskbar ? (taskbarSize === 'small' ? 180 : taskbarSize === 'large' ? 260 : 220) : 0;
-  const taskbarHClass = taskbarSize === 'small' ? 'h-10' : taskbarSize === 'large' ? 'h-[72px]' : 'h-14';
+  // Gap between the Start menu and the taskbar edge, tuned per taskbar size.
+  const taskbarGap = taskbarSize === 'small' ? 2 : taskbarSize === 'large' ? 6 : 4;
+  const taskbarHClass = taskbarSize === 'small' ? 'h-[42px]' : taskbarSize === 'large' ? 'h-[72px]' : 'h-14';
   const taskbarWClass = taskbarSize === 'small' ? 'w-[180px]' : taskbarSize === 'large' ? 'w-[260px]' : 'w-[220px]';
   // Transparency preferences → CSS custom properties for Modal.tsx to read
   const taskbarOpacity = (prefs.transparency_taskbar ?? 70) / 100;
@@ -939,6 +941,7 @@ export default function Layout({
           taskbarPosition={taskbarPosition as 'top' | 'bottom' | 'left' | 'right'}
           taskbarH={taskbarH}
           taskbarW={taskbarW}
+          taskbarGap={taskbarGap}
           size={(prefs.start_menu_size || 'medium') as 'small' | 'medium' | 'large'}
           navSections={navSections}
           navIcons={navIcons}

@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.16.0] — 2026-07-06
+
+### Added
+- **New `Large` menu density.** The menu Density setting (System Preferences →
+  Customization → Menu) now offers a third option alongside Tight and Normal.
+  Large gives roomier menus: 8px vertical padding on Start-menu rows and a
+  `0.6rem` item gap in context menus, dropdowns, and the notification popup.
+
+### Changed
+- **Slightly reduced the Normal menu density.** Normal now sits a touch tighter
+  than before (medium menu size: Start-menu row padding 8px → 6px, context-menu
+  item gap ~0.5rem → ~0.4rem), leaving clearer separation between Normal and the
+  new Large tier. Tight is unchanged.
+- **Small taskbar height is now 42px** (was 40px). Medium (56px) and large
+  (72px) are unchanged.
+- **The Start menu sits closer to the taskbar, scaled by taskbar size.** The gap
+  between the Start menu and the taskbar edge is now 2/4/6px for the small /
+  medium / large taskbar (previously a flat 8px).
+- **More visible window-thumbnail close button.** The close button on window
+  thumbnails (Exposé / taskbar previews) is slightly larger with a stronger
+  backdrop so it reads over any snapshot.
+
 ## [3.15.0] — 2026-07-06
 
 ### Added
