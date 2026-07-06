@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.15.0] — 2026-07-06
+
+### Added
+- **`EntityList` right-click bulk menu.** Right-clicking a row opens a context
+  menu that acts on the tick-box selection (selecting the row first if it
+  wasn't already). Two new opt-in props:
+  - `exportEndpoint` (+ optional `exportFilename`) — adds a built-in **Export
+    selected to CSV** that downloads just the ticked rows from the list's
+    `<base>/export_csv/` endpoint (`?ids=…`), honouring the visible/ordered
+    columns. Uses the consumer-registered `apiClient` (`setShellApiClient`).
+  - `contextActions(items) => EntityListContextAction[]` — page-supplied domain
+    actions (e.g. invoice Post / Cancel), each with `label`, `onClick`,
+    optional `danger` / `disabled` / `divider`.
+  A **Clear selection** item is always offered once a menu exists. Lists that
+  pass neither prop have no context menu — fully backward-compatible.
+
 ## [3.14.2] — 2026-07-05
 
 ### Fixed

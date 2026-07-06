@@ -102,7 +102,7 @@ export type { ImageAnnotatorHandle, ImageAnnotatorProps } from './apps/ImageAnno
 
 // ── Pageless data grid primitives ──
 export { default as EntityList } from './data/EntityList';
-export type { EntityListColumn, EntityListProps } from './data/EntityList';
+export type { EntityListColumn, EntityListProps, EntityListContextAction } from './data/EntityList';
 export { default as Kanban } from './data/Kanban';
 export type { KanbanColumn, KanbanProps } from './data/Kanban';
 export { default as ResizableTable } from './data/ResizableTable';
