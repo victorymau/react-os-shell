@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.16.2] — 2026-07-07
+
+### Fixed
+- **Create/draft entity windows no longer fire a doomed detail GET.** A window
+  opened for an unsaved record (`openEntity` mints a placeholder id like
+  `new-1783415283039`) was still running the registry detail query —
+  `GET {endpoint}new-…/` — which always 404s since nothing is persisted yet,
+  spamming server error telemetry. `RestoredRegistryModal` now skips the fetch
+  for `new-…` draft ids, mirroring the existing skip for duplicate windows. The
+  create form is unchanged: it was already driven by the window snapshot, not
+  the fetch result.
+
 ## [3.16.1] — 2026-07-07
 
 ### Fixed

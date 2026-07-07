@@ -162,12 +162,17 @@ function RestoredRegistryModal({ item, onClose, onMinimize }: { item: MinimizedI
   // Use queryKey from registry (matches what detail components invalidate) or derive from endpoint
   const qkPrefix = entry.queryKey || entry.endpoint.replace(/^\/|\/$/g, '').split('/').pop() || item.entityType;
   const isDuplicate = item.entitySnapshot?._duplicate;
+  // Unsaved "create" windows carry a placeholder id like `new-1783415283039`
+  // (openEntity mints these for a not-yet-persisted record). There is nothing to
+  // fetch — the GET would always 404 — so skip the detail query, exactly as we
+  // do for duplicate windows. The snapshot already drives the create form.
+  const isDraft = typeof item.entityId === 'string' && item.entityId.startsWith('new-');
   const { data: entity, isLoading, refetch } = useQuery({
     queryKey: [qkPrefix, item.entityId],
     queryFn: () => apiClient.get(`${entry.endpoint}${item.entityId}/`).then(r => r.data),
     initialData: item.entitySnapshot,
     initialDataUpdatedAt: 0, // Treat snapshot as stale so query refetches immediately
-    enabled: !entry.selfFetching && !isDuplicate && isShellApiClientConfigured(),
+    enabled: !entry.selfFetching && !isDuplicate && !isDraft && isShellApiClientConfigured(),
     staleTime: 0,
     refetchOnWindowFocus: true,
     refetchOnMount: 'always',
@@ -177,11 +182,11 @@ function RestoredRegistryModal({ item, onClose, onMinimize }: { item: MinimizedI
 
   // Refetch entity data whenever this modal is activated (brought to front)
   useEffect(() => {
-    if (entry.selfFetching || isDuplicate) return;
+    if (entry.selfFetching || isDuplicate || isDraft) return;
     const handler = () => { refetch(); };
     window.addEventListener('modal-reorder', handler);
     return () => window.removeEventListener('modal-reorder', handler);
-  }, [refetch, entry.selfFetching, isDuplicate]);
+  }, [refetch, entry.selfFetching, isDuplicate, isDraft]);
 
   // When editing, close/ESC exits edit mode instead of closing the window
   const handleClose = useCallback(() => {
