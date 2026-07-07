@@ -15,6 +15,13 @@ import toast from '../shell/toast';
 import { WindowTitle, getActiveModalId, registerModalEscapeInterceptor } from '../shell/Modal';
 import AboutApp from './_about';
 import ImageAnnotator, { type ImageAnnotatorHandle } from './ImageAnnotator';
+import {
+  PDF_PREVIEW_UPDATE_EVENT,
+  peekPdfPreviewStage,
+  claimPdfPreviewStage,
+  type PdfPreviewData,
+  type PendingPdfStage,
+} from './_previewStage';
 
 /** Slot at the right end of the outer Preview toolbar — each format panel
  *  portals its own action buttons (page nav, zoom, layers, download, etc.)
@@ -67,61 +74,10 @@ if (typeof window !== 'undefined' && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
     `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 }
 
-export interface PdfPreviewData {
-  /** Object URL or remote URL of the PDF. Blob URLs are revoked when the window unmounts.
-   *  Leave blank when staging a `converting: true` placeholder; call `handle.update({...})`
-   *  on the handle returned by `setPdfPreview` once conversion finishes. */
-  url?: string;
-  /** Display name (and download filename). */
-  filename: string;
-  /** Renderer to use. Defaults to `'pdf'`. `'dxf'` requires the consumer to
-   *  have `dxf-viewer` installed (it's an optional peer dep). `'image'`
-   *  renders an `<img>` for raster screenshots / photos. `'3d'` covers
-   *  STEP / STL / OBJ / GLTF / 3MF / IGES via the optional
-   *  `online-3d-viewer` peer dep. */
-  kind?: 'pdf' | 'dxf' | 'image' | '3d';
-  /** Optional download handler — replaces the built-in "save URL as filename" if supplied. */
-  onDownload?: () => void;
-  /** Optional email handler — only shown when supplied. */
-  onEmail?: () => void;
-  /** Show a progress placeholder while the consumer fetches/converts the file. */
-  converting?: boolean;
-  /** Headline shown on the converting placeholder (e.g. "CONVERTING DWG FILE"). */
-  convertingMessage?: string;
-}
-
-const EVENT_NAME = 'react-os-shell:pdf-preview-update';
-
-/** Handle returned by `setPdfPreview`. Holds the identity of the staged
- *  payload so a later `.update()` only targets the window that picked it up
- *  (not every open Preview, which would clobber unrelated windows). */
-export interface PdfPreviewHandle {
-  /** Replace the data shown in the window that consumed this staging.
-   *  No-op if no window ever consumed it, or if that window has been closed. */
-  update(next: PdfPreviewData): void;
-}
-
-interface PendingStage {
-  token: number;
-  data: PdfPreviewData;
-}
-
-let pending: PendingStage | null = null;
-let nextToken = 0;
-
-/** Stage a PDF for the next Preview window mount. The returned handle's
- *  `update()` method swaps content in *that* specific window only — use it
- *  to replace a `converting: true` placeholder with the resolved file. */
-export function setPdfPreview(data: PdfPreviewData): PdfPreviewHandle {
-  const token = ++nextToken;
-  pending = { token, data };
-  return {
-    update(next: PdfPreviewData) {
-      if (typeof window === 'undefined') return;
-      window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: { token, data: next } }));
-    },
-  };
-}
+// The consumer-facing staging surface (`setPdfPreview`, PdfPreviewData,
+// PdfPreviewHandle) lives in ./_previewStage so that hosts importing it don't
+// pull this module — and its static pdfjs-dist import — into their startup
+// bundle. This component drains the stage via the @internal peek/claim pair.
 
 export default function Preview() {
   // One-shot drain: this instance claims whatever was staged and stores the
@@ -131,16 +87,17 @@ export default function Preview() {
   // suspends on its chunk), and a destructive read here would let the
   // discarded pass swallow the payload, leaving the committed window empty.
   // The stage is cleared in the mount effect below (commit phase) instead.
-  const consumedRef = useRef<PendingStage | null | undefined>(undefined);
+  const consumedRef = useRef<PendingPdfStage | null | undefined>(undefined);
   if (consumedRef.current === undefined) {
-    consumedRef.current = pending;
+    consumedRef.current = peekPdfPreviewStage();
   }
   useEffect(() => {
-    // Claim the stage for real once mounted. The identity check keeps a
-    // payload staged *after* our render-phase peek (e.g. a second preview
-    // opened in quick succession) available for the window it belongs to.
-    if (consumedRef.current !== null && pending === consumedRef.current) {
-      pending = null;
+    // Claim the stage for real once mounted. The identity check (inside
+    // claimPdfPreviewStage) keeps a payload staged *after* our render-phase
+    // peek (e.g. a second preview opened in quick succession) available for
+    // the window it belongs to.
+    if (consumedRef.current != null) {
+      claimPdfPreviewStage(consumedRef.current);
     }
   }, []);
   const [data, setData] = useState<PdfPreviewData | null>(consumedRef.current?.data ?? null);
@@ -150,7 +107,7 @@ export default function Preview() {
     const myToken = consumedRef.current?.token;
     if (myToken == null) return;
     const handler = (e: Event) => {
-      const detail = (e as CustomEvent<PendingStage>).detail;
+      const detail = (e as CustomEvent<PendingPdfStage>).detail;
       if (!detail || detail.token !== myToken) return;
       setData(prev => {
         if (prev?.url && prev.url !== detail.data.url && prev.url.startsWith('blob:')) {
@@ -159,8 +116,8 @@ export default function Preview() {
         return detail.data;
       });
     };
-    window.addEventListener(EVENT_NAME, handler);
-    return () => window.removeEventListener(EVENT_NAME, handler);
+    window.addEventListener(PDF_PREVIEW_UPDATE_EVENT, handler);
+    return () => window.removeEventListener(PDF_PREVIEW_UPDATE_EVENT, handler);
   }, []);
 
   // Revoke blob URL on unmount.

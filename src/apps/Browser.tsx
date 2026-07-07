@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from 'react';
 import { WindowTitle } from '../shell/Modal';
 import { confirm } from '../shell/ConfirmDialog';
 import AboutApp from './_about';
+import { peekBrowserStartUrl, claimBrowserStartUrl, type PendingStartUrl } from './_browserStage';
 
 interface Bookmark {
   label: string;
@@ -71,20 +72,9 @@ function loadBookmarks(): Bookmark[] {
   return DEFAULT_BOOKMARKS;
 }
 
-interface PendingStartUrl {
-  token: number;
-  url: string;
-}
-
-let pendingStartUrl: PendingStartUrl | null = null;
-let nextStartToken = 0;
-
-/** Stage a URL for the next Browser window mount — pair with
- *  `openPage('/browser')`. Used by "open this link in the Browser" flows
- *  (e.g. links inside an email body). */
-export function setBrowserStartUrl(url: string): void {
-  pendingStartUrl = { token: ++nextStartToken, url };
-}
+// The consumer-facing `setBrowserStartUrl` lives in ./_browserStage so that
+// hosts importing it don't pull this module into their startup bundle. This
+// component drains the stage via the @internal peek/claim pair.
 
 function loadHomepage(): string {
   if (typeof window === 'undefined') return DEFAULT_HOMEPAGE;
@@ -99,11 +89,11 @@ export default function Browser() {
   // effect below.
   const consumedRef = useRef<PendingStartUrl | null | undefined>(undefined);
   if (consumedRef.current === undefined) {
-    consumedRef.current = pendingStartUrl;
+    consumedRef.current = peekBrowserStartUrl();
   }
   useEffect(() => {
-    if (consumedRef.current !== null && pendingStartUrl === consumedRef.current) {
-      pendingStartUrl = null;
+    if (consumedRef.current != null) {
+      claimBrowserStartUrl(consumedRef.current);
     }
   }, []);
   const startUrl = consumedRef.current ? normalizeUrl(consumedRef.current.url) : '';

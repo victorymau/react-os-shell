@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
 import { PopupMenu, PopupMenuItem, PopupMenuDivider } from './PopupMenu';
 import { useWindowManager } from './WindowManager';
-import { setPdfPreview } from '../apps/Preview';
+import { setPdfPreview } from '../apps/_previewStage';
 import toast from './toast';
 
 export interface PdfActionButtonProps {

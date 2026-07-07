@@ -3,6 +3,13 @@ import EditableGrid from '../shell/EditableGrid';
 import type { GridColumn, CellStyle } from '../shell/EditableGrid';
 import { WindowTitle } from '../shell/Modal';
 import AboutApp from './_about';
+import {
+  SPREADSHEET_PREVIEW_UPDATE_EVENT,
+  peekSpreadsheetPreviewStage,
+  claimSpreadsheetPreviewStage,
+  type SpreadsheetPreviewData,
+  type PendingSpreadsheetStage,
+} from './_spreadsheetStage';
 
 const TITLE_DISPLAY_MAX = 24;
 function truncateForTitle(s: string) {
@@ -76,48 +83,11 @@ function sheetFromCSV(text: string, sheetName: string): Sheet | null {
   return { id: crypto.randomUUID(), name: sheetName, columns: makeColumns(maxCols), data: padded, cellStyles: {} };
 }
 
-export interface SpreadsheetPreviewData {
-  /** CSV text (comma- or tab-separated). */
-  csv: string;
-  /** Display name; the title strips a trailing `.csv`/`.tsv`/`.txt`. */
-  filename: string;
-  /** When provided, the toolbar shows an Email button that calls back with the
-   *  sheet serialized as CSV at click time (edits included) and a filename
-   *  derived from the current title. */
-  onEmail?: (csv: string, filename: string) => void;
-}
-
-const SPREADSHEET_EVENT_NAME = 'react-os-shell:spreadsheet-preview-update';
-
-/** Handle returned by `setSpreadsheetPreview`. Holds the identity of the
- *  staged payload so a later `.update()` only targets the window that picked
- *  it up — opening a second Spreadsheet never clobbers the first. */
-export interface SpreadsheetPreviewHandle {
-  /** Replace the data shown in the window that consumed this staging.
-   *  No-op if no window ever consumed it, or if that window has been closed. */
-  update(next: SpreadsheetPreviewData): void;
-}
-
-interface PendingSpreadsheetStage {
-  token: number;
-  data: SpreadsheetPreviewData;
-}
-
-let pendingSpreadsheet: PendingSpreadsheetStage | null = null;
-let nextSpreadsheetToken = 0;
-
-/** Stage CSV content for the next Spreadsheet window mount. The returned
- *  handle's `update()` method swaps content in *that* specific window only. */
-export function setSpreadsheetPreview(data: SpreadsheetPreviewData): SpreadsheetPreviewHandle {
-  const token = ++nextSpreadsheetToken;
-  pendingSpreadsheet = { token, data };
-  return {
-    update(next: SpreadsheetPreviewData) {
-      if (typeof window === 'undefined') return;
-      window.dispatchEvent(new CustomEvent(SPREADSHEET_EVENT_NAME, { detail: { token, data: next } }));
-    },
-  };
-}
+// The consumer-facing staging surface (`setSpreadsheetPreview`,
+// SpreadsheetPreviewData, SpreadsheetPreviewHandle) lives in
+// ./_spreadsheetStage so that hosts importing it don't pull this module into
+// their startup bundle. This component drains the stage via the @internal
+// peek/claim pair.
 
 export default function Spreadsheet() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -130,14 +100,15 @@ export default function Spreadsheet() {
   // The stage is cleared in the mount effect below (commit phase) instead.
   const consumedRef = useRef<PendingSpreadsheetStage | null | undefined>(undefined);
   if (consumedRef.current === undefined) {
-    consumedRef.current = pendingSpreadsheet;
+    consumedRef.current = peekSpreadsheetPreviewStage();
   }
   useEffect(() => {
-    // Claim the stage for real once mounted. The identity check keeps a
-    // payload staged *after* our render-phase peek (e.g. a second preview
-    // opened in quick succession) available for the window it belongs to.
-    if (consumedRef.current !== null && pendingSpreadsheet === consumedRef.current) {
-      pendingSpreadsheet = null;
+    // Claim the stage for real once mounted. The identity check (inside
+    // claimSpreadsheetPreviewStage) keeps a payload staged *after* our
+    // render-phase peek (e.g. a second preview opened in quick succession)
+    // available for the window it belongs to.
+    if (consumedRef.current != null) {
+      claimSpreadsheetPreviewStage(consumedRef.current);
     }
   }, []);
   const initialPreview = (() => {
@@ -202,8 +173,8 @@ export default function Spreadsheet() {
       setTitle(detail.data.filename.replace(/\.(csv|tsv|txt)$/i, ''));
       setEmailHandler(() => detail.data.onEmail);
     };
-    window.addEventListener(SPREADSHEET_EVENT_NAME, handler);
-    return () => window.removeEventListener(SPREADSHEET_EVENT_NAME, handler);
+    window.addEventListener(SPREADSHEET_PREVIEW_UPDATE_EVENT, handler);
+    return () => window.removeEventListener(SPREADSHEET_PREVIEW_UPDATE_EVENT, handler);
   }, []);
   const [editingTitle, setEditingTitle] = useState(false);
   const [editingTab, setEditingTab] = useState<number | null>(null);

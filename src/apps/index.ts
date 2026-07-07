@@ -81,10 +81,13 @@ export {
 
 export { BUILTIN_APP_INFO } from './_about';
 export type { BuiltinAppId, BuiltinAppInfo } from './_about';
-export { setPdfPreview } from './Preview';
-export { setSpreadsheetPreview } from './Spreadsheet';
-export { setBrowserStartUrl } from './Browser';
-export { openFilesInTrashMode, setFilesDemoTree } from './Files';
-export type { FilesDemoNode } from './Files';
-export type { PdfPreviewData, PdfPreviewHandle } from './Preview';
-export type { SpreadsheetPreviewData, SpreadsheetPreviewHandle } from './Spreadsheet';
+// Setters/config live in small standalone modules (not the app-implementation
+// files) so importing them here never drags an app chunk — most notably
+// Preview's static pdfjs-dist import — into a host's startup bundle.
+export { setPdfPreview } from './_previewStage';
+export { setSpreadsheetPreview } from './_spreadsheetStage';
+export { setBrowserStartUrl } from './_browserStage';
+export { openFilesInTrashMode, setFilesDemoTree } from './_filesShared';
+export type { FilesDemoNode } from './_filesShared';
+export type { PdfPreviewData, PdfPreviewHandle } from './_previewStage';
+export type { SpreadsheetPreviewData, SpreadsheetPreviewHandle } from './_spreadsheetStage';
