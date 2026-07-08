@@ -28,41 +28,19 @@ import {
   peekFilesViewRequest,
   getDesktopFoldersSnapshot,
   subscribeDesktopFolders,
-  requestFilesTrashView,
   FILES_SHOW_TRASH_EVENT,
   FILES_OPEN_DESKTOP_FOLDER_EVENT,
   type DesktopItem,
 } from '../shell/desktopIcons';
+import { getFilesDemoTree, type FilesDemoNode } from './_filesShared';
 
-/**
- * Demo filesystem. When a consumer (e.g. the demo app) injects a static tree
- * via `setFilesDemoTree`, Files browses it in-memory — no file server needed.
- * Browse-only: upload / new-folder / rename / delete / trash are hidden while a
- * demo tree is set. Consumers with a real file server never call it, so their
- * behaviour is unchanged.
- */
-export interface FilesDemoNode {
-  name: string;
-  kind: 'file' | 'folder';
-  size?: number;
-  modifiedAt?: string;
-  children?: FilesDemoNode[];
-}
-let filesDemoTree: FilesDemoNode[] | null = null;
-export function setFilesDemoTree(tree: FilesDemoNode[] | null) {
-  filesDemoTree = tree;
-}
+// The consumer-facing surface (`setFilesDemoTree`, `openFilesInTrashMode`,
+// FilesDemoNode) lives in ./_filesShared so that hosts importing it don't
+// pull this module into their startup bundle.
 
 const DEFAULT_SERVER =
   (typeof window !== 'undefined' && (window as any).__REACT_OS_SHELL_FILE_SERVER__) ||
   'http://localhost:4000';
-
-// Side-channel for opening Files on a specific view (trash, desktop folder).
-// The flag + event plumbing lives in shell/desktopIcons.tsx; this wrapper is
-// kept because consumers import it from the package.
-export function openFilesInTrashMode() {
-  requestFilesTrashView();
-}
 
 /** Main-pane view: the server file tree, the server trash, or a virtual
  *  desktop shortcut folder (published live by the Desktop component). */
@@ -125,6 +103,7 @@ function formatTime(iso: string) {
 
 /** Resolve a directory path against the injected demo tree → its child entries. */
 function demoEntriesAt(dir: string): FileEntry[] {
+  const filesDemoTree = getFilesDemoTree();
   if (!filesDemoTree) return [];
   let level: FilesDemoNode[] = filesDemoTree;
   for (const part of dir.split('/').filter(Boolean)) {
@@ -142,7 +121,7 @@ function demoEntriesAt(dir: string): FileEntry[] {
 
 export default function Files() {
   const server = DEFAULT_SERVER.replace(/\/$/, '');
-  const demoMode = filesDemoTree !== null;
+  const demoMode = getFilesDemoTree() !== null;
   const [path, setPath] = useState('/');
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [rootFolders, setRootFolders] = useState<string[]>([]);

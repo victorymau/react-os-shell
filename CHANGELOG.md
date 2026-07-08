@@ -4,7 +4,22 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
-## [3.16.2] — 2026-07-07
+## [3.16.3] — 2026-07-08
+
+### Fixed
+- **`react-os-shell/apps` no longer drags pdfjs (~511 kB) into host startup
+  bundles.** The apps index re-exported `setPdfPreview` directly from the
+  Preview implementation, so any host importing the apps entry statically
+  pulled the whole viewer chunk — including its static `pdfjs-dist` import —
+  even though the Preview component itself is lazy. The consumer-facing
+  setters now live in tiny standalone modules (`setPdfPreview`,
+  `setSpreadsheetPreview`, `setBrowserStartUrl`, `setFilesDemoTree` /
+  `openFilesInTrashMode`), and the app implementations (Preview, Spreadsheets,
+  Browser, Files) are reachable only through their `React.lazy` dynamic
+  imports. `PdfActionButton` and `openPreviewFile` in the main entry were
+  rewired the same way, so the root `react-os-shell` import sheds the viewer
+  chunk too. No API change — everything is still exported from the same
+  entry points.
 
 ### Fixed
 - **Create/draft entity windows no longer fire a doomed detail GET.** A window

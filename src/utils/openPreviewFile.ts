@@ -8,8 +8,8 @@
  * prefs adapter.
  */
 import toast from '../shell/toast';
-import { setPdfPreview } from '../apps/Preview';
-import { setSpreadsheetPreview } from '../apps/Spreadsheet';
+import { setPdfPreview } from '../apps/_previewStage';
+import { setSpreadsheetPreview } from '../apps/_spreadsheetStage';
 
 export type PreviewFileKind = 'pdf' | 'dxf' | '3d' | 'image' | 'csv';
 
