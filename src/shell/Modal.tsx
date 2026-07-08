@@ -1482,11 +1482,10 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     // the title bar still activates the window but doesn't drag it.
     if (alwaysMaximized) { e.preventDefault(); return; }
     e.preventDefault();
-    // The gesture (pointer capture, drag shield, and the backdrop-blur
-    // suppression that flattens every frosted window) is deferred until the
-    // pointer actually moves past DRAG_THRESHOLD — a press-and-hold or a plain
-    // click on the title bar must not strip the frosted glass off other
-    // windows. `null` until the first real move; started in `move`, ended in `up`.
+    // The gesture (pointer capture, drag shield, compositor-layer promotion)
+    // is deferred until the pointer actually moves past DRAG_THRESHOLD — a
+    // press-and-hold or a plain click on the title bar must not engage any of
+    // it. `null` until the first real move; started in `move`, ended in `up`.
     const dragHandle = e.currentTarget as HTMLElement;
     const dragPointerId = e.pointerId;
     let endGesture: (() => void) | null = null;
@@ -1530,13 +1529,23 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
       if (!endGesture) {
         if (Math.abs(ev.clientX - sx) < DRAG_THRESHOLD && Math.abs(ev.clientY - sy) < DRAG_THRESHOLD) return;
         endGesture = beginPointerGesture(dragHandle, dragPointerId, 'move');
+        // The exposé exit path leaves `transition: transform` on the panel for
+        // ~320ms — a drag starting inside that window would animate/lag every
+        // frame's translate below, so pin transitions off for the gesture.
+        if (panel) panel.style.transition = 'none';
       }
       const nx = ox + ev.clientX - sx;
       const ny = Math.max(0, oy + ev.clientY - sy);
-      if (panel) {
-        panel.style.left = `${nx}px`;
-        panel.style.top = `${ny}px`;
-      }
+      // Move via transform, NOT left/top: mutating left/top invalidates layout
+      // of the whole window subtree every frame — reflowing a heavy list at
+      // pointer rate is what made drags stutter on older machines. translate()
+      // runs on the compositor against the will-change:transform layer the
+      // gesture style promotes, so the window's contents are never re-laid-out
+      // or repainted mid-drag. Inline left/top stay pinned at the gesture
+      // origin (matching the `box` state set above), so a mid-drag React
+      // re-render re-applies the same origin and can't fight the transform —
+      // with left/top writes it would snap the window back for a frame.
+      if (panel) panel.style.transform = `translate(${nx - ox}px, ${ny - oy}px)`;
       boxRef.current = { ...boxRef.current, x: nx, y: ny };
 
       // Snap detection: ignore for widgets so they keep free-positioning.
@@ -1559,7 +1568,18 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
       // Snap drop: lock to the snap target, save the pre-snap size for next drag.
       if (!widget && currentZone) {
         preSnapBoxRef.current = { x: ox, y: oy, w: actualW, h: actualH };
-        setBox(calcSnapBox(currentZone));
+        const snapped = calcSnapBox(currentZone);
+        // Commit the snap target inline in the same frame the transform is
+        // cleared, so the panel never flashes back to the gesture origin.
+        if (panel) {
+          panel.style.left = `${snapped.x}px`;
+          panel.style.top = `${snapped.y}px`;
+          panel.style.width = `${snapped.w}px`;
+          panel.style.height = `${snapped.h}px`;
+          panel.style.transform = '';
+          panel.style.transition = '';
+        }
+        setBox(snapped);
         return;
       }
 
@@ -1569,7 +1589,15 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
         const mid = window.innerWidth / 2;
         setWidgetAnchor(centerX > mid ? 'right' : 'left');
       }
-      // Sync React state once on drop — keep inline position until React re-renders
+      // Commit the drag delta into inline left/top and clear the transform in
+      // one style pass, then sync React state once — the inline position holds
+      // the window in place until the re-render lands.
+      if (panel) {
+        panel.style.left = `${finalBox.x}px`;
+        panel.style.top = `${finalBox.y}px`;
+        panel.style.transform = '';
+        panel.style.transition = '';
+      }
       setBox(finalBox);
     };
     window.addEventListener('pointermove', move);
