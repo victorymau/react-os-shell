@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.17.0] — 2026-07-08
+
+### Added
+- **Taskbar thumbnail peek — hover a preview to spotlight its window.** Hovering
+  any window thumbnail in a taskbar tab's hover popover now fades every other
+  open window down to 40% opacity while the hovered thumbnail's window stays
+  fully opaque, so you can see at a glance which window a preview belongs to
+  before clicking. Sliding between thumbnails in a grouped set cross-fades the
+  spotlight; the desktop restores to full opacity as soon as the pointer leaves
+  the popover. Purely visual — driven by a `body.rosh-peeking` class plus a
+  `data-peek-focus` marker on the target panel, so it never touches a window's
+  inline styles and cleans up on unmount.
+
 ## [3.16.3] — 2026-07-08
 
 ### Fixed
