@@ -44,6 +44,33 @@
   background-color: rgba(255, 255, 255, 0.06);
 }
 
+/* ── Reduce transparency (Preferences → Customization) ──────────────────────
+ * When the user turns on "Reduce transparency", Layout adds this class to
+ * <html>. Two effects, applied globally so every present-and-future glass
+ * surface is covered without per-component edits:
+ *   1. Force every window/taskbar/menu opacity variable fully opaque, so the
+ *      surfaces that tint via `rgb(... / var(--*-opacity))` become solid. The
+ *      `!important` beats Layout's inline (non-important) custom-property writes.
+ *   2. Strip backdrop-filter everywhere — the blur is the GPU-expensive part on
+ *      older machines. `!important` overrides both Tailwind `backdrop-blur-*`
+ *      utilities and inline `backdropFilter` from glassStyle(). glassStyle()
+ *      also returns a solid background under this class so menus/popups don't
+ *      read as washed-out translucent panels once the blur is gone. */
+html.rosh-reduce-transparency {
+  --active-header-opacity: 1 !important;
+  --active-content-opacity: 1 !important;
+  --inactive-header-opacity: 1 !important;
+  --inactive-content-opacity: 1 !important;
+  --menu-opacity: 1 !important;
+  --taskbar-opacity: 1 !important;
+}
+html.rosh-reduce-transparency *,
+html.rosh-reduce-transparency *::before,
+html.rosh-reduce-transparency *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
 /* Base theme colors for transparent windows */
 :root {
   --window-header-rgb: 243 244 246;

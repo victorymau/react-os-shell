@@ -767,8 +767,13 @@ export default function Layout({
   const taskbarGap = taskbarSize === 'small' ? 2 : taskbarSize === 'large' ? 6 : 4;
   const taskbarHClass = taskbarSize === 'small' ? 'h-[42px]' : taskbarSize === 'large' ? 'h-[72px]' : 'h-14';
   const taskbarWClass = taskbarSize === 'small' ? 'w-[180px]' : taskbarSize === 'large' ? 'w-[260px]' : 'w-[220px]';
+  // "Reduce transparency" (Preferences → Customization): drop the frosted-glass
+  // blur and make surfaces solid for better performance on older machines. The
+  // root class drives the global stylesheet rule (blur strip + opacity vars) and
+  // glassStyle(); the taskbar tints from a JS value below, so force it opaque here.
+  const reduceTransparency = !!prefs.reduce_transparency;
   // Transparency preferences → CSS custom properties for Modal.tsx to read
-  const taskbarOpacity = (prefs.transparency_taskbar ?? 70) / 100;
+  const taskbarOpacity = reduceTransparency ? 1 : (prefs.transparency_taskbar ?? 70) / 100;
   const menuOpacity = (prefs.transparency_start_menu ?? 95) / 100;
   const inactiveHeaderOpacity = (prefs.transparency_inactive_header ?? 70) / 100;
   const inactiveContentOpacity = (prefs.transparency_inactive_content ?? 80) / 100;
@@ -776,6 +781,10 @@ export default function Layout({
   const activeContentOpacity = (prefs.transparency_active_content ?? 90) / 100;
   useEffect(() => {
     const root = document.documentElement;
+    // Drives the global reduce-transparency stylesheet rule (blur strip + solid
+    // opacity vars) and glassStyle(). Kept in the same effect as the opacity
+    // vars so both land on the same frame when the pref changes.
+    root.classList.toggle('rosh-reduce-transparency', reduceTransparency);
     root.style.setProperty('--inactive-header-opacity', String(inactiveHeaderOpacity));
     root.style.setProperty('--inactive-content-opacity', String(inactiveContentOpacity));
     root.style.setProperty('--active-header-opacity', String(activeHeaderOpacity));
@@ -815,7 +824,7 @@ export default function Layout({
     root.style.setProperty('--menu-padding-y', sv.py);
     root.style.setProperty('--window-tab-width', sv.tabW);
     root.style.setProperty('--window-tab-font-size', sv.tabFont);
-  }, [inactiveHeaderOpacity, inactiveContentOpacity, activeHeaderOpacity, activeContentOpacity, taskbarH, taskbarPosition, prefs.default_window_size, prefs.window_position, prefs.menu_density, prefs.start_menu_size, sidebarWidth, layoutMode]);
+  }, [reduceTransparency, inactiveHeaderOpacity, inactiveContentOpacity, activeHeaderOpacity, activeContentOpacity, taskbarH, taskbarPosition, prefs.default_window_size, prefs.window_position, prefs.menu_density, prefs.start_menu_size, sidebarWidth, layoutMode]);
 
   // Mobile-only CSS var: bottom-nav reservation height. Modal reads this to
   // shrink fullscreen apps so they don't render under the nav. Zero on desktop

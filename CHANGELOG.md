@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.18.0] — 2026-07-08
+
+### Added
+- **"Reduce transparency" preference** (Preferences → Customization →
+  Transparency). Turning it on drops the frosted-glass `backdrop-filter` blur —
+  the GPU-expensive effect that makes window drags and menu opens stutter on
+  older machines — and makes windows, menus, popups and the taskbar solid.
+  While it's on, the individual Transparency sliders are disabled (they no
+  longer have any effect). Driven by a single `rosh-reduce-transparency` root
+  class: a global stylesheet rule strips every `backdrop-filter` and forces the
+  window/menu/taskbar opacity variables opaque, and `glassStyle()` returns a
+  solid, blur-free surface — so every current and future glass surface is
+  covered without per-component changes. Persists per-user through the existing
+  `ShellPrefsProvider` adapter (new `reduce_transparency` pref key).
+
 ## [3.17.1] — 2026-07-08
 
 ### Fixed
