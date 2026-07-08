@@ -83,7 +83,7 @@ export interface EntityListProps<T> {
  *
  * Usage:
  *
- *   const { sort, onSort } = useSort('mid');
+ *   const { sort, onSort } = useSort('mid', 'asc', 'suppliers');
  *   const { items, totalCount, isLoading, isFetchingNextPage, sentinelRef } =
  *     useInfiniteScroll<Supplier>({ queryKey: ['suppliers', filters],
  *                                   fetchFn: (p) => getSuppliers(p) });

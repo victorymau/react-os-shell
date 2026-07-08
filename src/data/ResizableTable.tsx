@@ -78,11 +78,16 @@ export default function ResizableTable({
     setSavingDefault(true);
     const visibleKeys = allColumns.filter(c => !c.hidden).map(c => c.key);
     const viewport = isMobile ? 'mobile' : 'desktop';
+    // Capture the sort the admin is looking at too, so "default for all
+    // users" covers ordering as well as columns. Lists that don't wire a
+    // `sort` prop omit the key and leave any previously-saved sort alone.
+    const payload: Record<string, unknown> = { visible_columns: visibleKeys };
+    if (sort) payload.sort = sort;
     try {
       await apiClient
-        .patch(`/auth/default-columns/${tableId}/`, { visible_columns: visibleKeys }, { params: { viewport } })
+        .patch(`/auth/default-columns/${tableId}/`, payload, { params: { viewport } })
         .catch(() =>
-          apiClient.post('/auth/default-columns/', { table_id: tableId, viewport, visible_columns: visibleKeys }),
+          apiClient.post('/auth/default-columns/', { table_id: tableId, viewport, ...payload }),
         );
       setSavedDefault(true);
       setTimeout(() => setSavedDefault(false), 2000);
