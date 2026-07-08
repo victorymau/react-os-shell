@@ -813,14 +813,18 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
     const openedFrom = currentlyActiveWindowKey();
     setOpenWindows(prev => {
       // Multi-instance pages always spawn a new window with a unique id.
+      // The window is identified by `id`, never by label — so every instance
+      // keeps the plain registry label. The instance count surfaces only as the
+      // taskbar group's blue count badge (derived live at render). Baking a
+      // `${label} N` ordinal into the stored label used to strand a stale
+      // number on a lone leftover window (close #1 of two, and #2's tab still
+      // read "Designs 2" with no badge, since a single window never groups).
       if (entry.multiInstance) {
-        const instanceCount = prev.filter(m => m.type === 'page' && m.route === path).length;
-        const nextNum = instanceCount + 1;
         const id = `page:${path}:${Math.random().toString(36).slice(2, 8)}`;
         activateAfterMount(id);
         return [...prev, {
           id, type: 'page' as const,
-          label: instanceCount === 0 ? entry.label : `${entry.label} ${nextNum}`,
+          label: entry.label,
           route: path,
           openedFrom,
         }];
