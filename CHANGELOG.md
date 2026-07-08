@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.17.0] — 2026-07-08
+
+### Added
+- **List sorting is now remembered like columns are.** `useSort` accepts an
+  optional third `tableId` argument (the same id the list passes to
+  `<EntityList>`/`<ResizableTable>`). When given, the user's sort choice is
+  persisted per-user through the `ShellPrefsProvider` adapter
+  (`prefs.sort_{tableId}`) and restored on the next visit; localStorage
+  mirrors the value so the first render already uses the last-known sort.
+  Restore precedence: per-user pref → admin-saved default → the page's
+  hardcoded default. Without `tableId`, behaviour is unchanged.
+- **"Save as default for all users" now includes sorting.** The column
+  picker's admin save sends the current `sort` alongside `visible_columns`
+  to `/auth/default-columns/{tableId}/`, and `useSort` applies that default
+  for users who haven't chosen their own sort. Requires a backend that
+  accepts/returns a `sort` field on the default-columns endpoint (EFFICIENT
+  backend ≥ 23.7.0); older backends ignore the extra key harmlessly.
+
 ## [3.16.3] — 2026-07-08
 
 ### Fixed
