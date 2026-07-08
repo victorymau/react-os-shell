@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.19.1] — 2026-07-09
+
+### Fixed
+- **A lone multi-instance window no longer keeps a stale `N` suffix on its
+  taskbar tab.** Opening a `multiInstance` page a second time baked a
+  `${label} 2` ordinal straight into the window's stored label. While both
+  copies were open they grouped into one tab showing the label + a blue count
+  badge, so the ordinal stayed hidden — but closing the *first* copy left the
+  second one ungrouped, and its tab fell back to the raw stored label, reading
+  e.g. "Designs 2" as plain text with no badge (a count of one). Windows are
+  identified by `id`, never by label, so the spawn now always stores the plain
+  registry label. The instance count surfaces only where it is derived live —
+  the taskbar group's blue badge — so a single window reads "Designs" and two
+  read "Designs" + a blue **2**.
+
 ## [3.19.0] — 2026-07-09
 
 ### Added
