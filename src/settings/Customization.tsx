@@ -103,6 +103,19 @@ export default function Customization({ omit, section }: CustomizationProps = {}
     save({ [key]: value });
   };
 
+  // "Reduce transparency" — drops the frosted-glass blur and makes surfaces
+  // solid (better performance on older machines). Toggle the root class now for
+  // instant feedback (Layout's effect reconciles once the prefs adapter
+  // settles) and mirror optimistically so the checkbox + slider disabling don't
+  // lag the save round-trip. Reuses the appearance optimistic mirror + settle
+  // effect above.
+  const reduceOn = !!pref('reduce_transparency');
+  const setReduce = (on: boolean) => {
+    document.documentElement.classList.toggle('rosh-reduce-transparency', on);
+    setOptimisticAppearance(prev => ({ ...prev, reduce_transparency: on }));
+    save({ reduce_transparency: on });
+  };
+
   // Debounced save for sliders — updates local state instantly, saves after 300ms idle
   const [localSliders, setLocalSliders] = useState<Record<string, number>>({});
   const sliderTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -335,7 +348,23 @@ export default function Customization({ omit, section }: CustomizationProps = {}
       {/* ── Transparency ── */}
       <div>
         <h3 className="text-sm font-semibold text-gray-900 mb-3">Transparency</h3>
-        <div className="space-y-3">
+        {/* Reduce transparency: master switch that overrides the sliders below.
+            When on, the shell drops the frosted-glass blur and makes every
+            surface solid — the sliders are disabled because they no longer
+            have any effect. */}
+        <label className="flex items-start gap-2 cursor-pointer mb-3">
+          <input type="checkbox" checked={reduceOn} onChange={e => setReduce(e.target.checked)}
+            className="h-4 w-4 mt-0.5 rounded border-gray-300 text-blue-600" />
+          <span className="text-sm text-gray-700">
+            Reduce transparency
+            <span className="block text-xs text-gray-400">
+              Turn off the frosted-glass blur and make windows, menus and the taskbar solid.
+              Improves performance on older machines.
+            </span>
+          </span>
+        </label>
+        <div className={`space-y-3 transition-opacity ${reduceOn ? 'opacity-40 pointer-events-none select-none' : ''}`}
+          aria-disabled={reduceOn}>
           {([
             { key: 'transparency_taskbar', label: 'Taskbar', defaultVal: 70 },
             { key: 'transparency_start_menu', label: 'Start Menu', defaultVal: 70 },
@@ -348,9 +377,9 @@ export default function Customization({ omit, section }: CustomizationProps = {}
             return (
               <div key={item.key} className="flex items-center gap-3">
                 <span className="text-sm text-gray-700 w-64 shrink-0">{item.label}</span>
-                <input type="range" min={20} max={100} value={val}
+                <input type="range" min={20} max={100} value={val} disabled={reduceOn}
                   onChange={e => saveSlider(item.key, Number(e.target.value))}
-                  className="flex-1 h-1.5 accent-blue-600 cursor-pointer" />
+                  className="flex-1 h-1.5 accent-blue-600 cursor-pointer disabled:cursor-not-allowed" />
                 <span className="text-xs text-gray-500 w-10 text-right font-mono">{val}%</span>
               </div>
             );

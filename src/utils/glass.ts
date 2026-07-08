@@ -17,11 +17,41 @@ function isDarkTheme(): boolean {
   }
 }
 
+/** Whether the "Reduce transparency" preference is active (root class set by
+ *  Layout). When on, glass surfaces render solid + blur-free — the blur is the
+ *  GPU-expensive part, and dropping it is the point of the setting. */
+function reduceTransparency(): boolean {
+  try {
+    return document.documentElement.classList.contains('rosh-reduce-transparency');
+  } catch {
+    return false;
+  }
+}
+
 /** Frosted glass style — shared across all menus, popups, and glass UI elements.
  * Reads --menu-opacity CSS variable set by the theme system, and adapts the
  * base tint to dark mode so menus don't stay light-cream when text is light. */
 export function glassStyle(opacity?: number): CSSProperties {
   const o = opacity ?? getMenuOpacity();
+  if (reduceTransparency()) {
+    // Reduce-transparency: a fully opaque, blur-free surface. No
+    // backdrop-filter (the expensive part on low-end GPUs) and a solid
+    // background so menus/popups stay legible over any wallpaper. The global
+    // stylesheet rule also strips backdrop-filter, but returning a solid
+    // background here is what keeps the surface from reading as washed-out
+    // translucent glass with the blur gone.
+    return isDarkTheme()
+      ? {
+          background: '#1e1e2e',
+          border: '1px solid rgba(255,255,255,0.12)',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+        }
+      : {
+          background: '#ffffff',
+          border: '1px solid rgba(0,0,0,0.12)',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+        };
+  }
   if (isDarkTheme()) {
     // Dark frosted glass — Catppuccin-aligned base (#1e1e2e / 30,30,46) with
     // a subtle gradient and lighter inner highlight.
