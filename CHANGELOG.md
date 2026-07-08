@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.17.1] — 2026-07-08
+
+### Fixed
+- **Window dragging no longer re-lays-out the window's contents every frame.**
+  The drag gesture moved the panel by mutating `left`/`top` per pointer move,
+  which invalidates layout for the whole window subtree — a window full of
+  table rows re-flowed at pointer rate, which is what made drags stutter on
+  older machines. The gesture now moves the panel with a compositor-only
+  `transform: translate()` (against the `will-change: transform` layer the
+  gesture style already promotes) and commits `left`/`top` once on drop —
+  including the snap-drop and restore-from-snap paths, which commit inline in
+  the same style pass so the panel never flashes back to its gesture origin.
+  As a side effect this also fixes a latent glitch where a React re-render
+  landing mid-drag snapped the window back to its gesture-start position for
+  a frame. Resize is unchanged (size changes genuinely require layout).
+
 ## [3.17.0] — 2026-07-08
 
 ### Added
