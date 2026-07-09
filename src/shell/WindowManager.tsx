@@ -317,6 +317,45 @@ function findPanelByLabel(label: string): HTMLElement | null {
   return null;
 }
 
+// Aero-peek: while the user hovers a taskbar thumbnail, fade every open window
+// down to 40% except the one the thumbnail belongs to, which stays fully
+// opaque so it stands out on the desktop behind the popover. Toggled purely
+// via a body class + a marker attribute — never touches a panel's inline
+// styles, so it cleans up for free and can't be stranded. The dim animates
+// (transition is scoped to `.rosh-peeking`); dropping the class snaps every
+// window crisply back to full. Mirrors `ensureGestureStyle` in Modal.tsx.
+const PEEK_STYLE_ID = 'rosh-peek-style';
+function ensurePeekStyle() {
+  if (typeof document === 'undefined' || document.getElementById(PEEK_STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = PEEK_STYLE_ID;
+  style.textContent =
+    'body.rosh-peeking [data-modal-panel]{transition:opacity .18s ease;opacity:.4}' +
+    'body.rosh-peeking [data-modal-panel][data-peek-focus]{opacity:1}';
+  document.head.appendChild(style);
+}
+
+/** Bring `panel` forward by fading every other open window to 40%. Passing
+ *  null clears the effect. Re-marking a different panel while already peeking
+ *  keeps the body class on, so sliding between thumbnails cross-fades the two
+ *  windows instead of flashing everything back to full opacity. */
+function setPeekFocus(panel: HTMLElement | null) {
+  if (typeof document === 'undefined') return;
+  ensurePeekStyle();
+  document.querySelectorAll('[data-modal-panel][data-peek-focus]')
+    .forEach(el => el.removeAttribute('data-peek-focus'));
+  if (panel) panel.setAttribute('data-peek-focus', '');
+  document.body.classList.toggle('rosh-peeking', !!panel);
+}
+
+/** Drop the peek — restore every window to full opacity. */
+function clearPeekFocus() {
+  if (typeof document === 'undefined') return;
+  document.body.classList.remove('rosh-peeking');
+  document.querySelectorAll('[data-modal-panel][data-peek-focus]')
+    .forEach(el => el.removeAttribute('data-peek-focus'));
+}
+
 /** Render a single window snapshot. The card sizes itself to the source
  *  panel's aspect ratio (clamped to maxW × maxH) so the snapshot fills
  *  the card with no empty letterboxing. When the source window is
@@ -456,6 +495,11 @@ function TaskbarTabPreview({ items, anchorEl, onActivate, onClose, onMouseEnter,
     return () => ro.disconnect();
   }, [anchorEl, items.length]);
 
+  // Safety net: always drop the peek when the popover unmounts, so the
+  // desktop never gets stranded dimmed if the mouse never fires a leave
+  // (e.g. the popover closes because its taskbar button was activated).
+  useEffect(() => clearPeekFocus, []);
+
   // When the taskbar is on top, the popover hangs below the tab, so the
   // snapshot should sit closest to the tab (i.e. on top of the popover) and
   // the title sits beneath it. Every other taskbar position keeps the title
@@ -473,10 +517,14 @@ function TaskbarTabPreview({ items, anchorEl, onActivate, onClose, onMouseEnter,
       }}
       className={isGroup ? 'flex gap-2 flex-wrap' : ''}
       onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
+      onMouseLeave={() => { clearPeekFocus(); onMouseLeave(); }}
     >
       {items.map(it => (
-        <div key={it.id} className="group flex flex-col items-center">
+        <div
+          key={it.id}
+          className="group flex flex-col items-center"
+          onMouseEnter={() => setPeekFocus(findPanelByWindowKey(it.id) ?? findPanelByLabel(it.label))}
+        >
           {!titleBelow && <span className={titleClass}>{it.label}</span>}
           <ThumbCard
             id={it.id}

@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.19.0] — 2026-07-09
+
+### Added
+- **Taskbar thumbnail peek** — hovering a window thumbnail in a taskbar tab's
+  hover popover now fades every *other* open window down to 40% opacity while
+  the hovered thumbnail's window stays fully opaque, so it's obvious which
+  window a preview belongs to before you click. Sliding between thumbnails
+  cross-fades the spotlight; the desktop restores to full the moment the
+  pointer leaves the popover. Driven by a single `body.rosh-peeking` class plus
+  a `data-peek-focus` marker on the target panel (CSS injected once, mirroring
+  `ensureGestureStyle`) — it never touches a window's inline styles and cleans
+  up on unmount, so a window can never be stranded dimmed.
+- **Exposé tile close button** — hovering a window tile in Exposé /
+  Mission-Control mode now reveals a round ✕ button pinned to the tile's
+  top-right corner; clicking it closes that window (honouring the unsaved-
+  changes confirm) without leaving Exposé, so you can tidy up several windows
+  in one pass. The button lives inside the tile's hover-capture layer and
+  counter-scales to a real ~30 px target regardless of how small the tile is.
+
 ## [3.18.0] — 2026-07-08
 
 ### Added
