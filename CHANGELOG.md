@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.24.1] — 2026-07-20
+
+### Fixed
+- **`confirm()` / `confirmDestructive()` / `prompt()` now consume `Escape`.**
+  These dialogs float above the window layer but aren't shell windows, so
+  pressing `Escape` over one used to reach the frontmost window's close handler
+  and close the **window beneath** the dialog instead of the dialog. The dialog
+  provider now registers a modal escape-interceptor while any dialog is open,
+  dismissing the top-most dialog (cancel) and leaving the underlying window
+  open. No effect when a dialog is shown with no window beneath it.
+
 ## [3.24.0] — 2026-07-20
 
 ### Added
@@ -20,6 +31,8 @@ All notable changes to this project will be documented in this file. The format 
   header/footer colour render exactly as before. Widgets (no title bar) and
   mobile fullscreen windows skip the stripe; omitting the prop keeps today's
   rendering everywhere.
+
+## [3.23.0] — 2026-07-18
 
 ### Changed
 - **Clicking a control in an inactive window now only brings the window
