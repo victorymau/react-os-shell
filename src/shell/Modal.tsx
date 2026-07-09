@@ -1803,9 +1803,15 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
 
   // ── Full window — render via portal when nested to escape parent overflow:hidden ──
   const exposeTile = exposeActive ? computeExposeTile(modalId) : null;
+  // Factor that shrinks a full-size window into its exposé tile. Hoisted so the
+  // hover close-button can counter-scale (1/exposeScale) back to a real,
+  // clickable on-screen size no matter how small the tile is.
+  const exposeScale = exposeActive && exposeTile
+    ? Math.min(exposeTile.w / box.w, exposeTile.h / box.h)
+    : 1;
   const exposeStyle = (() => {
     if (exposeActive && exposeTile) {
-      const scale = Math.min(exposeTile.w / box.w, exposeTile.h / box.h);
+      const scale = exposeScale;
       const scaledW = box.w * scale;
       const scaledH = box.h * scale;
       const tx = exposeTile.x + (exposeTile.w - scaledW) / 2 - box.x;
@@ -1855,6 +1861,9 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
         className={`fixed rounded-2xl flex flex-col overflow-hidden ${widget ? (isActive ? 'shadow-2xl' : 'shadow-lg') : `border ${isActive ? 'shadow-2xl border-gray-200' : 'shadow-lg border-gray-300'}`}`}
         onMouseDownCapture={(e) => {
           if (exposeActive) {
+            // The exposé close button handles its own click — let it through so
+            // the capture-phase "select this window" logic doesn't swallow it.
+            if ((e.target as HTMLElement).closest('[data-expose-close]')) return;
             // In exposé mode, any click on a tileable window selects it.
             e.preventDefault();
             e.stopPropagation();
@@ -2097,7 +2106,38 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
               setExposeState(false);
             }}
             onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
-          />
+          >
+            {/* Close button — revealed while the tile is hovered, pinned to the
+             *  tile's top-right corner. It lives INSIDE the hover-capture layer
+             *  (not as a sibling) so sliding the pointer onto it doesn't fire a
+             *  mouseleave and flicker the hover off. Counter-scaled by
+             *  1/exposeScale so it stays a real ~30px target however small the
+             *  tile is; honours the dirty-close confirm via `guardedClose`. */}
+            {exposeHovered && (
+              <button
+                type="button"
+                data-expose-close
+                aria-label="Close window"
+                title="Close"
+                className="absolute flex items-center justify-center rounded-full bg-black/55 text-white shadow-lg ring-1 ring-white/40 transition-colors hover:bg-red-500"
+                style={{
+                  top: 8,
+                  right: 8,
+                  width: 30,
+                  height: 30,
+                  transform: `scale(${1 / exposeScale})`,
+                  transformOrigin: 'top right',
+                  zIndex: 10000,
+                }}
+                onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                onClick={(e) => { e.stopPropagation(); e.preventDefault(); guardedClose(); }}
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
         )}
       </div>
       {/* EXPOSÉ label — title under the thumbnail (no hover styling on the
