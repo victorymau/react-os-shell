@@ -4,6 +4,45 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.25.0] — 2026-07-20
+
+### Added
+- **Taskbar peek now raises the window, not just brightens it.** Hovering a
+  thumbnail lifts its window above the others while they fall back a layer and
+  dim, so a window buried at the bottom of the stack becomes readable without
+  clicking. The raise is a single author-`!important` z-index rule keyed on the
+  same `body.rosh-peeking` + `data-peek-focus` markers as the dim — it never
+  writes a panel's inline styles, never calls `activateModal`, and stops
+  applying the moment the marker drops, so a hover can neither reorder your
+  windows nor strand one on top. It lands at `249`: above every window in the
+  activation ladder, below the taskbar at `250`, so a peeked window never
+  covers the thumbnail you are hovering.
+- **Windows pinned on top are exempt from the raise** (new `data-pinned-top`
+  marker), keeping their `999` lane rather than being demoted — the same reason
+  Windows leaves topmost windows out of Aero Peek. `data-utility` is *not* the
+  test: it only means a window *may* be pinned, and every bundled app sets it.
+- **Off-screen windows are surfaced and recoverable.** A window that is partly
+  outside the work area gets an amber dot on its taskbar tab, and its hover
+  thumbnail grows an "Off screen" pill whose arrow points at where the window
+  actually is. Clicking the thumbnail slides it fully back into view (keeping
+  its size and roughly its position) and focuses it. Deliberately not a
+  floating arrow on the desktop: neither Windows nor macOS annotates a lost
+  window, and the thumbnail already shows its content.
+
+### Fixed
+- **A window can no longer be dragged out of reach.** Drags were clamped only
+  at the top edge, so a window grabbed near the right end of its title bar
+  could be shoved off the left or bottom and never grabbed again. Position is
+  now clamped — on drag commit, on restore from a saved box, and on browser
+  resize — so the full title bar stays inside the work area and at least 80px
+  of the window stays grabbable. Parking a window mostly off the side still
+  works, as it does on macOS.
+- **Shrinking the browser no longer strands windows outside the viewport.** The
+  resize handler previously refitted only *maximized* windows; windowed ones
+  kept their old geometry and could end up entirely outside the new work area.
+  They are now nudged back to reachable, and a box saved on a larger screen is
+  sanitised before the window reopens.
+
 ## [3.24.0] — 2026-07-20
 
 ### Added
@@ -20,6 +59,8 @@ All notable changes to this project will be documented in this file. The format 
   header/footer colour render exactly as before. Widgets (no title bar) and
   mobile fullscreen windows skip the stripe; omitting the prop keeps today's
   rendering everywhere.
+
+## [3.23.0] — 2026-07-18
 
 ### Changed
 - **Clicking a control in an inactive window now only brings the window

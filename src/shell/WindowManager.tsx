@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient, { isShellApiClientConfigured } from '../api/client';
 import { WINDOW_REGISTRY, isPageEntry, isEntityEntry, type PageRegistryEntry, type ModalRegistryEntry } from '../windowRegistry/types';
-import Modal, { triggerSplitView, modalDepthRef, getActiveModalId, subscribeActive, activateModal, ExposeBackdrop, WindowShortcutProvider, setWindowDefaultPosition, type WindowShortcutSpec } from './Modal';
+import Modal, { triggerSplitView, modalDepthRef, getActiveModalId, subscribeActive, activateModal, ExposeBackdrop, WindowShortcutProvider, setWindowDefaultPosition, isPanelFullyVisible, panelOffscreenBearing, revealWindow, type WindowShortcutSpec } from './Modal';
 import WindowErrorBoundary, { WindowCrashedFallback } from './WindowErrorBoundary';
 import PartNumberDetailPopup from './PartNumberDetailPopup';
 import LoadingSpinner from './LoadingSpinner';
@@ -318,21 +318,41 @@ function findPanelByLabel(label: string): HTMLElement | null {
   return null;
 }
 
-// Aero-peek: while the user hovers a taskbar thumbnail, fade every open window
-// down to 40% except the one the thumbnail belongs to, which stays fully
-// opaque so it stands out on the desktop behind the popover. Toggled purely
-// via a body class + a marker attribute — never touches a panel's inline
-// styles, so it cleans up for free and can't be stranded. The dim animates
-// (transition is scoped to `.rosh-peeking`); dropping the class snaps every
-// window crisply back to full. Mirrors `ensureGestureStyle` in Modal.tsx.
+// Aero-peek: while the user hovers a taskbar thumbnail, the window it belongs
+// to is raised above its siblings and stays fully opaque, while every other
+// window falls back a layer and fades to 40%. Toggled purely via a body class
+// + a marker attribute — never touches a panel's inline styles, so it cleans
+// up for free and can't be stranded. The dim animates (transition is scoped to
+// `.rosh-peeking`); dropping the class snaps every window crisply back.
+// Mirrors `ensureGestureStyle` in Modal.tsx.
+//
+// The raise has to be `!important`: a panel's z-index is an inline style (see
+// Modal.tsx, `zIndex: pinnedOnTop ? 999 : zIndex + 1`), and an author
+// `!important` declaration is the only thing in the cascade that beats inline
+// without writing to `panel.style` — which a stray `modal-reorder` would
+// clobber — or calling `activateModal`, which would turn a hover into a click.
+//
+// 249 sits above every window in the ladder (50 + index*10 + 1) but below the
+// taskbar at z-250, so a peeked window never paints over the very thumbnail
+// you are hovering. A window that is currently pinned on top rides the 999
+// lane instead, so raising it to 249 would *demote* it — hence the
+// `[data-pinned-top]` exemption, the same reason Windows leaves topmost
+// windows out of Aero Peek. (`data-utility` is not the test: it only means the
+// window *may* be pinned, and every bundled app sets it.)
 const PEEK_STYLE_ID = 'rosh-peek-style';
+const PEEK_Z = 249;
 function ensurePeekStyle() {
   if (typeof document === 'undefined' || document.getElementById(PEEK_STYLE_ID)) return;
   const style = document.createElement('style');
   style.id = PEEK_STYLE_ID;
   style.textContent =
-    'body.rosh-peeking [data-modal-panel]{transition:opacity .18s ease;opacity:.4}' +
-    'body.rosh-peeking [data-modal-panel][data-peek-focus]{opacity:1}';
+    'body.rosh-peeking [data-modal-panel]{transition:opacity .18s ease}' +
+    'body.rosh-peeking [data-modal-panel]:not([data-peek-focus]){opacity:.4}' +
+    'body.rosh-peeking [data-modal-panel][data-peek-focus]{opacity:1}' +
+    `body.rosh-peeking [data-modal-panel][data-peek-focus]:not([data-pinned-top]){z-index:${PEEK_Z}!important}` +
+    // Someone who turned transparency off gets the raise, not a fade.
+    'html.rosh-reduce-transparency body.rosh-peeking [data-modal-panel]:not([data-peek-focus]){opacity:.92}' +
+    '@media (prefers-reduced-motion:reduce){body.rosh-peeking [data-modal-panel]{transition:none}}';
   document.head.appendChild(style);
 }
 
@@ -520,25 +540,44 @@ function TaskbarTabPreview({ items, anchorEl, onActivate, onClose, onMouseEnter,
       onMouseEnter={onMouseEnter}
       onMouseLeave={() => { clearPeekFocus(); onMouseLeave(); }}
     >
-      {items.map(it => (
-        <div
-          key={it.id}
-          className="group flex flex-col items-center"
-          onMouseEnter={() => setPeekFocus(findPanelByWindowKey(it.id) ?? findPanelByLabel(it.label))}
-        >
-          {!titleBelow && <span className={titleClass}>{it.label}</span>}
-          <ThumbCard
-            id={it.id}
-            label={it.label}
-            maxW={MAX_W}
-            maxH={MAX_H}
-            titleAbove
-            onClick={() => onActivate(it.id)}
-            onClose={() => onClose(it.id)}
-          />
-          {titleBelow && <span className={titleClass}>{it.label}</span>}
-        </div>
-      ))}
+      {items.map(it => {
+        const panel = findPanelByWindowKey(it.id) ?? findPanelByLabel(it.label);
+        // Null unless this window is (partly) outside the work area. The arrow
+        // lives here, on the taskbar chrome, rather than floating on the
+        // desktop: the thumbnail already shows the window's content, so all
+        // that's missing is which way it went — and clicking fetches it back.
+        const bearing = panel ? panelOffscreenBearing(panel) : null;
+        return (
+          <div
+            key={it.id}
+            className="group flex flex-col items-center"
+            onMouseEnter={() => setPeekFocus(panel)}
+          >
+            {!titleBelow && <span className={titleClass}>{it.label}</span>}
+            <ThumbCard
+              id={it.id}
+              label={it.label}
+              maxW={MAX_W}
+              maxH={MAX_H}
+              titleAbove
+              onClick={() => onActivate(it.id)}
+              onClose={() => onClose(it.id)}
+            />
+            {titleBelow && <span className={titleClass}>{it.label}</span>}
+            {bearing !== null && (
+              <span
+                title="This window is off screen — click to bring it back"
+                className="mt-1 inline-flex items-center gap-1 rounded bg-amber-500 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow-sm"
+              >
+                <svg className="h-3 w-3" style={{ transform: `rotate(${bearing}deg)` }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14m0 0l-5-5m5 5l-5 5" />
+                </svg>
+                Off screen
+              </span>
+            )}
+          </div>
+        );
+      })}
     </div>,
     document.body,
   );
@@ -557,6 +596,21 @@ function TaskbarWindows({ openWindows, onRemove, onCloseAll, onSplitView, onActi
   }, []);
 
   const activeModalId = useSyncExternalStore(subscribeActive, getActiveModalId);
+
+  // Off-screen markers are read straight off the panels' live rects, so the
+  // tabs need re-rendering whenever a window settles (`modal-geometry`, fired
+  // once per drag/resize/snap/reveal — never per frame) or the viewport moves
+  // under them.
+  const [, setGeomTick] = useState(0);
+  useEffect(() => {
+    const bump = () => setGeomTick(t => t + 1);
+    window.addEventListener('modal-geometry', bump);
+    window.addEventListener('resize', bump);
+    return () => {
+      window.removeEventListener('modal-geometry', bump);
+      window.removeEventListener('resize', bump);
+    };
+  }, []);
 
   // Re-render the taskbar when any window's title changes so the dynamic
   // title (e.g. "Untitled - Spreadsheets") shows up on the tab.
@@ -630,6 +684,12 @@ function TaskbarWindows({ openWindows, onRemove, onCloseAll, onSplitView, onActi
           }
         }
         const isGrouped = group.items.length > 1;
+        // Ambient "you have a window out there" signal, visible before the
+        // user hovers anything.
+        const offscreen = group.items.some(it => {
+          const p = findPanelByWindowKey(it.id) ?? findPanelByLabel(it.label);
+          return !!p && !isPanelFullyVisible(p);
+        });
 
         return (
           <button key={group.key} onClick={() => onActivateById(primary.id)}
@@ -647,6 +707,9 @@ function TaskbarWindows({ openWindows, onRemove, onCloseAll, onSplitView, onActi
               : <svg className={`h-3.5 w-3.5 shrink-0 ${isActive ? 'text-blue-600' : 'text-gray-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
             }
             <span className="truncate flex-1">{isGrouped ? group.label : liveTitle(primary.label)}</span>
+            {offscreen && (
+              <span title="Off screen — click to bring this window back" className="shrink-0 h-1.5 w-1.5 rounded-full bg-amber-500" />
+            )}
             {isGrouped && (
               <span className="shrink-0 px-1.5 py-0.5 rounded-full bg-blue-500/80 text-white text-[10px] font-bold leading-none">{group.items.length}</span>
             )}
@@ -933,8 +996,12 @@ export function WindowManagerProvider({ children, windowAccentForRoute }: {
           });
         }}
         onActivateById={(id) => {
-          const panel = document.querySelector(`[data-modal-panel][data-window-key="${id}"]`);
-          const mid = panel?.getAttribute('data-modal-id');
+          const panel = document.querySelector(`[data-modal-panel][data-window-key="${id}"]`) as HTMLElement | null;
+          if (!panel) return;
+          // Focusing a window you can't see achieves nothing — fetch it back
+          // first. `revealWindow` activates it as part of the rescue.
+          if (!isPanelFullyVisible(panel)) { revealWindow(id); return; }
+          const mid = panel.getAttribute('data-modal-id');
           if (mid) activateModal(mid);
         }}
       />
