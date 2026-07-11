@@ -10,9 +10,14 @@
  *   'YYYY-MM-DD'  — 2026-04-24
  *   'DD-MM-YYYY'  — 24-04-2026
  *   'DD.MM.YYYY'  — 24.04.2026
+ *   'DD/MM/YY'    — 24/04/26
+ *   'DD/MMM/YYYY' — 24/Apr/2026
+ *   'DD/MMM/YY'   — 24/Apr/26
  */
 
-export type DateFormatKey = 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD' | 'DD-MM-YYYY' | 'DD.MM.YYYY';
+export type DateFormatKey =
+  | 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD' | 'DD-MM-YYYY' | 'DD.MM.YYYY'
+  | 'DD/MM/YY' | 'DD/MMM/YYYY' | 'DD/MMM/YY';
 
 export const DATE_FORMAT_OPTIONS: { key: DateFormatKey; example: string }[] = [
   { key: 'DD/MM/YYYY', example: '24/04/2026' },
@@ -20,7 +25,17 @@ export const DATE_FORMAT_OPTIONS: { key: DateFormatKey; example: string }[] = [
   { key: 'YYYY-MM-DD', example: '2026-04-24' },
   { key: 'DD-MM-YYYY', example: '24-04-2026' },
   { key: 'DD.MM.YYYY', example: '24.04.2026' },
+  { key: 'DD/MM/YY', example: '24/04/26' },
+  { key: 'DD/MMM/YYYY', example: '24/Apr/2026' },
+  { key: 'DD/MMM/YY', example: '24/Apr/26' },
 ];
+
+/** Month abbreviations for the alpha-numeric 'MMM' formats. */
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function monthAbbr(mm: string): string {
+  return MONTH_ABBR[parseInt(mm, 10) - 1] ?? mm;
+}
 
 export function getUserDateFormat(): DateFormatKey {
   return (localStorage.getItem('user_date_format') as DateFormatKey) || 'DD/MM/YYYY';
@@ -51,6 +66,9 @@ export function formatDate(value: string | null | undefined): string {
     case 'YYYY-MM-DD': return `${yyyy}-${mm}-${dd}`;
     case 'DD-MM-YYYY': return `${dd}-${mm}-${yyyy}`;
     case 'DD.MM.YYYY': return `${dd}.${mm}.${yyyy}`;
+    case 'DD/MM/YY':   return `${dd}/${mm}/${yyyy.slice(-2)}`;
+    case 'DD/MMM/YYYY': return `${dd}/${monthAbbr(mm)}/${yyyy}`;
+    case 'DD/MMM/YY':  return `${dd}/${monthAbbr(mm)}/${yyyy.slice(-2)}`;
     case 'DD/MM/YYYY':
     default:           return `${dd}/${mm}/${yyyy}`;
   }
