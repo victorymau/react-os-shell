@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.20.0] — 2026-07-12
+
+### Added
+- **Three new date format choices** in `DATE_FORMAT_OPTIONS` / `DateFormatKey`
+  (SG#00326): `DD/MM/YY` (24/04/26), `DD/MMM/YYYY` (24/Apr/2026) and
+  `DD/MMM/YY` (24/Apr/26). `formatDate` renders the new keys; consumers that
+  pin an older shell fall back to `DD/MM/YYYY` for them.
+
 ## [3.19.1] — 2026-07-09
 
 ### Fixed
