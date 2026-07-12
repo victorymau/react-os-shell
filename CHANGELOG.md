@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.21.0] — 2026-07-12
+
+### Added
+- **Eight more date format choices** (16 total) in `DATE_FORMAT_OPTIONS` /
+  `DateFormatKey` / `formatDate`: `MM/DD/YY`, `YYYY/MM/DD`, `YYYY.MM.DD`,
+  `MM-DD-YYYY`, `DD MMM YYYY`, `MMM DD, YYYY`, `DD MMMM YYYY` and
+  `MMMM DD, YYYY` — follow-up to SG#00326's "offer as many formats as
+  possible". Unknown keys still fall back to `DD/MM/YYYY`.
+
 ## [3.20.0] — 2026-07-12
 
 ### Added
