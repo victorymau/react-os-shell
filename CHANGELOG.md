@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.22.0] — 2026-07-13
+
+### Added
+- **"Keep all" duplicate resolution in `BulkImportGrid`** (BG#00365): the
+  duplicate-review step now offers Keep first / Keep last / **Keep all** /
+  Skip all per duplicate group, so the same key can survive as multiple
+  lines (e.g. one part number arriving from two purchase orders at two
+  prices on a purchase-invoice import). Default stays Keep first, so
+  existing imports behave exactly as before. Kept duplicates flow through
+  `mergeBulkItems` as separate appended lines.
+
 ## [3.21.1] — 2026-07-13
 
 ### Fixed

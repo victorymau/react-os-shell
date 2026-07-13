@@ -216,7 +216,7 @@ function ColumnMapper({ csvPreview, targetColumns, onConfirm, onCancel }: {
 
 // ── Duplicate-key review UI ──
 
-type DupResolution = 'first' | 'last' | 'skip';
+type DupResolution = 'first' | 'last' | 'all' | 'skip';
 
 function DuplicateReview({
   rows,
@@ -238,11 +238,13 @@ function DuplicateReview({
   const totalKept = groups.reduce((acc, g) => {
     const r = resolutions[g.key.toUpperCase()];
     if (r === 'skip') return acc;
+    if (r === 'all') return acc + g.rowIndices.length;
     return acc + 1; // first/last always collapse to a single row
   }, 0);
   const totalDropped = groups.reduce((acc, g) => {
     const r = resolutions[g.key.toUpperCase()];
     if (r === 'skip') return acc + g.rowIndices.length;
+    if (r === 'all') return acc;
     return acc + (g.rowIndices.length - 1);
   }, 0);
 
@@ -292,7 +294,7 @@ function DuplicateReview({
                 </table>
               </div>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-                {(['first', 'last', 'skip'] as DupResolution[]).map(opt => (
+                {(['first', 'last', 'all', 'skip'] as DupResolution[]).map(opt => (
                   <label key={opt} className="flex items-center gap-1 cursor-pointer">
                     <input
                       type="radio"
@@ -303,7 +305,7 @@ function DuplicateReview({
                       className="h-3 w-3 text-amber-600 focus:ring-amber-500"
                     />
                     <span className="text-gray-700">
-                      {opt === 'first' ? 'Keep first' : opt === 'last' ? 'Keep last' : 'Skip all'}
+                      {opt === 'first' ? 'Keep first' : opt === 'last' ? 'Keep last' : opt === 'all' ? 'Keep all' : 'Skip all'}
                     </span>
                   </label>
                 ))}
@@ -457,7 +459,7 @@ function MergeReview({
 /**
  * Spreadsheet-style bulk entry surface: type, paste, or upload a CSV/TSV, with
  * automatic column auto-mapping (with a manual mapping fallback) and duplicate
- * de-duplication (keep-first/last/skip, or summed merge in `mergeDuplicates`
+ * de-duplication (keep-first/last/all/skip, or summed merge in `mergeDuplicates`
  * mode). Purely presentational — owns local grid/CSV state and reports the
  * resolved rows via `onImport`; it does no fetching, auth, or persistence.
  *
@@ -598,9 +600,10 @@ export default function BulkImportGrid({ columns, onImport, description, mergeDu
         for (let i = 1; i < idx.length; i++) drop.add(idx[i]);
       } else if (choice === 'last') {
         for (let i = 0; i < idx.length - 1; i++) drop.add(idx[i]);
-      } else {
+      } else if (choice === 'skip') {
         for (const j of idx) drop.add(j);
       }
+      // 'all' keeps every occurrence — the rows import as separate lines
     }
     const filtered = rows.filter((_, i) => !drop.has(i));
     setDupReview(null);
