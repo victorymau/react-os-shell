@@ -283,6 +283,17 @@ export default function SearchableSelect({
             setOpen(false);
             setSearch('');
             triggerRef.current?.blur();
+          } else if (e.key === 'Tab') {
+            // Tab moves focus to the next field; close/clear the dropdown so the
+            // body-portaled results don't linger over the neighbour (BG#00359).
+            // No preventDefault — let Tab advance focus as usual (covers
+            // Shift+Tab too). The free-text-commit guard mirrors the outside-
+            // mousedown handler so no new commit behaviour is introduced.
+            if (allowFreeText && search.trim() && search.trim() !== value) {
+              onChange(search.trim());
+            }
+            setOpen(false);
+            setSearch('');
           }
         }}
         placeholder={placeholder || (emptyOptionLabel || 'Select…')}
