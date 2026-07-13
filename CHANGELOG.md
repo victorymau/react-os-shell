@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.21.1] — 2026-07-13
+
+### Fixed
+- **`SearchableSelect` dropdown now closes on Tab** (BG#00359): pressing Tab to
+  move focus to the next field dismisses the body-portaled results instead of
+  leaving them lingering over the neighbouring field. Handled in the trigger
+  `onKeyDown` without `preventDefault`, so Tab (and Shift+Tab) still advance
+  focus as usual; a pending free-text entry is committed on the way out, matching
+  the existing outside-click behaviour.
+
 ## [3.21.0] — 2026-07-12
 
 ### Added
