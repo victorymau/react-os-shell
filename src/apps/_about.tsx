@@ -59,7 +59,7 @@ export const BUILTIN_APP_INFO = {
   },
   browser: {
     name: 'Browser',
-    version: '1.0.0',
+    version: '1.0.1',
     route: '/browser',
     description: 'Minimal web browser with bookmarks, history and navigation bar.',
   },
