@@ -20,19 +20,58 @@ interface Bookmark {
 const BOOKMARKS_KEY = 'react-os-shell:browser-bookmarks';
 const HOMEPAGE_KEY = 'react-os-shell:browser-homepage';
 const DEFAULT_HOMEPAGE = 'https://en.wikipedia.org/wiki/Main_Page';
+// Search provider (DuckDuckGo, no tracking). Hoisted to a constant so the
+// provider is stated in exactly one place — note it is deliberately NOT
+// framable, hence its presence in BLOCKED_HOSTS below.
+const SEARCH_URL = 'https://duckduckgo.com/?q=';
 const DEFAULT_BOOKMARKS: Bookmark[] = [
   { label: 'Wikipedia', url: 'https://en.wikipedia.org/wiki/Main_Page' },
-  { label: 'MDN', url: 'https://developer.mozilla.org' },
+  // DevDocs rather than MDN: MDN sends `x-frame-options: DENY`, so shipping it
+  // as a default bookmark shipped a guaranteed-blank pane (BG#00374). DevDocs
+  // carries the same API reference content and permits embedding.
+  { label: 'DevDocs', url: 'https://devdocs.io' },
   { label: 'Example', url: 'https://example.com' },
 ];
+
+// A dotted single token is ambiguous: `example.com` is a host, but `node.js`,
+// `web.config` and `array.map` are search queries the user expects to search.
+// The only offline signal is the last label, so we treat a bare token as a host
+// ONLY when it ends in a real TLD; everything else searches. A host on an
+// exotic TLD missing from this list is still reachable by typing the scheme
+// (`https://foo.zuerich`), which short-circuits before this check.
+const KNOWN_TLDS = new Set([
+  // ISO 3166-1 alpha-2 ccTLDs. Mind the lookalikes: `md`, `py`, `rs` and `sh`
+  // ARE countries (`foo.sh` is a real host), while `js` and `ts` are not.
+  'ac ad ae af ag ai al am ao aq ar as at au aw ax az ba bb bd be bf bg bh bi',
+  'bj bm bn bo br bs bt bw by bz ca cc cd cf cg ch ci ck cl cm cn co cr cu cv',
+  'cw cx cy cz de dj dk dm do dz ec ee eg er es et eu fi fj fk fm fo fr ga gd',
+  'ge gf gg gh gi gl gm gn gp gq gr gs gt gu gw gy hk hm hn hr ht hu id ie il',
+  'im in io iq ir is it je jm jo jp ke kg kh ki km kn kp kr kw ky kz la lb lc',
+  'li lk lr ls lt lu lv ly ma mc md me mg mh mk ml mm mn mo mp mq mr ms mt mu',
+  'mv mw mx my mz na nc ne nf ng ni nl no np nr nu nz om pa pe pf pg ph pk pl',
+  'pm pn pr ps pt pw py qa re ro rs ru rw sa sb sc sd se sg sh si sk sl sm sn',
+  'so sr ss st su sv sx sy sz tc td tf tg th tj tk tl tm tn to tr tt tv tw tz',
+  'ua ug uk us uy uz va vc ve vg vi vn vu wf ws ye yt za zm zw',
+  // Common gTLDs, plus the ones this business actually uses (`design`).
+  'com net org edu gov mil int info biz name pro app dev xyz online site tech',
+  'store shop cloud design digital agency studio media news blog live life',
+  'world today email systems solutions services software page link space host',
+  'press wiki team group works careers finance capital energy academy',
+].join(' ').split(' '));
+
+// `example.com`, `sub.example.co.uk`, `example.com/path` → host; `node.js` → search.
+function isProbableHost(s: string): boolean {
+  const m = /^([\w-]+\.)+([a-z]{2,})(\/.*)?$/i.exec(s);
+  return m !== null && KNOWN_TLDS.has(m[2].toLowerCase());
+}
 
 function normalizeUrl(input: string): string {
   let s = input.trim();
   if (!s) return '';
-  // Already a URL? Otherwise treat as a search query (DuckDuckGo, no tracking).
+  // Already a URL? Otherwise treat as a search query.
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) return s;
-  if (/^[\w.-]+\.[a-z]{2,}(\/.*)?$/i.test(s)) return 'https://' + s;
-  return 'https://duckduckgo.com/?q=' + encodeURIComponent(s);
+  if (isProbableHost(s)) return 'https://' + s;
+  return SEARCH_URL + encodeURIComponent(s);
 }
 
 // Sites known to refuse iframe embedding via X-Frame-Options or CSP. There's
@@ -41,6 +80,16 @@ function normalizeUrl(input: string): string {
 // instead of letting the browser's blank "refused to connect" error
 // through. Subdomain match: `mail.google.com` matches `google.com`.
 const BLOCKED_HOSTS = [
+  // The two hosts this app itself routes to or ships as a default bookmark.
+  // Their absence here was BG#00374: an address-bar search went to a blank
+  // pane rather than the panel below, reading as "search does nothing".
+  // Verified live 2026-07-16 — duckduckgo.com: `x-frame-options: SAMEORIGIN` +
+  // `frame-ancestors 'self' https://html.duckduckgo.com` (the html/ and lite/
+  // mirrors are no escape hatch: `frame-ancestors 'self'`);
+  // developer.mozilla.org: `x-frame-options: DENY` (kept even though the
+  // default bookmark moved to DevDocs — existing users have MDN persisted in
+  // localStorage, and it stays a thing people type).
+  'duckduckgo.com', 'developer.mozilla.org',
   'google.com', 'gmail.com', 'youtube.com',
   'facebook.com', 'instagram.com', 'whatsapp.com',
   'twitter.com', 'x.com',
@@ -458,8 +507,8 @@ function BrowserBody({
           </p>
           <p>
             Hit the <span className="font-medium">↗</span> button to open the page in
-            a real new tab. Sites that <em>do</em> allow embedding (Wikipedia, MDN,
-            docs sites, your own apps) work fine in here.
+            a real new tab. Sites that <em>do</em> allow embedding (Wikipedia, DevDocs,
+            your own apps) work fine in here.
           </p>
           <button
             onClick={dismissHelp}

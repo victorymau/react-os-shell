@@ -4,6 +4,37 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.22.1] — 2026-07-16
+
+### Fixed
+- **Browser: address-bar search and the MDN bookmark no longer go blank**
+  (BG#00374). `duckduckgo.com` — the app's own search provider — and
+  `developer.mozilla.org` — a shipped default bookmark — both refuse iframe
+  embedding (`x-frame-options: SAMEORIGIN` + `frame-ancestors 'self' …` and
+  `x-frame-options: DENY` respectively) but were missing from `BLOCKED_HOSTS`.
+  Searching from the address bar therefore fell through to a raw iframe and
+  rendered an unexplained blank pane, reading as "the address bar does
+  nothing". Both are now blocklisted, so the existing "can't be embedded"
+  panel with **Open in a new tab** appears instead — which actually completes
+  the search. Google was already handled correctly; no engine can be iframed,
+  so honest degradation is the fix.
+- **Browser: a dotted search query is no longer mistaken for a hostname**
+  (BG#00374). `node.js`, `vue.js`, `web.config` and `array.map` navigated to
+  `https://node.js` (a DNS failure) instead of searching, because any dotted
+  token matched the host pattern. A bare token is now treated as a host only
+  when its last label is a real TLD; anything else searches. Real hosts
+  (`example.com`, `sub.example.co.uk`, `example.com/path`) are unaffected, and
+  a host on a TLD outside the list still works when typed with a scheme
+  (`https://foo.zuerich`).
+
+### Changed
+- **Browser: the default `MDN` bookmark is now `DevDocs`** (`devdocs.io`,
+  verified embeddable) — same API reference content, minus the guaranteed
+  blank pane. Only affects users with no saved bookmarks; existing bookmark
+  bars are untouched (and a persisted MDN entry now shows the friendly panel).
+  The embedding-help text no longer claims MDN "works fine in here", which
+  was false.
+
 ## [3.22.0] — 2026-07-13
 
 ### Added
