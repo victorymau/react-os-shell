@@ -275,7 +275,7 @@ export default function Customization({ omit, section }: CustomizationProps = {}
           <div className="mt-3 space-y-2">
             {([
               { key: 'custom_bg_color', label: 'Background Color', defaultVal: '#f3f4f6' },
-              { key: 'custom_title_color', label: 'Title Color', defaultVal: '#f9fafb' },
+              { key: 'custom_title_color', label: 'Header & Footer Color', defaultVal: '#f9fafb' },
               { key: 'custom_window_color', label: 'Windows Background', defaultVal: '#ffffff' },
               { key: 'custom_button_color', label: 'Button Color', defaultVal: '#2563eb' },
               { key: 'accent_color', label: 'Accent Color', defaultVal: '#8b5cf6' },

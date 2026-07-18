@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.22.2] — 2026-07-18
+
+### Changed
+- **Settings › Customization: the "Title Color" picker is now labelled
+  "Header & Footer Color"** (SG#00396). The pref (`custom_title_color`) drives
+  both the window header and the footer colours, but under the old label users
+  couldn't find "a header and footer colour option" that already existed. Label
+  change only — the pref key, applied CSS variables and Custom-theme gating are
+  untouched.
+
 ## [3.22.1] — 2026-07-16
 
 ### Fixed
