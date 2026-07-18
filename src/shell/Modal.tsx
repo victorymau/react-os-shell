@@ -939,6 +939,10 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   const [widgetAnchor, setWidgetAnchor] = useState<'left' | 'right'>(initialPosition === 'top-right' ? 'right' : 'left');
   const closingRef = useRef(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  // SG#00391: set when a mousedown on an INACTIVE window's interactive element
+  // was swallowed to raise-only — the paired click (which is what would
+  // navigate an <a> or fire a button's onClick) must be eaten too.
+  const swallowInactiveClickRef = useRef(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const actionsRef = useRef<HTMLDivElement>(null);
   const actionsLeftRef = useRef<HTMLDivElement>(null);
@@ -1860,6 +1864,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
       <div ref={panelRef} data-modal-panel data-modal-id={modalId} data-window-key={windowKey || undefined} {...(allowPinOnTop ? { 'data-utility': '' } : {})} {...(widget ? { 'data-widget': '' } : {})}
         className={`fixed rounded-2xl flex flex-col overflow-hidden ${widget ? (isActive ? 'shadow-2xl' : 'shadow-lg') : `border ${isActive ? 'shadow-2xl border-gray-200' : 'shadow-lg border-gray-300'}`}`}
         onMouseDownCapture={(e) => {
+          swallowInactiveClickRef.current = false;
           if (exposeActive) {
             // The exposé close button handles its own click — let it through so
             // the capture-phase "select this window" logic doesn't swallow it.
@@ -1874,6 +1879,48 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
             setExposeState(false);
             activateModal(modalId);
             return;
+          }
+          // SG#00391: a primary-button press on an INACTIVE window's
+          // interactive element raises the window and does nothing else — no
+          // click-through (a link in a background tile used to navigate when
+          // the user only meant to bring the window forward). Widgets and
+          // pinned-on-top utility panels keep the pass-through; the active
+          // window is untouched. Title-bar chrome ([data-window-chrome]:
+          // close/minimize/maximize/pin/icon-menu) is exempt so a background
+          // window still closes in ONE click. preventDefault here only affects
+          // interactive targets, so text selection over background content is
+          // unchanged.
+          if (!isActive && !widget && !pinnedOnTop && e.button === 0) {
+            const target = e.target as HTMLElement;
+            // Ignore events bubbling out of a nested child modal's panel.
+            if (target.closest('[data-modal-panel]') === panelRef.current
+              && target.closest('button, input, a, select, textarea')
+              && !target.closest('[data-window-chrome]')) {
+              e.preventDefault();
+              e.stopPropagation();
+              swallowInactiveClickRef.current = true;
+              setWindowMenu(null);
+              activateModal(modalId);
+              // If the mouseup lands OUTSIDE the panel (drag off the control),
+              // no paired click reaches onClickCapture and the flag would eat
+              // the next keyboard/programmatic click. mouseup fires before
+              // click in the same task, so clear on the next tick — after the
+              // paired click (if any) has been dispatched and consumed.
+              window.addEventListener('mouseup', () => {
+                setTimeout(() => { swallowInactiveClickRef.current = false; }, 0);
+              }, { once: true });
+            }
+          }
+        }}
+        onClickCapture={(e) => {
+          // Second half of the SG#00391 swallow: activation already happened
+          // on mousedown; eat exactly the paired click so the control never
+          // fires. The flag (not `isActive`, which is already true by now)
+          // guards against double-activation and against eating later clicks.
+          if (swallowInactiveClickRef.current) {
+            swallowInactiveClickRef.current = false;
+            e.preventDefault();
+            e.stopPropagation();
           }
         }}
         onMouseDown={(e) => {
@@ -1936,7 +1983,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
           null
         ) : compact ? (
           /* Compact: smaller title bar with title + close only */
-          <div onPointerDown={startDrag}
+          <div onPointerDown={startDrag} data-window-chrome=""
             className={`flex items-center justify-between px-3 py-1.5 border-b border-gray-200 shrink-0 cursor-move select-none rounded-t-2xl ${isActive ? 'backdrop-blur-sm' : ''}`}
             style={{ touchAction: 'none', backgroundColor: isActive ? `rgb(var(--window-header-rgb) / var(--active-header-opacity, 0.8))` : `rgb(var(--window-header-rgb) / var(--inactive-header-opacity, 0.7))` }}>
             <div data-window-title className="text-sm font-medium min-w-0 flex-1 truncate flex items-center gap-1.5" style={{ color: isActive ? 'var(--window-title-active, rgb(17 24 39))' : 'var(--window-title-inactive, rgb(156 163 175))' }}>
@@ -1959,7 +2006,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
           </div>
         ) : appStyle ? (
           /* App style: small title bar like compact, but keeps minimize/maximize for full window control. */
-          <div onPointerDown={startDrag}
+          <div onPointerDown={startDrag} data-window-chrome=""
             className={`flex items-center justify-between px-3 py-1.5 border-b border-gray-200 shrink-0 cursor-move select-none rounded-t-2xl ${isActive ? 'backdrop-blur-sm' : ''}`}
             style={{ touchAction: 'none', backgroundColor: isActive ? `rgb(var(--window-header-rgb) / var(--active-header-opacity, 0.8))` : `rgb(var(--window-header-rgb) / var(--inactive-header-opacity, 0.7))` }}>
             <div data-window-title className="text-sm font-medium min-w-0 flex-1 truncate flex items-center gap-1.5" style={{ color: isActive ? 'var(--window-title-active, rgb(17 24 39))' : 'var(--window-title-inactive, rgb(156 163 175))' }}>
@@ -1985,7 +2032,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
             )}
           </div>
         ) : (
-        <div onPointerDown={startDrag}
+        <div onPointerDown={startDrag} data-window-chrome=""
           className={`flex items-center justify-between px-4 py-2.5 border-b border-gray-200 shrink-0 cursor-move select-none rounded-t-2xl ${isActive ? 'backdrop-blur-sm' : ''}`}
           style={{ touchAction: 'none', backgroundColor: isActive ? `rgb(var(--window-header-rgb) / var(--active-header-opacity, 0.8))` : `rgb(var(--window-header-rgb) / var(--inactive-header-opacity, 0.7))` }}>
           <div data-window-title className="text-base font-medium min-w-0 flex-1 truncate flex items-center gap-2" style={{ color: isActive ? 'var(--window-title-active, rgb(17 24 39))' : 'var(--window-title-inactive, rgb(156 163 175))' }}>

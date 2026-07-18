@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.23.0] — 2026-07-18
+
+### Changed
+- **Clicking a control in an inactive window now only brings the window
+  forward** (SG#00391). Buttons, links, inputs, selects and textareas in a
+  background window used to receive the click that was meant to raise the
+  window — a link in a background tile would navigate, a button would fire.
+  The first primary-button click on an inactive window's interactive element
+  is now swallowed and raise-only; a second click (with the window active)
+  operates the control as before. Title-bar chrome is exempt — close,
+  minimize, maximize, pin and the icon menu on a background window still work
+  in one click. The active window, widgets, pinned-on-top utility panels,
+  plain chrome clicks (title bar / body background, which already raised) and
+  text selection over background content are all unchanged.
+
 ## [3.22.2] — 2026-07-18
 
 ### Changed
