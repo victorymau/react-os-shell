@@ -324,6 +324,14 @@ interface ModalProps {
    *  mobile, swipe-to-back broadcasts this value so the parent window can
    *  un-hide itself underneath the sliding panel. */
   openedFromKey?: string;
+  /** Per-section window accent (SG#00372): an `R G B` triple (e.g.
+   *  '91 141 190'). When set, the panel publishes it as the
+   *  `--window-accent-rgb` CSS custom property and renders a thin accent
+   *  stripe across the top of the title bar, so overlapping windows from
+   *  different app sections are distinguishable at a glance. The header
+   *  itself stays theme-neutral — themes and the user's custom header
+   *  colour are untouched. Absent = exactly the previous rendering. */
+  accentRgb?: string;
   children: React.ReactNode;
 }
 
@@ -838,7 +846,7 @@ export function ExposeBackdrop() {
 }
 
 
-export default function Modal({ open, onClose, title, icon, copyText, size = 'lg', dirty = false, onNext, onPrev, footer, bodyScroll, onMinimize, initialBox, actions, actionsLeft, allowPinOnTop, initialPosition, widget, compact, appStyle, flushBody, autoHeight, autoMinHeight, widgetMenu, dimensions, windowKey, openedFromKey, children }: ModalProps) {
+export default function Modal({ open, onClose, title, icon, copyText, size = 'lg', dirty = false, onNext, onPrev, footer, bodyScroll, onMinimize, initialBox, actions, actionsLeft, allowPinOnTop, initialPosition, widget, compact, appStyle, flushBody, autoHeight, autoMinHeight, widgetMenu, dimensions, windowKey, openedFromKey, accentRgb, children }: ModalProps) {
   const isMobile = useIsMobile();
   // Mobile swipe-from-left-edge gesture: track horizontal offset of the panel.
   // 0 = at rest. While the user is dragging from the left edge, this grows
@@ -939,6 +947,17 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   const [widgetAnchor, setWidgetAnchor] = useState<'left' | 'right'>(initialPosition === 'top-right' ? 'right' : 'left');
   const closingRef = useRef(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  // SG#00372: publish the per-section accent as a CSS custom property on the
+  // panel element (same setProperty convention as the theme vars in
+  // Layout/useTheme). The accent stripe below and any theme CSS read it via
+  // `var(--window-accent-rgb)`. React never manages this key in the panel's
+  // `style` prop, so the two can't fight over it.
+  useLayoutEffect(() => {
+    const el = panelRef.current;
+    if (!el) return;
+    if (accentRgb) el.style.setProperty('--window-accent-rgb', accentRgb);
+    else el.style.removeProperty('--window-accent-rgb');
+  }, [accentRgb]);
   // SG#00391: set when a mousedown on an INACTIVE window's interactive element
   // was swallowed to raise-only — the paired click (which is what would
   // navigate an <a> or fire a button's onClick) must be eaten too.
@@ -1972,6 +1991,20 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
             style={{ touchAction: 'pan-y' }}
             aria-hidden="true"
           />
+        )}
+
+        {/* SG#00372: per-section accent stripe — a thin line across the top
+         *  edge of the title bar, painted from --window-accent-rgb (set by the
+         *  effect above when the consumer passes `accentRgb`). Overlapping
+         *  windows from different app sections become distinguishable while
+         *  the header itself stays theme-neutral. pointer-events-none keeps
+         *  title-bar dragging/clicking unaffected; the overflow-hidden panel
+         *  clips it to the rounded corners. Widgets have no title bar and
+         *  mobile windows are fullscreen, so neither renders it. */}
+        {accentRgb && !widget && !isMobile && (
+          <div aria-hidden="true"
+            className="absolute top-0 left-0 right-0 h-[3px] z-[6] pointer-events-none"
+            style={{ backgroundColor: `rgb(var(--window-accent-rgb) / ${isActive ? 0.9 : 0.55})` }} />
         )}
 
         {/* HEADER — draggable on desktop, hidden on mobile (apps go fullscreen
