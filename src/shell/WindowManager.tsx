@@ -112,13 +112,13 @@ function shortcutSpecFor(item: MinimizedItem): WindowShortcutSpec | null {
   return { entityType, entityId, label: item.label };
 }
 
-function PageWindow({ item, onClose }: { item: MinimizedItem; onClose: () => void }) {
+function PageWindow({ item, onClose, accentRgb }: { item: MinimizedItem; onClose: () => void; accentRgb?: string }) {
   const raw = WINDOW_REGISTRY[item.route!];
   if (!raw || !isPageEntry(raw)) return null;
   const entry = raw as PageRegistryEntry;
   const Component = entry.component;
   return (
-    <Modal open={true} onClose={onClose} icon={navIcons[item.route!]} title={entry.label} size={entry.size || '2xl'} allowPinOnTop={entry.allowPinOnTop} initialPosition={entry.initialPosition} widget={entry.widget} compact={entry.compact} appStyle={entry.appStyle} flushBody={entry.flushBody} autoHeight={entry.autoHeight} autoMinHeight={entry.autoMinHeight} dimensions={entry.dimensions} windowKey={item.id} openedFromKey={item.openedFrom}>
+    <Modal open={true} onClose={onClose} icon={navIcons[item.route!]} title={entry.label} size={entry.size || '2xl'} allowPinOnTop={entry.allowPinOnTop} initialPosition={entry.initialPosition} widget={entry.widget} compact={entry.compact} appStyle={entry.appStyle} flushBody={entry.flushBody} autoHeight={entry.autoHeight} autoMinHeight={entry.autoMinHeight} dimensions={entry.dimensions} windowKey={item.id} openedFromKey={item.openedFrom} accentRgb={accentRgb}>
       <Suspense fallback={<div className="flex items-center justify-center py-12"><LoadingSpinner /></div>}>
         <Component />
       </Suspense>
@@ -152,7 +152,7 @@ export function DocFavStar({ entityType, entityId, label }: { entityType: string
   );
 }
 
-function RestoredRegistryModal({ item, onClose, onMinimize }: { item: MinimizedItem; onClose: () => void; onMinimize: (sb: SavedBox) => void }) {
+function RestoredRegistryModal({ item, onClose, onMinimize, accentRgb }: { item: MinimizedItem; onClose: () => void; onMinimize: (sb: SavedBox) => void; accentRgb?: string }) {
   const raw = WINDOW_REGISTRY[item.entityType!];
   if (!raw || !isEntityEntry(raw)) return null;
   const entry = raw as ModalRegistryEntry;
@@ -251,6 +251,7 @@ function RestoredRegistryModal({ item, onClose, onMinimize }: { item: MinimizedI
       autoHeight={entry.autoHeight}
       autoMinHeight={entry.autoMinHeight}
       appStyle={entry.appStyle}
+      accentRgb={accentRgb}
     >
       <Suspense fallback={<LoadingSpinner />}>
         {entry.selfFetching ? (
@@ -786,7 +787,16 @@ function restoreWindowState(): MinimizedItem[] {
 
 const AUTH_PAGES = ['/login', '/forgot-password', '/reset-password', '/force-change-password'];
 
-export function WindowManagerProvider({ children }: { children: ReactNode }) {
+export function WindowManagerProvider({ children, windowAccentForRoute }: {
+  children: ReactNode;
+  /** SG#00372: optional per-section window accent. Called with each open
+   *  window's route ('/sales-orders', '/payments', …); return an `R G B`
+   *  triple (e.g. '91 141 190') to give that window a thin accent stripe on
+   *  its title bar (see Modal's `accentRgb`), or undefined for no accent.
+   *  The consumer owns the route→section→colour mapping; omitting the prop
+   *  keeps every window exactly as before. */
+  windowAccentForRoute?: (route: string) => string | undefined;
+}) {
   const location = useLocation();
   const isAuthPage = AUTH_PAGES.some(p => location.pathname.startsWith(p));
   const [openWindows, setOpenWindows] = useState<MinimizedItem[]>(() => restoreWindowState());
@@ -939,7 +949,10 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
           before its Modal mounts — so one bad window can never unmount the
           desktop. The fallback swaps the window for a plain Modal carrying the
           same crash state; its close button still removes the window. */}
-      {!isAuthPage && openWindows.map(item => (
+      {!isAuthPage && openWindows.map(item => {
+        // SG#00372: resolve the window's per-section accent from its route.
+        const accentRgb = item.route ? windowAccentForRoute?.(item.route) : undefined;
+        return (
         <WindowErrorBoundary
           key={item.id}
           fallback={(error, reset) => (
@@ -950,17 +963,19 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
         >
           <WindowShortcutProvider spec={shortcutSpecFor(item)}>
             {item.type === 'page' ? (
-              <PageWindow item={item} onClose={() => closeEntity(item.id)} />
+              <PageWindow item={item} onClose={() => closeEntity(item.id)} accentRgb={accentRgb} />
             ) : (
               <RestoredRegistryModal
                 item={item}
                 onClose={() => closeEntity(item.id)}
                 onMinimize={() => {}}
+                accentRgb={accentRgb}
               />
             )}
           </WindowShortcutProvider>
         </WindowErrorBoundary>
-      ))}
+        );
+      })}
     </MinimizedContext.Provider>
   );
 }

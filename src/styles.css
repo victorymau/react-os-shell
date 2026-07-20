@@ -71,7 +71,14 @@ html.rosh-reduce-transparency *::after {
   -webkit-backdrop-filter: none !important;
 }
 
-/* Base theme colors for transparent windows */
+/* Base theme colors for transparent windows.
+ *
+ * --window-accent-rgb (SG#00372) is deliberately NOT defined here: it is a
+ * per-window property, set inline on the panel element by Modal when the
+ * consumer passes `accentRgb` (see WindowManagerProvider's
+ * `windowAccentForRoute`). It paints only the thin accent stripe on the
+ * title bar — the header colours below and the user's custom header colour
+ * are never overridden by it. */
 :root {
   --window-header-rgb: 243 244 246;
   --window-footer-rgb: 249 250 251;

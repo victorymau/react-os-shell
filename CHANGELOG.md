@@ -4,7 +4,22 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
-## [3.23.0] — 2026-07-18
+## [3.24.0] — 2026-07-20
+
+### Added
+- **Per-section window accent stripe** (SG#00372). `Modal` takes an optional
+  `accentRgb` prop (an `R G B` triple, e.g. `'91 141 190'`); when present the
+  panel publishes it as the `--window-accent-rgb` CSS custom property and
+  draws a thin (3 px) accent stripe across the top of the title bar, so
+  overlapping windows from different app sections are distinguishable at a
+  glance. `WindowManagerProvider` takes a matching optional
+  `windowAccentForRoute(route)` callback and resolves the accent per open
+  window from its route — the consumer owns the route→section→colour map.
+  The header itself stays theme-neutral: the stripe never touches
+  `--window-header-rgb`, so all six built-in themes and the user's custom
+  header/footer colour render exactly as before. Widgets (no title bar) and
+  mobile fullscreen windows skip the stripe; omitting the prop keeps today's
+  rendering everywhere.
 
 ### Changed
 - **Clicking a control in an inactive window now only brings the window
