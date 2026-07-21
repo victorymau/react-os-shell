@@ -3,6 +3,7 @@ import {
   Button, Input, Textarea, Select, Checkbox, Radio, FormField,
   Card, StatCard, Avatar, AvatarGroup, Banner, Tabs, Accordion, Tooltip,
   Pagination, Sparkline, BarChart, DonutChart,
+  MetricBar, SidebarNavItem, SidebarGroupLabel, type SeverityTone,
 } from 'react-os-shell';
 
 /**
@@ -21,12 +22,22 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 const SERIES = [4, 6, 5, 8, 7, 11, 9, 13, 12, 16, 14, 18];
 
+/** Severity rolled up per section by the app — the sidebar renders a tone, it
+ *  never computes one. `Overview` makes no health claim, so it omits it. */
+const SECTIONS: { id: string; label: string; count?: number; severity?: SeverityTone }[] = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'compute', label: 'Compute', count: 3, severity: 'success' },
+  { id: 'storage', label: 'Storage', count: 4, severity: 'danger' },
+  { id: 'workers', label: 'Workers', count: 6, severity: 'warning' },
+];
+
 export default function PrimitivesDemo() {
   const [tab, setTab] = useState('overview');
   const [plan, setPlan] = useState('pro');
   const [agree, setAgree] = useState(true);
   const [country, setCountry] = useState('us');
   const [page, setPage] = useState(3);
+  const [section, setSection] = useState('storage');
 
   return (
     <div className="h-full overflow-auto bg-gray-50 p-6">
@@ -133,6 +144,38 @@ export default function PrimitivesDemo() {
               size={120} thickness={16} centerLabel={<span className="text-gray-900">100%</span>}
               segments={[{ label: 'Direct', value: 45 }, { label: 'Search', value: 30 }, { label: 'Social', value: 15 }, { label: 'Email', value: 10 }]}
             />
+          </div>
+        </Section>
+
+        <Section title="Metrics & severity">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+            <div className="rounded-lg border border-gray-200 bg-white p-4">
+              <div className="mb-3 text-sm font-medium text-gray-900">web-01 · ap-southeast-2</div>
+              <div className="space-y-3">
+                <MetricBar label="CPU" value={23.4} warn={80} crit={90} detail="4 vCPU" />
+                <MetricBar label="Memory" value={82.1} warn={80} crit={90} detail="13.1 / 16 GiB" />
+                <MetricBar label="Disk" value={94.2} warn={80} crit={90} detail="94.2 / 100 GiB" />
+                {/* null is not zero: dashed empty track, never a green sliver. */}
+                <MetricBar label="Swap" value={null} warn={80} crit={90} />
+              </div>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-white p-2">
+              <SidebarGroupLabel>Sections</SidebarGroupLabel>
+              {SECTIONS.map(s => (
+                <SidebarNavItem
+                  key={s.id}
+                  label={s.label}
+                  count={s.count}
+                  severity={s.severity}
+                  active={section === s.id}
+                  onClick={() => setSection(s.id)}
+                />
+              ))}
+              <p className="px-2.5 pt-2 text-[11px] italic text-gray-400">
+                The marker is the sidebar's alarm surface — a problem several levels down stays
+                visible on the item that leads to it.
+              </p>
+            </div>
           </div>
         </Section>
       </div>

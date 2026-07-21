@@ -4,7 +4,41 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
-## [3.24.0] — 2026-07-20
+## [3.25.0] — 2026-07-21
+
+### Added
+- **`SidebarNavItem` takes an optional `severity`** (`'success' | 'warning' |
+  'danger'` — the same status vocabulary `StatusBadge` and `Banner` already
+  speak, not a new ok/warn/crit dialect). It renders a small marker dot before
+  the label so a filter sidebar can double as an always-visible alarm surface:
+  a problem several levels inside a section stays visible on the nav item that
+  leads to it. The consuming app rolls the tone up (worst-of its children); the
+  item renders a severity, it never computes one. The dot is `aria-hidden` with
+  a `title`, and the word ("ok" / "warning" / "critical") rides in an `sr-only`
+  span after the label, so the meaning survives a screen reader or a
+  colour-blind operator. **Omitting the prop renders byte-identical markup to
+  3.24** — asserted in `tests/SidebarNavItem.test.tsx` against the captured
+  pre-change output, so no existing call site changes.
+- **`MetricBar`** — a value, a proportional bar and optional `warn` / `crit`
+  threshold ticks: the CPU / memory / disk row that status surfaces keep
+  re-implementing locally. The contract it enforces so no caller can get it
+  wrong: **`null` is not zero**. A missing reading renders as a dashed empty
+  track and an em dash, never a zero-width bar (which is a picture of a healthy
+  idle box); `NaN`/`Infinity` count as missing too. With no thresholds supplied
+  the fill stays grey rather than green, because green is a claim ("measured,
+  and under warn") that an unjudged number has no standing to make — the shell
+  hardcodes no threshold, not even as a fallback. Ticks are positioned from the
+  caller's numbers on the caller's `max` scale, bounds are inclusive (`>=`), the
+  bar clamps at 100 % while the printed number does not, and the track is a
+  `role="meter"` that stays indeterminate when there is no reading. Sizes `sm`
+  (compact row) and `md` (stat); neither draws a frame.
+- **`severityOf(value, warn?, crit?)`** and the `SeverityTone` type are exported
+  alongside them, so consumers roll severity up with the same function the
+  components judge with.
+- **`npm test`** — `tests/*.test.tsx` run by node's built-in test runner
+  (`scripts/test.mjs` bundles them with esbuild, already a build dependency, and
+  renders through `react-dom/server`). No test framework, no new
+  devDependency, no lockfile churn; wired into CI between typecheck and build.
 
 ### Added
 - **Per-section window accent stripe** (SG#00372). `Modal` takes an optional
