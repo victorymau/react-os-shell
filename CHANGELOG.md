@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.27.0] — 2026-07-22
+
+### Changed
+- **`Select` is now a custom listbox on desktop** instead of a native
+  `<select>`. A native select's OS popup grabs every key event while it is open,
+  so page and window hotkeys went dead until it closed (BG#00421 — filter
+  dropdowns on list pages were the surface most often hit). The rebuilt control
+  renders a trigger button plus a body-portaled option list (same
+  portal/positioning reasoning as `SearchableSelect` and `PopupMenu`), so key
+  events keep flowing to the app. It ships full keyboard support — ArrowUp/Down,
+  Home/End, Enter/Space to select, letter typeahead, and Esc to close **the
+  listbox only** (via the shell's `registerModalEscapeInterceptor` seam, so Esc
+  never falls through and closes the parent window) — and combobox/listbox/option
+  ARIA with `aria-expanded` / `aria-activedescendant`.
+- **On mobile (touch) `Select` still renders the native `<select>`** — the OS
+  wheel/sheet picker is the better touch affordance and hotkeys are irrelevant
+  there. The forwarded `HTMLSelectElement` ref and any spread native attributes
+  land on a hidden native `<select>` on desktop too, so the public `SelectProps`
+  API is unchanged and every existing call site compiles as-is.
+- **`FilterBar`'s short-list (`<=8` option) path** dropped its native `<select>`
+  for the same custom listbox (`PlainFilter`), matching the existing
+  `SearchableFilter` styling, so list-page filter dropdowns stop starving
+  hotkeys.
+
+### Added
+- **`NativeSelect`** is exported for callers that need a raw native `<select>`
+  (form posts, arbitrary native attributes) on every viewport.
+
 ## [3.26.0] — 2026-07-21
 
 ### Added

@@ -122,7 +122,7 @@ export { default as Input } from './forms/Input';
 export type { InputProps } from './forms/Input';
 export { default as Textarea } from './forms/Textarea';
 export type { TextareaProps } from './forms/Textarea';
-export { default as Select } from './forms/Select';
+export { default as Select, NativeSelect } from './forms/Select';
 export type { SelectProps, SelectOption } from './forms/Select';
 export { default as Checkbox } from './forms/Checkbox';
 export type { CheckboxProps } from './forms/Checkbox';
