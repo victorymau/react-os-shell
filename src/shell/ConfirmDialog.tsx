@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react';
 import { ExclamationTriangleIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { registerModalEscapeInterceptor } from './Modal';
 
 interface ConfirmOptions {
   title?: string;
@@ -125,6 +126,30 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
       pResolveRef.current?.(null);
     }
   };
+
+  // A confirm/destructive/prompt dialog floats above every shell window
+  // (z-9999) but is NOT a shell Modal, so it's absent from the window activation
+  // order. Without this, pressing Escape over a dialog reaches the frontmost
+  // Modal's window-close handler and closes the WINDOW BENEATH the dialog. While
+  // any dialog is open, claim Escape via the shell's escape-interceptor hook and
+  // dismiss the TOP-MOST open dialog instead. Returning true makes Modal
+  // preventDefault/stopPropagation and skip its window close; stopping the event
+  // in the window capture phase also pre-empts Headless UI's own (bubble-phase)
+  // Escape listener, so the dialog's onClose never double-fires. With no shell
+  // window beneath, no interceptor runs and Headless UI closes the dialog itself.
+  useEffect(() => {
+    if (!open && !dOpen && !pOpen) return;
+    return registerModalEscapeInterceptor(() => {
+      // Paint order confirm < destructive < prompt → dismiss the top-most first.
+      if (pOpen) { handlePClose(false); return true; }
+      if (dOpen) { handleDClose(false); return true; }
+      if (open) { handleClose(false); return true; }
+      return false;
+    });
+    // The close handlers' cancel paths don't read transient input, so they're
+    // safe to close over; re-register only when which dialog is open changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, dOpen, pOpen]);
 
   const variant = options.variant || (options.confirmLabel?.toLowerCase().includes('delete') || options.message.toLowerCase().includes('delete') ? 'danger' : 'info');
   const confirmBtnClass = variant === 'danger'

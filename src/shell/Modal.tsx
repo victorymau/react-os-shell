@@ -467,6 +467,68 @@ function workArea(): Box {
   return { x, y, w, h };
 }
 
+// ── Keeping windows reachable ────────────────────────────────────────────
+// A window may be parked mostly off-screen on purpose — macOS allows it, and
+// so do we. What neither macOS nor Windows allows is a window you can no
+// longer grab: Windows pins the caption inside the work area, macOS forbids
+// going under the menu bar. We enforce the same invariant, which is also the
+// only defence against the browser viewport shrinking out from under a window.
+const CAPTION_H = 40;    // title-bar height that must stay inside the work area
+const MIN_VISIBLE_X = 80; // horizontal strip that must stay grabbable
+
+/** Smallest move that keeps `box` grabbable. Never resizes. Returns `box`
+ *  itself when nothing moved, so callers can `setBox(clampReachable)` without
+ *  forcing a re-render or re-persisting an untouched window. */
+function clampReachable(box: Box, a: Box = workArea()): Box {
+  const x = Math.min(Math.max(box.x, a.x + MIN_VISIBLE_X - box.w), a.x + a.w - MIN_VISIBLE_X);
+  const y = Math.min(Math.max(box.y, a.y), a.y + a.h - CAPTION_H);
+  return x === box.x && y === box.y ? box : { ...box, x, y };
+}
+
+/** Smallest move that brings the whole window back on screen. Shrinks it only
+ *  when it is larger than the work area. */
+function clampFullyVisible(box: Box, a: Box = workArea()): Box {
+  const w = Math.min(box.w, a.w);
+  const h = Math.min(box.h, a.h);
+  return {
+    w, h,
+    x: Math.min(Math.max(box.x, a.x), a.x + a.w - w),
+    y: Math.min(Math.max(box.y, a.y), a.y + a.h - h),
+  };
+}
+
+/** Does every edge of this window sit inside the work area? A hidden panel
+ *  (minimised, or hidden by show-desktop) measures 0×0 and is never reported
+ *  off-screen — there is nothing to rescue. */
+export function isPanelFullyVisible(panel: HTMLElement): boolean {
+  const r = panel.getBoundingClientRect();
+  if (r.width === 0 || r.height === 0) return true;
+  const a = workArea();
+  const EPS = 1;
+  return r.left >= a.x - EPS && r.top >= a.y - EPS
+    && r.right <= a.x + a.w + EPS && r.bottom <= a.y + a.h + EPS;
+}
+
+/** Bearing in degrees from the work-area centre toward an off-screen window
+ *  (0 = right, 90 = down), for the taskbar's off-screen chevron. Null when the
+ *  window is fully visible. */
+export function panelOffscreenBearing(panel: HTMLElement): number | null {
+  if (isPanelFullyVisible(panel)) return null;
+  const r = panel.getBoundingClientRect();
+  const a = workArea();
+  const dx = (r.left + r.width / 2) - (a.x + a.w / 2);
+  const dy = (r.top + r.height / 2) - (a.y + a.h / 2);
+  return Math.atan2(dy, dx) * 180 / Math.PI;
+}
+
+/** Ask the window owning `windowKey` to slide fully back into the work area
+ *  and take focus. Handled by the `modal-reveal` listener each Modal installs.
+ *  Unlike `modal-center` this keeps the window's size and roughly its position
+ *  — it is a rescue, not a re-layout. */
+export function revealWindow(windowKey: string) {
+  window.dispatchEvent(new CustomEvent('modal-reveal', { detail: { windowKey } }));
+}
+
 function calcSnapBox(zone: SnapZone): Box {
   const a = workArea();
   const halfW = Math.floor(a.w / 2);
@@ -1219,9 +1281,44 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
       setWindowMenu({ x, y });
     };
 
+    // Rescue a window the user can't reach: the smallest move that puts it
+    // fully back inside the work area, shrinking it only if it is bigger than
+    // the work area. Fired when the taskbar's off-screen thumbnail is clicked.
+    // Deliberately narrower than `onCenter` — the window keeps its size and
+    // roughly its place, because a rescue shouldn't re-layout your desktop.
+    const onReveal = (e: Event) => {
+      if ((e as CustomEvent).detail?.windowKey !== windowKey) return;
+      activateModal(modalId);
+      const cur = boxRef.current;
+      const next = clampFullyVisible(cur);
+      if (next.x === cur.x && next.y === cur.y && next.w === cur.w && next.h === cur.h) return;
+      const panel = panelRef.current;
+      const stillness = typeof window.matchMedia === 'function'
+        && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (panel && !stillness) {
+        // Animate it home so the user sees where it came from. Mid-slide the
+        // panel's rect still measures as off-screen, so the taskbar marker
+        // would survive its own rescue — re-poll once the window has landed.
+        // `transitionend` is the honest signal; the timer is a fallback,
+        // because a slide with no movement on any axis never fires one.
+        let settled = false;
+        const done = () => {
+          if (settled) return;
+          settled = true;
+          panel.style.transition = '';
+          window.dispatchEvent(new CustomEvent('modal-geometry'));
+        };
+        panel.style.transition = 'left .28s ease, top .28s ease, width .28s ease, height .28s ease';
+        panel.addEventListener('transitionend', done, { once: true });
+        window.setTimeout(done, 400);
+      }
+      setBox(next);
+    };
+
     window.addEventListener('modal-reorder', onReorder);
     window.addEventListener('modal-split-view', onSplitView);
     window.addEventListener('modal-center', onCenter);
+    window.addEventListener('modal-reveal', onReveal);
     window.addEventListener('modal-context-menu', onCtxMenu);
     return () => {
       modalDepthRef.dec();
@@ -1234,6 +1331,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
       window.removeEventListener('modal-reorder', onReorder);
       window.removeEventListener('modal-split-view', onSplitView);
       window.removeEventListener('modal-center', onCenter);
+      window.removeEventListener('modal-reveal', onReveal);
       window.removeEventListener('modal-context-menu', onCtxMenu);
       // Notify remaining modals to recalc z-index
       window.dispatchEvent(new CustomEvent('modal-reorder'));
@@ -1251,7 +1349,8 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
       const saved = { ..._windowPositions[boxKey] };
       // If dimensions are specified, enforce them (override cached size but keep position)
       if (dimensions) { saved.w = dimensions[0]; if (!autoHeight) saved.h = dimensions[1]; }
-      return saved;
+      // A box saved on a larger screen must not reopen out of reach.
+      return clampReachable(saved);
     }
     if (initialBox) return { x: initialBox.x, y: initialBox.y, w: initialBox.w, h: initialBox.h };
     return openMaximized ? calcMaximized() : calcWindowed();
@@ -1431,12 +1530,23 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
       _windowPositions[boxKey] = box;
       _savePositionsDebounced();
     }
+    // Let the taskbar recompute its off-screen markers. `box` only changes on a
+    // settled gesture (drag/resize commit, snap, reveal) — never per frame.
+    if (open) window.dispatchEvent(new CustomEvent('modal-geometry'));
   }, [box, open, boxKey]);
 
-  // Sync on viewport resize when maximized
+  // Sync on viewport resize: refit a maximized window, and rescue a windowed
+  // one the viewport has shrunk out from under.
   useEffect(() => {
     if (!open) return;
-    const sync = () => { if (maximized) setBox(calcMaximized()); };
+    const sync = () => {
+      if (maximized) { setBox(calcMaximized()); return; }
+      // Mid-gesture the panel is driven by inline styles, not `box` — leave it.
+      if (document.body.classList.contains('rosh-gesturing')) return;
+      // `clampReachable` returns the same object when nothing moved, so a
+      // window that is already reachable neither re-renders nor re-persists.
+      setBox(clampReachable);
+    };
     window.addEventListener('resize', sync);
     // Only observe DOM changes when maximized — avoids unnecessary re-renders
     let observer: MutationObserver | null = null;
@@ -1458,7 +1568,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     // than clobbering it back to the (stale/seeded) saved value.
     if (boxKey && _windowPositions[boxKey]) {
       const saved = _windowPositions[boxKey];
-      setBox(prev => (autoHeight ? { ...saved, h: prev.h } : { ...saved }));
+      setBox(prev => clampReachable(autoHeight ? { ...saved, h: prev.h } : { ...saved }));
       return;
     }
     if (initialBox) {
@@ -1586,7 +1696,11 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
       window.removeEventListener('pointerup', up);
       endGesture?.();
       hideSnapPreview();
-      const finalBox = { ...boxRef.current };
+      // Commit the drag through the reachability clamp — the pointer can leave
+      // the viewport, so without this a window can be shoved past the right or
+      // bottom edge and never grabbed again.
+      const finalBox = clampReachable({ ...boxRef.current });
+      boxRef.current = finalBox;
 
       // Snap drop: lock to the snap target, save the pre-snap size for next drag.
       if (!widget && currentZone) {
@@ -1880,7 +1994,11 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   const content = (
     <div>
       {/* Window */}
-      <div ref={panelRef} data-modal-panel data-modal-id={modalId} data-window-key={windowKey || undefined} {...(allowPinOnTop ? { 'data-utility': '' } : {})} {...(widget ? { 'data-widget': '' } : {})}
+      {/* `data-utility` marks a window that *may* be pinned on top; `data-pinned-top`
+          marks one that currently *is*, and so is riding the 999 lane rather than the
+          activation-order ladder. The taskbar's peek needs the latter to know which
+          windows it must not restack. */}
+      <div ref={panelRef} data-modal-panel data-modal-id={modalId} data-window-key={windowKey || undefined} {...(allowPinOnTop ? { 'data-utility': '' } : {})} {...(pinnedOnTop ? { 'data-pinned-top': '' } : {})} {...(widget ? { 'data-widget': '' } : {})}
         className={`fixed rounded-2xl flex flex-col overflow-hidden ${widget ? (isActive ? 'shadow-2xl' : 'shadow-lg') : `border ${isActive ? 'shadow-2xl border-gray-200' : 'shadow-lg border-gray-300'}`}`}
         onMouseDownCapture={(e) => {
           swallowInactiveClickRef.current = false;
