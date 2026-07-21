@@ -43,6 +43,17 @@ All notable changes to this project will be documented in this file. The format 
   They are now nudged back to reachable, and a box saved on a larger screen is
   sanitised before the window reopens.
 
+## [3.24.1] — 2026-07-20
+
+### Fixed
+- **`confirm()` / `confirmDestructive()` / `prompt()` now consume `Escape`.**
+  These dialogs float above the window layer but aren't shell windows, so
+  pressing `Escape` over one used to reach the frontmost window's close handler
+  and close the **window beneath** the dialog instead of the dialog. The dialog
+  provider now registers a modal escape-interceptor while any dialog is open,
+  dismissing the top-most dialog (cancel) and leaving the underlying window
+  open. No effect when a dialog is shown with no window beneath it.
+
 ## [3.24.0] — 2026-07-20
 
 ### Added
