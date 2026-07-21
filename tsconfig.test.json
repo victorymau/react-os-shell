@@ -1,0 +1,24 @@
+{
+  // Typechecks the specs, which the main config cannot reach: it is the BUILD
+  // config, so `rootDir: "./src"` fixes the shape of dist/ and `include` stops
+  // at src/**. The specs were therefore transpiled by esbuild — which strips
+  // types without checking them — and a type error in 250 lines of spec code
+  // was invisible to `npm run typecheck` and so to CI.
+  //
+  // `src` is included as well as `tests` because the specs import from it and a
+  // project needs the files it resolves; `rootDir` widens to the repo root to
+  // cover both, which is harmless here because nothing is emitted.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    // The specs are the only thing in the repo that runs on Node — `node:test`,
+    // `node:assert/strict`, `process.env`. The library itself is browser code
+    // and keeps `"types": []`, so these globals never leak into src.
+    "types": ["node"]
+  },
+  "include": ["src/**/*", "tests/**/*"]
+}

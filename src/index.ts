@@ -162,6 +162,10 @@ export type { LoadingSpinnerProps } from './shell/Spinner';
 export { default as FilterBar, useFilters } from './shell/FilterBar';
 export type { FilterOption } from './shell/FilterBar';
 export { SidebarNavItem, SidebarGroupLabel } from './shell/SidebarNav';
+export { default as MetricBar } from './shell/MetricBar';
+export type { MetricBarProps } from './shell/MetricBar';
+export { severityOf, isSeverityTone } from './shell/severity';
+export type { SeverityTone } from './shell/severity';
 
 // ── Portal-promoted components (phase 2/3 — app concerns lifted to props) ──
 export { default as BulkImportGrid } from './shell/BulkImportGrid';

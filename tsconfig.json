@@ -11,6 +11,11 @@
     "isolatedModules": true,
     "skipLibCheck": true,
     "strict": true,
+    // The library is browser code. `@types/node` is a devDependency (the specs
+    // and scripts/ run on Node), and letting its globals in here would change
+    // what `setTimeout` and friends resolve to across src. Ambient types are
+    // opted into per-config instead — see tsconfig.test.json.
+    "types": [],
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
