@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { SEVERITY_FILL, SEVERITY_WORD, type SeverityTone } from './severity';
+import { resolveSeverity, type SeverityTone } from './severity';
 
 /**
  * Presentational building blocks for SidebarLayout filter sidebars (status
@@ -29,23 +29,32 @@ export function SidebarNavItem({ label, count, active, onClick, severity }: {
    * renders a severity, it never computes one. Omitting it is not a claim of
    * health, it is no claim at all, and renders exactly as an item did before
    * this prop existed.
+   *
+   * A tone that arrives from a backend rollup has not been near the compiler,
+   * so an unrecognised token (`'crit'`, `'critical'`, a stale enum) renders a
+   * visible "unknown severity" marker and logs — never nothing. This item is
+   * often the ONLY place a deep alarm surfaces; a marker that quietly vanishes
+   * on a bad token would turn the safety feature into the outage.
    */
   severity?: SeverityTone;
 }) {
+  // `null` when the prop was omitted (no marker at all — 3.24's markup), a
+  // style otherwise. Never partially-undefined classes, whatever came in.
+  const marker = resolveSeverity(severity, 'SidebarNavItem');
   return (
     <button
       type="button"
       onClick={onClick}
       className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-sm text-left ${active ? 'bg-blue-50 font-medium text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
     >
-      {severity && (
+      {marker && (
         // Decorative in the a11y tree — the word itself follows the label, so
         // the item reads "Warehouses, warning, 12" in that order instead of
         // leading with a tone before anyone knows what it belongs to.
         <span
           aria-hidden="true"
-          title={SEVERITY_WORD[severity]}
-          className={`shrink-0 h-1.5 w-1.5 rounded-full ${SEVERITY_FILL[severity]}`}
+          title={marker.word}
+          className={`shrink-0 h-1.5 w-1.5 rounded-full ${marker.fill}`}
         />
       )}
       {/* `mr-auto` only with a marker: the button is `justify-between`, which
@@ -53,8 +62,8 @@ export function SidebarNavItem({ label, count, active, onClick, severity }: {
           the middle. An auto margin absorbs the free space instead, so the dot
           stays against the label and the count keeps its right edge. Without a
           marker the class list is untouched — 3.24's exact markup. */}
-      <span className={severity ? 'truncate mr-auto' : 'truncate'}>{label}</span>
-      {severity && <span className="sr-only">{SEVERITY_WORD[severity]}</span>}
+      <span className={marker ? 'truncate mr-auto' : 'truncate'}>{label}</span>
+      {marker && <span className="sr-only">{marker.word}</span>}
       {count != null && count > 0 && (
         <span className={`shrink-0 inline-flex items-center justify-center min-w-[1.25rem] px-1.5 h-5 rounded-full text-[11px] font-medium ${active ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
           {count}

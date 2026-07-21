@@ -58,3 +58,34 @@ export function Severity() {
     </div>
   );
 }
+
+// A severity normally arrives from a backend rollup, where the compiler cannot
+// follow it. A token outside `success | warning | danger` therefore has to be a
+// render state of its own: grey dot, red edge, the token named in the tooltip
+// and to a screen reader, and one console line. It must never render as
+// nothing — this item is often the only place a deep alarm surfaces, so a
+// marker that vanishes on a typo turns the safety feature into the outage.
+const STALE_ROLLUP = [
+  { value: 'compute', label: 'Compute', count: 3, severity: 'success' },
+  // The operational dialect, and the displayed word round-tripped back in.
+  { value: 'storage', label: 'Storage', count: 4, severity: 'crit' },
+  { value: 'workers', label: 'Workers', count: 6, severity: 'critical' },
+];
+
+export function UnknownSeverity() {
+  return (
+    <div className="p-5 w-64 space-y-0.5">
+      {STALE_ROLLUP.map(s => (
+        <SidebarNavItem
+          key={s.value}
+          label={s.label}
+          count={s.count}
+          // Deliberately unchecked: this story exists to show the fallback.
+          severity={s.severity as SeverityTone}
+          active={false}
+          onClick={() => {}}
+        />
+      ))}
+    </div>
+  );
+}

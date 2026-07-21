@@ -18,7 +18,15 @@ All notable changes to this project will be documented in this file. The format 
   span after the label, so the meaning survives a screen reader or a
   colour-blind operator. **Omitting the prop renders byte-identical markup to
   3.24** — asserted in `tests/SidebarNavItem.test.tsx` against the captured
-  pre-change output, so no existing call site changes.
+  pre-change output, so no existing call site changes. A severity usually
+  arrives from a backend rollup, where the compiler cannot follow it, so an
+  **unrecognised token degrades visibly and loudly rather than vanishing**: a
+  grey dot with a red edge (deliberately unlike all three tones), the offending
+  token named in the `title` and to a screen reader, and one deduplicated
+  `console.error` naming the accepted vocabulary. Aliases (`ok` / `warn` /
+  `crit`, or the displayed words round-tripped) are deliberately NOT accepted —
+  quietly absorbing a second dialect would re-create the problem this vocabulary
+  exists to avoid, and would hide the caller's bug instead of surfacing it.
 - **`MetricBar`** — a value, a proportional bar and optional `warn` / `crit`
   threshold ticks: the CPU / memory / disk row that status surfaces keep
   re-implementing locally. The contract it enforces so no caller can get it
@@ -28,17 +36,43 @@ All notable changes to this project will be documented in this file. The format 
   the fill stays grey rather than green, because green is a claim ("measured,
   and under warn") that an unjudged number has no standing to make — the shell
   hardcodes no threshold, not even as a fallback. Ticks are positioned from the
-  caller's numbers on the caller's `max` scale, bounds are inclusive (`>=`), the
-  bar clamps at 100 % while the printed number does not, and the track is a
-  `role="meter"` that stays indeterminate when there is no reading. Sizes `sm`
-  (compact row) and `md` (stat); neither draws a frame.
-- **`severityOf(value, warn?, crit?)`** and the `SeverityTone` type are exported
-  alongside them, so consumers roll severity up with the same function the
-  components judge with.
+  caller's numbers on the caller's `max` scale, bounds are inclusive (`>=`), and
+  the bar clamps at 100 % while the printed number does not. `max` is held to
+  the same standard as `value`, because it is the divisor: `0`, a negative,
+  `NaN` or `Infinity` is not a scale, so the row prints the value but draws no
+  bar and no ticks rather than dividing by zero into a fabricated full bar.
+  Sizes `sm` (compact row) and `md` (stat); neither draws a frame.
+- **`severityOf(value, warn?, crit?)`**, **`isSeverityTone(value)`** and the
+  `SeverityTone` type are exported alongside them, so consumers roll severity up
+  with the same function the components judge with, and can validate a rollup at
+  the fetch boundary — where a bad token can still be reported against its
+  payload — instead of discovering it as a wrong pixel. A non-finite bound now
+  counts as absent rather than as a threshold nothing exceeds (`value >= NaN` is
+  false, so `warn={NaN}` used to return a `success` invented out of a missing
+  threshold).
 - **`npm test`** — `tests/*.test.tsx` run by node's built-in test runner
-  (`scripts/test.mjs` bundles them with esbuild, already a build dependency, and
-  renders through `react-dom/server`). No test framework, no new
-  devDependency, no lockfile churn; wired into CI between typecheck and build.
+  (`scripts/test.mjs` bundles them with esbuild and renders through
+  `react-dom/server`). No test framework is installed; `esbuild` and
+  `@types/node`, which the runner and the specs genuinely import, are declared
+  as devDependencies rather than borrowed from `tsup`'s transitive tree. Wired
+  into CI between typecheck and build.
+- **`npm run typecheck` now also covers `tests/`** via `tsconfig.test.json`. The
+  main config is the build config (`rootDir: "./src"`, `include: ["src/**/*"]`),
+  so the specs sat outside it and were only ever transpiled by esbuild, which
+  strips types without checking them — a type error in a spec was invisible to
+  CI.
+- **`MetricBar`'s track carries `role="meter"` only when it is actually a
+  meter** — a reading, on a scale. `aria-valuenow` is a REQUIRED attribute of
+  `role="meter"` (axe-core `aria-required-attr`, serious): unlike `progressbar`,
+  `meter` has no indeterminate state, so a meter without it is not an "unknown"
+  reading, it is a malformed widget whose announcement is undefined. With no
+  reading, or no usable `max`, the track is therefore decorative
+  (`aria-hidden`) and the em dash plus "no data" carry the fact in text.
+  `aria-valuenow` also stays inside the declared range, since the bar clamps and
+  the printed number does not; `aria-valuetext` carries the unclamped reading
+  and takes precedence in the announcement.
+
+## [3.24.0] — 2026-07-20
 
 ### Added
 - **Per-section window accent stripe** (SG#00372). `Modal` takes an optional
@@ -54,6 +88,8 @@ All notable changes to this project will be documented in this file. The format 
   header/footer colour render exactly as before. Widgets (no title bar) and
   mobile fullscreen windows skip the stripe; omitting the prop keeps today's
   rendering everywhere.
+
+## [3.23.0] — 2026-07-18
 
 ### Changed
 - **Clicking a control in an inactive window now only brings the window

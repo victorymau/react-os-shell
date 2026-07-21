@@ -15,11 +15,19 @@
  *   thresholds, no value  no reading — dashed empty track, em dash
  *   neither               same
  *
+ * `max` is held to the same standard as `value`, because it is the divisor: a
+ * bar is a proportion, and a proportion of an unknown total is not a small bar,
+ * it is no bar. `max={0}` used to divide to `Infinity`, clamp to 100 % and paint
+ * a full green bar out of a division by zero — a fabricated measurement on the
+ * exact path this component exists to guard (`max={total ?? 0}` where the probe
+ * never learned the total). Now a non-positive or non-finite `max` drops the
+ * scale: the value still prints, the bar does not pretend to place it.
+ *
  * Severity is `success | warning | danger` — the shell's status vocabulary (see
  * `severity.ts`), not a private ok/warn/crit dialect.
  */
 import type { ReactNode } from 'react';
-import { SEVERITY_FILL, SEVERITY_INK, severityOf, type SeverityTone } from './severity';
+import { boundOf, resolveSeverity, severityOf, styleForTone, warnOnce, type SeverityTone } from './severity';
 
 export interface MetricBarProps {
   /** Row label — `CPU`, `Memory`, `Disk`. Rendered in a fixed-width column so
@@ -28,7 +36,10 @@ export interface MetricBarProps {
   /** The measured value. `null` / `undefined` means NO READING — rendered as
    *  unknown, never as 0. */
   value: number | null | undefined;
-  /** Value mapped to a full bar. Default 100. */
+  /** Value mapped to a full bar. Default 100. Must be a positive finite number:
+   *  it is the divisor, so `0`, a negative or `NaN` is not a scale. Given one,
+   *  the row prints the value but draws no proportional bar and no ticks —
+   *  there is nothing truthful to draw them against. */
   max?: number;
   /** Warning bound, in the same unit as `value`. Inclusive (`>=`). */
   warn?: number | null;
@@ -88,51 +99,82 @@ export default function MetricBar({
   // One narrowed reading for the whole component: `null` covers both "not
   // supplied" and NaN/Infinity, which are just as unmeasured.
   const reading = value != null && Number.isFinite(value) ? value : null;
-  const tone = reading != null ? (severity ?? severityOf(reading, warn, crit)) : null;
+  // The same test applied to the divisor, plus positivity. Anything else is not
+  // a smaller scale, it is the absence of one.
+  const scale = Number.isFinite(max) && max > 0 ? max : null;
+  if (scale == null) {
+    warnOnce(
+      `MetricBar:max:${String(max)}`,
+      `[react-os-shell] MetricBar: max=${String(max)} is not a positive finite number, so there is ` +
+        'no scale to draw a proportional bar against. Printing the value without a bar. Pass the real ' +
+        'capacity, or leave the reading out entirely (value={null}) when it is unknown — do not pass 0.',
+    );
+  }
+  // A `severity` the caller supplied outranks the bounds. An unrecognised one
+  // resolves to a visible "unknown" style rather than to undefined classes.
+  const supplied = resolveSeverity(severity, 'MetricBar');
+  const paint = reading != null ? (supplied ?? styleForTone(severityOf(reading, warn, crit))) : null;
+  // Ticks need a bound the component can actually place, on a scale that exists.
+  const warnAt = boundOf(warn);
+  const critAt = boundOf(crit);
   // Clamp the BAR only — never the printed number. A probe blipping to 103 %
   // should draw a full bar and still say 103 %.
-  const width = reading != null ? clampPct((reading / max) * 100) : 0;
-  const format = formatValue ?? ((v: number) => (max === 100 ? `${v.toFixed(1)}%` : String(v)));
+  const width = reading != null && scale != null ? clampPct((reading / scale) * 100) : 0;
+  const format = formatValue ?? ((v: number) => (scale === 100 ? `${v.toFixed(1)}%` : String(v)));
   const printed = reading != null ? format(reading) : '—';
-  const showTicks = reading != null && (warn != null || crit != null);
+  const showTicks = reading != null && scale != null && (warnAt != null || critAt != null);
 
   const meterLabel = ariaLabel ?? (typeof label === 'string' ? label : undefined);
   const barHeight = size === 'md' ? 'h-2' : 'h-1.5';
+  // It is a meter only when it is actually a meter: a reading, on a scale.
+  // `role="meter"` REQUIRES `aria-valuenow` (unlike `progressbar`, it has no
+  // indeterminate state), so a roleless track is the honest empty rendering —
+  // omitting valuenow under the role would have been a malformed widget whose
+  // announcement is undefined, and `aria-valuenow={0}` would have announced a
+  // healthy idle box. Either way the row already says "— / no data" in text.
+  const isMeter = reading != null && scale != null;
 
   const bar = (
     <div
-      role="meter"
-      aria-label={meterLabel}
-      aria-valuemin={0}
-      aria-valuemax={max}
-      // Omitted when there is no reading — an indeterminate meter, which is
-      // exactly the fact. `aria-valuenow={0}` would announce a healthy zero.
-      aria-valuenow={reading ?? undefined}
-      aria-valuetext={reading != null ? printed : emptyLabel}
+      {...(isMeter
+        ? {
+            role: 'meter' as const,
+            'aria-label': meterLabel,
+            'aria-valuemin': 0,
+            'aria-valuemax': scale,
+            // Kept inside the declared range: the bar clamps, and a valuenow
+            // past its own valuemax is an invalid widget. `aria-valuetext`
+            // still carries the unclamped truth, and takes precedence in the
+            // announcement.
+            'aria-valuenow': Math.min(scale, Math.max(0, reading)),
+            'aria-valuetext': printed,
+          }
+        : { 'aria-hidden': true as const })}
       className={
-        reading != null && tone
+        isMeter && paint
           ? `relative mt-2 ${barHeight} rounded-full bg-gray-200`
-          // Dashed track: nothing to compare against, or nothing to compare.
+          // Dashed track: nothing to compare against, nothing to compare, or
+          // nothing to compare it on.
           : `relative mt-2 ${barHeight} rounded-full border border-dashed border-gray-300 bg-transparent`
       }
     >
-      {reading != null && (
+      {isMeter && (
         // Grey when unjudged: the magnitude is real, the verdict is not ours.
         <div
-          className={`absolute inset-y-0 left-0 rounded-full ${tone ? SEVERITY_FILL[tone] : 'bg-gray-400'}`}
+          className={`absolute inset-y-0 left-0 rounded-full ${paint ? paint.fill : 'bg-gray-400'}`}
           style={{ width: `${width}%` }}
         />
       )}
-      {showTicks && warn != null && (
-        <Tick at={clampPct((warn / max) * 100)} title={`warning ≥ ${warn}`} className="bg-gray-400 opacity-75" />
+      {showTicks && scale != null && warnAt != null && (
+        <Tick at={clampPct((warnAt / scale) * 100)} title={`warning ≥ ${warnAt}`} className="bg-gray-400 opacity-75" />
       )}
-      {showTicks && crit != null && (
-        <Tick at={clampPct((crit / max) * 100)} title={`critical ≥ ${crit}`} className="bg-gray-500" />
+      {showTicks && scale != null && critAt != null && (
+        <Tick at={clampPct((critAt / scale) * 100)} title={`critical ≥ ${critAt}`} className="bg-gray-500" />
       )}
     </div>
   );
 
-  const valueInk = tone ? SEVERITY_INK[tone] : reading != null ? 'text-gray-900' : 'text-gray-400';
+  const valueInk = paint ? paint.ink : reading != null ? 'text-gray-900' : 'text-gray-400';
 
   if (size === 'md') {
     return (

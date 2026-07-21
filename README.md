@@ -176,8 +176,8 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 | `BugReportDetail` | Used inside an entity-window registry entry; reads from `<BugReportConfigProvider>`. |
 | `StatusBadge` | Coloured pill rendering a status string. Map status→semantic group via `<StatusBadgeProvider groups={{...}}>`. |
 | `SidebarLayout` | Two-pane layout with a drag-to-resize sidebar (`storageKey` persists the width). Pair with a `flushBody` window so the sidebar runs edge-to-edge. |
-| `SidebarNavItem`, `SidebarGroupLabel` | Filter-sidebar button (optional `count` badge and `severity` marker dot) plus its group heading. Roll the severity up in the app; omitting it renders exactly as before it existed. |
-| `MetricBar` | Value + proportional bar with optional `warn` / `crit` threshold ticks — the CPU / memory / disk row. `value={null}` renders "no data" (dashed empty track), never a zero-width bar; with no thresholds the fill stays grey rather than claiming health. |
+| `SidebarNavItem`, `SidebarGroupLabel` | Filter-sidebar button (optional `count` badge and `severity` marker dot) plus its group heading. Roll the severity up in the app; omitting it renders exactly as before it existed. An unrecognised `severity` renders a visible "unknown" marker and logs — it never silently disappears. |
+| `MetricBar` | Value + proportional bar with optional `warn` / `crit` threshold ticks — the CPU / memory / disk row. `value={null}` renders "no data" (dashed empty track), never a zero-width bar; with no thresholds the fill stays grey rather than claiming health. `max` must be a positive finite number — given `0`/`NaN` the row prints the value but draws no bar, rather than dividing by zero into a full one. |
 | `Button`, `Input`, `Textarea`, `Select`, `Checkbox`, `Radio`, `FormField`, `Label` | Form controls — controlled (`value`/`onChange`); `Input`/`Textarea` forward native props for react-hook-form. |
 | `Card`, `StatCard` | Surface panel (optional header/footer) + dashboard metric tile. |
 | `Avatar`, `AvatarGroup` | User avatar with initials fallback + status dot; overlapping stack with +N overflow. |
@@ -234,7 +234,8 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 | `glassStyle()` | Returns the theme-aware frosted-glass `style` object. |
 | `reportBug(submit)` | Captures a screenshot via `getDisplayMedia`, opens the dialog, hands the payload to your `submit`. |
 | `formatDate(iso)` | Locale-aware date formatter. |
-| `severityOf(value, warn?, crit?)` | The `SeverityTone` (`success` \| `warning` \| `danger`) a reading earns against **inclusive** bounds; `null` when there's no reading or no bounds — the shell hardcodes no threshold. Backs `MetricBar`; use it to roll a `SidebarNavItem severity` up. |
+| `severityOf(value, warn?, crit?)` | The `SeverityTone` (`success` \| `warning` \| `danger`) a reading earns against **inclusive** bounds; `null` when there's no reading or no usable bounds — the shell hardcodes no threshold. Backs `MetricBar`; use it to roll a `SidebarNavItem severity` up. |
+| `isSeverityTone(value)` | Type guard for the three tones. Validate a backend rollup with it at the fetch boundary, where a bad token can still be reported against its payload, rather than letting it surface as a wrong pixel. |
 | `toast.success / .error / .info` | Toast notifications — auto-mounts container. |
 | `Kbd` constants — `MOD`, `ALT`, `SHIFT`, `ENTER`, `ALT_SHIFT_E`, `CMD_K`, … | Symbol constants for rendering keyboard shortcuts. |
 
@@ -251,12 +252,14 @@ Most "desktop UI" demos on the web are toys with hardcoded windows and no escape
 PRs welcome. Open an issue first for non-trivial changes so we can align on shape.
 
 ```bash
-npm run typecheck   # tsc --noEmit
+npm run typecheck   # tsc --noEmit, then tsc -p tsconfig.test.json (src + tests)
 npm test            # specs in tests/, run by node's test runner
 npm run build       # tsup → dist/
 ```
 
-`npm test` bundles `tests/*.test.tsx` with esbuild (already a build dependency) and runs them under `node --test`, rendering components with `react-dom/server`. No test framework is installed — the runner is `scripts/test.mjs`, ~40 lines, so the suite costs the package zero extra dependencies.
+`npm test` bundles `tests/*.test.tsx` with esbuild and runs them under `node --test`, rendering components with `react-dom/server`. No test framework is installed — the runner is `scripts/test.mjs`, ~60 lines. `esbuild` (the runner imports it) and `@types/node` (the specs import `node:test`) are declared devDependencies rather than borrowed from `tsup`'s transitive tree, so a change in its dependency layout cannot break the build job with a module-not-found.
+
+Typecheck runs twice on purpose: `tsconfig.json` is the *build* config, so `rootDir: "./src"` fixes the shape of `dist/` and its `include` stops at `src/**`. `tsconfig.test.json` widens the scope to cover `tests/` as well — esbuild strips types without checking them, so without it a type error in a spec is invisible to CI.
 
 ## License
 

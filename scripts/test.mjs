@@ -1,15 +1,24 @@
 /**
  * Test runner — `npm test`.
  *
- * The package ships no test framework on purpose: every dependency here is a
+ * The package ships no test FRAMEWORK on purpose: every dependency here is a
  * dependency CI installs on two Node versions for a library whose CI budget is
- * "typecheck + build". So the runner is assembled from what the repo already
- * has — esbuild (a tsup dependency) transpiles the .tsx specs, node's built-in
- * test runner runs them, and react-dom/server renders the components to static
- * markup. No new devDependency, no lockfile churn.
+ * "typecheck + build". So the runner is assembled from small pieces — esbuild
+ * transpiles the .tsx specs, node's built-in test runner runs them, and
+ * react-dom/server renders the components to static markup.
+ *
+ * esbuild is a declared devDependency, NOT a borrowed one. It arrives in
+ * `node_modules` as a tsup dependency either way, so the import resolves
+ * without it — but only by npm's hoisting, which is a property of the install
+ * topology and not a promise anyone made. This file is on the CI critical path,
+ * so a change in tsup's dependency layout would break the build job with a
+ * module-not-found rather than a test failure. Declaring it costs nothing (it
+ * dedupes to the same single copy) and makes the resolution guaranteed.
  *
  * Specs live in `tests/*.test.tsx` and import components from `../src/...`.
  * React stays external so the specs and the components share one instance.
+ * They are typechecked by `tsconfig.test.json`, NOT here: esbuild strips types
+ * without checking them, so `npm test` passing says nothing about spec types.
  */
 import { build } from 'esbuild';
 import { spawn } from 'node:child_process';

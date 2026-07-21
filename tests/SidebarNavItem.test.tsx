@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { SidebarNavItem } from '../src/shell/SidebarNav';
+import { withConsoleError } from './capture-console';
 
 const noop = () => {};
 
@@ -77,4 +78,65 @@ test('severity leaves the count badge and active styling alone', () => {
   );
   assert.match(html, /bg-blue-50 font-medium text-blue-700/);
   assert.match(html, /bg-blue-100 text-blue-700">12<\/span>/);
+});
+
+test('an unrecognised severity is never invisible — the whole point of the marker', () => {
+  // The regression this locks down: SEVERITY_FILL[severity] on an unknown key
+  // is `undefined`, which interpolates into the className as the literal string
+  // "undefined" — producing a colourless dot with no title and no screen-reader
+  // word. On the one component whose job is keeping a deep alarm visible at the
+  // top level, silent invisibility is the worst available failure.
+  const { result: html, errors } = withConsoleError(() =>
+    renderToStaticMarkup(
+      <SidebarNavItem label="Servers" active={false} onClick={noop} severity={'critical' as never} />,
+    ),
+  );
+
+  assert.doesNotMatch(html, /undefined/, 'no "undefined" class reaches the DOM');
+  // Visible: real classes, and deliberately unlike any of the three tones so it
+  // cannot be mistaken for a verdict.
+  const dot = html.match(/class="shrink-0 h-1\.5 w-1\.5 rounded-full ([^"]*)"/);
+  assert.ok(dot, 'the marker dot still renders');
+  assert.notEqual(dot[1].trim(), '', 'and it has paint on it');
+  assert.match(dot[1], /border-red-500/);
+  assert.doesNotMatch(dot[1], /bg-(green|amber|red)-500/, 'not disguised as a real tone');
+  // Legible: the bad token is named in the tooltip and to a screen reader, so
+  // an operator can report it and a developer can find it.
+  assert.match(html, /title="unrecognised severity &quot;critical&quot;"/);
+  assert.match(html, /<span class="sr-only">unrecognised severity &quot;critical&quot;<\/span>/);
+  // Loud: and reported once, not once per item in the sidebar.
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /SidebarNavItem: severity "critical" is not one of success \| warning \| danger/);
+});
+
+test('every shape of junk severity degrades visibly rather than vanishing', () => {
+  // The realistic sources: the operational dialect (`ok|warn|crit`), the word
+  // the component itself DISPLAYS round-tripped back in, a stale enum, an empty
+  // string from a partially-filled payload, and a non-string from raw JSON.
+  for (const junk of ['ok', 'warn', 'crit', 'critical', 'OK', 'Danger', '', 'error', 0, true, {}]) {
+    const html = withConsoleError(() =>
+      renderToStaticMarkup(
+        <SidebarNavItem label="Servers" active={false} onClick={noop} severity={junk as never} />,
+      ),
+    ).result;
+    const dot = html.match(/class="shrink-0 h-1\.5 w-1\.5 rounded-full ([^"]*)"/);
+    assert.ok(dot, `${JSON.stringify(junk)} must still render a marker`);
+    assert.notEqual(dot[1].trim(), '', `${JSON.stringify(junk)} must render a visible marker`);
+    assert.doesNotMatch(html, /undefined/, `${JSON.stringify(junk)} must not leak "undefined"`);
+    assert.match(html, /class="sr-only">unrecognised severity/, `${JSON.stringify(junk)} must say so`);
+  }
+});
+
+test('a null or undefined severity is still "no claim", not a bad token', () => {
+  // The absent case must stay distinguishable from the invalid one: omitting
+  // the prop is not an error, and must not draw a marker or log anything.
+  for (const absent of [undefined, null]) {
+    const { result: html, errors } = withConsoleError(() =>
+      renderToStaticMarkup(
+        <SidebarNavItem label="Open" count={12} active={false} onClick={noop} severity={absent as never} />,
+      ),
+    );
+    assert.equal(html, V3_24_INACTIVE_WITH_COUNT, `${String(absent)} renders 3.24's markup`);
+    assert.equal(errors.length, 0, `${String(absent)} is silent`);
+  }
 });

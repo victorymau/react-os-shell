@@ -25,6 +25,21 @@ export function NoReading() {
   );
 }
 
+// `max` is the divisor, so it has to be a positive finite number. Given 0 or
+// NaN the row prints the value and drops the bar — it does NOT divide by zero
+// into a clamped, healthy-looking full bar. Same dashes as NoReading, different
+// cause: there the reading is missing, here the scale is.
+export function NoScale() {
+  return (
+    <div className="w-72 space-y-3 p-5">
+      {/* The realistic path: a probe that never learned the capacity, and a
+          caller writing `max={total ?? 0}`. */}
+      <MetricBar label="Disk" value={94.2} max={0} warn={80} crit={90} detail="94.2 GiB used" />
+      <MetricBar label="Queue" value={17} max={NaN} detail="17 jobs" />
+    </div>
+  );
+}
+
 export function StatSize() {
   return (
     <div className="flex gap-4 p-5">
