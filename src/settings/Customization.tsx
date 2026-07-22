@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { ModalActions } from '../shell/Modal';
+import { ModalActions, forgetMaximizedWindowBoxes } from '../shell/Modal';
 import { useDesktopHost } from '../shell/Desktop';
 import { useShellPrefs } from '../shell/ShellPrefs';
 import { applyThemePrefs, resolveTheme } from '../hooks/useTheme';
@@ -397,7 +397,8 @@ export default function Customization({ omit, section }: CustomizationProps = {}
         <p className="text-xs text-gray-500 mb-3">
           Sidebar mode is designed for small screens — windows always run maximized
           and the start menu lives in a persistent left sidebar (sections expand inline
-          instead of opening flyouts).
+          instead of opening flyouts). Classic is the windowed mode: choosing it puts
+          every open window back to its normal size.
         </p>
         <div className="flex gap-2">
           {([
@@ -408,10 +409,19 @@ export default function Customization({ omit, section }: CustomizationProps = {}
               key={m.key}
               onClick={() => {
                 savePref('layout_mode', m.key);
-                // Stay consistent if the user later switches back to classic —
-                // sidebar implies maximized, so set the default-window-size pref
-                // to match.
-                if (m.key === 'sidebar') savePref('default_window_size', 'maximized');
+                // Sidebar forces every window maximized through the
+                // `--layout-mode` CSS var, so it must NOT also write the user's
+                // 'Default window size' preference — doing so left classic mode
+                // permanently opening windows full-screen once sidebar had been
+                // tried even once. Classic instead undoes that stuck value and
+                // asks live windows to drop back to their windowed size.
+                if (m.key === 'classic') {
+                  if (prefs.default_window_size === 'maximized') savePref('default_window_size', 'large');
+                  // Open windows un-maximize now; closed ones would still
+                  // reopen at the full-screen box they saved while maximized.
+                  forgetMaximizedWindowBoxes();
+                  window.dispatchEvent(new CustomEvent('react-os-shell:restore-windowed'));
+                }
               }}
               className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
                 (prefs.layout_mode || 'classic') === m.key

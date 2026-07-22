@@ -9,6 +9,7 @@ import { useIsMobile } from './useIsMobile';
 import { getSwipingParentKey, setSwipingParentKey, subscribeSwipingParentKey } from './mobileSwipeStore';
 import WindowErrorBoundary from './WindowErrorBoundary';
 import { useShellPrefs } from './ShellPrefs';
+import { boxFillsWorkArea, computeMaximizedBox, isSidebarStripReserved, readAlwaysMaximizedFlag } from './workArea';
 
 /** Context that passes the modal's unique ID to children */
 const ModalIdContext = createContext<string>('');
@@ -263,6 +264,29 @@ export function getWindowPosition(key: string): { x: number; y: number; w: numbe
 export function setWindowPosition(key: string, pos: { x: number; y: number; w: number; h: number }) {
   _windowPositions[key] = pos;
   _savePositionsDebounced();
+}
+
+/**
+ * Forget every saved box that is really "the whole work area".
+ *
+ * A window that was maximized persists its full-screen geometry under its
+ * `windowKey`, so it reopens filling the screen even after the shell is back
+ * in windowed mode — the box outlives the setting that produced it. Layout
+ * Mode → Classic calls this so those windows fall back to the normal size
+ * ladder on their next open. `boxFillsWorkArea` is what keeps it from
+ * forgetting a window the user sized and placed by hand.
+ */
+export function forgetMaximizedWindowBoxes() {
+  const workArea = computeMaximizedBox();
+  const sidebarReserved = isSidebarStripReserved();
+  let changed = false;
+  for (const key of Object.keys(_windowPositions)) {
+    if (boxFillsWorkArea(_windowPositions[key], workArea, sidebarReserved)) {
+      delete _windowPositions[key];
+      changed = true;
+    }
+  }
+  if (changed) _savePositionsDebounced();
 }
 
 interface ModalProps {
@@ -1160,19 +1184,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   // ── Draggable/resizable state ──
   const isNested = useRef(false);
 
-  const calcMaximized = useCallback(() => {
-    const taskbarH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--taskbar-height')) || 0;
-    const taskbarW = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--taskbar-width')) || 0;
-    const tbPos = getComputedStyle(document.documentElement).getPropertyValue('--taskbar-position')?.trim() || 'bottom';
-    // Sidebar layout mode reserves a fixed strip on the left edge — windows
-    // that would otherwise hit x=0 must start at sidebar's right edge instead.
-    const sidebarW = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width')) || 0;
-    const x = (tbPos === 'left' ? taskbarW : 0) + sidebarW;
-    const y = tbPos === 'top' ? taskbarH : 0;
-    const w = window.innerWidth - (tbPos === 'left' || tbPos === 'right' ? taskbarW : 0) - sidebarW;
-    const h = window.innerHeight - (tbPos === 'top' || tbPos === 'bottom' ? taskbarH : 0);
-    return { x, y, w, h };
-  }, []);
+  const calcMaximized = useCallback(computeMaximizedBox, []);
 
   const calcWindowed = useCallback(() => {
     const sw = 0;
@@ -1378,11 +1390,6 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   // calcMaximized() — no windowed state, no drag-to-restore, no maximize
   // toggle button. Layout dispatches a custom event whenever the pref
   // flips so already-mounted windows refresh without needing to remount.
-  const readAlwaysMaximizedFlag = () => {
-    if (typeof document === 'undefined') return false;
-    const mode = getComputedStyle(document.documentElement).getPropertyValue('--layout-mode')?.trim();
-    return mode === 'sidebar';
-  };
   const [alwaysMaximizedRaw, setAlwaysMaximizedRaw] = useState<boolean>(() => readAlwaysMaximizedFlag());
   useEffect(() => {
     const refresh = () => setAlwaysMaximizedRaw(readAlwaysMaximizedFlag());
@@ -1514,15 +1521,34 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   }, [autoHeightResolved, widget, autoMinHeight]);
 
   // When sidebar mode is toggled at runtime, snap existing windows to the
-  // maximized box so they instantly fill the new work area. When it's
-  // turned off we leave the window where it is — the user can manually
-  // un-maximize if they want.
+  // maximized box so they instantly fill the new work area.
   useEffect(() => {
     if (alwaysMaximized) {
       setMaximized(true);
       setBox(calcMaximized());
     }
   }, [alwaysMaximized, calcMaximized]);
+
+  // Picking 'Classic' in Layout Mode means "windowed": every non-widget window
+  // drops out of maximized and back onto the normal size ladder, whether it was
+  // maximized by sidebar mode, by the default-window-size preference, or by
+  // hand. Widgets are content-sized and never maximized, so they're exempt.
+  // Layout Mode fires this on every Classic click — not only on a sidebar →
+  // classic transition — so a shell already stuck full-screen can be recovered
+  // without hunting through Behavior.
+  //
+  // The handler deliberately does *not* re-read `--layout-mode`: Layout writes
+  // that var in an effect that lands after the click handler, so a guard here
+  // would still see the outgoing 'sidebar' and skip the restore. Un-maximizing
+  // unconditionally is safe either way — if the shell really is still in
+  // sidebar mode, the alwaysMaximized effect above puts the window straight
+  // back.
+  useEffect(() => {
+    if (widget) return;
+    const restore = () => { setMaximized(false); setBox(calcWindowed()); };
+    window.addEventListener('react-os-shell:restore-windowed', restore);
+    return () => window.removeEventListener('react-os-shell:restore-windowed', restore);
+  }, [widget, calcWindowed]);
 
   // Persist box position on changes (debounced to localStorage)
   useEffect(() => {

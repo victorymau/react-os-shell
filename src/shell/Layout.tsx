@@ -8,6 +8,7 @@ import ShortcutHelp from './ShortcutHelp';
 import NotificationBell, { type NotificationsConfig } from './NotificationBell';
 import { getPomoSnapshot, subscribePomo } from './pomodoroStore';
 import { useShellPrefs } from './ShellPrefs';
+import { SIDEBAR_STRIP_W } from './workArea';
 import { useWindowManager } from './WindowManager';
 import { useTheme } from '../hooks/useTheme';
 import Desktop, { useDesktopHost } from './Desktop';
@@ -750,7 +751,7 @@ export default function Layout({
   // right edge, and always-maximized non-widget windows.
   const layoutMode: 'classic' | 'sidebar' = prefs.layout_mode === 'sidebar' ? 'sidebar' : 'classic';
   const sidebarMode = layoutMode === 'sidebar';
-  const sidebarWidth = sidebarMode ? 280 : 0;
+  const sidebarWidth = sidebarMode ? SIDEBAR_STRIP_W : 0;
 
   // Taskbar layout — when sidebar mode is active we force the taskbar
   // horizontal across the bottom; the design doesn't support a vertical
