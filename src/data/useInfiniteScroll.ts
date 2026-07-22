@@ -109,6 +109,10 @@ export function useInfiniteScroll<T>({
     items: allItems,
     totalCount,
     isLoading: query.isLoading,
+    // Surface the query's error state so a failed fetch renders as an error
+    // (with retry) rather than a misleading empty list. `refetch` is the retry.
+    isError: query.isError,
+    error: query.error,
     isFetchingNextPage,
     hasNextPage: !!hasNextPage,
     sentinelRef,

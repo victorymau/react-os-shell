@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.28.0] — 2026-07-22
+
+### Added
+- **`ListLoadError`** — the error counterpart to `EmptyState` for data lists.
+  Shown when a list's fetch fails (5xx, auth expiry, network) so an outage
+  reads as an error with a **Try again** retry, instead of a misleading
+  "nothing here" empty state. Visual language mirrors `EmptyState`, tinted for
+  error; `onRetry` is optional.
+- **`useInfiniteScroll` now returns `isError` and `error`** (from the
+  underlying `useInfiniteQuery`) alongside the existing `refetch`, so callers
+  can distinguish a failed fetch from an empty result.
+
+### Changed
+- **`EntityList` gained optional `isError` and `onRetry` props.** When
+  `isError` is set and no rows have loaded, it renders `ListLoadError` (wired to
+  `onRetry`) instead of `emptyState`; a mid-scroll next-page failure with rows
+  already loaded keeps the list. Both props default to unset, so every existing
+  call site is unchanged — pass `isError={isError} onRetry={refetch}` from
+  `useInfiniteScroll` to opt a list in.
+
 ## [3.27.0] — 2026-07-22
 
 ### Changed
