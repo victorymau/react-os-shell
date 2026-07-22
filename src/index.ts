@@ -107,6 +107,8 @@ export { default as Kanban } from './data/Kanban';
 export type { KanbanColumn, KanbanProps } from './data/Kanban';
 export { default as ResizableTable } from './data/ResizableTable';
 export { default as ListFooter } from './data/ListFooter';
+export { default as ListLoadError } from './data/ListLoadError';
+export type { ListLoadErrorProps } from './data/ListLoadError';
 export { default as useTableNav } from './data/useTableNav';
 export { useColumnConfig } from './data/useColumnConfig';
 export { useInfiniteScroll } from './data/useInfiniteScroll';

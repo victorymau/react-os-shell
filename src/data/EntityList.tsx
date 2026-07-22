@@ -4,6 +4,7 @@ import useTableNav from './useTableNav';
 import ResizableTable from './ResizableTable';
 import LoadingSpinner from '../shell/LoadingSpinner';
 import ListFooter from './ListFooter';
+import ListLoadError from './ListLoadError';
 import { PopupMenu, PopupMenuItem, PopupMenuDivider, PopupMenuLabel } from '../shell/PopupMenu';
 import apiClient from '../api/client';
 import toast from '../shell/toast';
@@ -34,6 +35,15 @@ export interface EntityListProps<T> {
   isLoading: boolean;
   emptyState: ReactNode;
   totalCount?: number;
+
+  /** When true and no rows have loaded yet, render {@link ListLoadError}
+   *  (with a retry) instead of `emptyState` — so a failed fetch reads as an
+   *  error, not "nothing here". Wire `useInfiniteScroll`'s `isError`. A
+   *  mid-scroll next-page failure (rows already loaded) keeps the list.
+   *  Defaults to unset → behaviour unchanged for existing callers. */
+  isError?: boolean;
+  /** Retry handler for the error state — wire the data source's `refetch`. */
+  onRetry?: () => void;
 
   tableId: string;
   columns: EntityListColumn[];
@@ -108,6 +118,7 @@ export interface EntityListProps<T> {
 export default function EntityList<T>(props: EntityListProps<T>) {
   const {
     items, isLoading, emptyState, totalCount,
+    isError, onRetry,
     tableId, columns, renderCell, getRowId = (item: any) => item.id,
     sort, onSort,
     selected, setSelected,
@@ -197,6 +208,9 @@ export default function EntityList<T>(props: EntityListProps<T>) {
   };
 
   if (isLoading) return <LoadingSpinner />;
+  // A failed initial fetch (no rows) reads as an error with retry, not the
+  // empty state. Once rows exist, a later next-page failure keeps the list.
+  if (isError && items.length === 0) return <ListLoadError onRetry={onRetry} />;
   if (items.length === 0) return <>{emptyState}</>;
 
   const allSelected = items.length > 0 && selected.size === items.length;
