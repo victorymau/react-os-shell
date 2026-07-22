@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.28.1] — 2026-07-22
+
+### Fixed
+- **Layout Mode → Classic puts windows back to their normal size.** Choosing
+  **Sidebar** used to also write the user's Behavior → *Default window size*
+  preference to *Maximized*. Nothing ever wrote it back, so once sidebar mode
+  had been tried even once, classic mode kept opening every window full-screen —
+  and a window that had saved a full-screen box reopened at that size even after
+  being resized smaller. Sidebar already forces maximized through
+  `--layout-mode`, so it no longer touches the preference at all. Choosing
+  **Classic** now un-maximizes every open window, restores a stuck *Maximized*
+  default back to *Large*, and forgets saved boxes that are really "the whole
+  work area" so those windows reopen on the normal size ladder. Boxes the user
+  sized or placed by hand — including half-screen snaps and full-width short
+  windows — are left alone.
+
+### Changed
+- **New `workArea` module** holds the work-area geometry that was inline in
+  `Modal` (`computeMaximizedBox`, `boxFillsWorkArea`, `SIDEBAR_STRIP_W`,
+  `readAlwaysMaximizedFlag`). `Layout` takes the sidebar strip width from there
+  instead of repeating the literal. Internal — no public API change.
+
 ## [3.28.0] — 2026-07-22
 
 ### Added
