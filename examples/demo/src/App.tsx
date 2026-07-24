@@ -548,6 +548,13 @@ export default function App() {
                               notifications={DEMO_NOTIFICATIONS}
                               search={DEMO_SEARCH}
                               taskbarTrayLeft={<DevIndicator />}
+                              mobileApp={{
+                                url: 'https://example.com/get-the-app',
+                                heading: 'Get the react-os-shell app',
+                                description:
+                                  'The desktop shell is built for larger screens. Grab the mobile app to keep working on your phone.',
+                                ctaLabel: 'Download the app',
+                              }}
                             />
                           }
                         />

@@ -2,10 +2,10 @@
  * Shared desktop-icon building blocks.
  *
  * Desktop.tsx renders the desktop surface; Files.tsx renders desktop shortcut
- * folders inside the Files app; MobileHome.tsx renders the mobile home grid.
- * All three import the icon tiles, entity-icon config and the desktop-folder
- * bridge from here so the surfaces never visually diverge — and so Desktop
- * and Files never import each other (that would be an import cycle).
+ * folders inside the Files app. Both import the icon tiles, entity-icon config
+ * and the desktop-folder bridge from here so the surfaces never visually
+ * diverge — and so Desktop and Files never import each other (that would be an
+ * import cycle).
  */
 import { isValidElement, cloneElement, type ReactElement, type ReactNode } from 'react';
 import { navIcons } from '../shell-config/nav';

@@ -1,10 +1,11 @@
 /**
  * Mobile breakpoint hook — single source of truth for "is this a phone/tablet
  * portrait viewport?" Drives whether <Layout> renders the desktop chrome
- * (windows / taskbar / start menu sidebar) or <MobileShell> (home / fullscreen
- * apps / bottom-nav switcher).
+ * (windows / taskbar / start menu sidebar) or the <MobileAppLanding> screen
+ * that points the user at the consumer-wired mobile app. A handful of
+ * primitives (Modal, ResizableTable) also read it to adapt touch behaviour.
  *
- * Locked at 768 px so iPad portrait gets the mobile shell. Also OR's with
+ * Locked at 768 px so iPad portrait counts as mobile. Also OR's with
  * `pointer: coarse` so touch-only devices that happen to be wider (e.g. an
  * Android tablet in landscape) still get touch-appropriate UI.
  */

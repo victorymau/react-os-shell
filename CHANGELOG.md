@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [4.0.0] — 2026-07-24
+
+### Removed
+- **BREAKING: the built-in mobile shell is gone.** On phone / tablet-portrait
+  viewports `<Layout>` used to swap the desktop chrome for a bespoke touch OS
+  (home icon grid, app switcher, bottom nav, notification/profile sheets). That
+  whole surface has been removed — the shell is desktop-only now.
+
+### Added
+- **`Layout` `mobileApp` prop** — wire a link to your dedicated mobile app
+  (native deep link, App Store / Play Store page, or a mobile-optimised web
+  app) and small-screen visitors get a branded landing screen with a call-to-
+  action that opens it. See the new `MobileAppConfig` type (`url`, `ctaLabel`,
+  `heading`, `description`). With no `mobileApp` configured the landing screen
+  still renders as a plain "works best on desktop" notice, so a consumer that
+  hasn't adopted the prop yet degrades gracefully rather than dropping phone
+  users into the cramped desktop shell.
+
+### Migration
+- Consumers that relied on the mobile shell should pass `mobileApp={{ url: … }}`
+  to `<Layout>`. No other API changed; the responsive touch tweaks in `Modal`
+  and the data tables are unaffected.
+
 ## [3.28.2] — 2026-07-24
 
 ### Fixed
