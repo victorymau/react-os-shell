@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [3.28.2] — 2026-07-24
+
+### Fixed
+- **A restored window whose record is gone stops asking for it.** An entity
+  window reopened from the saved session re-reads its record on mount, on focus
+  and on a 60s fallback interval. Applied to a record the server says is not
+  there, that never ended: TanStack's default three retries (1s/2s/4s) on top
+  of the 60s poll meant ~4 requests a minute, forever, for as long as the tab
+  stayed open — and the window looked perfectly normal throughout, because it
+  renders from the snapshot saved beside it. One such window in production made
+  2,848 `404`s from a single browser in 48 hours. A 4xx now stops both the
+  retry and the polling: the request is asked once and left alone. `408` and
+  `429` still retry, as do 5xx, timeouts and offline blips — those are the
+  cases retrying exists for.
+- **A window id containing `#` no longer truncates its own request.** The
+  detail URL interpolated the saved id raw, so an id holding a document number
+  (`RP#60001`) was cut at the fragment before the request left the browser and
+  the server saw a path nobody wrote. Ids are now encoded — a no-op for a uuid,
+  and a wrong id 404s as itself instead of as something else.
+
+### Changed
+- **New `entityFetchPolicy` module** holds the retry/poll decision and the
+  detail-URL construction that were inline in `WindowManager`, with specs
+  covering permanent vs transient failures and id encoding.
+
 ## [3.28.1] — 2026-07-22
 
 ### Fixed
