@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient, { isShellApiClientConfigured } from '../api/client';
+import { entityDetailUrl, entityRefetchInterval, shouldRetryEntityFetch } from './entityFetchPolicy';
 import { WINDOW_REGISTRY, isPageEntry, isEntityEntry, type PageRegistryEntry, type ModalRegistryEntry } from '../windowRegistry/types';
 import Modal, { triggerSplitView, modalDepthRef, getActiveModalId, subscribeActive, activateModal, ExposeBackdrop, WindowShortcutProvider, setWindowDefaultPosition, isPanelFullyVisible, panelOffscreenBearing, revealWindow, type WindowShortcutSpec } from './Modal';
 import WindowErrorBoundary, { WindowCrashedFallback } from './WindowErrorBoundary';
@@ -169,15 +170,19 @@ function RestoredRegistryModal({ item, onClose, onMinimize, accentRgb }: { item:
   const isDraft = typeof item.entityId === 'string' && item.entityId.startsWith('new-');
   const { data: entity, isLoading, refetch } = useQuery({
     queryKey: [qkPrefix, item.entityId],
-    queryFn: () => apiClient.get(`${entry.endpoint}${item.entityId}/`).then(r => r.data),
+    queryFn: () => apiClient.get(entityDetailUrl(entry.endpoint, String(item.entityId))).then(r => r.data),
     initialData: item.entitySnapshot,
     initialDataUpdatedAt: 0, // Treat snapshot as stale so query refetches immediately
     enabled: !entry.selfFetching && !isDuplicate && !isDraft && isShellApiClientConfigured(),
     staleTime: 0,
     refetchOnWindowFocus: true,
     refetchOnMount: 'always',
-    refetchInterval: 60_000, // Fallback polling; WebSocket provides instant updates
+    // Fallback polling; WebSocket provides instant updates. A window whose
+    // entity the server says is not there stops polling instead of asking
+    // every 60s forever — see entityFetchPolicy.
+    refetchInterval: query => entityRefetchInterval(query.state.error),
     refetchIntervalInBackground: false,
+    retry: shouldRetryEntityFetch,
   });
 
   // Refetch entity data whenever this modal is activated (brought to front)
