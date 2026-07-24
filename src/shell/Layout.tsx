@@ -23,7 +23,7 @@ import StartMenu from './StartMenu';
 // stale source checkout where Sidebar.tsx hasn't been pulled yet won't
 // crash on module load — only when they actually flip into sidebar mode.
 const Sidebar = lazy(() => import('./Sidebar'));
-import MobileShell from './MobileShell';
+import MobileAppLanding, { type MobileAppConfig } from './MobileAppLanding';
 import { useIsMobile } from './useIsMobile';
 import { PopupMenu, PopupMenuItem, PopupMenuDivider } from './PopupMenu';
 import {
@@ -48,6 +48,7 @@ export {
   isSection,
 };
 export type { NavItem, NavSection };
+export type { MobileAppConfig };
 
 export interface LayoutProps {
   /** Brand label rendered on the start-menu button. */
@@ -81,6 +82,11 @@ export interface LayoutProps {
    *  (e.g. tasks due that day) inside the mini month calendar. When omitted
    *  the popover stays a plain date grid. */
   clockCalendar?: ClockCalendarConfig;
+  /** Mobile-app link shown on phone/tablet-portrait viewports in place of the
+   *  desktop chrome. The shell has no built-in touch UI — wire a link to your
+   *  dedicated mobile app here (see MobileAppConfig). When omitted, small
+   *  screens get a plain "best viewed on desktop" notice. */
+  mobileApp?: MobileAppConfig;
 }
 
 export interface ClockCalendarConfig {
@@ -726,6 +732,7 @@ export default function Layout({
   search,
   taskbarTrayLeft,
   clockCalendar,
+  mobileApp,
 }: LayoutProps = {}) {
   const host = useDesktopHost();
   const { user, logout, hasAnyPerm } = useAuth();
@@ -827,12 +834,13 @@ export default function Layout({
     root.style.setProperty('--window-tab-font-size', sv.tabFont);
   }, [reduceTransparency, inactiveHeaderOpacity, inactiveContentOpacity, activeHeaderOpacity, activeContentOpacity, taskbarH, taskbarPosition, prefs.default_window_size, prefs.window_position, prefs.menu_density, prefs.start_menu_size, sidebarWidth, layoutMode]);
 
-  // Mobile-only CSS var: bottom-nav reservation height. Modal reads this to
-  // shrink fullscreen apps so they don't render under the nav. Zero on desktop
-  // so the variable can be used unconditionally in Modal styles.
+  // Bottom-nav reservation height, read by Modal to shrink fullscreen apps so
+  // they don't render under a nav bar. The shell no longer paints a mobile
+  // bottom nav, so this is always 0 — kept as an explicit set (not unset) so
+  // Modal's `var(--mobile-bottom-nav, …)` fallback doesn't reintroduce a gap.
   useEffect(() => {
-    document.documentElement.style.setProperty('--mobile-bottom-nav', isMobile ? '100px' : '0px');
-  }, [isMobile]);
+    document.documentElement.style.setProperty('--mobile-bottom-nav', '0px');
+  }, []);
   const [balloonDismissed, setBalloonDismissed] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
   const [taskbarMenu, setTaskbarMenu] = useState<{ x: number; y: number } | null>(null);
@@ -984,8 +992,9 @@ export default function Layout({
       )}
 
       {(() => {
-        // Shared wallpaper style used by both desktop main and mobile home so
-        // the user's chosen background carries across breakpoints.
+        // Shared wallpaper style used by both the desktop main area and the
+        // mobile landing screen so the user's chosen background carries across
+        // breakpoints.
         const wallpaperStyle: React.CSSProperties = {
           backgroundColor: desktopBg?.startsWith('#') ? desktopBg : desktopBg === 'none' ? (() => {
             const customBg = getComputedStyle(document.documentElement).getPropertyValue('--custom-bg-color')?.trim();
@@ -1002,18 +1011,11 @@ export default function Layout({
 
         if (isMobile) {
           return (
-            <MobileShell
+            <MobileAppLanding
               productName={productName}
               productIcon={productIcon}
-              navSections={navSections}
-              navIcons={navIcons}
-              sectionIcons={sectionIcons}
+              config={mobileApp}
               wallpaperStyle={wallpaperStyle}
-              notifications={notifications}
-              profile={profile}
-              user={user}
-              onNavigate={(path) => openPage(path)}
-              onLogout={() => setShowLogout(true)}
             />
           );
         }

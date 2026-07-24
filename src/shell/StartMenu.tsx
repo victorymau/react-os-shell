@@ -119,9 +119,8 @@ export default function StartMenu({
 
   const handleClick = (path: string) => { openPage(path); onClose(); };
 
-  // Mobile: render as full-screen slide-up sheet with search + flat list.
-  // Folders live on MobileHome; this sheet is the quick-launch / search UI
-  // surfaced from the bottom-nav "Menu" button.
+  // Coarse-pointer / narrow viewport: render as a full-screen slide-up sheet
+  // with search + a flat, tappable list instead of the dense desktop columns.
   if (isMobile) {
     const allItems: { item: NavItem; sectionLabel?: string }[] = [];
     // Recursively flatten — 3rd-level children show up as their own rows so

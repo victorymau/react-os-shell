@@ -986,9 +986,8 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
       setSwipeDragging(false);
       if (past) {
         // Swipe-from-edge closes the current window so whatever was opened
-        // before it (the parent list, or — if this was a top-level app —
-        // home) becomes visible underneath. MobileShell falls back to home
-        // when the close empties openWindows.
+        // before it (the parent list, or the desktop underneath a top-level
+        // app) becomes visible.
         setSwipeX(window.innerWidth);
         setTimeout(() => {
           onClose();

@@ -80,7 +80,7 @@ export type { ChangelogEntry } from './changelog';
 
 // ── Layout entry point ──
 export { default as Layout } from './shell/Layout';
-export type { LayoutProps, ClockCalendarConfig } from './shell/Layout';
+export type { LayoutProps, ClockCalendarConfig, MobileAppConfig } from './shell/Layout';
 export { default as StartMenu } from './shell/StartMenu';
 export { default as Desktop } from './shell/Desktop';
 export { default as WidgetManager } from './shell/WidgetManager';
