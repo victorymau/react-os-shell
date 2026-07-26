@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [4.0.3] — 2026-07-26
+
+### Fixed
+- **Alt+Shift+N ("New") no longer fires in every open window at once.**
+  `useNewHotkey` registered a global keydown listener with no active-window
+  guard, so every mounted window that used it responded to a single keypress —
+  with two or more list windows open, "New" opened in all of them. It now
+  checks `useModalActive()` and only the frontmost window responds, matching
+  its sibling `useEditHotkey` (Alt+Shift+E), which already had the guard.
+
 ## [4.0.2] — 2026-07-26
 
 ### Fixed
