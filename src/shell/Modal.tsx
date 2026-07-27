@@ -2088,9 +2088,19 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
         onMouseDown={(e) => {
           if (exposeActive) return;
           setWindowMenu(null);
-          // Don't activate if the click is inside a child modal (nested portal)
+          // Only a press that landed inside THIS panel raises it. Two cases
+          // are excluded, and both reach here because React bubbles portaled
+          // events through the React tree, not the DOM tree — so every
+          // ancestor window sees a press that is nowhere near its own panel:
+          //   • a nested child modal's panel — that press belongs to the child;
+          //   • no panel at all — a body-portaled popup (Select/SearchableSelect
+          //     option list, PopupMenu). The ancestors fire in child→parent
+          //     order, so the OUTERMOST window activated last and buried the
+          //     nested window the user was working in: picking a User Group in
+          //     admin's "Edit User" raised the parent user window over the form,
+          //     which reads as a new window opening on top of the one you're in.
           const targetPanel = (e.target as HTMLElement).closest('[data-modal-panel]');
-          if (targetPanel && targetPanel !== panelRef.current) return;
+          if (targetPanel !== panelRef.current) return;
           if (!(e.target as HTMLElement).closest('button, input, a, select, textarea')) {
             activateModal(modalId);
           }

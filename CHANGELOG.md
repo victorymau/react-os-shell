@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [4.0.4] — 2026-07-27
+
+### Fixed
+- **Picking an option from a dropdown no longer throws the parent window over
+  the one you are working in.** In admin's Edit User — a nested window inside
+  the user's own window — choosing a User Group buried the form under the user
+  window the instant the option was clicked, which reads as a new window
+  opening on top of you. `Modal`'s mousedown-to-raise skipped activation only
+  when the press landed in a *nested child* panel; a press with no panel at all
+  fell through and raised the window. `Select`, `SearchableSelect` and
+  `PopupMenu` all portal their popup to `<body>`, and React bubbles portaled
+  events through the React tree rather than the DOM tree — so every ancestor
+  window saw a press nowhere near its own panel, and the outermost one, firing
+  last, won. Raising now requires the press to have landed inside that panel.
+  Clicking a window's own body still raises it as before.
+
 ## [4.0.3] — 2026-07-26
 
 ### Fixed
