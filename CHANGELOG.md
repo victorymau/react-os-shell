@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [4.1.0] — 2026-07-27
+
+### Added
+- **`DateRangePicker`** — a from/to calendar filter in one popover trigger,
+  with presets, promoted into the kit so every portal shares one control. The
+  portals had each grown the same filter as a pair of bare
+  `<input type="date">` boxes: two boxes state no relationship between the two
+  dates, offer no presets, and open an OS picker that is itself a
+  month-at-a-time stepper — reaching a date years back took one click per
+  intervening month.
+- Calendar navigation drills UP instead of stepping. The header's month and
+  year are separate buttons opening a 12-month and a 12-year grid, and the
+  arrows step whatever grid is open (a month, a year, or a 12-year page), so a
+  far-off date is a few clicks.
+- `formatDisplay` injects the consumer's own date formatter, so the picker
+  agrees with every other date on screen and the kit stays free of app-level
+  date-preference dependencies. Values are the plain `YYYY-MM-DD` the APIs
+  filter on; `toISODate` is exported alongside for callers that need to
+  serialise a `Date` the same way.
+- `clearable={false}` hides the Clear affordances for callers where a range is
+  REQUIRED — an accounting report seeded with a period has nothing sensible to
+  show for an empty one.
+
 ## [4.0.4] — 2026-07-27
 
 ### Fixed

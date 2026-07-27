@@ -138,6 +138,8 @@ export { default as MediaUploadField, mediaFileName } from './forms/MediaUploadF
 export type { MediaUploadFieldProps } from './forms/MediaUploadField';
 export { default as MediaUploadGrid } from './forms/MediaUploadGrid';
 export type { MediaUploadGridProps, MediaUploadGridItem } from './forms/MediaUploadGrid';
+export { default as DateRangePicker, toISODate } from './forms/DateRangePicker';
+export type { DateRangePickerProps } from './forms/DateRangePicker';
 export { INPUT_BASE, inputClasses } from './forms/styles';
 
 // ── Display & layout primitives ──
