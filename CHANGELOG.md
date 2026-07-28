@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [4.1.2] — 2026-07-29
+
+### Removed
+- **Deleted the dead duplicate `src/hooks/useTableNav.ts`.** It was an older,
+  unexported copy of the table-navigation hook that predates the
+  `useModalActive()` gate. The live hook lives at `src/data/useTableNav.ts`
+  (exported from the kit index; consumed by `EntityList`) and gates its
+  document-level shift-click/keydown listeners on the active window so two open
+  lists don't both react to a single shift-click — the `hooks/` copy lacked
+  that guard. Nothing imported the `hooks/` path, so this removes a footgun (a
+  future `import … from '../hooks/useTableNav'` would silently reintroduce the
+  multi-list shift-click bug) with no change to the published surface or
+  runtime behaviour.
+
 ## [4.1.1] — 2026-07-28
 
 ### Fixed
