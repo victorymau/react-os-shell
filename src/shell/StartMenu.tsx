@@ -10,6 +10,7 @@ import {
   type StartMenuCategories,
   type VirtualSection,
 } from '../shell-config/nav';
+import { visibleChildren as navVisibleChildren, isReachable } from './nav-types';
 import { useAuth } from '../contexts/AuthContext';
 import { glassStyle, GLASS_INPUT_BG } from '../utils/glass';
 import { useIsMobile } from './useIsMobile';
@@ -127,10 +128,11 @@ export default function StartMenu({
     // they can be searched/tapped from the mobile sheet too.
     const pushItem = (it: NavItem, sectionLabel?: string) => {
       if (it.perms && !hasAnyPerm(it.perms)) return;
+      // Same reachability rule as the desktop flyout — an empty group is not a
+      // tap target, so don't list one.
+      if (!isReachable(it, hasAnyPerm)) return;
       allItems.push({ item: it, sectionLabel });
-      if (it.children) {
-        for (const c of it.children) pushItem(c, it.label);
-      }
+      for (const c of navVisibleChildren(it, hasAnyPerm)) pushItem(c, it.label);
     };
     for (const entry of navSections) {
       if (isSection(entry)) {
@@ -218,17 +220,21 @@ export default function StartMenu({
   const getVisibleItems = (section: NavSection) =>
     section.items.filter(item => !item.perms || hasAnyPerm(item.perms));
 
+  const visibleChildren = (item: NavItem) => navVisibleChildren(item, hasAnyPerm);
+
   // Search — walks 3rd-level children too. Section column shows the parent
   // item label for children so users can tell nested entries apart.
   const matchTree = (it: NavItem, sectionLabel: string): (NavItem & { section: string })[] => {
     if (it.perms && !hasAnyPerm(it.perms)) return [];
+    // Same rule as the flyout: a group whose children are all hidden isn't a
+    // reachable destination, so it shouldn't surface as a result either.
+    if (!isReachable(it, hasAnyPerm)) return [];
+    const kids = visibleChildren(it);
     const hits: (NavItem & { section: string })[] = [];
     if (it.label.toLowerCase().includes(search.toLowerCase())) {
       hits.push({ ...it, section: sectionLabel });
     }
-    if (it.children) {
-      for (const c of it.children) hits.push(...matchTree(c, it.label));
-    }
+    for (const c of kids) hits.push(...matchTree(c, it.label));
     return hits;
   };
   const searchResults = search.length >= 2 ? [
@@ -265,9 +271,10 @@ export default function StartMenu({
   const hoveredData = hoveredVirtual
     ? null
     : (hoveredSection ? [...erpSections, ...systemSections, ...footerSections].find(s => (s as NavSection).label === hoveredSection) as NavSection | undefined : null);
-  const flyoutItems = hoveredVirtual
+  const flyoutItems = (hoveredVirtual
     ? hoveredVirtual.items
-    : (hoveredData ? getVisibleItems(hoveredData) : []);
+    : (hoveredData ? getVisibleItems(hoveredData) : [])
+  ).filter(item => isReachable(item, hasAnyPerm));
 
   // Density from CSS variable — three tiers controlling the vertical gap between
   // rows: tight < normal < large. `normal` is the default and sits a little
@@ -484,7 +491,7 @@ export default function StartMenu({
             onMouseLeave={() => { hoverTimeout.current = setTimeout(() => { setHoveredSection(null); setHoveredChild(null); }, 200); }}>
             <div className="py-1 px-1 overflow-y-auto overscroll-contain" style={{ maxHeight: availH }}>
               {flyoutItems.map(item => {
-                const hasChildren = !!item.children && item.children.length > 0;
+                const hasChildren = visibleChildren(item).length > 0;
                 const isChildHovered = hoveredChild === item.to;
                 return (
                   <div key={item.to}
@@ -518,7 +525,7 @@ export default function StartMenu({
         {(() => {
           if (search.length >= 2 || !hoveredChild) return null;
           const parent = flyoutItems.find(it => it.to === hoveredChild);
-          const kids = (parent?.children ?? []).filter(c => !c.perms || hasAnyPerm(c.perms));
+          const kids = parent ? visibleChildren(parent) : [];
           if (!parent || kids.length === 0) return null;
           const flyoutRect = flyoutRef.current?.getBoundingClientRect();
           const subLeft = flyoutRect ? flyoutRect.right + 4 : 0;

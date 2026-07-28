@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [4.1.1] — 2026-07-28
+
+### Fixed
+- **The start menu's 3rd-level flyout would not open.** Hovering a nested group
+  in a section flyout (e.g. Human Resources → Recruitment) highlighted the row
+  and showed its `>` chevron, but no sub-menu ever appeared. `<StartMenu>` drew
+  the chevron — and installed the handler that opens the flyout — from the raw
+  `item.children`, while the flyout itself rendered
+  `children.filter(perms)`. Any user who could see the parent row but none of
+  its children got an affordance that could never resolve: the parent of a
+  nested group carries no `perms` of its own by convention, so it is visible to
+  everyone who can see the section, while each child is gated individually.
+- Both affordances now come off one permission-filtered list
+  (`visibleChildren`), so the arrow appears exactly when there is something
+  behind it.
+- A group with no visible children is dropped from the menu, the sidebar and
+  the search results rather than left as an inert row. Such a parent's `to` is
+  a synthetic key that never navigates, so there was nothing to fall back to —
+  clicking it went nowhere. Users who can see at least one child are
+  unaffected, and partially-permitted users keep the group with only the
+  children they may see.
+
 ## [4.1.0] — 2026-07-27
 
 ### Added

@@ -26,6 +26,7 @@ import {
   type StartMenuCategories,
   type VirtualSection,
 } from '../shell-config/nav';
+import { visibleChildren, isReachable } from './nav-types';
 import { useAuth } from '../contexts/AuthContext';
 import { glassStyle, GLASS_INPUT_BG } from '../utils/glass';
 
@@ -88,18 +89,22 @@ export default function Sidebar({
 
   const getVisibleItems = (section: { items: NavItem[]; perms?: string[] }) => {
     if (section.perms && !hasAnyPerm(section.perms)) return [];
-    return section.items.filter(it => !it.perms || hasAnyPerm(it.perms));
+    return section.items
+      .filter(it => !it.perms || hasAnyPerm(it.perms))
+      // Same rule as <StartMenu>: a group whose children are all
+      // permission-hidden has nothing to expand, and its `to` is a synthetic
+      // key that never navigates — so drop it rather than leave an inert row.
+      .filter(it => isReachable(it, hasAnyPerm));
   };
 
   // Search across all items + sections (same flat list StartMenu uses).
   // Walks 3rd-level children too so nested entries are still discoverable.
   const matchTree = (it: NavItem, q: string): NavItem[] => {
     if (it.perms && !hasAnyPerm(it.perms)) return [];
+    if (!isReachable(it, hasAnyPerm)) return [];
     const hits: NavItem[] = [];
     if (it.label.toLowerCase().includes(q)) hits.push(it);
-    if (it.children) {
-      for (const c of it.children) hits.push(...matchTree(c, q));
-    }
+    for (const c of visibleChildren(it, hasAnyPerm)) hits.push(...matchTree(c, q));
     return hits;
   };
   const searchResults = useMemo(() => {
@@ -182,7 +187,7 @@ export default function Sidebar({
   // parent as its own mini-accordion (further indented). Expansion key is
   // `child:<to>` so it doesn't clash with the section labels in `expanded`.
   const renderNestedItem = (item: NavItem) => {
-    const kids = (item.children ?? []).filter(c => !c.perms || hasAnyPerm(c.perms));
+    const kids = visibleChildren(item, hasAnyPerm);
     if (kids.length === 0) return renderItem(item);
     const key = `child:${item.to}`;
     const isOpen = expanded.has(key);

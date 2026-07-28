@@ -51,3 +51,30 @@ export interface StartMenuCategories {
 export function isSection(item: NavSection | NavItem): item is NavSection {
   return 'items' in item;
 }
+
+/** The host app's permission predicate — `useAuth().hasAnyPerm`. */
+type HasAnyPerm = (perms: string[]) => boolean;
+
+/**
+ * The sub-items of `item` this user may actually see.
+ *
+ * Every affordance for a nested group has to be derived from THIS list — the
+ * chevron that advertises it, the hover handler that opens it, and the flyout
+ * itself. Reading the raw `item.children` for the chevron while filtering only
+ * for the flyout put an arrow on groups whose children were all
+ * permission-hidden: hovering one highlighted the row and opened nothing.
+ */
+export function visibleChildren(item: NavItem, hasAnyPerm: HasAnyPerm): NavItem[] {
+  return (item.children ?? []).filter(c => !c.perms || hasAnyPerm(c.perms));
+}
+
+/**
+ * Whether a nav row leads anywhere for this user: either it's a plain
+ * destination, or it's a group with at least one visible child. A group whose
+ * children are all hidden has nothing to open — and by convention a group's
+ * `to` is a synthetic key that never navigates, so there is nothing to fall
+ * back to either. Such a row is dropped rather than rendered inert.
+ */
+export function isReachable(item: NavItem, hasAnyPerm: HasAnyPerm): boolean {
+  return !item.children?.length || visibleChildren(item, hasAnyPerm).length > 0;
+}
