@@ -41,6 +41,28 @@ All notable changes to this project will be documented in this file. The format 
   burst of typing becomes a single Undo rather than one per keystroke. Omit it
   for a change that is already whole, like an import or a deleted row.
 
+  **Every window gets a stack without asking.** `WindowManager` mounts one
+  `UndoProvider` per open window, so a form only has to register its state — and
+  the stack is torn down with the window, which is right, because history is the
+  unsaved edit. It costs nothing until something registers. A read-only form
+  nests its own `<UndoProvider canEdit={false}>` to shadow it.
+
+  **`useUndoableState` is `useState` with the value in the stack**, so adopting a
+  form is a rename rather than an added line per field — which matters, because
+  the forms this is for hold their state in dozens of separate `useState` calls
+  and one of them has forty-three:
+
+  ```tsx
+  const [supplier, setSupplier] = useState('');                                // out
+  const [supplier, setSupplier] = useUndoableState('', { label: 'supplier' }); // in
+  ```
+
+  That also makes the choice legible: state left as plain `useState` is state
+  deliberately kept out of the history. Keep it there for anything that is not
+  the user's input — a search box, fetched data, validation output, an
+  initialisation guard. Undoing those puts stale results back on screen, and a
+  reverted guard can re-fire the effect it exists to suppress.
+
   ⌘Z / Ctrl+Z undoes and ⇧⌘Z / Ctrl+Shift+Z / Ctrl+Y redoes, bound by the
   provider so the keys work in a form that shows no controls at all — **except
   while the caret is in an input, a textarea, a select, or a grid cell**. There

@@ -239,6 +239,6 @@ export { formatDate } from './utils/date';
 export { default as useClickOutside } from './hooks/useClickOutside';
 export { default as useNewHotkey } from './hooks/useNewHotkey';
 export { default as useEditHotkey } from './hooks/useEditHotkey';
-export { UndoProvider, useUndo, useUndoable } from './shell/UndoProvider';
+export { UndoProvider, useUndo, useUndoable, useUndoableState } from './shell/UndoProvider';
 export type { UndoControlsApi, UndoableOptions, UndoProviderProps } from './shell/UndoProvider';
 export type { UndoStep, UndoState, UndoSnapshot } from './hooks/undoHistory';

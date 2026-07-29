@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useId, useMemo, useReducer, useRef } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useReducer, useRef, useState } from 'react';
 import { useModalActive } from './Modal';
 import { useShellAuth } from './ShellAuth';
 import {
@@ -247,4 +247,34 @@ export function useUndoable<T>(value: T, apply: (next: T) => void, opts: Undoabl
     ctx.record(label, coalesceKey);
     last.current = value;
   });
+}
+
+/**
+ * `useState`, with the value in the window's undo stack.
+ *
+ * Written to be a rename rather than an extra line, because the forms this is
+ * for hold their state in dozens of separate `useState` calls — one of them has
+ * forty-three. Adopting a form is then a per-line edit:
+ *
+ *     const [supplier, setSupplier] = useState('');
+ *     const [supplier, setSupplier] = useUndoableState('', { label: 'supplier' });
+ *
+ * Which also makes the choice legible: state left as plain `useState` is state
+ * deliberately kept out of the history. Keep it that way for anything that is
+ * not the user's input — a search box, fetched data, validation output, an
+ * initialisation guard. Undoing those puts stale results back on screen, and a
+ * reverted guard can re-fire the effect it exists to suppress.
+ *
+ * Pass `coalesceKey` for anything typed into, so a run of keystrokes is one
+ * Undo; the field's own name is the obvious key.
+ */
+export function useUndoableState<T>(
+  initial: T | (() => T),
+  opts: UndoableOptions,
+): [T, React.Dispatch<React.SetStateAction<T>>] {
+  const [value, setValue] = useState(initial);
+  // Restore through the updater form, so a T that is itself a function is set
+  // rather than called.
+  useUndoable(value, next => setValue(() => next), opts);
+  return [value, setValue];
 }

@@ -7,6 +7,7 @@ import { entityDetailUrl, entityRefetchInterval, shouldRetryEntityFetch } from '
 import { WINDOW_REGISTRY, isPageEntry, isEntityEntry, type PageRegistryEntry, type ModalRegistryEntry } from '../windowRegistry/types';
 import Modal, { triggerSplitView, modalDepthRef, getActiveModalId, subscribeActive, activateModal, ExposeBackdrop, WindowShortcutProvider, setWindowDefaultPosition, isPanelFullyVisible, panelOffscreenBearing, revealWindow, type WindowShortcutSpec } from './Modal';
 import WindowErrorBoundary, { WindowCrashedFallback } from './WindowErrorBoundary';
+import { UndoProvider } from './UndoProvider';
 import PartNumberDetailPopup from './PartNumberDetailPopup';
 import LoadingSpinner from './LoadingSpinner';
 import { navIcons } from '../shell-config/nav';
@@ -1042,16 +1043,24 @@ export function WindowManagerProvider({ children, windowAccentForRoute }: {
           )}
         >
           <WindowShortcutProvider spec={shortcutSpecFor(item)}>
-            {item.type === 'page' ? (
-              <PageWindow item={item} onClose={() => closeEntity(item.id)} accentRgb={accentRgb} />
-            ) : (
-              <RestoredRegistryModal
-                item={item}
-                onClose={() => closeEntity(item.id)}
-                onMinimize={() => {}}
-                accentRgb={accentRgb}
-              />
-            )}
+            {/* One undo stack per open window. Mounting it here rather than in
+                each form means every window has one without asking, and it is
+                torn down with the window — history is the unsaved edit, and a
+                closed window has none. Costs nothing until something registers
+                through useUndoable/useUndoableState. A read-only form nests its
+                own <UndoProvider canEdit={false}> to shadow this one. */}
+            <UndoProvider>
+              {item.type === 'page' ? (
+                <PageWindow item={item} onClose={() => closeEntity(item.id)} accentRgb={accentRgb} />
+              ) : (
+                <RestoredRegistryModal
+                  item={item}
+                  onClose={() => closeEntity(item.id)}
+                  onMinimize={() => {}}
+                  accentRgb={accentRgb}
+                />
+              )}
+            </UndoProvider>
           </WindowShortcutProvider>
         </WindowErrorBoundary>
         );

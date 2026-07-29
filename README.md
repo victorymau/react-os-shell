@@ -215,7 +215,8 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 | `useModalSave(handler)` | Cmd-S inside a modal. |
 | `useModalDuplicate(handler)` | Alt-D inside a modal. |
 | `useTableNav({ rows, cols, onCell })` | Arrow-key cell navigation in editable grids. |
-| `useUndoable(value, apply, { label, coalesceKey })` | Put one piece of a form's state under the window's undo stack. `apply` is the setter you already have. `coalesceKey` folds a run of typing into one step. |
+| `useUndoableState(initial, { label, coalesceKey })` | `useState`, with the value in the window's undo stack — a rename, not an extra line. State left as plain `useState` stays out of the history, which is where transient UI, fetched data and validation output belong. |
+| `useUndoable(value, apply, { label, coalesceKey })` | The explicit form, for state whose setter the component does not own. `apply` is the setter you already have. `coalesceKey` folds a run of typing into one step. |
 | `useUndo()` | `{ undo, redo, canUndo, canRedo, undoLabel, clear }` for the enclosing `UndoProvider` — for custom UI, or to `clear()` the history after a save. |
 | `useMultiModal()` | Manages multi-window stacking + activate/blur. |
 | `useShellAuth() / useShellPrefs() / useShellEntityFetcher() / useBugReport() / useDesktopHost()` | Context readers — the shell uses these internally; consumers may also call them. |
