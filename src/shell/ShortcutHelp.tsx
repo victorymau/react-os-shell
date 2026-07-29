@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Dialog, DialogBackdrop, DialogPanel } from '@headlessui/react';
-import { CMD_ENTER, CMD_S, CMD_K, CMD_DOT, CMD_A, ALT_SHIFT_D, ALT_SHIFT_E, ALT_SHIFT_N } from './Kbd';
+import { CMD_ENTER, CMD_S, CMD_K, CMD_DOT, CMD_A, CMD_Z, CMD_SHIFT_Z, ALT_SHIFT_D, ALT_SHIFT_E, ALT_SHIFT_N } from './Kbd';
 
 const sections = [
   {
@@ -33,6 +33,8 @@ const sections = [
       { keys: CMD_ENTER, description: 'Submit' },
       { keys: CMD_S, description: 'Save' },
       { keys: ALT_SHIFT_D, description: 'Save as new (duplicate)' },
+      { keys: CMD_Z, description: 'Undo bulk import' },
+      { keys: CMD_SHIFT_Z, description: 'Redo bulk import' },
       { keys: 'ESC', description: 'Close modal' },
     ],
   },

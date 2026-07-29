@@ -560,7 +560,10 @@ export default function BulkImportGrid({ columns, onImport, description, mergeDu
         const obj: Record<string, string> = {};
         columns.forEach((col, i) => {
           const val = row[i]?.trim() || '';
-          obj[col.key] = i === 0 ? val : cleanNumber(val);
+          // Currency symbols and thousands separators are noise in a number and
+          // content in a description — strip them only where they're noise.
+          const kind = colKind(col, i);
+          obj[col.key] = kind === 'price' || kind === 'qty' ? cleanNumber(val) : val;
         });
         return obj;
       });

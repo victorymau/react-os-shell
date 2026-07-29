@@ -4,6 +4,61 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [4.2.0] — 2026-07-29
+
+### Added
+- **Undo and Redo for a bulk import: `useImportHistory` + `ImportHistoryControls`.**
+  A bulk import is the one edit to a line-items table that arrives all at once
+  and can't be walked back by hand — fifteen rows land in a purchase order and
+  the only way out is deleting them one at a time. Undo now takes the whole
+  import back in one press, and Redo puts it back.
+
+  The pair is deliberately scoped to the import, not to the table. Typing in a
+  row is cheap to correct and pushes no step; only `commit` does. The caller
+  keeps owning its list — `commit` snapshots it and then hands the new rows to
+  the same `onChange` the table already uses:
+
+  ```tsx
+  const history = useImportHistory(items, setItems);
+
+  <LineItemsTable
+    items={items}
+    onChange={setItems}                                         // hand edit — no step
+    onBulkImport={async rows => history.commit(toLines(rows))}  // one step
+  />
+  <ImportHistoryControls history={history} />
+  ```
+
+  The controls belong in the header of the list the import lands in, not inside
+  `BulkImportGrid` — that unmounts on import and would take any control inside
+  it along. Both buttons stay rendered and go disabled, so the header does not
+  reflow the moment an import arrives. Depth is 50 imports.
+
+  ⌘Z / Ctrl+Z undoes and ⇧⌘Z / Ctrl+Shift+Z / Ctrl+Y redoes, bound while the
+  controls are mounted in the frontmost modal — **except while the caret is in
+  an input, a textarea, a select, or a grid cell**. There ⌘Z means "take back
+  what I just typed", the browser already does that, and swapping a text undo
+  for a six-row rollback would be a nasty surprise. The keys are also left alone
+  when there is nothing to step to, rather than being swallowed into a no-op.
+  Pass `hotkeys={false}` for a second list on the same screen, so one pair owns
+  the keys. Both appear in `ShortcutHelp` under Modals / Forms.
+
+  Undoing is lossy when the list was edited after the import, because the
+  snapshot predates those edits too; that case asks before discarding them.
+  Redo restores the list as it stood when Undo was pressed rather than replaying
+  the import's own output, so an edit made after the import survives the round
+  trip.
+
+### Fixed
+- **`BulkImportGrid` no longer strips spaces and commas out of text columns on
+  import.** `handleImport` ran every column but the first through the number
+  cleaner, which exists to drop currency symbols and thousands separators from a
+  price. Applied to a `kind: 'text'` column it deleted content: a description
+  pasted as `Gunmetal 19" Alloy Wheel` was imported as `Gunmetal19"AlloyWheel`,
+  silently, on every import that carried one. Cleaning now follows the column's
+  declared `kind` — `price` and `qty` only — via the `colKind()` the rest of the
+  component already resolves columns with.
+
 ## [4.1.3] — 2026-07-29
 
 ### Fixed

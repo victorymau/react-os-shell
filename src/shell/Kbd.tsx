@@ -12,6 +12,9 @@ export const CMD_S = isMac ? '\u2318S' : 'Ctrl+S';
 export const CMD_K = isMac ? '\u2318K' : 'Ctrl+K';
 export const CMD_DOT = isMac ? '\u2318.' : 'Ctrl+.';
 export const CMD_A = isMac ? '\u2318A' : 'Ctrl+A';
+export const CMD_Z = isMac ? '\u2318Z' : 'Ctrl+Z';
+/** Redo. Mac has no \u2318Y convention, so it is the shifted undo there. */
+export const CMD_SHIFT_Z = isMac ? '\u2318\u21e7Z' : 'Ctrl+Shift+Z';
 export const ALT_SHIFT_D = isMac ? '\u2325\u21E7D' : 'Alt+Shift+D';
 export const ALT_SHIFT_E = isMac ? '\u2325\u21E7E' : 'Alt+Shift+E';
 export const ALT_SHIFT_N = isMac ? '\u2325\u21E7N' : 'Alt+Shift+N';
