@@ -240,5 +240,5 @@ export { default as useClickOutside } from './hooks/useClickOutside';
 export { default as useNewHotkey } from './hooks/useNewHotkey';
 export { default as useEditHotkey } from './hooks/useEditHotkey';
 export { UndoProvider, useUndo, useUndoable } from './shell/UndoProvider';
-export type { UndoControlsApi, UndoableOptions } from './shell/UndoProvider';
+export type { UndoControlsApi, UndoableOptions, UndoProviderProps } from './shell/UndoProvider';
 export type { UndoStep, UndoState, UndoSnapshot } from './hooks/undoHistory';

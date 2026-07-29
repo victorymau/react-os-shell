@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useReducer, useRef } from 'react';
 import { useModalActive } from './Modal';
+import { useShellAuth } from './ShellAuth';
 import {
   undoReducer,
   emptyUndoState,
@@ -27,9 +28,27 @@ interface UndoContextValue {
   canRedo: boolean;
   undoLabel: string | null;
   redoLabel: string | null;
+  enabled: boolean;
 }
 
 const UndoContext = createContext<UndoContextValue | null>(null);
+
+export interface UndoProviderProps {
+  children: React.ReactNode;
+  /**
+   * Whether this user may edit the record. Undo is offered to everyone who
+   * can — it is not gated on role or seniority — and withheld from a reader
+   * only because they have nothing to take back. Defaults to true.
+   */
+  canEdit?: boolean;
+  /**
+   * Permission codes that count as "may edit", checked through
+   * `ShellAuthProvider`. Combined with `canEdit`, so a form that already knows
+   * it is read-only stays read-only whatever the codes say. Omit to rely on
+   * `canEdit` alone.
+   */
+  perms?: string[];
+}
 
 /**
  * Undo/redo for everything in one open form.
@@ -43,10 +62,20 @@ const UndoContext = createContext<UndoContextValue | null>(null);
  * History is the unsaved edit only. It lives with the mounted provider and
  * dies with it, and `clear()` ends it at a save — past that point "earlier" is
  * on the server, and taking it back is not something a form can do.
+ *
+ * Anyone who may edit the record gets it — it is not a privileged feature, and
+ * the user most helped by an undo is the one least sure of what they just did.
+ * A reader is the only one it is withheld from, and only because there is
+ * nothing for them to take back.
  */
-export function UndoProvider({ children }: { children: React.ReactNode }) {
+export function UndoProvider({ children, canEdit = true, perms }: UndoProviderProps) {
   const [state, dispatch] = useReducer(undoReducer, emptyUndoState);
   const slices = useRef(new Map<string, Slice>());
+  const { hasAnyPerm } = useShellAuth();
+
+  // Read-only means nothing to take back. Gating here rather than on the
+  // buttons keeps a stale ⌘Z from stepping a form the user may not change.
+  const enabled = canEdit && (perms && perms.length > 0 ? hasAnyPerm(perms) : true);
 
   // One user action can move several slices in the same commit — a bulk import
   // fills the line items and resets the grid. Their effects all run before the
@@ -64,14 +93,14 @@ export function UndoProvider({ children }: { children: React.ReactNode }) {
   const unregister = useCallback((id: string) => { slices.current.delete(id); }, []);
 
   const record = useCallback((label: string, coalesceKey: string | null) => {
-    if (pending.current) return;
+    if (!enabled || pending.current) return;
     pending.current = { values: snapshot(), label, coalesceKey };
     queueMicrotask(() => {
       const step = pending.current;
       pending.current = null;
       if (step) dispatch({ type: 'record', step });
     });
-  }, [snapshot]);
+  }, [enabled, snapshot]);
 
   /** Restore a snapshot, pre-arming each slice so the change is not recorded. */
   const applyValues = useCallback((values: UndoSnapshot) => {
@@ -101,8 +130,8 @@ export function UndoProvider({ children }: { children: React.ReactNode }) {
 
   const clear = useCallback(() => dispatch({ type: 'clear' }), []);
 
-  const canUndo = state.past.length > 0;
-  const canRedo = state.future.length > 0;
+  const canUndo = enabled && state.past.length > 0;
+  const canRedo = enabled && state.future.length > 0;
 
   // Bound here rather than on the buttons, so the keys work in a form that
   // shows no controls at all. Only the frontmost window answers.
@@ -110,7 +139,7 @@ export function UndoProvider({ children }: { children: React.ReactNode }) {
   const keyed = useRef({ undo, redo, canUndo, canRedo });
   keyed.current = { undo, redo, canUndo, canRedo };
   useEffect(() => {
-    if (!isActive) return;
+    if (!isActive || !enabled) return;
     const handler = (e: KeyboardEvent) => {
       const action = matchUndoHotkey(e as unknown as UndoHotkeyEvent);
       if (!action) return;
@@ -123,13 +152,13 @@ export function UndoProvider({ children }: { children: React.ReactNode }) {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [isActive]);
+  }, [isActive, enabled]);
 
   const value = useMemo<UndoContextValue>(() => ({
-    register, unregister, record, undo, redo, clear, canUndo, canRedo,
+    register, unregister, record, undo, redo, clear, canUndo, canRedo, enabled,
     undoLabel: canUndo ? state.past[state.past.length - 1].label : null,
     redoLabel: canRedo ? state.future[0].label : null,
-  }), [register, unregister, record, undo, redo, clear, canUndo, canRedo, state.past, state.future]);
+  }), [register, unregister, record, undo, redo, clear, canUndo, canRedo, enabled, state.past, state.future]);
 
   return <UndoContext.Provider value={value}>{children}</UndoContext.Provider>;
 }
@@ -144,6 +173,9 @@ export interface UndoControlsApi {
   redoLabel: string | null;
   /** End the history — call after a successful save. */
   clear: () => void;
+  /** False when the user may not edit this record, so custom UI can hide
+   *  itself the way `UndoControls` does. */
+  enabled: boolean;
 }
 
 /**
@@ -161,6 +193,7 @@ export function useUndo(): UndoControlsApi {
     canRedo: ctx?.canRedo ?? false,
     undoLabel: ctx?.undoLabel ?? null,
     redoLabel: ctx?.redoLabel ?? null,
+    enabled: ctx?.enabled ?? false,
   };
 }
 

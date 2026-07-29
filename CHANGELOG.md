@@ -54,6 +54,15 @@ All notable changes to this project will be documented in this file. The format 
   with it, and `clear()` ends it at a save — past that point "earlier" is on the
   server, and taking it back is not something a form can do.
 
+  **Everyone who may edit the record gets it.** Undo is not a privileged
+  feature — the user most helped by one is the one least sure of what they just
+  did — so it is gated on edit rights and nothing else. `<UndoProvider canEdit>`
+  takes the form's own read-only flag; `perms` checks codes through
+  `ShellAuthProvider` when the form would rather not work it out itself. Both
+  are combined, so a form that already knows it is read-only stays that way. For
+  a reader the controls render nothing at all rather than sitting there dead,
+  the keys are not bound, and no history is recorded.
+
 ### Fixed
 - **`BulkImportGrid` no longer strips spaces and commas out of text columns on
   import.** `handleImport` ran every column but the first through the number

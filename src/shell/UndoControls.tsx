@@ -18,9 +18,14 @@ const BTN =
  * beside the save button. The keys work without it; this is for discoverability
  * and for the mouse. Both buttons stay rendered and go disabled, so the row
  * does not reflow the moment there is something to undo.
+ *
+ * Renders nothing for a user who may not edit the record — dead buttons on a
+ * read-only form read as something broken rather than something withheld.
  */
 export default function UndoControls({ className = '' }: UndoControlsProps) {
-  const { undo, redo, canUndo, canRedo, undoLabel, redoLabel } = useUndo();
+  const { undo, redo, canUndo, canRedo, undoLabel, redoLabel, enabled } = useUndo();
+
+  if (!enabled) return null;
 
   return (
     <div className={`flex items-center gap-2 ${className}`}>
