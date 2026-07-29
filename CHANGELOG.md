@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
-## [4.2.0] — 2026-07-29
+## [4.3.0] — 2026-07-29
 
 ### Added
 - **Undo and Redo for a whole form: `UndoProvider`, `useUndoable`, `useUndo`,
@@ -94,6 +94,155 @@ All notable changes to this project will be documented in this file. The format 
   silently, on every import that carried one. Cleaning now follows the column's
   declared `kind` — `price` and `qty` only — via the `colKind()` the rest of the
   component already resolves columns with.
+## [4.2.2] — 2026-07-29
+
+### Fixed
+- **`autoHeight` windows with a `<ModalActions>` footer opened exactly one
+  footer-height too short** — last row cut off behind a needless scrollbar,
+  identically on every reopen (admin portal's Edit User modal, measured at a
+  stable 53px shortfall). The footer element mounts `hidden` and only un-hides
+  after `ModalActions` flips `hasActions` from a passive effect — *after* the
+  measurement's layout effect read `chrome = panel − body` — so the measured
+  chrome was missing the footer, and nothing re-measured: the footer sits
+  outside the body, invisible to both the content-root ResizeObserver and the
+  body MutationObserver. The measurement now re-runs in the same commit that
+  un-hides the footer (footer visibility is an effect dependency), the
+  ResizeObserver additionally watches the footer element while unresolved,
+  and the freeze takes one final measure before resolving so a footer landing
+  in the very last frame can't be missed. The masking subtlety: on
+  classic-scrollbar platforms the transient scrollbar re-wrapped the content
+  and self-healed the height, which is why the bug only presented on
+  overlay-scrollbar macOS.
+- A footer that (dis)appears **after** the height has frozen — `ModalActions`
+  inside a lazy/slow body, or conditionally rendered `footer`/`actions` — now
+  nudges the frozen height by exactly the footer's delta, keeping the body's
+  height (and a deliberate user resize) intact instead of silently costing
+  the body the footer's height.
+- Demo: new "Auto height (actions footer)" repro window in Window Styles,
+  fixed-width on purpose so it reproduces in both scrollbar modes.
+
+## [4.2.1] — 2026-07-29
+
+### Fixed
+- **The performance overlay had no findable entrance.** 4.2.0 put its only
+  switch at the very bottom of Preferences → Customization → Appearance,
+  below Theme, Desktop Wallpaper and six transparency sliders — measured at
+  646px past the fold in a 684px-tall pane, so it was never on screen when
+  the panel opened. A diagnostic exists to be found by someone who is already
+  frustrated, which makes "scroll a full screen through settings you did not
+  come here for" the wrong and only way in. The desktop right-click menu now
+  carries **Show / Hide Performance Stats**, next to Manage Widgets — the
+  same surface the overlay itself appears on. The label reflects the current
+  state, and the Preferences switch stays where it is for anyone who goes
+  looking there.
+- This matters most where the shell is embedded: the admin portal hides the
+  `customization`, `favorites` and `about` items from that menu, so its users
+  could not reach Preferences from the desktop at all. The new item is a
+  separate `'perf-stats'` key in `DesktopContextMenuItem`, so a consumer that
+  wants it gone can hide it the same way — but nobody has to opt in to get it.
+
+## [4.2.0] — 2026-07-29
+
+### Added
+- **A desktop performance HUD that says *where* the UI is slow, not just that
+  it is.** New `Preferences → Customization → Diagnostics → Show performance
+  stats` overlays frame rate, mean and worst frame time, main-thread blocked
+  share and JS heap in the desktop corner beside the version watermark, and
+  turns them into a verdict: smooth, GPU-bound, or CPU-bound. The
+  discriminator is late frames against an idle main thread — if JavaScript
+  were the problem the thread would be busy, so dropped frames plus an idle
+  thread put the cost downstream of script, in compositing and paint. That is
+  the signature the shell's own frosted glass produces (`glassStyle()` blurs
+  at a 40px radius on every menu, modal and popup), and it is invisible in a
+  JS profile, so a GPU verdict points straight at `Reduce transparency` — the
+  switch that strips `backdrop-filter` everywhere. The toggle sits directly
+  under that switch on purpose: one is the usual fix for a sluggish machine,
+  the other tells you whether it was the right fix. Motivated by a portal
+  reported as laggy on a fanless MacBook Air, whose 8–10 core GPU does the
+  same blur work a 40-core M3 Max hides.
+- Attribution is exported as pure functions (`classifyPerf`,
+  `summariseFrames`) alongside the `PerfStats` component, and specced. Where
+  the browser exposes no `longtask` observer — Safari — a low frame rate is
+  reported as **unattributed rather than as the GPU**: that case is
+  indistinguishable from genuine compositing cost, and a confident wrong
+  answer is worse than none when someone is about to change settings on the
+  strength of it.
+- **A session log, so a slow machine somewhere else can produce evidence
+  instead of an adjective.** While the HUD is on, every reading is recorded
+  with the context around it: how many windows were open, which one was on
+  top, and counts of clicks, keystrokes, scrolls and milliseconds spent
+  dragging. Dragging gets its own axis because it is the most
+  compositing-heavy thing a user can do in a window shell. The overlay
+  exports the log as JSON (with the analysis included, so the recipient gets
+  the conclusion without rerunning it) or as flat CSV for a spreadsheet.
+  `summarisePerfLog` reports median frame rate split by idle versus
+  interacting, bucketed by open-window count, and ranked worst-first by
+  window — turning "it feels laggy" into "the Sales Invoice window runs at 18
+  fps with six windows open". Medians, not means, so one 400ms stall cannot
+  drag the number somewhere no frame ever was; and groups below a
+  four-sample floor are withheld rather than reported thinly, since one
+  unlucky reading is not a finding. Only readings with a real frame rate
+  enter a median — a sample taken while the thread was too blocked to deliver
+  frames carries fps 0 and would otherwise report a rate the display never
+  showed.
+- The log is capped at ~20 minutes, mirrored to `localStorage` on a throttle,
+  and flushed on `pagehide`/`visibilitychange` and on unmount — the unsaved
+  tail is exactly the part someone was watching when they gave up and closed
+  the tab. It records counts and window keys only: no page content and no
+  keystroke text. It stays on the device unless the user exports it, and the
+  Preferences copy says so.
+- The HUD is built not to distort what it measures: the `requestAnimationFrame`
+  sampler writes to refs and never sets state, so the panel re-renders twice a
+  second rather than per frame, and it is the one surface in the shell that
+  deliberately takes no `backdrop-filter` — a perf overlay costing a 40px blur
+  would add the very load it exists to attribute. Note that a running rAF loop
+  does keep the browser compositing, so readings are meaningful while the UI is
+  in use, which is also when the jank worth measuring happens.
+
+## [4.1.5] — 2026-07-29
+
+### Fixed
+- **`FilterBar` no longer nests a `<button>` inside a `<button>`.** Both filter
+  controls render the pill as a `<button role="combobox">`, and both put the
+  clear-X *inside* it as another `<button>` — so every list page with an active
+  filter logged `In HTML, <button> cannot be a descendant of <button>. This will
+  cause a hydration error.` (seen across the admin portal, e.g. Stock on Hand).
+  Invalid nesting is also parser-level: the browser is free to reconstruct the
+  tree, which is what makes it a hydration hazard rather than only a console
+  line. The clear affordance is now a `<span>` with the same
+  `stopPropagation()` click handler, so it looks and behaves exactly as before —
+  one click clears the filter without opening or closing the dropdown. It is
+  `aria-hidden`, not a `role="button"`: it sits inside the combobox, where a
+  nested control would pad the pill's accessible name, and clearing already has
+  a proper keyboard path — the leading "All" entry in the listbox. The pill
+  itself is untouched, so its tab stop and full combobox key handling
+  (arrows/Home/End/Enter/Space/typeahead/Esc) are unchanged.
+- **Importing `Modal` (or anything reaching it) no longer throws outside a
+  browser.** Two `window.addEventListener` calls ran at module scope, so
+  `import` alone crashed with `ReferenceError: window is not defined` under SSR
+  or a `node:test` spec — `FilterBar` reaches `Modal` for its Esc interceptor,
+  which is how this surfaced. Both are now guarded the same way
+  `ensureGestureStyle()` already was; in a browser nothing changes. This is what
+  lets the new `tests/FilterBar.test.tsx` render the component at all.
+
+## [4.1.4] — 2026-07-29
+
+### Fixed
+- **`isVideoUrl()` now recognises `data:` video URLs, which previewed as a
+  broken `<img>`.** The helper decided image-vs-video with a file-extension
+  regex, and a `data:` URL has no extension — `data:video/mp4;base64,…` carries
+  its kind in the media type, before the comma — so it was judged not-video and
+  routed to the `<img>` branch by both `MediaUploadField` and
+  `MediaUploadGrid`. The existing escape hatches did not cover it: the
+  `accept`-string fallback only fires for a *video-only* picker (both
+  components default `accept` to `'image/*'`, and a mixed `'image/*,video/*'`
+  picker missed), and the `videoBlobUrl` check only matches a `blob:` URL the
+  component minted itself. A `data:` URL's media type is now read directly and
+  treated as authoritative, so an `image/*` data URL is correctly *not* a video
+  even in a video-only picker. A typeless `data:,…` still falls through to the
+  `accept` guess, and extension-shaped, `blob:`, query-string and hash URLs keep
+  their existing derivation — all pinned by the new spec. Sibling of the
+  `mediaFileName()` fix in 4.1.3; closes #84.
 
 ## [4.1.3] — 2026-07-29
 

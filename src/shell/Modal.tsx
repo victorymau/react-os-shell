@@ -694,8 +694,11 @@ function beginPointerGesture(handle: HTMLElement, pointerId: number, cursor: str
   };
 }
 
-// Listen for deactivate-all event from taskbar
-window.addEventListener('deactivate-all-modals', deactivateAllModals);
+// Listen for deactivate-all event from taskbar. Guarded like ensureGestureStyle
+// above: this runs at IMPORT time, so without the check merely importing any
+// component that reaches Modal — FilterBar does, for the Esc interceptor —
+// throws "window is not defined" outside a browser (SSR, or a node:test spec).
+if (typeof window !== 'undefined') window.addEventListener('deactivate-all-modals', deactivateAllModals);
 function getZForModal(id: string): number {
   const idx = activationOrder.indexOf(id);
   if (idx === -1) return -1; // Behind everything — hidden below listing page
@@ -820,12 +823,15 @@ function triggerSplitView() {
 export { triggerSplitView };
 
 // Escape exits exposé. Also clear the highlight so a re-entry starts fresh.
-window.addEventListener('keydown', (e) => {
-  if (_exposeOn && e.key === 'Escape') {
-    setExposeHighlight(null);
-    setExposeState(false);
-  }
-});
+// Import-time, so guarded like the deactivate-all listener above.
+if (typeof window !== 'undefined') {
+  window.addEventListener('keydown', (e) => {
+    if (_exposeOn && e.key === 'Escape') {
+      setExposeHighlight(null);
+      setExposeState(false);
+    }
+  });
+}
 
 interface ExposeTile { x: number; y: number; w: number; h: number; }
 
@@ -1051,6 +1057,13 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   const actionsRef = useRef<HTMLDivElement>(null);
   const actionsLeftRef = useRef<HTMLDivElement>(null);
   const [hasActions, setHasActions] = useState(false);
+  const footerRef = useRef<HTMLDivElement>(null);
+  // One boolean for "the footer has anything to show" — drives both the
+  // footer's `hidden` class and the autoHeight re-measure below, so the two
+  // can't drift apart. Presence booleans rather than the nodes themselves:
+  // consumer JSX props get a new identity every render and would thrash the
+  // measurement effect's dependency array.
+  const hasFooterContent = !!(footer || actions || actionsLeft) || hasActions;
   // Every window must surface a clickable icon — it's the only entry point
   // to the window menu. Fall back to a generic "window" glyph when the
   // consumer hasn't supplied one. Consumer icons rarely include explicit
@@ -1508,16 +1521,67 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
           if (freezeTimer) { clearTimeout(freezeTimer); freezeTimer = null; }
         } else if (changed || freezeTimer === null) {
           if (freezeTimer) clearTimeout(freezeTimer);
-          freezeTimer = setTimeout(() => setAutoHeightResolved(true), 160);
+          freezeTimer = setTimeout(() => {
+            // One last look before freezing: anything that moved in the very
+            // frame the timer fired (a footer un-hiding, a straggling image)
+            // would otherwise be missed forever. An unchanged measure
+            // confirms stability and freezes; a changed one re-armed this
+            // timer above, so the next stable window freezes instead.
+            const before = lastH;
+            measure();
+            if (lastH === before) setAutoHeightResolved(true);
+          }, 160);
         }
       }
     };
     const ro = new ResizeObserver(measure);
     measure();
+    // The footer sits OUTSIDE the body, so neither observer here sees it: it
+    // mounts `hidden` and un-hides only when a portalled <ModalActions> flips
+    // `hasActions` from a passive effect — after this layout effect's first
+    // measure. Without watching it, `chrome` under-counts by exactly the
+    // footer height and the window opens one footer too short (last row cut
+    // off behind a scrollbar). Observing it re-measures on the un-hide and on
+    // any later footer re-wrap while still unresolved.
+    if (footerRef.current) ro.observe(footerRef.current);
     const mo = new MutationObserver(measure);
     mo.observe(body, { childList: true, subtree: true, characterData: true });
     return () => { ro.disconnect(); mo.disconnect(); if (freezeTimer) clearTimeout(freezeTimer); };
-  }, [autoHeightResolved, widget, autoMinHeight]);
+    // `hasFooterContent` re-runs the effect in the same commit that un-hides
+    // the footer — one layout pass ahead of the ResizeObserver above, so the
+    // corrected height paints together with the footer, not one frame late.
+  }, [autoHeightResolved, widget, autoMinHeight, hasFooterContent]);
+
+  // The measurement stops reacting once resolved, but the footer can still
+  // (dis)appear afterwards — a <ModalActions> inside a lazy/slow body flips
+  // `hasActions` after the freeze, and a consumer can conditionally render
+  // `footer`/`actions` at any time. That changes the chrome under a frozen
+  // window, silently costing the body the footer's height. Re-opening the
+  // measurement would stomp a deliberate user resize, so keep the BODY height
+  // invariant instead: nudge `box.h` by exactly the delta of a visibility
+  // flip. Footer re-wraps without a flip stay absorbed by the body, as on any
+  // fixed-size window; maximized boxes are never touched.
+  useLayoutEffect(() => {
+    if (!autoHeight || !autoHeightResolved || widget || !open) return;
+    const footerEl = footerRef.current;
+    if (!footerEl) return;
+    let lastFooterH = footerEl.offsetHeight;
+    const ro = new ResizeObserver(() => {
+      if (!footerEl.isConnected) return; // close teardown, not a real flip
+      const h = footerEl.offsetHeight;
+      const delta = h - lastFooterH;
+      const flipped = (h > 0) !== (lastFooterH > 0);
+      lastFooterH = h;
+      if (!flipped || delta === 0 || maximized) return;
+      if (document.body.classList.contains('rosh-gesturing')) return;
+      const floor = autoMinHeight ?? 240;
+      const taskbarH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--taskbar-height')) || 0;
+      const viewportCap = Math.max(floor, window.innerHeight - taskbarH - Math.max(0, boxRef.current.y) - 24);
+      setBox(prev => ({ ...prev, h: Math.min(Math.max(floor, prev.h + delta), viewportCap) }));
+    });
+    ro.observe(footerEl);
+    return () => ro.disconnect();
+  }, [autoHeight, autoHeightResolved, widget, open, maximized, autoMinHeight]);
 
   // When sidebar mode is toggled at runtime, snap existing windows to the
   // maximized box so they instantly fill the new work area.
@@ -2295,8 +2359,8 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
         )}
 
         {/* FOOTER — always rendered; visible when footer prop or portal actions exist; hidden for widgets/compact */}
-        <div onPointerDown={startDrag}
-          className={`px-4 py-2 border-t border-gray-200 shrink-0 flex items-center justify-between text-xs select-none cursor-move${isActive ? ' backdrop-blur-sm' : ''}${widget || compact || appStyle || isMobile || (!footer && !hasActions && !actions && !actionsLeft) ? ' hidden' : ''}`}
+        <div onPointerDown={startDrag} ref={footerRef}
+          className={`px-4 py-2 border-t border-gray-200 shrink-0 flex items-center justify-between text-xs select-none cursor-move${isActive ? ' backdrop-blur-sm' : ''}${widget || compact || appStyle || isMobile || !hasFooterContent ? ' hidden' : ''}`}
           style={{ touchAction: 'none', backgroundColor: isActive ? `rgb(var(--window-footer-rgb) / var(--active-header-opacity, 0.8))` : `rgb(var(--window-footer-rgb) / var(--inactive-header-opacity, 0.7))` }}>
           <div className="flex items-center gap-2 min-w-0">
             {actionsLeft}

@@ -196,9 +196,20 @@ function PlainFilter({ filter, value, onChange }: { filter: FilterOption; value:
       >
         <span className="truncate max-w-[140px]">{selectedLabel || filter.label}</span>
         {value ? (
-          <button type="button" onClick={e => { e.stopPropagation(); onChange(''); }} className="text-blue-400 hover:text-blue-600">
+          // A span, not a button: this lives INSIDE the combobox <button>, and
+          // `<button>` inside `<button>` is invalid HTML — React logs "cannot
+          // be a descendant of" and warns of a hydration error. It stays out of
+          // the a11y tree because clearing is already a first-class keyboard
+          // action: index 0 of the listbox is the "All" entry (value ''). A
+          // nested control here would only pad the combobox's accessible name
+          // with an affordance Tab can't reach.
+          <span
+            aria-hidden="true"
+            onClick={e => { e.stopPropagation(); onChange(''); }}
+            className="cursor-pointer text-blue-400 hover:text-blue-600"
+          >
             <XMarkIcon className="h-3.5 w-3.5" />
-          </button>
+          </span>
         ) : (
           <svg className={`h-3.5 w-3.5 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
         )}
@@ -254,9 +265,15 @@ function SearchableFilter({ filter, value, onChange }: { filter: FilterOption; v
       >
         <span className="truncate max-w-[140px]">{selectedLabel || filter.label}</span>
         {value ? (
-          <button onClick={e => { e.stopPropagation(); onChange(''); setSearch(''); }} className="text-blue-400 hover:text-blue-600">
+          // Same nested-button fix as PlainFilter — the dropdown's leading
+          // "All" button is the keyboard path to the same clear.
+          <span
+            aria-hidden="true"
+            onClick={e => { e.stopPropagation(); onChange(''); setSearch(''); }}
+            className="cursor-pointer text-blue-400 hover:text-blue-600"
+          >
             <XMarkIcon className="h-3.5 w-3.5" />
-          </button>
+          </span>
         ) : (
           <svg className={`h-3.5 w-3.5 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
         )}

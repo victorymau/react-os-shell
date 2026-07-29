@@ -386,6 +386,35 @@ export default function Customization({ omit, section }: CustomizationProps = {}
           })}
         </div>
       </div>
+
+      {/* ── Diagnostics ── */}
+      {/* Deliberately adjacent to Transparency: the switch above is the usual
+          fix for a sluggish machine, and this is how you find out whether it
+          was the right fix rather than guessing. */}
+      <div>
+        <h3 className="text-sm font-semibold text-gray-900 mb-3">Diagnostics</h3>
+        <label className="flex items-start gap-2 cursor-pointer">
+          <input type="checkbox" checked={!!pref('show_desktop_stats')}
+            onChange={e => savePref('show_desktop_stats', e.target.checked)}
+            className="h-4 w-4 mt-0.5 rounded border-gray-300 text-blue-600" />
+          <span className="text-sm text-gray-700">
+            Show performance stats
+            <span className="block text-xs text-gray-400">
+              Overlays frame rate, worst frame time and a bottleneck reading on the desktop,
+              beside the version number. Turn it on to check whether Reduce transparency
+              actually helps on this machine — or whether the slowness is coming from
+              somewhere else.
+            </span>
+            <span className="block text-xs text-gray-400 mt-1">
+              While it is on, each reading is recorded with what was happening at the time —
+              how many windows were open, which one was on top, and counts of clicks,
+              keystrokes, scrolls and window drags. No page content or keystroke text is
+              recorded. The log stays on this device and is only shared if you export it
+              with the JSON or CSV button on the overlay.
+            </span>
+          </span>
+        </label>
+      </div>
       </>
       )}
 

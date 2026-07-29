@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useWindowManager, glassStyle, toggleExposeMode } from 'react-os-shell';
+import { useWindowManager, glassStyle, toggleExposeMode, ModalActions } from 'react-os-shell';
 
 /**
  * Window Styles — opens one real window per chrome variant the shell's
@@ -122,6 +122,45 @@ export function AutoHeightWindow() {
   );
 }
 
+// REPRO: an autoHeight window whose footer arrives via <ModalActions> (the
+// admin-portal Edit User shape). The footer element mounts `hidden` and only
+// un-hides after ModalActions' effect flips `hasActions` — i.e. after the
+// first autoHeight measurement — so `chrome` under-counted by the footer
+// height and the window opened exactly one footer too short: last row cut
+// off behind a needless scrollbar, identical on every reopen. Right: all
+// five rows visible, no body scrollbar, Cancel/Save in the footer.
+export function AutoHeightFooterWindow() {
+  return (
+    <>
+      {/* Fixed-width content root, on purpose: its size must not depend on
+          scrollbar appearance. With a width-tracking root, a CLASSIC
+          (layout-consuming) scrollbar popping in re-fires the content
+          ResizeObserver and the pre-fix code self-heals — masking the bug
+          everywhere except overlay-scrollbar platforms (macOS, where it was
+          reported). A fixed width keeps the repro honest in both modes. */}
+      <div className="space-y-3 text-sm text-gray-600" style={{ width: 320 }}>
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900">Auto height + actions footer</h3>
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            <Chip>autoHeight: true</Chip>
+            <Chip>{'<ModalActions>'}</Chip>
+          </div>
+        </div>
+        <p>The footer below is portalled in by <Chip>{'<ModalActions>'}</Chip> after the first
+          height measurement. The window must re-measure when it appears — every row here
+          stays visible with no body scrollbar.</p>
+        {Array.from({ length: 5 }, (_, i) => (
+          <div key={i} className="rounded border border-gray-200 px-3 py-2">Row {i + 1} of 5 — must be fully visible</div>
+        ))}
+      </div>
+      <ModalActions>
+        <button className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+        <button className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600">Save</button>
+      </ModalActions>
+    </>
+  );
+}
+
 // REPRO: an autoHeight window whose detail component fetches its own data and
 // renders a small spinner first, then swaps in tall content (mirrors the
 // supplier-portal QCReportDetail). The autoHeight measurement must not freeze
@@ -197,6 +236,7 @@ const STYLES: { route: string; name: string; flags: string[]; blurb: string }[] 
   { route: '/win-app', name: 'App style', flags: ['appStyle: true'], blurb: 'Small title bar, zero padding — for apps with their own chrome.' },
   { route: '/win-flush', name: 'Flush body', flags: ['flushBody: true'], blurb: 'Standard chrome, edge-to-edge body for sidebar layouts.' },
   { route: '/win-auto', name: 'Auto height', flags: ['autoHeight: true', 'autoMinHeight: 280'], blurb: 'Window height hugs the content, with a floor.' },
+  { route: '/win-auto-footer', name: 'Auto height (actions footer)', flags: ['autoHeight: true', '<ModalActions>'], blurb: 'The portalled footer un-hides after the first measure — the window must grow by its height instead of cutting off the last row.' },
   { route: '/win-auto-fill', name: 'Auto height (fill)', flags: ['autoHeight: true', "size: 'md'"], blurb: 'A fill-height root (header / flex-1 / footer) opens at the ladder height instead of collapsing.' },
   { route: '/win-auto-delayed', name: 'Auto height (delayed load)', flags: ['autoHeight: true', 'multiInstance: true'], blurb: 'Content fetches async (spinner then tall content). First open must hug the loaded content, not freeze at the spinner height.' },
   { route: '/win-pinned', name: 'Pin on top', flags: ['allowPinOnTop: true'], blurb: 'Title-bar pin keeps the window above everything.' },

@@ -167,6 +167,27 @@ export { default as FilterBar, useFilters } from './shell/FilterBar';
 export type { FilterOption } from './shell/FilterBar';
 export { SidebarNavItem, SidebarGroupLabel } from './shell/SidebarNav';
 export { default as MetricBar } from './shell/MetricBar';
+export { default as PerfStats, type PerfStatsProps } from './shell/PerfStats';
+export {
+  classify as classifyPerf,
+  summariseFrames,
+  SMOOTH_FPS,
+  BLOCKED_PCT_CPU,
+  type PerfReading,
+  type Verdict,
+  type BottleneckKind,
+} from './shell/perfVerdict';
+export {
+  appendRecord as appendPerfRecord,
+  summariseLog as summarisePerfLog,
+  toCsv as perfLogToCsv,
+  isInteracting,
+  LOG_CAP,
+  MIN_GROUP_SAMPLES,
+  type PerfLogRecord,
+  type LogSummary,
+  type FpsGroup,
+} from './shell/perfLog';
 export type { MetricBarProps } from './shell/MetricBar';
 export { severityOf, isSeverityTone } from './shell/severity';
 export type { SeverityTone } from './shell/severity';

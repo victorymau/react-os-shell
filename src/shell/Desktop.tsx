@@ -4,6 +4,7 @@ import { useWindowManager } from './WindowManager';
 import { useShellPrefs } from './ShellPrefs';
 import Modal from './Modal';
 import WidgetManager from './WidgetManager';
+import PerfStats from './PerfStats';
 import { APP_VERSION } from '../version';
 import changelog, { type ChangelogEntry } from '../changelog';
 import toast from './toast';
@@ -71,8 +72,9 @@ export type StickyResolver = (prefix: string, number: string) => Promise<StickyE
 /** Optional items in the desktop right-click menu that a consumer can hide via
  *  {@link DesktopHostConfig.hiddenContextMenuItems} — e.g. when they're surfaced
  *  under Preferences instead. `'customization'` is the Preferences/Customization
- *  shortcut, `'favorites'` the Favorites shortcut, `'about'` the About item. */
-export type DesktopContextMenuItem = 'customization' | 'favorites' | 'about';
+ *  shortcut, `'favorites'` the Favorites shortcut, `'about'` the About item,
+ *  `'perf-stats'` the performance-overlay toggle. */
+export type DesktopContextMenuItem = 'customization' | 'favorites' | 'about' | 'perf-stats';
 
 export interface DesktopHostConfig {
   /** Product name shown in the About dialog and desktop context menu. */
@@ -1234,6 +1236,19 @@ export default function Desktop({ profile }: { profile: any }) {
             <svg className="h-4 w-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="3.5" y="13.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="13.5" width="7" height="7" rx="1.5" /></svg>
             Manage Widgets…
           </PopupMenuItem>
+          {/* Performance overlay toggle. It lives here, next to the other
+              desktop-surface items, because the Preferences switch alone was
+              not a findable entrance: it sits last in the Appearance pane,
+              below Theme, Wallpaper and six transparency sliders — about a
+              screen's worth of scrolling past the fold. A diagnostic has to be
+              reachable by someone who is already frustrated, and that means
+              right where the overlay itself appears. */}
+          {!hiddenMenuItems.includes('perf-stats') && (
+            <PopupMenuItem onClick={() => { setContextMenu(null); saveShellPrefs({ show_desktop_stats: prefs.show_desktop_stats !== true }); }}>
+              <svg className="h-4 w-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 20.25V15m5.25 5.25V9.75m5.25 10.5V4.5m5.25 15.75v-7.5" /></svg>
+              {prefs.show_desktop_stats === true ? 'Hide Performance Stats' : 'Show Performance Stats'}
+            </PopupMenuItem>
+          )}
           {!(hiddenMenuItems.includes('customization') && hiddenMenuItems.includes('favorites') && hiddenMenuItems.includes('about')) && <PopupMenuDivider />}
           {!hiddenMenuItems.includes('customization') && (
             <PopupMenuItem onClick={() => { setContextMenu(null); openPage('/settings/customization'); }}>
@@ -1366,6 +1381,33 @@ export default function Desktop({ profile }: { profile: any }) {
             )}
           </div>
         </Modal>
+        );
+      })()}
+
+      {/* Performance HUD — opt-in diagnostic, parked in the same corner as the
+          version watermark: one row above it when both show, in its slot when
+          the watermark is off. z-[240] floats it over windows (which stack
+          below the taskbar's z-[250]) but under every piece of shell chrome,
+          so it stays readable while you drag a window around — which is when
+          the jank worth measuring actually happens. */}
+      {prefs.show_desktop_stats === true && (() => {
+        const versionShowing = prefs.show_desktop_version === true && !!(host.productVersion ?? APP_VERSION);
+        const taskbarAtBottom = prefs.taskbar_position !== 'top'
+          && prefs.taskbar_position !== 'left'
+          && prefs.taskbar_position !== 'right';
+        const side = prefs.taskbar_position === 'right' ? 'left-3' : 'right-3';
+        // Standard spacing steps only — no arbitrary values. These class names
+        // have to survive whatever Tailwind build each consuming portal runs,
+        // and an arbitrary `bottom-[5.5rem]` silently resolves to nothing if a
+        // consumer's scan misses the shell's dist. The stacked offsets simply
+        // clear the watermark sitting below.
+        const bottom = taskbarAtBottom
+          ? (versionShowing ? 'bottom-24' : 'bottom-16')
+          : (versionShowing ? 'bottom-8' : 'bottom-3');
+        return (
+          <div className={`absolute z-[240] ${side} ${bottom}`}>
+            <PerfStats onClose={() => saveShellPrefs({ show_desktop_stats: false })} />
+          </div>
         );
       })()}
 

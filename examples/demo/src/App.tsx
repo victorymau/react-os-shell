@@ -154,6 +154,7 @@ setShellWindowRegistry(createWindowRegistry(bundledApps, {
   '/win-app': { component: winStyle('AppStyleWindow'), label: 'App-style window', size: 'lg', appStyle: true },
   '/win-flush': { component: winStyle('FlushBodyWindow'), label: 'Flush-body window', size: 'lg', flushBody: true },
   '/win-auto': { component: winStyle('AutoHeightWindow'), label: 'Auto-height window', size: 'sm', autoHeight: true, autoMinHeight: 280 },
+  '/win-auto-footer': { component: winStyle('AutoHeightFooterWindow'), label: 'Auto-height footer window', size: 'sm', autoHeight: true, multiInstance: true },
   '/win-auto-fill': { component: winStyle('AutoHeightFillWindow'), label: 'Auto-height fill window', size: 'md', autoHeight: true },
   '/win-auto-delayed': { component: winStyle('DelayedLoadWindow'), label: 'Auto-height delayed-load window', size: 'lg', autoHeight: true, multiInstance: true },
   '/win-pinned': { component: winStyle('PinnedWindow'), label: 'Pinned window', size: 'sm', allowPinOnTop: true },
