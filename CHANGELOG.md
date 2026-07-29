@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [4.1.4] — 2026-07-29
+
+### Fixed
+- **`isVideoUrl()` now recognises `data:` video URLs, which previewed as a
+  broken `<img>`.** The helper decided image-vs-video with a file-extension
+  regex, and a `data:` URL has no extension — `data:video/mp4;base64,…` carries
+  its kind in the media type, before the comma — so it was judged not-video and
+  routed to the `<img>` branch by both `MediaUploadField` and
+  `MediaUploadGrid`. The existing escape hatches did not cover it: the
+  `accept`-string fallback only fires for a *video-only* picker (both
+  components default `accept` to `'image/*'`, and a mixed `'image/*,video/*'`
+  picker missed), and the `videoBlobUrl` check only matches a `blob:` URL the
+  component minted itself. A `data:` URL's media type is now read directly and
+  treated as authoritative, so an `image/*` data URL is correctly *not* a video
+  even in a video-only picker. A typeless `data:,…` still falls through to the
+  `accept` guess, and extension-shaped, `blob:`, query-string and hash URLs keep
+  their existing derivation — all pinned by the new spec. Sibling of the
+  `mediaFileName()` fix in 4.1.3; closes #84.
+
 ## [4.1.3] — 2026-07-29
 
 ### Fixed

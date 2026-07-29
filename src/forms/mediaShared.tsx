@@ -55,12 +55,21 @@ export function mediaFileName(url: string): string {
 const VIDEO_EXT_RE = /\.(mp4|webm|ogg|ogv|mov|m4v)(\?|#|$)/i;
 
 /**
- * Best-effort image-vs-video guess for a preview: extension first, then the
- * `accept` string when it is video-only. Callers that mint extensionless blob
- * URLs (the native fallback) track the MIME themselves and OR it in.
+ * Best-effort image-vs-video guess for a preview: media type for a `data:`
+ * URL, then extension, then the `accept` string when it is video-only. Callers
+ * that mint extensionless blob URLs (the native fallback) track the MIME
+ * themselves and OR it in.
  */
 export function isVideoUrl(url: string | null | undefined, accept = ''): boolean {
   if (!url) return false;
+  // A data URL states its kind in the media type and never carries an
+  // extension, so `VIDEO_EXT_RE` can't match one — `data:video/mp4;base64,…`
+  // would previously fall through and preview as a broken `<img>`. When the
+  // type is present it is authoritative: an `image/*` data URL is not a video
+  // even in a video-only picker. A typeless `data:,…` has nothing to go on and
+  // falls through to the guess below.
+  const data = DATA_URL_RE.exec(url);
+  if (data) return data[1].toLowerCase() === 'video';
   const acceptsVideo = accept.includes('video');
   const acceptsImage = accept.includes('image') || accept === '*' || accept === '';
   return VIDEO_EXT_RE.test(url) || (acceptsVideo && !acceptsImage);
