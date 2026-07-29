@@ -512,12 +512,15 @@ export default function BulkImportGrid({ columns, onImport, description, mergeDu
     const cleaned = data.map(row => {
       const r = [...row];
       while (r.length < colCount) r.push('');
-      return r.slice(0, colCount).map((cell, i) => i === 0 ? cell : cleanNumber(cell));
+      return r.slice(0, colCount).map((cell, i) => {
+        const kind = colKind(columns[i], i);
+        return kind === 'price' || kind === 'qty' ? cleanNumber(cell) : cell;
+      });
     });
     // Pad to minimum rows
     while (cleaned.length < 15) cleaned.push(Array(colCount).fill(''));
     setGridData(cleaned);
-  }, [colCount]);
+  }, [colCount, columns]);
 
   const handleCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
