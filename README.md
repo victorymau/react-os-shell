@@ -186,7 +186,7 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 | `Pagination` | Numbered page control (pairs with tables; complements `ListFooter`). |
 | `Sparkline`, `BarChart`, `DonutChart` | Dependency-free inline-SVG charts (`currentColor`-themed). |
 | `BulkImportGrid` | Paste-or-upload bulk entry with column mapping, duplicate review and optional sum-merge. Hands resolved rows to `onImport`; owns no persistence. |
-| `ImportHistoryControls` | Undo/Redo for the newest bulk import. Pair with `useImportHistory` and put it in the header of the list the import lands in — *not* inside `BulkImportGrid`, which unmounts on import. Binds ⌘Z / ⇧⌘Z (and Ctrl+Y) except while the caret is in a field, where the browser's own undo wins; `hotkeys={false}` opts out. |
+| `UndoProvider`, `UndoControls` | One undo stack per form window, covering its fields, line items and bulk imports. Wrap the form in the provider, register state with `useUndoable`, drop the controls wherever the form's actions live. Binds ⌘Z / ⇧⌘Z (and Ctrl+Y) except while the caret is in a field, where the browser's own undo wins. |
 | `DashboardTemplate`, `DataTablePage`, `FormLayoutPage`, `CheckoutTemplate`, `EmailTemplate`, `ChatTemplate`, `GalleryTemplate`, `AuthScreen`, `ErrorPage` | Zero-prop starter page templates composed from the primitives. |
 
 ### Providers + setters
@@ -215,7 +215,8 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 | `useModalSave(handler)` | Cmd-S inside a modal. |
 | `useModalDuplicate(handler)` | Alt-D inside a modal. |
 | `useTableNav({ rows, cols, onCell })` | Arrow-key cell navigation in editable grids. |
-| `useImportHistory(items, onChange)` | Undo/redo for a bulk import into a list you control. `commit(next)` records one step and forwards to your `onChange`; hand edits push no step. Render with `ImportHistoryControls`. |
+| `useUndoable(value, apply, { label, coalesceKey })` | Put one piece of a form's state under the window's undo stack. `apply` is the setter you already have. `coalesceKey` folds a run of typing into one step. |
+| `useUndo()` | `{ undo, redo, canUndo, canRedo, undoLabel, clear }` for the enclosing `UndoProvider` — for custom UI, or to `clear()` the history after a save. |
 | `useMultiModal()` | Manages multi-window stacking + activate/blur. |
 | `useShellAuth() / useShellPrefs() / useShellEntityFetcher() / useBugReport() / useDesktopHost()` | Context readers — the shell uses these internally; consumers may also call them. |
 

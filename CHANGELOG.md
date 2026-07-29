@@ -7,47 +7,52 @@ All notable changes to this project will be documented in this file. The format 
 ## [4.2.0] — 2026-07-29
 
 ### Added
-- **Undo and Redo for a bulk import: `useImportHistory` + `ImportHistoryControls`.**
-  A bulk import is the one edit to a line-items table that arrives all at once
-  and can't be walked back by hand — fifteen rows land in a purchase order and
-  the only way out is deleting them one at a time. Undo now takes the whole
-  import back in one press, and Redo puts it back.
+- **Undo and Redo for a whole form: `UndoProvider`, `useUndoable`, `useUndo`,
+  `UndoControls`.** A form window gets one undo stack covering everything in it
+  — its fields, its line items, a bulk import. ⌘Z steps back the last thing the
+  user did, whatever part of the form it happened in, and Redo walks forward
+  again. Two open windows keep two independent stacks, so the keys never reach
+  into a window the user is not looking at.
 
-  The pair is deliberately scoped to the import, not to the table. Typing in a
-  row is cheap to correct and pushes no step; only `commit` does. The caller
-  keeps owning its list — `commit` snapshots it and then hands the new rows to
-  the same `onChange` the table already uses:
+  Wrap the form, then register each piece of its state. `apply` is the setter
+  the form already uses, so nothing about how state is stored has to change:
 
   ```tsx
-  const history = useImportHistory(items, setItems);
+  <UndoProvider>
+    <PurchaseOrderForm />
+  </UndoProvider>
 
-  <LineItemsTable
-    items={items}
-    onChange={setItems}                                         // hand edit — no step
-    onBulkImport={async rows => history.commit(toLines(rows))}  // one step
-  />
-  <ImportHistoryControls history={history} />
+  // inside the form
+  useUndoable(supplier, setSupplier, { label: 'supplier', coalesceKey: 'supplier' });
+  useUndoable(items, setItems, { label: 'line items' });
+
+  const { clear } = useUndo();     // call after a successful save
+  <UndoControls />                 // optional — the keys work without it
   ```
 
-  The controls belong in the header of the list the import lands in, not inside
-  `BulkImportGrid` — that unmounts on import and would take any control inside
-  it along. Both buttons stay rendered and go disabled, so the header does not
-  reflow the moment an import arrives. Depth is 50 imports.
+  A step snapshots **every** registered slice, not just the one that moved, so
+  undoing restores a coherent form rather than one slice out of step with the
+  rest. One user action that moves several slices at once — a bulk import fills
+  the line items and closes the grid — is still one step: the slices' effects
+  all run before the recording microtask, so the first captures the snapshot and
+  the rest join it. Depth is 100 steps.
 
-  ⌘Z / Ctrl+Z undoes and ⇧⌘Z / Ctrl+Shift+Z / Ctrl+Y redoes, bound while the
-  controls are mounted in the frontmost modal — **except while the caret is in
-  an input, a textarea, a select, or a grid cell**. There ⌘Z means "take back
-  what I just typed", the browser already does that, and swapping a text undo
-  for a six-row rollback would be a nasty surprise. The keys are also left alone
-  when there is nothing to step to, rather than being swallowed into a no-op.
-  Pass `hotkeys={false}` for a second list on the same screen, so one pair owns
-  the keys. Both appear in `ShortcutHelp` under Modals / Forms.
+  `coalesceKey` folds a run of changes into one step: pass the field name and a
+  burst of typing becomes a single Undo rather than one per keystroke. Omit it
+  for a change that is already whole, like an import or a deleted row.
 
-  Undoing is lossy when the list was edited after the import, because the
-  snapshot predates those edits too; that case asks before discarding them.
-  Redo restores the list as it stood when Undo was pressed rather than replaying
-  the import's own output, so an edit made after the import survives the round
-  trip.
+  ⌘Z / Ctrl+Z undoes and ⇧⌘Z / Ctrl+Shift+Z / Ctrl+Y redoes, bound by the
+  provider so the keys work in a form that shows no controls at all — **except
+  while the caret is in an input, a textarea, a select, or a grid cell**. There
+  ⌘Z means "take back what I just typed" and the browser already does that;
+  leaving the field ends the run and turns it into one step here, so the next ⌘Z
+  outside the field takes the whole edit back. The keys are also left alone when
+  there is nothing to step to, rather than being swallowed into a no-op. Both
+  appear in `ShortcutHelp` under Modals / Forms.
+
+  **Scope is the unsaved edit.** History lives with the mounted provider and dies
+  with it, and `clear()` ends it at a save — past that point "earlier" is on the
+  server, and taking it back is not something a form can do.
 
 ### Fixed
 - **`BulkImportGrid` no longer strips spaces and commas out of text columns on
