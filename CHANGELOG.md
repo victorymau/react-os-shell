@@ -4,6 +4,37 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [4.7.1] — 2026-08-01
+
+### Fixed
+- **Shift+click left the last row of the range unticked.** Select a row, Shift+click
+  one further down, and every box between them filled in except the one you clicked
+  — while the footer counted it as selected. The count was right and the box was
+  wrong, so a list of 20 showed 19 ticks, and the row you had just clicked looked
+  like the one thing the gesture had missed.
+
+  `useTableNav` called `preventDefault()` on that click. On a checkbox that runs the
+  browser's *canceled activation steps*, which restore the pre-click checkedness at
+  the END of event dispatch — after the microtask in which React has already
+  committed the new selection. The browser's revert therefore landed last, and React
+  never wrote the box again, because on every later render the `checked` prop is
+  unchanged. `stopPropagation()` alone does the job the cancel was there for (it
+  keeps both the checkbox's own toggle and the row-open handler from firing), so the
+  cancel is now used only on the row body, where a Shift+click on a cell link would
+  otherwise open a new window.
+
+- **The first Shift+click into a list selected nothing at all.** With no anchor
+  recorded yet, the handler toggled the row itself and then let the event reach the
+  checkbox, whose own `onClick` toggled it straight back off. It is reachable more
+  often than "the first click of the session" suggests: the anchor is also dropped
+  whenever the row count changes, so a filter, a search or an infinite-scroll page
+  put the list back into that state. The row now ticks and becomes the anchor for
+  the Shift+click after it.
+
+  One neighbouring behaviour changed with it: a Shift+click on the row *body* with
+  no anchor yet used to select the row and open it. It now only selects, which is
+  what the same gesture already did once an anchor existed.
+
 ## [4.7.0] — 2026-07-30
 
 Numbered 4.7.0 because **4.4.0, 4.5.0 and 4.6.0 were already on npm before any of

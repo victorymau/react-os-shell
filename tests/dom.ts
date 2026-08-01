@@ -60,7 +60,11 @@ define('sessionStorage', win.sessionStorage);
 define('getComputedStyle', win.getComputedStyle.bind(win));
 define('requestAnimationFrame', (cb: FrameRequestCallback) => setTimeout(() => cb(Date.now()), 0));
 define('cancelAnimationFrame', (id: number) => clearTimeout(id));
-define('matchMedia', (query: string) => ({
+// jsdom has no media queries. Set it on the window too, not just the global:
+// most callers here reach for it as `window.matchMedia` (`useIsMobile`,
+// `useColumnConfig`, `useSort`, `useTheme`), and a bare global leaves those
+// throwing on mount.
+const matchMedia = (query: string) => ({
   matches: false,
   media: query,
   onchange: null,
@@ -69,7 +73,9 @@ define('matchMedia', (query: string) => ({
   addEventListener() {},
   removeEventListener() {},
   dispatchEvent: () => false,
-}));
+});
+define('matchMedia', matchMedia);
+(win as unknown as { matchMedia: unknown }).matchMedia = matchMedia;
 // Constructors the shell reaches for by bare name.
 for (const name of ['Event', 'CustomEvent', 'KeyboardEvent', 'MouseEvent', 'Node', 'Element', 'HTMLElement', 'DOMRect'] as const) {
   define(name, (win as unknown as Record<string, unknown>)[name]);

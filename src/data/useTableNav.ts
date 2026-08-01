@@ -8,7 +8,8 @@ import { useModalActive } from '../shell/Modal';
  * - Enter to open the focused row (calls `onSelect`)
  * - Space to toggle the focused row's checkbox (calls `onToggle`)
  * - Shift+J/K to extend selection while moving
- * - Shift+click to range-select (calls `onSelectRange`)
+ * - Shift+click to range-select (calls `onSelectRange`, which must ADD the range
+ *   rather than toggle it — the clicked checkbox is ticked on that assumption)
  * - Cmd/Ctrl+A to select/deselect all (calls `onSelectAll`)
  *
  * Each list instance gates its document-level listeners on `useModalActive`
@@ -140,25 +141,54 @@ export default function useTableNav<T>(
       const clickedIdx = parseInt(row.getAttribute('data-row-idx')!, 10);
       if (isNaN(clickedIdx)) return;
 
+      // Clicking the row's checkbox and clicking its body need different
+      // handling below — the checkbox toggles itself, the body doesn't.
+      const checkbox =
+        target.tagName === 'INPUT' && (target as HTMLInputElement).type === 'checkbox'
+          ? (target as HTMLInputElement)
+          : null;
+
       const anchor = lastToggledRef.current;
       if (anchor < 0) {
+        // Nothing to range from — this Shift+click is just a plain tick that
+        // also becomes the anchor. On the checkbox its own onClick already
+        // toggles the row; toggling here too cancels out and selects nothing.
+        if (checkbox) {
+          lastToggledRef.current = clickedIdx;
+          setFocusIdx(clickedIdx);
+          return;
+        }
         onToggleRef.current?.(itemsRef.current[clickedIdx]);
-        lastToggledRef.current = clickedIdx;
-        setFocusIdx(clickedIdx);
-        return;
-      }
-
-      e.preventDefault();
-      e.stopPropagation();
-      const from = Math.min(anchor, clickedIdx);
-      const to = Math.max(anchor, clickedIdx);
-      if (onSelectRangeRef.current) {
-        onSelectRangeRef.current(from, to);
-      } else if (onToggleRef.current) {
-        for (let i = from; i <= to; i++) {
-          onToggleRef.current(itemsRef.current[i]);
+      } else {
+        const from = Math.min(anchor, clickedIdx);
+        const to = Math.max(anchor, clickedIdx);
+        if (onSelectRangeRef.current) {
+          onSelectRangeRef.current(from, to);
+          // A range select only ever ADDS, so the clicked checkbox must end up
+          // ticked. Say so directly rather than leaving it to React: the
+          // browser toggled it during the click's activation behaviour, and if
+          // the row was already selected the `checked` prop doesn't change, so
+          // React has no reason to write the DOM back.
+          if (checkbox) checkbox.checked = true;
+        } else if (onToggleRef.current) {
+          for (let i = from; i <= to; i++) {
+            onToggleRef.current(itemsRef.current[i]);
+          }
         }
       }
+
+      // Suppress the click — but NEVER on the checkbox itself. preventDefault()
+      // on a checkbox runs the browser's "canceled activation steps", which
+      // restore the pre-click checkedness at the END of dispatch — after the
+      // microtask in which React commits the new selection. React's write is
+      // overwritten and never repeated (the prop is unchanged on later
+      // renders), so the Shift+clicked row alone rendered unticked while being
+      // counted as selected. stopPropagation() is enough here: it keeps both
+      // the checkbox's own toggle and the row-open handler from firing. On the
+      // row body preventDefault() is still wanted, to stop a Shift+click on a
+      // cell link opening a new window.
+      if (!checkbox) e.preventDefault();
+      e.stopPropagation();
       lastToggledRef.current = clickedIdx;
       setFocusIdx(clickedIdx);
     };
