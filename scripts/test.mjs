@@ -53,6 +53,20 @@ await build({
   jsx: 'automatic',
   sourcemap: 'inline',
   logLevel: 'warning',
+  plugins: [{
+    name: 'confirm-dialog-headlessui-test-double',
+    setup(build) {
+      build.onResolve({ filter: /^@headlessui\/react$/ }, (args) => {
+        if (!args.importer.endsWith('/src/shell/ConfirmDialog.tsx')) return null;
+        // Repository-wide ConfirmDialog DOM-test policy: Headless UI's
+        // portal/transition layer depends on browser layout and CSS animation
+        // APIs jsdom deliberately does not implement. Keep ConfirmProvider's
+        // state, copy, and actions real; browser-level portal/focus/Escape
+        // mechanics belong in a browser test, not this node:test runner.
+        return { path: join(root, 'tests', 'headlessui.tsx') };
+      });
+    },
+  }],
   // jsdom is external because it is a large node-only package that has no
   // business being bundled; react-dom/client and react-dom/test-utils are
   // listed so `tests/dom.ts` can pull them in dynamically, after it has put

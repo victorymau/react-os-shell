@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient, { isShellApiClientConfigured } from '../api/client';
 import { entityDetailUrl, entityRefetchInterval, shouldRetryEntityFetch } from './entityFetchPolicy';
 import { WINDOW_REGISTRY, isPageEntry, isEntityEntry, type PageRegistryEntry, type ModalRegistryEntry } from '../windowRegistry/types';
-import Modal, { triggerSplitView, modalDepthRef, getActiveModalId, subscribeActive, activateModal, ExposeBackdrop, WindowShortcutProvider, setWindowDefaultPosition, isPanelFullyVisible, panelOffscreenBearing, revealWindow, type WindowShortcutSpec } from './Modal';
+import Modal, { triggerSplitView, modalDepthRef, getActiveModalId, subscribeActive, activateModal, ExposeBackdrop, WindowShortcutProvider, setWindowDefaultPosition, isPanelFullyVisible, panelOffscreenBearing, revealWindow, requestModalClose, type WindowShortcutSpec } from './Modal';
 import WindowErrorBoundary, { WindowCrashedFallback } from './WindowErrorBoundary';
 import { UndoProvider } from './UndoProvider';
 import PartNumberDetailPopup from './PartNumberDetailPopup';
@@ -64,6 +64,24 @@ const MinimizedContext = createContext<MinimizedContextType>({
   openItems: [],
 });
 
+type WindowDirtyRegistration = (id: symbol, dirty: boolean) => () => void;
+
+const WindowDirtyContext = createContext<WindowDirtyRegistration | null>(null);
+
+/**
+ * Registers controlled dirty state with the enclosing page window.
+ * Registrations outside a WindowManager-managed PageWindow are ignored.
+ */
+export function useWindowDirty(dirty: boolean): void {
+  const register = useContext(WindowDirtyContext);
+  const id = useRef(Symbol('window-dirty'));
+
+  useLayoutEffect(() => {
+    if (!register) return;
+    return register(id.current, dirty);
+  }, [register, dirty]);
+}
+
 export function useWindowManager() {
   return useContext(MinimizedContext);
 }
@@ -115,15 +133,32 @@ function shortcutSpecFor(item: MinimizedItem): WindowShortcutSpec | null {
 }
 
 function PageWindow({ item, onClose, accentRgb }: { item: MinimizedItem; onClose: () => void; accentRgb?: string }) {
+  const registrations = useRef(new Map<symbol, boolean>());
+  const [dirty, setDirty] = useState(false);
+  const registerDirty = useCallback<WindowDirtyRegistration>((id, value) => {
+    const updateAggregate = () => {
+      const next = Array.from(registrations.current.values()).some(Boolean);
+      setDirty(current => current === next ? current : next);
+    };
+    registrations.current.set(id, value);
+    updateAggregate();
+    return () => {
+      registrations.current.delete(id);
+      updateAggregate();
+    };
+  }, []);
+
   const raw = WINDOW_REGISTRY[item.route!];
   if (!raw || !isPageEntry(raw)) return null;
   const entry = raw as PageRegistryEntry;
   const Component = entry.component;
   return (
-    <Modal open={true} onClose={onClose} icon={navIcons[item.route!]} title={entry.label} size={entry.size || '2xl'} allowPinOnTop={entry.allowPinOnTop} initialPosition={entry.initialPosition} widget={entry.widget} compact={entry.compact} appStyle={entry.appStyle} flushBody={entry.flushBody} autoHeight={entry.autoHeight} autoMinHeight={entry.autoMinHeight} dimensions={entry.dimensions} windowKey={item.id} openedFromKey={item.openedFrom} accentRgb={accentRgb}>
-      <Suspense fallback={<div className="flex items-center justify-center py-12"><LoadingSpinner /></div>}>
-        <Component />
-      </Suspense>
+    <Modal open={true} onClose={onClose} icon={navIcons[item.route!]} title={entry.label} size={entry.size || '2xl'} dirty={dirty} allowPinOnTop={entry.allowPinOnTop} initialPosition={entry.initialPosition} widget={entry.widget} compact={entry.compact} appStyle={entry.appStyle} flushBody={entry.flushBody} autoHeight={entry.autoHeight} autoMinHeight={entry.autoMinHeight} dimensions={entry.dimensions} windowKey={item.id} openedFromKey={item.openedFrom} accentRgb={accentRgb}>
+      <WindowDirtyContext.Provider value={registerDirty}>
+        <Suspense fallback={<div className="flex items-center justify-center py-12"><LoadingSpinner /></div>}>
+          <Component />
+        </Suspense>
+      </WindowDirtyContext.Provider>
     </Modal>
   );
 }
@@ -900,6 +935,17 @@ export function WindowManagerProvider({ children, windowAccentForRoute }: {
     setOpenWindows(prev => prev.filter(m => m.id !== id));
   }, []);
 
+  const requestClose = useCallback((id: string) => {
+    // A mounted shell Modal owns the close decision, including dirty-state
+    // confirmation. Windows that render no keyed Modal keep the legacy direct
+    // removal fallback because there is no guard to ask.
+    if (!findPanelByWindowKey(id)) {
+      closeEntity(id);
+      return;
+    }
+    requestModalClose(id);
+  }, [closeEntity]);
+
   // Bring the just-spawned window with `windowKey` to the front after React
   // renders its panel. Without this, mountModal would slot the new modal into
   // its previously-saved z-order (from localStorage), placing it behind the
@@ -999,7 +1045,7 @@ export function WindowManagerProvider({ children, windowAccentForRoute }: {
       {/* Taskbar windows */}
       <TaskbarWindows
         openWindows={openWindows}
-        onRemove={closeEntity}
+        onRemove={requestClose}
         onCloseAll={() => setOpenWindows([])}
         onSplitView={triggerSplitView}
         onActivate={(label) => {

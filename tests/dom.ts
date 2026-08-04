@@ -77,7 +77,7 @@ const matchMedia = (query: string) => ({
 define('matchMedia', matchMedia);
 (win as unknown as { matchMedia: unknown }).matchMedia = matchMedia;
 // Constructors the shell reaches for by bare name.
-for (const name of ['Event', 'CustomEvent', 'KeyboardEvent', 'MouseEvent', 'Node', 'Element', 'HTMLElement', 'DOMRect'] as const) {
+for (const name of ['Event', 'CustomEvent', 'KeyboardEvent', 'MouseEvent', 'MutationObserver', 'Node', 'Element', 'HTMLElement', 'DOMRect'] as const) {
   define(name, (win as unknown as Record<string, unknown>)[name]);
 }
 // Not implemented by jsdom, and called by anything that measures itself.

@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [4.11.0] — 2026-08-04
+
+### Added
+- **Page windows can register controlled unsaved state with
+  `useWindowDirty(dirty)`.** The enclosing `PageWindow` now feeds the aggregate
+  state into its existing `Modal` close guard, so close and Escape reuse the
+  standard discard confirmation, including close requests from taskbar tabs
+  and their previews. Multiple mounted registrations are isolated: clearing or
+  unmounting one cannot clear another dirty registration. Calling the hook
+  outside a managed page window is a safe no-op.
+
 ## [4.10.0] — 2026-08-04
 
 ### Changed

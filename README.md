@@ -26,7 +26,7 @@ A backend-less playground hosted on GitHub Pages. Wallpapers, themes, sticky not
 
 Most apps ship in the `bundledApps` registry; a few (WorldClock, Notepad) want consumer-supplied prefs wiring to persist content across reloads. The bundled `Customization` settings page is also exported separately for consumers to register at `/settings/customization`.
 
-**Hooks:** `useWindowManager`, `useTheme`, full hotkey/nav system.
+**Hooks:** `useWindowManager`, `useWindowDirty`, `useTheme`, full hotkey/nav system.
 
 **Themes:** light + dark (frosted-glass tinting; the package ships base styles, additional theme variants like pink/green/grey/blue can layer on top).
 
@@ -162,6 +162,20 @@ openPage('/calculator');
 openEntity('order', 'uuid-123');
 ```
 
+### useWindowDirty
+
+Register controlled unsaved state from a component rendered by `PageWindow`:
+
+```tsx
+const [dirty, setDirty] = useState(false);
+useWindowDirty(dirty);
+```
+
+The page window uses the standard `Modal` discard confirmation while any
+mounted registration is dirty. Set the value to `false` after save or discard;
+unmounting also removes the registration. Calls outside a managed page window
+are ignored.
+
 ## API reference
 
 All exports are named — `import { Modal, ... } from 'react-os-shell'`.
@@ -213,6 +227,7 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 | Export | Purpose |
 |---|---|
 | `useWindowManager()` | `{ openPage, openEntity, closeEntity, openWindows, … }` |
+| `useWindowDirty(dirty)` | Registers controlled unsaved state with the enclosing `PageWindow`; multiple registrations aggregate with any-dirty semantics, and calls outside a managed page window are ignored. |
 | `useTheme()` | `{ theme, resolved }` — current theme + system-resolved value. |
 | `useNewHotkey(handler)` | Cmd/Ctrl+N — for "create new entity" buttons. |
 | `useEditHotkey(handler)` | Alt+Shift+E — for "edit" toggle. |

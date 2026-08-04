@@ -864,6 +864,18 @@ export function registerModalEscapeInterceptor(fn: (e: KeyboardEvent) => boolean
   escapeInterceptors.add(fn);
   return () => { escapeInterceptors.delete(fn); };
 }
+
+const MODAL_CLOSE_REQUEST_EVENT = 'modal-close-request';
+interface ModalCloseRequestDetail { windowKey: string }
+
+/** Route shell-chrome close controls back to the keyed Modal that owns the
+ * close guard. Internal to the shell; consumers close through their manager. */
+export function requestModalClose(windowKey: string): void {
+  window.dispatchEvent(new CustomEvent<ModalCloseRequestDetail>(MODAL_CLOSE_REQUEST_EVENT, {
+    detail: { windowKey },
+  }));
+}
+
 function runEscapeInterceptors(e: KeyboardEvent): boolean {
   for (const fn of escapeInterceptors) {
     try {
@@ -1864,6 +1876,19 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     }
     onClose();
   }, [isDirty, onClose]);
+
+  // Shell chrome outside the panel (taskbar tabs and their previews) cannot
+  // call this Modal's guardedClose directly. Route keyed close requests back
+  // through the same decision so every close surface shares one guard, copy,
+  // and in-flight lock instead of growing a second confirmation path.
+  useLayoutEffect(() => {
+    if (!open || !windowKey) return;
+    const handler = (event: Event) => {
+      if ((event as CustomEvent<ModalCloseRequestDetail>).detail?.windowKey === windowKey) guardedClose();
+    };
+    window.addEventListener(MODAL_CLOSE_REQUEST_EVENT, handler);
+    return () => window.removeEventListener(MODAL_CLOSE_REQUEST_EVENT, handler);
+  }, [open, windowKey, guardedClose]);
 
   // Pre-snap box: if the user drags a window that's currently snapped to an
   // edge, restore it to its previous "natural" size so dragging it across

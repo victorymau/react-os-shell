@@ -64,6 +64,7 @@ export { isDevEnv, applyDevTitle, DEV_BANNER_TEXT } from './utils/env';
 export {
   WindowManagerProvider,
   useWindowManager,
+  useWindowDirty,
   DocFavStar,
   getActiveWindowRoute,
 } from './shell/WindowManager';
