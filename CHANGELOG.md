@@ -14,7 +14,9 @@ All notable changes to this project will be documented in this file. The format 
   toggles, Widget Manager controls, taskbar tabs, and their previews. Multiple
   mounted registrations are isolated: clearing or
   unmounting one cannot clear another dirty registration. Calling the hook
-  outside a managed page window is a safe no-op.
+  outside a managed page window is a safe no-op. Concurrent dirty-close
+  requests are presented serially, so bulk widget removal cannot lose a
+  confirmation or leave a canceled window locked against a later retry.
 
 ## [4.10.0] — 2026-08-04
 

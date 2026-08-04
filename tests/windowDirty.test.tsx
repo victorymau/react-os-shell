@@ -11,6 +11,7 @@ import { setShellWindowRegistry } from '../src/windowRegistry/types';
 
 const ROUTE = '/window-dirty-test';
 const WIDGET_ROUTE = '/window-dirty-widget-test';
+const SECOND_WIDGET_ROUTE = '/window-dirty-widget-test-2';
 const panelSelector = (route = ROUTE) => `[data-modal-panel][data-window-key="page:${route}"]`;
 
 function Registration({ dirty }: { dirty: boolean }) {
@@ -43,6 +44,11 @@ setShellWindowRegistry({
   },
   [WIDGET_ROUTE]: {
     label: 'Window dirty widget test',
+    component: lazy(() => Promise.resolve({ default: DirtyTestPage })),
+    widget: true,
+  },
+  [SECOND_WIDGET_ROUTE]: {
+    label: 'Window dirty widget test 2',
     component: lazy(() => Promise.resolve({ default: DirtyTestPage })),
     widget: true,
   },
@@ -81,6 +87,39 @@ async function mountPage(route = ROUTE) {
   await flush();
   await flush();
   assert.ok(document.querySelector(panelSelector(route)), 'the real PageWindow opened');
+  return mounted;
+}
+
+function DirtyWidgetBulkOpener() {
+  const { openPage } = useWindowManager();
+  useEffect(() => {
+    openPage(WIDGET_ROUTE);
+    openPage(SECOND_WIDGET_ROUTE);
+  }, [openPage]);
+  return (
+    <>
+      <WidgetManager open={true} onClose={() => {}} />
+      <div id="taskbar-windows" />
+    </>
+  );
+}
+
+async function mountDirtyWidgets() {
+  localStorage.setItem('access_token', 'window-dirty-bulk-test');
+  localStorage.setItem('erp_open_windows', '[]');
+  const mounted = render(
+    <MemoryRouter>
+      <ConfirmProvider>
+        <WindowManagerProvider>
+          <DirtyWidgetBulkOpener />
+        </WindowManagerProvider>
+      </ConfirmProvider>
+    </MemoryRouter>,
+  );
+  await flush();
+  await flush();
+  assert.ok(document.querySelector(panelSelector(WIDGET_ROUTE)), 'the first dirty widget opened');
+  assert.ok(document.querySelector(panelSelector(SECOND_WIDGET_ROUTE)), 'the second dirty widget opened');
   return mounted;
 }
 
@@ -254,6 +293,39 @@ test('Widget Manager removal uses the same dirty guard', async (t) => {
 
   assertDiscardConfirmation();
   assert.ok(document.querySelector(panelSelector(WIDGET_ROUTE)), 'Widget Manager cannot remove a dirty page directly');
+});
+
+test('Widget Manager bulk removal serializes dirty confirmations without locking a canceled window', async (t) => {
+  const mounted = await mountDirtyWidgets();
+  t.after(() => mounted.unmount());
+
+  clickButton('Remove all');
+  await flush();
+  assertDiscardConfirmation();
+  assert.equal(document.querySelectorAll('[role="dialog"]').length, 1, 'only one dirty confirmation is active');
+
+  clickButton('Keep Editing');
+  await flush();
+  assertDiscardConfirmation();
+  assert.equal(document.querySelectorAll('[role="dialog"]').length, 1, 'the second dirty close is presented after canceling the first');
+
+  clickButton('Discard');
+  await flush();
+  const remainingPanels = [WIDGET_ROUTE, SECOND_WIDGET_ROUTE]
+    .filter(route => document.querySelector(panelSelector(route)));
+  assert.equal(remainingPanels.length, 1, 'discarding the second queued close removes exactly one widget');
+
+  const retry = document.querySelector<HTMLButtonElement>('[title^="Remove Window dirty widget test"]');
+  assert.ok(retry, 'Widget Manager still exposes the canceled widget');
+  act(() => { retry.click(); });
+  await flush();
+  assertDiscardConfirmation();
+  clickButton('Discard');
+  await flush();
+
+  assert.equal(document.querySelector(panelSelector(WIDGET_ROUTE)), null);
+  assert.equal(document.querySelector(panelSelector(SECOND_WIDGET_ROUTE)), null);
+  assert.doesNotMatch(document.body.textContent ?? '', /Discard changes\?/, 'the retried Modal was not left locked');
 });
 
 test('useWindowDirty is a safe no-op outside a managed page window', () => {

@@ -12,6 +12,11 @@ interface ConfirmOptions {
 }
 
 type ConfirmFn = (options: ConfirmOptions | string) => Promise<boolean>;
+interface PendingConfirm {
+  id: number;
+  options: ConfirmOptions;
+  resolve: (value: boolean) => void;
+}
 
 const ConfirmContext = createContext<ConfirmFn>(() => Promise.resolve(false));
 
@@ -51,16 +56,28 @@ export const prompt = (opts: PromptOptions | string) => globalPromptFn(opts);
 export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [options, setOptions] = useState<ConfirmOptions>({ message: '' });
+  const [confirmId, setConfirmId] = useState(0);
   const resolveRef = useRef<(value: boolean) => void>();
+  const activeConfirmIdRef = useRef<number | null>(null);
+  const nextConfirmIdRef = useRef(0);
+  const confirmQueueRef = useRef<PendingConfirm[]>([]);
+
+  const showConfirm = useCallback((request: PendingConfirm) => {
+    activeConfirmIdRef.current = request.id;
+    resolveRef.current = request.resolve;
+    setConfirmId(request.id);
+    setOptions(request.options);
+    setOpen(true);
+  }, []);
 
   const confirmFn: ConfirmFn = useCallback((opts) => {
     const normalized = typeof opts === 'string' ? { message: opts } : opts;
-    setOptions(normalized);
-    setOpen(true);
     return new Promise<boolean>((resolve) => {
-      resolveRef.current = resolve;
+      const request = { id: ++nextConfirmIdRef.current, options: normalized, resolve };
+      if (activeConfirmIdRef.current === null) showConfirm(request);
+      else confirmQueueRef.current.push(request);
     });
-  }, []);
+  }, [showConfirm]);
 
   // Destructive confirm state
   const [dOpen, setDOpen] = useState(false);
@@ -99,9 +116,20 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
     globalPromptFn = promptFn;
   }, [confirmFn, destructiveConfirmFn, promptFn]);
 
-  const handleClose = (result: boolean) => {
-    setOpen(false);
-    resolveRef.current?.(result);
+  const handleClose = (id: number, result: boolean) => {
+    // Headless UI and shell Escape interception can observe the same key. A
+    // callback captured by the previous dialog must never settle the next
+    // queued request after the active request advances.
+    if (activeConfirmIdRef.current !== id) return;
+    const resolve = resolveRef.current;
+    const next = confirmQueueRef.current.shift();
+    if (next) showConfirm(next);
+    else {
+      activeConfirmIdRef.current = null;
+      resolveRef.current = undefined;
+      setOpen(false);
+    }
+    resolve?.(result);
   };
 
   const handleDClose = (result: boolean) => {
@@ -143,13 +171,13 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
       // Paint order confirm < destructive < prompt → dismiss the top-most first.
       if (pOpen) { handlePClose(false); return true; }
       if (dOpen) { handleDClose(false); return true; }
-      if (open) { handleClose(false); return true; }
+      if (open) { handleClose(confirmId, false); return true; }
       return false;
     });
     // The close handlers' cancel paths don't read transient input, so they're
     // safe to close over; re-register only when which dialog is open changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, dOpen, pOpen]);
+  }, [open, dOpen, pOpen, confirmId]);
 
   const variant = options.variant || (options.confirmLabel?.toLowerCase().includes('delete') || options.message.toLowerCase().includes('delete') ? 'danger' : 'info');
   const confirmBtnClass = variant === 'danger'
@@ -166,7 +194,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   return (
     <ConfirmContext.Provider value={confirmFn}>
       {children}
-      <Dialog open={open} onClose={() => handleClose(false)} className="relative z-[9999]">
+      <Dialog open={open} onClose={() => handleClose(confirmId, false)} className="relative z-[9999]">
         <DialogBackdrop className="fixed inset-0 bg-black/30 transition-opacity" />
         <div className="fixed inset-0 flex items-center justify-center p-4">
           <DialogPanel className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
@@ -184,14 +212,14 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
             <div className="mt-6 flex justify-end gap-3">
               <button
                 type="button"
-                onClick={() => handleClose(false)}
+                onClick={() => handleClose(confirmId, false)}
                 className="bg-white text-gray-700 border border-gray-300 px-4 py-2 text-sm font-medium rounded-lg hover:bg-gray-50"
               >
                 {options.cancelLabel || 'Cancel'}
               </button>
               <button
                 type="button"
-                onClick={() => handleClose(true)}
+                onClick={() => handleClose(confirmId, true)}
                 className={`px-4 py-2 text-sm font-medium rounded-lg ${confirmBtnClass}`}
               >
                 {options.confirmLabel || 'OK'}
