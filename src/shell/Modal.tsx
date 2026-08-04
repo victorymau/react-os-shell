@@ -351,11 +351,16 @@ interface ModalProps {
   openedFromKey?: string;
   /** Per-section window accent (SG#00372): an `R G B` triple (e.g.
    *  '91 141 190'). When set, the panel publishes it as the
-   *  `--window-accent-rgb` CSS custom property and renders a thin accent
-   *  stripe across the top of the title bar, so overlapping windows from
+   *  `--window-accent-rgb` CSS custom property, and — if the user has turned
+   *  the `window_accent_stripe` preference on — renders a thin accent stripe
+   *  between the title bar and the body, so overlapping windows from
    *  different app sections are distinguishable at a glance. The header
    *  itself stays theme-neutral — themes and the user's custom header
-   *  colour are untouched. Absent = exactly the previous rendering. */
+   *  colour are untouched. Absent = exactly the previous rendering.
+   *
+   *  The CSS custom property is published whenever `accentRgb` is passed,
+   *  independent of the preference, so consumer CSS can key off the section
+   *  accent even with the stripe switched off. */
   accentRgb?: string;
   children: React.ReactNode;
 }
@@ -1193,6 +1198,11 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   // below) and for Modals used outside the window system.
   const shortcutSpec = useContext(WindowShortcutContext);
   const { prefs: shellPrefs, save: saveShellPrefs } = useShellPrefs();
+  // SG#00372: the per-section accent stripe is opt-in — plenty of users read a
+  // coloured band under the title bar as status rather than as "which section
+  // this window belongs to", so it stays off until asked for. Consumers that
+  // pass `accentRgb` still publish the CSS custom property either way.
+  const accentStripeOn = !!shellPrefs.window_accent_stripe;
   const favDocs: WindowShortcutSpec[] = shellPrefs.favorite_documents || [];
   const isOnDesktop = !!shortcutSpec && favDocs.some(d => d.entityType === shortcutSpec.entityType && d.entityId === shortcutSpec.entityId);
   const toggleDesktopShortcut = useCallback(() => {
@@ -2376,20 +2386,6 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
           />
         )}
 
-        {/* SG#00372: per-section accent stripe — a thin line across the top
-         *  edge of the title bar, painted from --window-accent-rgb (set by the
-         *  effect above when the consumer passes `accentRgb`). Overlapping
-         *  windows from different app sections become distinguishable while
-         *  the header itself stays theme-neutral. pointer-events-none keeps
-         *  title-bar dragging/clicking unaffected; the overflow-hidden panel
-         *  clips it to the rounded corners. Widgets have no title bar and
-         *  mobile windows are fullscreen, so neither renders it. */}
-        {accentRgb && !widget && !isMobile && (
-          <div aria-hidden="true"
-            className="absolute top-0 left-0 right-0 h-[3px] z-[6] pointer-events-none"
-            style={{ backgroundColor: `rgb(var(--window-accent-rgb) / ${isActive ? 0.9 : 0.55})` }} />
-        )}
-
         {/* HEADER — draggable on desktop, hidden on mobile (apps go fullscreen
          *  with a swipe-from-left-edge gesture to close). */}
         {widget ? (
@@ -2480,6 +2476,24 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
             </div>
           )}
         </div>
+        )}
+
+        {/* SG#00372: per-section accent stripe — a thin line between the title
+         *  bar and the body, painted from --window-accent-rgb (set by the
+         *  effect above when the consumer passes `accentRgb`). Overlapping
+         *  windows from different app sections become distinguishable while
+         *  the header itself stays theme-neutral. In flow rather than absolute
+         *  so it lands under whichever of the three title bars rendered
+         *  (compact / appStyle / full) without having to know its height.
+         *  pointer-events-none keeps the 3px band from swallowing a drag that
+         *  started on the header edge. Off by default — the user opts in via
+         *  the `window_accent_stripe` preference (Customization → Windows).
+         *  Widgets have no title bar and mobile windows are fullscreen, so
+         *  neither renders it. */}
+        {accentRgb && accentStripeOn && !widget && !isMobile && (
+          <div aria-hidden="true"
+            className="h-[3px] shrink-0 pointer-events-none"
+            style={{ backgroundColor: `rgb(var(--window-accent-rgb) / ${isActive ? 0.9 : 0.55})` }} />
         )}
 
         {/* BODY */}

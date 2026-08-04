@@ -868,8 +868,11 @@ export function WindowManagerProvider({ children, windowAccentForRoute }: {
   children: ReactNode;
   /** SG#00372: optional per-section window accent. Called with each open
    *  window's route ('/sales-orders', '/payments', …); return an `R G B`
-   *  triple (e.g. '91 141 190') to give that window a thin accent stripe on
-   *  its title bar (see Modal's `accentRgb`), or undefined for no accent.
+   *  triple (e.g. '91 141 190') to give that window a thin accent stripe
+   *  between its title bar and body (see Modal's `accentRgb`), or undefined
+   *  for no accent. The stripe is drawn only for users who have switched it
+   *  on in Customization → Windows; the mapping is still worth wiring
+   *  regardless, since it also publishes `--window-accent-rgb` per window.
    *  The consumer owns the route→section→colour mapping; omitting the prop
    *  keeps every window exactly as before. */
   windowAccentForRoute?: (route: string) => string | undefined;

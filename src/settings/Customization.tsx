@@ -387,6 +387,28 @@ export default function Customization({ omit, section }: CustomizationProps = {}
         </div>
       </div>
 
+      {/* ── Windows ── */}
+      {/* SG#00372: the per-section accent stripe. Only does anything when the
+          consumer wires `windowAccentForRoute` on WindowManagerProvider — with
+          no accents configured the switch is harmless rather than hidden,
+          because this panel has no way to ask whether any route has one. */}
+      <div>
+        <h3 className="text-sm font-semibold text-gray-900 mb-3">Windows</h3>
+        <label className="flex items-start gap-2 cursor-pointer">
+          <input type="checkbox" checked={!!pref('window_accent_stripe')}
+            onChange={e => savePref('window_accent_stripe', e.target.checked)}
+            className="h-4 w-4 mt-0.5 rounded border-gray-300 text-blue-600" />
+          <span className="text-sm text-gray-700">
+            Show section colour stripe
+            <span className="block text-xs text-gray-400">
+              Draws a thin coloured line between a window's title bar and its content,
+              one colour per area of the app, so overlapping windows are easier to tell
+              apart at a glance.
+            </span>
+          </span>
+        </label>
+      </div>
+
       {/* ── Diagnostics ── */}
       {/* Deliberately adjacent to Transparency: the switch above is the usual
           fix for a sluggish machine, and this is how you find out whether it

@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [4.10.0] — 2026-08-04
+
+### Changed
+- **The per-section colour stripe moved off the top edge of the window and now
+  sits between the title bar and the content**, where it reads as a divider
+  belonging to the window rather than as a highlight sitting on top of it. It is
+  drawn in flow, immediately after whichever of the three title bars rendered
+  (compact / `appStyle` / full), so it needs no knowledge of the header's
+  height and can't drift out of alignment with it.
+
+- **The stripe is now off by default and opt-in**, via a new *Show section
+  colour stripe* switch in Customization → Windows (`window_accent_stripe`).
+  A coloured band across a window is easy to read as status — something is
+  wrong, something needs attention — rather than as "this window belongs to
+  Sales", so it is no longer imposed on every user of a consumer that wires
+  `windowAccentForRoute`.
+
+  `--window-accent-rgb` is still published on the panel element whenever the
+  consumer passes `accentRgb`, switch or no switch, so consumer CSS keyed off
+  the section accent keeps working when the stripe is hidden.
+
 ## [4.9.0] — 2026-08-04
 
 ### Added
