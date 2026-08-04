@@ -35,6 +35,8 @@ const outDir = join(root, 'node_modules', '.cache', 'react-os-shell-tests');
 const specs = readdirSync(testsDir)
   .filter((f) => f.endsWith('.test.tsx') || f.endsWith('.test.ts'))
   .map((f) => join(testsDir, f));
+const focusedConfirmSpec = join(testsDir, 'windowDirty.test.tsx');
+const regularSpecs = specs.filter(spec => spec !== focusedConfirmSpec);
 
 if (specs.length === 0) {
   console.error('No specs found in tests/');
@@ -43,9 +45,7 @@ if (specs.length === 0) {
 
 rmSync(outDir, { recursive: true, force: true });
 
-await build({
-  entryPoints: specs,
-  outdir: outDir,
+const sharedBuild = {
   bundle: true,
   format: 'esm',
   platform: 'node',
@@ -53,20 +53,6 @@ await build({
   jsx: 'automatic',
   sourcemap: 'inline',
   logLevel: 'warning',
-  plugins: [{
-    name: 'confirm-dialog-headlessui-test-double',
-    setup(build) {
-      build.onResolve({ filter: /^@headlessui\/react$/ }, (args) => {
-        if (!args.importer.endsWith('/src/shell/ConfirmDialog.tsx')) return null;
-        // Repository-wide ConfirmDialog DOM-test policy: Headless UI's
-        // portal/transition layer depends on browser layout and CSS animation
-        // APIs jsdom deliberately does not implement. Keep ConfirmProvider's
-        // state, copy, and actions real; browser-level portal/focus/Escape
-        // mechanics belong in a browser test, not this node:test runner.
-        return { path: join(root, 'tests', 'headlessui.tsx') };
-      });
-    },
-  }],
   // jsdom is external because it is a large node-only package that has no
   // business being bundled; react-dom/client and react-dom/test-utils are
   // listed so `tests/dom.ts` can pull them in dynamically, after it has put
@@ -76,6 +62,33 @@ await build({
     'react-dom/test-utils', 'react/jsx-runtime', 'jsdom',
   ],
   define: { __PKG_VERSION__: '"test"' },
+};
+
+await build({
+  ...sharedBuild,
+  entryPoints: regularSpecs,
+  outdir: outDir,
+});
+
+const focusedOutDir = join(outDir, 'focused-confirm');
+await build({
+  ...sharedBuild,
+  entryPoints: [focusedConfirmSpec],
+  outdir: focusedOutDir,
+  plugins: [{
+    name: 'confirm-dialog-headlessui-test-double',
+    setup(build) {
+      build.onResolve({ filter: /^@headlessui\/react$/ }, (args) => {
+        if (!args.importer.endsWith('/src/shell/ConfirmDialog.tsx')) return null;
+        // This focused jsdom spec uses a visual double because Headless UI's
+        // portal/transition layer depends on browser layout and CSS animation
+        // APIs jsdom deliberately does not implement. All other specs resolve
+        // real Headless UI, and the browser suite covers this boundary without
+        // a double.
+        return { path: join(root, 'tests', 'headlessui.tsx') };
+      });
+    },
+  }],
 });
 
 // Specs run from the bundle, so `import.meta.url` points into the cache dir —
@@ -83,6 +96,7 @@ await build({
 const bundled = readdirSync(outDir)
   .filter((f) => f.endsWith('.js'))
   .map((f) => join(outDir, f));
+bundled.push(join(focusedOutDir, 'windowDirty.test.js'));
 
 const child = spawn(process.execPath, ['--test', ...bundled], {
   stdio: 'inherit',

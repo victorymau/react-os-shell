@@ -5,13 +5,13 @@ import assert from 'node:assert/strict';
 import { MemoryRouter } from 'react-router-dom';
 import { ConfirmProvider } from '../src/shell/ConfirmDialog';
 import { WindowManagerProvider, useWindowDirty, useWindowManager } from '../src/shell/WindowManager';
-import type { useWindowDirty as PublicUseWindowDirty } from '../src/index';
+import { useWindowDirty as publicUseWindowDirty } from '../src/index';
+import WidgetManager from '../src/shell/WidgetManager';
 import { setShellWindowRegistry } from '../src/windowRegistry/types';
 
 const ROUTE = '/window-dirty-test';
-const PANEL_SELECTOR = `[data-modal-panel][data-window-key="page:${ROUTE}"]`;
-
-const publicUseWindowDirty: typeof PublicUseWindowDirty = useWindowDirty;
+const WIDGET_ROUTE = '/window-dirty-widget-test';
+const panelSelector = (route = ROUTE) => `[data-modal-panel][data-window-key="page:${route}"]`;
 
 function Registration({ dirty }: { dirty: boolean }) {
   useWindowDirty(dirty);
@@ -41,34 +41,46 @@ setShellWindowRegistry({
     label: 'Window dirty test',
     component: lazy(() => Promise.resolve({ default: DirtyTestPage })),
   },
+  [WIDGET_ROUTE]: {
+    label: 'Window dirty widget test',
+    component: lazy(() => Promise.resolve({ default: DirtyTestPage })),
+    widget: true,
+  },
 });
 
-function PageOpener() {
-  const { openPage } = useWindowManager();
-  useEffect(() => { openPage(ROUTE); }, [openPage]);
+function PageOpener({ route }: { route: string }) {
+  const { openPage, closeEntity, remove } = useWindowManager();
+  const [showWidgetManager, setShowWidgetManager] = useState(false);
+  useEffect(() => { openPage(route); }, [openPage, route]);
+  const windowId = `page:${route}`;
   return (
     <>
-      <button type="button" data-testid="reopen" onClick={() => openPage(ROUTE)}>Reopen</button>
+      <button type="button" data-testid="reopen" onClick={() => openPage(route)}>Reopen</button>
+      <button type="button" data-testid="public-close" onClick={() => closeEntity(windowId)}>Public close</button>
+      <button type="button" data-testid="legacy-remove" onClick={() => remove(windowId)}>Legacy remove</button>
+      <button type="button" data-testid="widget-toggle" onClick={() => openPage(route)}>Widget toggle</button>
+      <button type="button" data-testid="show-widget-manager" onClick={() => setShowWidgetManager(true)}>Show widget manager</button>
+      <WidgetManager open={showWidgetManager} onClose={() => setShowWidgetManager(false)} />
       <div id="taskbar-windows" />
     </>
   );
 }
 
-async function mountPage() {
+async function mountPage(route = ROUTE) {
   localStorage.setItem('access_token', 'window-dirty-test');
   localStorage.setItem('erp_open_windows', '[]');
   const mounted = render(
     <MemoryRouter>
       <ConfirmProvider>
         <WindowManagerProvider>
-          <PageOpener />
+          <PageOpener route={route} />
         </WindowManagerProvider>
       </ConfirmProvider>
     </MemoryRouter>,
   );
   await flush();
   await flush();
-  assert.ok(document.querySelector(PANEL_SELECTOR), 'the real PageWindow opened');
+  assert.ok(document.querySelector(panelSelector(route)), 'the real PageWindow opened');
   return mounted;
 }
 
@@ -109,7 +121,7 @@ test('a dirty PageWindow registration uses the existing Modal close confirmation
   assertDiscardConfirmation();
   clickButton('Keep Editing');
   await flush();
-  assert.ok(document.querySelector(PANEL_SELECTOR), 'canceling the existing confirmation keeps the page open');
+  assert.ok(document.querySelector(panelSelector()), 'canceling the existing confirmation keeps the page open');
 });
 
 test('clearing or unmounting the only dirty registration removes the close guard', async (t) => {
@@ -124,7 +136,7 @@ test('clearing or unmounting the only dirty registration removes the close guard
   clickTestButton('first-false');
   pressKey('Escape');
   await flush();
-  assert.equal(document.querySelector(PANEL_SELECTOR), null, 'changing dirty to false closes without confirmation');
+  assert.equal(document.querySelector(panelSelector()), null, 'changing dirty to false closes without confirmation');
   assert.doesNotMatch(document.body.textContent ?? '', /Discard changes\?/);
 
   clickTestButton('reopen');
@@ -137,7 +149,7 @@ test('clearing or unmounting the only dirty registration removes the close guard
   clickTestButton('first-unmount');
   pressKey('Escape');
   await flush();
-  assert.equal(document.querySelector(PANEL_SELECTOR), null, 'unmounting the registration also closes without confirmation');
+  assert.equal(document.querySelector(panelSelector()), null, 'unmounting the registration also closes without confirmation');
   assert.doesNotMatch(document.body.textContent ?? '', /Discard changes\?/);
 });
 
@@ -153,12 +165,12 @@ test('multiple registrations stay guarded while any mounted registration is dirt
   assertDiscardConfirmation();
   clickButton('Keep Editing');
   await flush();
-  assert.ok(document.querySelector(PANEL_SELECTOR), 'one cleanup cannot clear another registration');
+  assert.ok(document.querySelector(panelSelector()), 'one cleanup cannot clear another registration');
 
   clickTestButton('second-unmount');
   pressKey('Escape');
   await flush();
-  assert.equal(document.querySelector(PANEL_SELECTOR), null, 'the guard clears after the final dirty registration unmounts');
+  assert.equal(document.querySelector(panelSelector()), null, 'the guard clears after the final dirty registration unmounts');
 });
 
 test('taskbar close requests use the same guard while dirty and close directly while clean', async (t) => {
@@ -170,15 +182,78 @@ test('taskbar close requests use the same guard while dirty and close directly w
   await flush();
   assertDiscardConfirmation();
   assert.equal(document.querySelectorAll('[role="dialog"]').length, 1, 'repeated close requests share one confirmation');
-  assert.ok(document.querySelector(PANEL_SELECTOR), 'the taskbar cannot bypass the dirty guard');
+  assert.ok(document.querySelector(panelSelector()), 'the taskbar cannot bypass the dirty guard');
 
   clickButton('Keep Editing');
   await flush();
   clickTestButton('first-false');
   clickTaskbarClose();
   await flush();
-  assert.equal(document.querySelector(PANEL_SELECTOR), null, 'the same taskbar request closes a clean page');
+  assert.equal(document.querySelector(panelSelector()), null, 'the same taskbar request closes a clean page');
   assert.doesNotMatch(document.body.textContent ?? '', /Discard changes\?/);
+});
+
+test('public closeEntity guards dirty windows and confirmed removal does not recurse', async (t) => {
+  const mounted = await mountPage();
+  t.after(() => mounted.unmount());
+
+  clickTestButton('public-close');
+  await flush();
+  assertDiscardConfirmation();
+
+  clickButton('Discard');
+  await flush();
+  assert.equal(document.querySelector(panelSelector()), null, 'confirmation performs one forced removal');
+  assert.doesNotMatch(document.body.textContent ?? '', /Discard changes\?/, 'forced removal does not re-enter the guard');
+});
+
+test('legacy remove guards dirty windows and clean public closes remain direct', async (t) => {
+  const mounted = await mountPage();
+  t.after(() => mounted.unmount());
+
+  clickTestButton('legacy-remove');
+  await flush();
+  assertDiscardConfirmation();
+  clickButton('Keep Editing');
+  await flush();
+
+  clickTestButton('first-false');
+  clickTestButton('public-close');
+  await flush();
+  assert.equal(document.querySelector(panelSelector()), null, 'clean public close removes the window directly');
+  assert.doesNotMatch(document.body.textContent ?? '', /Discard changes\?/);
+});
+
+test('toggling an active widget through openPage cannot bypass its dirty guard', async (t) => {
+  const mounted = await mountPage(WIDGET_ROUTE);
+  t.after(() => mounted.unmount());
+
+  clickTestButton('widget-toggle');
+  await flush();
+  assertDiscardConfirmation();
+  assert.ok(document.querySelector(panelSelector(WIDGET_ROUTE)), 'widget toggle keeps the dirty page mounted');
+
+  clickButton('Keep Editing');
+  await flush();
+  clickTestButton('first-false');
+  clickTestButton('widget-toggle');
+  await flush();
+  assert.equal(document.querySelector(panelSelector(WIDGET_ROUTE)), null, 'clean widget toggle removes the page directly');
+});
+
+test('Widget Manager removal uses the same dirty guard', async (t) => {
+  const mounted = await mountPage(WIDGET_ROUTE);
+  t.after(() => mounted.unmount());
+
+  clickTestButton('show-widget-manager');
+  await flush();
+  const removeWidget = document.querySelector<HTMLButtonElement>('[title="Remove Window dirty widget test from desktop"]');
+  assert.ok(removeWidget, 'Widget Manager exposes the active widget removal control');
+  act(() => { removeWidget.click(); });
+  await flush();
+
+  assertDiscardConfirmation();
+  assert.ok(document.querySelector(panelSelector(WIDGET_ROUTE)), 'Widget Manager cannot remove a dirty page directly');
 });
 
 test('useWindowDirty is a safe no-op outside a managed page window', () => {

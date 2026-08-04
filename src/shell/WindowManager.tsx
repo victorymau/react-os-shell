@@ -632,8 +632,8 @@ function TaskbarTabPreview({ items, anchorEl, onActivate, onClose, onMouseEnter,
   );
 }
 
-function TaskbarWindows({ openWindows, onRemove, onCloseAll, onSplitView, onActivate, onActivateById }: {
-  openWindows: MinimizedItem[]; onRemove: (id: string) => void; onCloseAll: () => void; onSplitView: () => void;
+function TaskbarWindows({ openWindows, onRemove, onSplitView, onActivate, onActivateById }: {
+  openWindows: MinimizedItem[]; onRemove: (id: string) => void; onSplitView: () => void;
   onActivate: (label: string) => void;
   onActivateById: (id: string) => void;
 }) {
@@ -915,6 +915,8 @@ export function WindowManagerProvider({ children, windowAccentForRoute }: {
   const location = useLocation();
   const isAuthPage = AUTH_PAGES.some(p => location.pathname.startsWith(p));
   const [openWindows, setOpenWindows] = useState<MinimizedItem[]>(() => restoreWindowState());
+  const openWindowsRef = useRef(openWindows);
+  useLayoutEffect(() => { openWindowsRef.current = openWindows; }, [openWindows]);
 
   // Persist window state on every change — but don't save empty on initial mount (login page)
   const hasUserActed = useRef(false);
@@ -931,7 +933,10 @@ export function WindowManagerProvider({ children, windowAccentForRoute }: {
     }
   }, [openWindows]);
 
-  const closeEntity = useCallback((id: string) => {
+  // Modal calls this only after its own close guard has allowed the close.
+  // Keep it private so public controls cannot bypass dirty confirmation, and
+  // so a confirmed close cannot recurse back into requestClose.
+  const forceRemoveWindow = useCallback((id: string) => {
     setOpenWindows(prev => prev.filter(m => m.id !== id));
   }, []);
 
@@ -940,11 +945,11 @@ export function WindowManagerProvider({ children, windowAccentForRoute }: {
     // confirmation. Windows that render no keyed Modal keep the legacy direct
     // removal fallback because there is no guard to ask.
     if (!findPanelByWindowKey(id)) {
-      closeEntity(id);
+      forceRemoveWindow(id);
       return;
     }
     requestModalClose(id);
-  }, [closeEntity]);
+  }, [forceRemoveWindow]);
 
   // Bring the just-spawned window with `windowKey` to the front after React
   // renders its panel. Without this, mountModal would slot the new modal into
@@ -994,6 +999,13 @@ export function WindowManagerProvider({ children, windowAccentForRoute }: {
   const openPage = useCallback((path: string) => {
     if (!WINDOW_REGISTRY[path] || !isPageEntry(WINDOW_REGISTRY[path])) return;
     const entry = WINDOW_REGISTRY[path] as PageRegistryEntry;
+    if (entry.widget) {
+      const existing = openWindowsRef.current.find(m => m.type === 'page' && m.route === path);
+      if (existing) {
+        requestClose(existing.id);
+        return;
+      }
+    }
     const openedFrom = currentlyActiveWindowKey();
     setOpenWindows(prev => {
       // Multi-instance pages always spawn a new window with a unique id.
@@ -1015,10 +1027,10 @@ export function WindowManagerProvider({ children, windowAccentForRoute }: {
       }
       const existing = prev.find(m => m.type === 'page' && m.route === path);
       if (existing) {
-        // Widgets toggle on/off; non-widgets activate (bring to front)
-        if (entry.widget) {
-          return prev.filter(m => m !== existing);
-        }
+        // A same-tick duplicate widget open may reach this updater before the
+        // latest committed state reaches openWindowsRef. Do not turn that race
+        // into an unguarded toggle; the next explicit call uses requestClose.
+        if (entry.widget) return prev;
         activateAfterMount(existing.id);
         return prev;
       }
@@ -1030,12 +1042,13 @@ export function WindowManagerProvider({ children, windowAccentForRoute }: {
         openedFrom,
       }];
     });
-  }, []);
+  }, [requestClose]);
 
   // Backward compat stubs
   const minimize = useCallback(() => {}, []);
   const restore = useCallback(() => {}, []);
-  const remove = closeEntity;
+  const closeEntity = requestClose;
+  const remove = requestClose;
   const restoreIfMinimized = () => false;
 
   return (
@@ -1046,7 +1059,6 @@ export function WindowManagerProvider({ children, windowAccentForRoute }: {
       <TaskbarWindows
         openWindows={openWindows}
         onRemove={requestClose}
-        onCloseAll={() => setOpenWindows([])}
         onSplitView={triggerSplitView}
         onActivate={(label) => {
           const panels = document.querySelectorAll('[data-modal-panel]');
@@ -1086,7 +1098,7 @@ export function WindowManagerProvider({ children, windowAccentForRoute }: {
         <WindowErrorBoundary
           key={item.id}
           fallback={(error, reset) => (
-            <Modal open={true} onClose={() => closeEntity(item.id)} title={item.label} size="md" autoHeight windowKey={item.id}>
+            <Modal open={true} onClose={() => forceRemoveWindow(item.id)} title={item.label} size="md" autoHeight windowKey={item.id}>
               <WindowCrashedFallback error={error} onReload={reset} />
             </Modal>
           )}
@@ -1106,11 +1118,11 @@ export function WindowManagerProvider({ children, windowAccentForRoute }: {
                 value the Modal gets as `windowKey` below. */}
             <UndoProvider windowId={item.id}>
               {item.type === 'page' ? (
-                <PageWindow item={item} onClose={() => closeEntity(item.id)} accentRgb={accentRgb} />
+                <PageWindow item={item} onClose={() => forceRemoveWindow(item.id)} accentRgb={accentRgb} />
               ) : (
                 <RestoredRegistryModal
                   item={item}
-                  onClose={() => closeEntity(item.id)}
+                  onClose={() => forceRemoveWindow(item.id)}
                   onMinimize={() => {}}
                   accentRgb={accentRgb}
                 />

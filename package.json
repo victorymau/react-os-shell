@@ -85,6 +85,7 @@
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
     "test": "node scripts/test.mjs",
+    "test:browser": "node scripts/test-browser.mjs",
     "screenshot": "node scripts/screenshot.mjs",
     "clean": "rm -rf dist"
   },
