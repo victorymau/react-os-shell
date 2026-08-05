@@ -42,6 +42,22 @@ function rangeContains(anchor: CellPos, end: CellPos, row: number, col: number):
 }
 
 /**
+ * `rows` with one blank row under it when the last row has content, so there is
+ * always a line left to click into.
+ *
+ * Typing has had this since the beginning — `ensureRows` grows the grid as the
+ * cursor nears the bottom. Paste never did: 16 lines into a 15-line grid landed
+ * as exactly 16 rows, and the operator with a second batch to paste had nowhere
+ * to put it. Returns a new array rather than pushing into the caller's, so the
+ * paste handlers' selection maths still sees the pasted block's own length.
+ */
+export function withSpareRow(rows: string[][], colCount: number): string[][] {
+  const last = rows[rows.length - 1];
+  if (last && !last.some(cell => cell.trim())) return rows;
+  return [...rows, Array(colCount).fill('')];
+}
+
+/**
  * Lightweight editable grid with spreadsheet-like features:
  * - Click + drag to select a range of cells
  * - Ctrl+C / Cmd+C to copy selection as tab-delimited text
@@ -192,7 +208,7 @@ export default function EditableGrid({ columns, data, onChange, onColumnsChange,
           next[targetRow][targetCol] = pastedRows[r][c].trim();
         }
       }
-      onChange(next);
+      onChange(fixedRows ? next : withSpareRow(next, columns.length));
 
       // Select the pasted range
       setSelAnchor({ row: focus.row, col: focus.col });
@@ -200,7 +216,7 @@ export default function EditableGrid({ columns, data, onChange, onColumnsChange,
     };
     window.addEventListener('paste', handler);
     return () => window.removeEventListener('paste', handler);
-  }, [focus, rows, columns, onChange]);
+  }, [focus, rows, columns, onChange, fixedRows]);
 
   // Handle paste — supports multi-cell paste from spreadsheets (when in edit mode)
   const handlePaste = useCallback((e: React.ClipboardEvent, startRow: number, startCol: number) => {
@@ -225,8 +241,8 @@ export default function EditableGrid({ columns, data, onChange, onColumnsChange,
       }
     }
 
-    onChange(next);
-  }, [rows, columns, onChange]);
+    onChange(fixedRows ? next : withSpareRow(next, columns.length));
+  }, [rows, columns, onChange, fixedRows]);
 
   // Handle keyboard navigation
   const handleKeyDown = useCallback((e: React.KeyboardEvent, row: number, col: number) => {

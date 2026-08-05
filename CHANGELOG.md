@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [4.11.1] — 2026-08-05
+
+### Fixed
+- **A paste that filled the bulk-import grid left nowhere to paste the next
+  batch.** The grid opens with 15 lines, so 16 pasted lines landed as exactly 16
+  full rows: an operator holding a second batch on the clipboard had no cell to
+  click into, and the only way on was to import what was already there and start
+  the grid over. Both paste paths now leave one blank line under the last row
+  that has content, so line 17 is waiting after a 16-line paste — and after the
+  paste that fills it, line 18.
+
+  Typing has always had this. `ensureRows` adds five rows as the cursor comes
+  within two of the bottom, and paste was the one way of filling the grid that
+  never grew it. A paste with blank lines still under it changes nothing, so the
+  grid does not creep a row longer every time.
+
+  A grid in `fixedRows` mode is untouched — a caller that fixes its row count
+  owns it. `BulkImportGrid`'s CSV upload leaves the same spare line, for a file
+  long enough to fill the rows it pads to.
+
 ## [4.11.0] — 2026-08-04
 
 ### Added

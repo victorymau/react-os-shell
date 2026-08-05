@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import EditableGrid from './EditableGrid';
+import EditableGrid, { withSpareRow } from './EditableGrid';
 import type { GridColumn } from './EditableGrid';
 import { CancelButton } from './Modal';
 import { findDuplicateKeys } from '../utils/mergeBulkItems';
@@ -517,9 +517,10 @@ export default function BulkImportGrid({ columns, onImport, description, mergeDu
         return kind === 'price' || kind === 'qty' ? cleanNumber(cell) : cell;
       });
     });
-    // Pad to minimum rows
+    // Pad to minimum rows, and leave a spare line under a CSV long enough to
+    // fill them — a paste on top of the upload needs somewhere to land too.
     while (cleaned.length < 15) cleaned.push(Array(colCount).fill(''));
-    setGridData(cleaned);
+    setGridData(withSpareRow(cleaned, colCount));
   }, [colCount, columns]);
 
   const handleCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
