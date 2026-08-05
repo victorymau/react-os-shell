@@ -3,6 +3,7 @@ import { lazy, useEffect, useState } from 'react';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { MemoryRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ConfirmProvider } from '../src/shell/ConfirmDialog';
 import { WindowManagerProvider, useWindowDirty, useWindowManager } from '../src/shell/WindowManager';
 import { useWindowDirty as publicUseWindowDirty } from '../src/index';
@@ -37,6 +38,26 @@ function DirtyTestPage() {
   );
 }
 
+const ENTITY_TYPE = 'window-dirty-entity';
+const ENTITY_ID = '1';
+const entityPanelSelector = `[data-modal-panel][data-window-key="${ENTITY_TYPE}:${ENTITY_ID}"]`;
+
+/** The body of an entity/detail window — the kind whose registry entry carries
+ *  an explicit `editing` mode, which is exactly where unsaved edits live. */
+function EntityDetail({ editing, setEditing }: { editing: boolean; setEditing: (v: boolean) => void }) {
+  const [dirty, setDirty] = useState(true);
+  useWindowDirty(dirty);
+  return (
+    <div>
+      <button type="button" data-testid="entity-clean" onClick={() => setDirty(false)}>Entity clean</button>
+      <button type="button" data-testid="entity-dirty" onClick={() => setDirty(true)}>Entity dirty</button>
+      <button type="button" data-testid="entity-edit" onClick={() => setEditing(true)}>Entity edit</button>
+      <span>{editing ? 'editing' : 'viewing'}</span>
+    </div>
+  );
+}
+
+
 setShellWindowRegistry({
   [ROUTE]: {
     label: 'Window dirty test',
@@ -52,7 +73,53 @@ setShellWindowRegistry({
     component: lazy(() => Promise.resolve({ default: DirtyTestPage })),
     widget: true,
   },
+  // `selfFetching` keeps the detail query out of the way; this spec is about
+  // the close guard, not about entity loading.
+  [ENTITY_TYPE]: {
+    endpoint: '/window-dirty-entity/',
+    selfFetching: true,
+    title: () => 'Entity dirty test',
+    render: (_entity: unknown, _onClose: () => void, _entityId?: string, editing?: boolean, setEditing?: (v: boolean) => void) => (
+      <EntityDetail editing={!!editing} setEditing={setEditing!} />
+    ),
+  },
 });
+
+function EntityOpener() {
+  const { openEntity, closeEntity } = useWindowManager();
+  useEffect(() => { openEntity(ENTITY_TYPE, ENTITY_ID, undefined, 'Entity dirty test'); }, [openEntity]);
+  return (
+    <>
+      <button type="button" data-testid="entity-close" onClick={() => closeEntity(`${ENTITY_TYPE}:${ENTITY_ID}`)}>
+        Entity close
+      </button>
+      <div id="taskbar-windows" />
+    </>
+  );
+}
+
+async function mountEntity() {
+  localStorage.setItem('access_token', 'window-dirty-entity-test');
+  localStorage.setItem('erp_open_windows', '[]');
+  // Entity windows run a detail query unconditionally (disabled here via
+  // `selfFetching`), so they need a client even when nothing is fetched.
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const mounted = render(
+    <MemoryRouter>
+      <QueryClientProvider client={queryClient}>
+        <ConfirmProvider>
+          <WindowManagerProvider>
+            <EntityOpener />
+          </WindowManagerProvider>
+        </ConfirmProvider>
+      </QueryClientProvider>
+    </MemoryRouter>,
+  );
+  await flush();
+  await flush();
+  assert.ok(document.querySelector(entityPanelSelector), 'the real entity window opened');
+  return mounted;
+}
 
 function PageOpener({ route }: { route: string }) {
   const { openPage, closeEntity, remove } = useWindowManager();
@@ -328,7 +395,67 @@ test('Widget Manager bulk removal serializes dirty confirmations without locking
   assert.doesNotMatch(document.body.textContent ?? '', /Discard changes\?/, 'the retried Modal was not left locked');
 });
 
-test('useWindowDirty is a safe no-op outside a managed page window', () => {
+test('an entity window registers dirty state and uses the same close guard', async (t) => {
+  const mounted = await mountEntity();
+  t.after(() => mounted.unmount());
+
+  clickTestButton('entity-close');
+  await flush();
+
+  assertDiscardConfirmation();
+  assert.ok(document.querySelector(entityPanelSelector), 'the entity window is still open while asking');
+
+  clickButton('Keep Editing');
+  await flush();
+  assert.ok(document.querySelector(entityPanelSelector), 'Keep Editing leaves the entity window open');
+
+  clickTestButton('entity-close');
+  await flush();
+  clickButton('Discard');
+  await flush();
+  assert.equal(document.querySelector(entityPanelSelector), null, 'Discard closes the entity window');
+});
+
+test('a clean entity window still closes directly', async (t) => {
+  const mounted = await mountEntity();
+  t.after(() => mounted.unmount());
+
+  clickTestButton('entity-clean');
+  await flush();
+
+  clickTestButton('entity-close');
+  await flush();
+
+  assert.doesNotMatch(document.body.textContent ?? '', /Discard changes\?/, 'a clean entity window does not ask');
+  assert.equal(document.querySelector(entityPanelSelector), null, 'and closes straight away');
+});
+
+test('a confirmed discard closes an editing entity window instead of only leaving edit mode', async (t) => {
+  const mounted = await mountEntity();
+  t.after(() => mounted.unmount());
+
+  // The shell's own Edit affordance is what `editing` tracks; without a dirty
+  // registration a close drops out of edit mode and keeps the window, which is
+  // the behaviour entity windows have always had.
+  clickTestButton('entity-edit');
+  clickTestButton('entity-clean');
+  await flush();
+  clickTestButton('entity-close');
+  await flush();
+  assert.ok(document.querySelector(entityPanelSelector), 'clean + editing: close only exits edit mode');
+
+  // Dirty is different: the user has been asked whether to discard and said
+  // yes, so the window must actually go.
+  clickTestButton('entity-dirty');
+  await flush();
+  clickTestButton('entity-close');
+  await flush();
+  clickButton('Discard');
+  await flush();
+  assert.equal(document.querySelector(entityPanelSelector), null, 'a confirmed discard closes the window');
+});
+
+test('useWindowDirty is a safe no-op outside a managed window', () => {
   function OutsidePageWindow() {
     useWindowDirty(true);
     return <span>Outside page window</span>;
@@ -342,3 +469,4 @@ test('useWindowDirty is a safe no-op outside a managed page window', () => {
 test('the package root exports useWindowDirty', () => {
   assert.equal(publicUseWindowDirty, useWindowDirty);
 });
+

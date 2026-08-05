@@ -7,16 +7,37 @@ All notable changes to this project will be documented in this file. The format 
 ## [4.11.0] — 2026-08-04
 
 ### Added
-- **Page windows can register controlled unsaved state with
-  `useWindowDirty(dirty)`.** The enclosing `PageWindow` now feeds the aggregate
-  state into its existing `Modal` close guard, so close and Escape reuse the
+- **Windows can register controlled unsaved state with
+  `useWindowDirty(dirty)`.** The enclosing window feeds the aggregate state
+  into its existing `Modal` close guard, so close and Escape reuse the
   standard discard confirmation, including public manager calls, widget
   toggles, Widget Manager controls, taskbar tabs, and their previews. Multiple
   mounted registrations are isolated: clearing or
-  unmounting one cannot clear another dirty registration. Calling the hook
-  outside a managed page window is a safe no-op. Concurrent dirty-close
-  requests are presented serially, so bulk widget removal cannot lose a
-  confirmation or leave a canceled window locked against a later retry.
+  unmounting one cannot clear another dirty registration. Concurrent
+  dirty-close requests are presented serially, so bulk widget removal cannot
+  lose a confirmation or leave a canceled window locked against a later retry.
+
+  **Both kinds of window the shell owns a `Modal` for are covered — page
+  windows AND entity/detail windows.** The entity kind is the one that matters
+  most in practice: its registry entry carries an explicit `editing` mode, so
+  it is where unsaved edits actually live. In an entity window a confirmed
+  discard now closes the window rather than only dropping out of edit mode,
+  which would answer a different question than the one the user was asked; an
+  entity window with no registration keeps the old exit-edit-mode behaviour
+  exactly.
+
+  The hook is a deliberate no-op in the one place the shell has no `Modal` to
+  guard — a registry entry with `rendersOwnModal`, where the consumer renders
+  its own `Modal` and should pass it `dirty` directly — and outside a
+  `WindowManager` entirely.
+
+### Known gaps
+- **Nothing guards a window teardown the shell does not own.** Navigating to an
+  auth page unmounts every window (a session-expiry redirect to login is the
+  realistic trigger), and a browser refresh or tab close is not intercepted
+  either. In both cases the window entries survive in storage and reappear
+  looking untouched, so the discarded edits are invisible rather than
+  announced.
 
 ## [4.10.0] — 2026-08-04
 

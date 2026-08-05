@@ -69,17 +69,50 @@ type WindowDirtyRegistration = (id: symbol, dirty: boolean) => () => void;
 const WindowDirtyContext = createContext<WindowDirtyRegistration | null>(null);
 
 /**
- * Registers controlled dirty state with the enclosing page window.
- * Registrations outside a WindowManager-managed PageWindow are ignored.
+ * Registers controlled dirty state with the enclosing shell window, so closing
+ * it asks before discarding. Works in both kinds of window the shell owns the
+ * Modal for: page windows and entity/detail windows.
+ *
+ * Ignored — deliberately, and silently — in the one place the shell has no
+ * Modal to guard: a registry entry with `rendersOwnModal`, where the consumer
+ * renders its own Modal and should pass that Modal `dirty` directly. Also a
+ * no-op outside a WindowManager entirely.
  */
 export function useWindowDirty(dirty: boolean): void {
   const register = useContext(WindowDirtyContext);
-  const id = useRef(Symbol('window-dirty'));
+  // Lazily minted so a re-render doesn't allocate a Symbol it then discards.
+  const idRef = useRef<symbol | null>(null);
+  if (idRef.current === null) idRef.current = Symbol('window-dirty');
 
   useLayoutEffect(() => {
     if (!register) return;
-    return register(id.current, dirty);
+    return register(idRef.current!, dirty);
   }, [register, dirty]);
+}
+
+/**
+ * The dirty-registration store one shell window owns.
+ *
+ * Lives here rather than inside PageWindow because entity windows need exactly
+ * the same thing: a set of registrations from whatever the window is currently
+ * rendering, aggregated to the single boolean the Modal's close guard reads.
+ */
+function useWindowDirtyRegistry(): { dirty: boolean; registerDirty: WindowDirtyRegistration } {
+  const registrations = useRef(new Map<symbol, boolean>());
+  const [dirty, setDirty] = useState(false);
+  const registerDirty = useCallback<WindowDirtyRegistration>((id, value) => {
+    const updateAggregate = () => {
+      const next = Array.from(registrations.current.values()).some(Boolean);
+      setDirty(current => current === next ? current : next);
+    };
+    registrations.current.set(id, value);
+    updateAggregate();
+    return () => {
+      registrations.current.delete(id);
+      updateAggregate();
+    };
+  }, []);
+  return { dirty, registerDirty };
 }
 
 export function useWindowManager() {
@@ -133,20 +166,7 @@ function shortcutSpecFor(item: MinimizedItem): WindowShortcutSpec | null {
 }
 
 function PageWindow({ item, onClose, accentRgb }: { item: MinimizedItem; onClose: () => void; accentRgb?: string }) {
-  const registrations = useRef(new Map<symbol, boolean>());
-  const [dirty, setDirty] = useState(false);
-  const registerDirty = useCallback<WindowDirtyRegistration>((id, value) => {
-    const updateAggregate = () => {
-      const next = Array.from(registrations.current.values()).some(Boolean);
-      setDirty(current => current === next ? current : next);
-    };
-    registrations.current.set(id, value);
-    updateAggregate();
-    return () => {
-      registrations.current.delete(id);
-      updateAggregate();
-    };
-  }, []);
+  const { dirty, registerDirty } = useWindowDirtyRegistry();
 
   const raw = WINDOW_REGISTRY[item.route!];
   if (!raw || !isPageEntry(raw)) return null;
@@ -195,6 +215,7 @@ function RestoredRegistryModal({ item, onClose, onMinimize, accentRgb }: { item:
   const entry = raw as ModalRegistryEntry;
 
   const [editing, setEditing] = useState(false);
+  const { dirty, registerDirty } = useWindowDirtyRegistry();
 
   // Use queryKey from registry (matches what detail components invalidate) or derive from endpoint
   const qkPrefix = entry.queryKey || entry.endpoint.replace(/^\/|\/$/g, '').split('/').pop() || item.entityType;
@@ -229,14 +250,19 @@ function RestoredRegistryModal({ item, onClose, onMinimize, accentRgb }: { item:
     return () => window.removeEventListener('modal-reorder', handler);
   }, [refetch, entry.selfFetching, isDuplicate, isDraft]);
 
-  // When editing, close/ESC exits edit mode instead of closing the window
+  // When editing, close/ESC exits edit mode instead of closing the window.
+  //
+  // Unless a registration says the window is dirty: the Modal's close guard has
+  // then already asked "discard changes?" and been told yes, and dropping the
+  // user back into a still-open detail view would answer a different question
+  // than the one they were asked.
   const handleClose = useCallback(() => {
-    if (editing) {
+    if (editing && !dirty) {
       setEditing(false);
     } else {
       onClose();
     }
-  }, [editing, onClose]);
+  }, [editing, dirty, onClose]);
 
   const titleBase = entry.selfFetching
     ? item.label
@@ -288,23 +314,26 @@ function RestoredRegistryModal({ item, onClose, onMinimize, accentRgb }: { item:
       windowKey={item.id}
       openedFromKey={item.openedFrom}
       size={(entry.size || '2xl') as any}
+      dirty={dirty}
       dimensions={entry.dimensions}
       autoHeight={entry.autoHeight}
       autoMinHeight={entry.autoMinHeight}
       appStyle={entry.appStyle}
       accentRgb={accentRgb}
     >
-      <Suspense fallback={<LoadingSpinner />}>
-        {entry.selfFetching ? (
-          entry.render(null, handleClose, item.entityId, editing, setEditing)
-        ) : isLoading && !entity ? (
-          <LoadingSpinner />
-        ) : entity ? (
-          entry.render(entity, handleClose, item.entityId, editing, setEditing)
-        ) : (
-          <p className="text-sm text-gray-500 py-8 text-center">Not found.</p>
-        )}
-      </Suspense>
+      <WindowDirtyContext.Provider value={registerDirty}>
+        <Suspense fallback={<LoadingSpinner />}>
+          {entry.selfFetching ? (
+            entry.render(null, handleClose, item.entityId, editing, setEditing)
+          ) : isLoading && !entity ? (
+            <LoadingSpinner />
+          ) : entity ? (
+            entry.render(entity, handleClose, item.entityId, editing, setEditing)
+          ) : (
+            <p className="text-sm text-gray-500 py-8 text-center">Not found.</p>
+          )}
+        </Suspense>
+      </WindowDirtyContext.Provider>
     </Modal>
   );
 }
