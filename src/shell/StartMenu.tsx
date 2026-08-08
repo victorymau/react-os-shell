@@ -10,7 +10,7 @@ import {
   type StartMenuCategories,
   type VirtualSection,
 } from '../shell-config/nav';
-import { visibleChildren as navVisibleChildren, isReachable } from './nav-types';
+import { visibleChildren as navVisibleChildren, isReachable, navVisible } from './nav-types';
 import { markMenuOpen } from './perfEvents';
 import { useAuth } from '../contexts/AuthContext';
 import { glassStyle, GLASS_INPUT_BG } from '../utils/glass';
@@ -54,7 +54,7 @@ export default function StartMenu({
   const { hasAnyPerm } = useAuth();
   // Flat rows pinned to the footer (next to the profile), e.g. System
   // Preferences. Rendered directly — no flyout — unlike `categories.footer`.
-  const footerItems = (categories.footerItems ?? []).filter(item => !item.perms || hasAnyPerm(item.perms));
+  const footerItems = (categories.footerItems ?? []).filter(item => navVisible(item, hasAnyPerm));
   const isMobile = useIsMobile();
   const [hoveredSection, setHoveredSection] = useState<string | null>(null);
   const [hoveredY, setHoveredY] = useState(0);
@@ -139,7 +139,7 @@ export default function StartMenu({
     // Recursively flatten — 3rd-level children show up as their own rows so
     // they can be searched/tapped from the mobile sheet too.
     const pushItem = (it: NavItem, sectionLabel?: string) => {
-      if (it.perms && !hasAnyPerm(it.perms)) return;
+      if (!navVisible(it, hasAnyPerm)) return;
       // Same reachability rule as the desktop flyout — an empty group is not a
       // tap target, so don't list one.
       if (!isReachable(it, hasAnyPerm)) return;
@@ -149,7 +149,7 @@ export default function StartMenu({
     for (const entry of navSections) {
       if (isSection(entry)) {
         const sec = entry as NavSection;
-        if (sec.perms && !hasAnyPerm(sec.perms)) continue;
+        if (!navVisible(sec, hasAnyPerm)) continue;
         for (const it of sec.items) pushItem(it, sec.label);
       } else {
         pushItem(entry as NavItem);
@@ -230,14 +230,14 @@ export default function StartMenu({
   const hasAppsGroup = topItems.length > 0 || systemSections.length > 0 || virtualSections.length > 0;
 
   const getVisibleItems = (section: NavSection) =>
-    section.items.filter(item => !item.perms || hasAnyPerm(item.perms));
+    section.items.filter(item => navVisible(item, hasAnyPerm));
 
   const visibleChildren = (item: NavItem) => navVisibleChildren(item, hasAnyPerm);
 
   // Search — walks 3rd-level children too. Section column shows the parent
   // item label for children so users can tell nested entries apart.
   const matchTree = (it: NavItem, sectionLabel: string): (NavItem & { section: string })[] => {
-    if (it.perms && !hasAnyPerm(it.perms)) return [];
+    if (!navVisible(it, hasAnyPerm)) return [];
     // Same rule as the flyout: a group whose children are all hidden isn't a
     // reachable destination, so it shouldn't surface as a result either.
     if (!isReachable(it, hasAnyPerm)) return [];
@@ -334,7 +334,7 @@ export default function StartMenu({
   };
 
   const renderSection = (section: NavSection, isErp: boolean) => {
-    if (section.perms && !hasAnyPerm(section.perms)) return null;
+    if (!navVisible(section, hasAnyPerm)) return null;
     const items = getVisibleItems(section);
     if (items.length === 0) return null;
     const isHovered = hoveredSection === section.label;

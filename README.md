@@ -151,6 +151,17 @@ const navSections = [
 
 Items with `perms` are filtered through `<ShellAuthProvider value={{ hasAnyPerm }}>`.
 
+`perms` is an **any-of** test: the row shows if the user holds at least one of them. When a row should appear only for someone holding *every* permission in a set, use `allPerms` instead — it is an **all-of** test, and the two can be combined on the same entry:
+
+```ts
+// Reaching price sheets puts the row in the menu; seeing prices is what the
+// page itself needs. Adding both to `perms` would show it to MORE people.
+{ to: '/suppliers/price-sheets', label: 'Price Sheets',
+  perms: ['view_supplierpricesheet'], allPerms: ['view_supplier_prices'] },
+```
+
+Reach for `allPerms` whenever the permission that lists a destination is broader than the one its page enforces — otherwise the row renders and then refuses on click. Both fields work on sections as well as items, and on nested children.
+
 ### useWindowManager
 
 The hook every component uses to open / close / minimise windows:

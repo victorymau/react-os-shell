@@ -26,7 +26,7 @@ import {
   type StartMenuCategories,
   type VirtualSection,
 } from '../shell-config/nav';
-import { visibleChildren, isReachable } from './nav-types';
+import { visibleChildren, isReachable, navVisible } from './nav-types';
 import { useAuth } from '../contexts/AuthContext';
 import { glassStyle, GLASS_INPUT_BG } from '../utils/glass';
 
@@ -65,7 +65,7 @@ export default function Sidebar({
   const footerLabels = new Set(categories.footer ?? []);
   // Flat rows pinned to the footer (next to the profile) — rendered inline,
   // not as an accordion section. Mirrors StartMenu's `footerItems`.
-  const footerItems = (categories.footerItems ?? []).filter(it => !it.perms || hasAnyPerm(it.perms));
+  const footerItems = (categories.footerItems ?? []).filter(it => navVisible(it, hasAnyPerm));
   const virtualSections = categories.virtual ?? [];
 
   const [search, setSearch] = useState('');
@@ -87,10 +87,10 @@ export default function Sidebar({
   const systemSections = navSections.filter(item => isSection(item) && systemLabels.has((item as NavSection).label)) as NavSection[];
   const footerSections = navSections.filter(item => isSection(item) && footerLabels.has((item as NavSection).label)) as NavSection[];
 
-  const getVisibleItems = (section: { items: NavItem[]; perms?: string[] }) => {
-    if (section.perms && !hasAnyPerm(section.perms)) return [];
+  const getVisibleItems = (section: { items: NavItem[]; perms?: string[]; allPerms?: string[] }) => {
+    if (!navVisible(section, hasAnyPerm)) return [];
     return section.items
-      .filter(it => !it.perms || hasAnyPerm(it.perms))
+      .filter(it => navVisible(it, hasAnyPerm))
       // Same rule as <StartMenu>: a group whose children are all
       // permission-hidden has nothing to expand, and its `to` is a synthetic
       // key that never navigates — so drop it rather than leave an inert row.
@@ -100,7 +100,7 @@ export default function Sidebar({
   // Search across all items + sections (same flat list StartMenu uses).
   // Walks 3rd-level children too so nested entries are still discoverable.
   const matchTree = (it: NavItem, q: string): NavItem[] => {
-    if (it.perms && !hasAnyPerm(it.perms)) return [];
+    if (!navVisible(it, hasAnyPerm)) return [];
     if (!isReachable(it, hasAnyPerm)) return [];
     const hits: NavItem[] = [];
     if (it.label.toLowerCase().includes(q)) hits.push(it);

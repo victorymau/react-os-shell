@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [4.13.0] — 2026-08-08
+
+### Added
+- **A nav entry can require ALL of its permissions — `allPerms`.**
+  `perms` has always been an any-of test, which is right for most rows and
+  quietly wrong for one shape: an entry whose page enforces a NARROWER
+  permission than the one that lists it. The supplier portal's Price Sheets row
+  is gated on `view_supplierpricesheet`, while the page needs
+  `view_supplier_prices`; a price-blind R&D role built the obvious way kept the
+  row in the sidebar and was refused on click (SG#00214). Adding the second
+  permission to `perms` makes it worse rather than better, because an OR shows
+  the row to anyone holding either one.
+
+  `allPerms` is the all-of counterpart, usable on items, sections and nested
+  children, and combinable with `perms` on the same entry. It is tested one
+  permission at a time — a host only ever supplies `hasAnyPerm`, so asking for
+  the whole set in a single call would be an OR and grant the row.
+
+### Changed
+- **Every nav visibility test now runs through one `navVisible` helper.**
+  The same `!x.perms || hasAnyPerm(x.perms)` line was repeated at nine call
+  sites across `Sidebar` and `StartMenu`, which is why a second rule could not
+  be added without missing one. Behaviour for existing nav data is unchanged.
+
 ## [4.12.0] — 2026-08-08
 
 ### Added
