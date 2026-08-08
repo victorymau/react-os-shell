@@ -20,6 +20,12 @@ import type { ReactNode } from 'react';
  * `dragenter` (once per card crossed) so the line stays stable rather than
  * flickering. Pass `onAddItem` to give each column a "+ Add item" button at its
  * foot, revealed on column hover / keyboard focus.
+ *
+ * With no items the board is replaced by `emptyState` — right when the items
+ * are the whole story, wrong when the columns are (a pipeline the user just
+ * configured has a shape worth showing, and a board with no drop target can't
+ * take its first card). Pass `showColumnsWhenEmpty` for that case and the
+ * normal layout draws with every column on its `columnEmptyText` placeholder.
  */
 export interface KanbanColumn {
   /** Stable column key — what `columnOf` returns and `onMove` receives. */
@@ -50,8 +56,16 @@ export interface KanbanProps<T> {
   sortInColumn?: (a: T, b: T) => number;
   isLoading?: boolean;
   loadingText?: string;
-  /** Shown when there are no items at all. */
+  /** Shown INSTEAD of the board when there are no items at all. */
   emptyState?: ReactNode;
+  /**
+   * Draw the board — headers, empty columns, drop targets — even with no items,
+   * instead of replacing it with `emptyState`. Opt in when the columns are
+   * themselves the information (a configurable pipeline the user just defined)
+   * or when an empty board still needs somewhere to drop a card into. Default
+   * `false` keeps the `emptyState` behaviour every existing caller relies on.
+   */
+  showColumnsWhenEmpty?: boolean;
   /** Placeholder text inside an empty column. */
   columnEmptyText?: string;
   /**
@@ -80,6 +94,7 @@ export default function Kanban<T>({
   isLoading = false,
   loadingText = 'Loading…',
   emptyState,
+  showColumnsWhenEmpty = false,
   columnEmptyText = 'Drop here',
   onAddItem,
   addItemText = 'Add item',
@@ -167,7 +182,7 @@ export default function Kanban<T>({
   };
 
   if (isLoading) return <div className="text-sm text-gray-500 p-4">{loadingText}</div>;
-  if (items.length === 0) {
+  if (items.length === 0 && !showColumnsWhenEmpty) {
     return <>{emptyState ?? <div className="text-sm text-gray-500 p-4">No items.</div>}</>;
   }
 

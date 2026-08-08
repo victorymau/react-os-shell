@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [4.12.0] — 2026-08-08
+
+### Added
+- **`Kanban` can draw its columns on an empty board — `showColumnsWhenEmpty`.**
+  With no items the board is replaced wholesale by `emptyState`, which is right
+  when the cards are the whole story and wrong when the COLUMNS are: a board
+  whose columns the user configures (a deal pipeline) went invisible the moment
+  it had nothing in it, so the shape just defined in settings could not be seen,
+  and there was no drop target to put a first card into. The new prop renders
+  the normal layout instead — headers, counts, and each column on its
+  `columnEmptyText` placeholder, all still live drop targets.
+
+  Opt-in: the default is unchanged, so every existing caller keeps the
+  `emptyState` behaviour and none of them need to pass anything. `emptyState`
+  is not also rendered when the prop is on — it is the branch being replaced —
+  and with items present the prop changes nothing at all.
+
 ## [4.11.1] — 2026-08-05
 
 ### Fixed

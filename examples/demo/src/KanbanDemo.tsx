@@ -7,6 +7,10 @@ import { Kanban } from 'react-os-shell';
  * between its new neighbours — the same pattern a real backend would persist —
  * so you can drag cards between columns AND reorder up/down within a column and
  * watch the drop-line, the column highlight, and the settle (FLIP) animation.
+ *
+ * Emptying the board shows the other axis: by default the columns are replaced
+ * by `emptyState`, and `showColumnsWhenEmpty` keeps them on screen instead —
+ * headers, counts, and a drop target per column to put the first card back in.
  */
 interface Task {
   id: string;
@@ -48,6 +52,7 @@ let nextId = INITIAL.length + 1;
 
 export default function KanbanDemo() {
   const [tasks, setTasks] = useState<Task[]>(INITIAL);
+  const [showColumnsWhenEmpty, setShowColumnsWhenEmpty] = useState(true);
 
   const handleAdd = (toColumn: string) => {
     setTasks(prev => {
@@ -82,6 +87,23 @@ export default function KanbanDemo() {
           Drag cards between columns, or up and down within a column to reorder. Order is kept in
           local state (a real app would persist the <code>order</code> field).
         </p>
+        <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-gray-600">
+          <button
+            type="button"
+            onClick={() => setTasks(prev => (prev.length ? [] : INITIAL))}
+            className="rounded-md border border-gray-300 px-2 py-1 font-medium hover:bg-gray-50"
+          >
+            {tasks.length ? 'Empty the board' : 'Restore the cards'}
+          </button>
+          <label className="inline-flex items-center gap-1.5">
+            <input
+              type="checkbox"
+              checked={showColumnsWhenEmpty}
+              onChange={e => setShowColumnsWhenEmpty(e.target.checked)}
+            />
+            <code>showColumnsWhenEmpty</code>
+          </label>
+        </div>
       </div>
       <div className="flex min-h-0 flex-1 flex-col p-3">
         <Kanban<Task>
@@ -92,7 +114,13 @@ export default function KanbanDemo() {
           sortInColumn={(a, b) => a.order - b.order}
           onMove={handleMove}
           onAddItem={handleAdd}
+          showColumnsWhenEmpty={showColumnsWhenEmpty}
           columnEmptyText="Drop tasks here"
+          emptyState={
+            <div className="p-4 text-sm text-gray-500">
+              No tasks. Turn on <code>showColumnsWhenEmpty</code> to keep the board on screen.
+            </div>
+          }
           renderCard={t => <div className="text-sm leading-snug text-gray-800">{t.title}</div>}
         />
       </div>
