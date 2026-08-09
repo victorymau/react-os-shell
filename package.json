@@ -81,6 +81,7 @@
     "xlsx": "^0.18.5"
   },
   "scripts": {
+    "prepare": "npm run build",
     "build": "tsup && cp src/styles.css src/themes.css dist/",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
