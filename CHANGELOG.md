@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [4.15.0] — 2026-08-09
+
+### Fixed
+- **A window title too long for its title bar can now be read in full by
+  hovering it.** The title bar has always truncated cleanly with CSS and then
+  offered no way to see the rest — the text was simply gone, in every window in
+  every consuming portal. It became hard to miss with long campaign names
+  ("Campaign editor - Panthera Blackout Sale: Blade | Walkin | Tri-spoke |
+  Gen-2"), where the part that distinguishes one window from another is the part
+  that gets cut.
+
+  All three title bars (compact / `appStyle` / full) now carry a native `title`
+  attribute on `[data-window-title]`. The text comes from the same private
+  `extractTitleText` the taskbar and exposé already use, so a `ReactNode` title
+  contributes its words rather than `[object Object]`, and buttons, inputs,
+  `kbd` and `svg` children are left out as they are everywhere else. A title
+  that yields no plain text gets no attribute at all, rather than an empty
+  tooltip.
+
+  Additive only: no change to layout, truncation, or styling.
+
 ## [4.14.0] — 2026-08-09
 
 ### Fixed

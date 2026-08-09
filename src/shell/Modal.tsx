@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useCallback, useRef, useState, createContext, useContext, useSyncExternalStore, cloneElement, isValidElement, type ReactNode, type ReactElement } from 'react';
+import { useEffect, useLayoutEffect, useCallback, useMemo, useRef, useState, createContext, useContext, useSyncExternalStore, cloneElement, isValidElement, type ReactNode, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { confirm } from './ConfirmDialog';
@@ -1202,6 +1202,9 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   }, [swipeDragging]);
   const [displayTitle, setDisplayTitle] = useState<React.ReactNode>(title);
   useEffect(() => { setDisplayTitle(title); }, [title]);
+  /** Native tooltip so a title truncated by CSS can still be read in full. Undefined when the
+   *  title carries no plain text (icon-only nodes), so no empty tooltip is attached. */
+  const titleTooltip = useMemo(() => extractTitleText(displayTitle).trim() || undefined, [displayTitle]);
   const [touched, setTouched] = useState(false);
   const [pinnedOnTop, setPinnedOnTop] = useState(false);
   const [windowMenu, setWindowMenu] = useState<{ x: number; y: number } | null>(null);
@@ -2423,7 +2426,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
           <div onPointerDown={startDrag} data-window-chrome=""
             className={`flex items-center justify-between px-3 py-1.5 border-b border-gray-200 shrink-0 cursor-move select-none rounded-t-2xl ${isActive ? 'backdrop-blur-sm' : ''}`}
             style={{ touchAction: 'none', backgroundColor: isActive ? `rgb(var(--window-header-rgb) / var(--active-header-opacity, 0.8))` : `rgb(var(--window-header-rgb) / var(--inactive-header-opacity, 0.7))` }}>
-            <div data-window-title className="text-sm font-medium min-w-0 flex-1 truncate flex items-center gap-1.5" style={{ color: isActive ? 'var(--window-title-active, rgb(17 24 39))' : 'var(--window-title-inactive, rgb(156 163 175))' }}>
+            <div data-window-title title={titleTooltip} className="text-sm font-medium min-w-0 flex-1 truncate flex items-center gap-1.5" style={{ color: isActive ? 'var(--window-title-active, rgb(17 24 39))' : 'var(--window-title-inactive, rgb(156 163 175))' }}>
               {!exposeActive && renderIconButton()}
               <span className="truncate">{exposeActive ? extractTitleText(displayTitle) : displayTitle}</span>
             </div>
@@ -2446,7 +2449,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
           <div onPointerDown={startDrag} data-window-chrome=""
             className={`flex items-center justify-between px-3 py-1.5 border-b border-gray-200 shrink-0 cursor-move select-none rounded-t-2xl ${isActive ? 'backdrop-blur-sm' : ''}`}
             style={{ touchAction: 'none', backgroundColor: isActive ? `rgb(var(--window-header-rgb) / var(--active-header-opacity, 0.8))` : `rgb(var(--window-header-rgb) / var(--inactive-header-opacity, 0.7))` }}>
-            <div data-window-title className="text-sm font-medium min-w-0 flex-1 truncate flex items-center gap-1.5" style={{ color: isActive ? 'var(--window-title-active, rgb(17 24 39))' : 'var(--window-title-inactive, rgb(156 163 175))' }}>
+            <div data-window-title title={titleTooltip} className="text-sm font-medium min-w-0 flex-1 truncate flex items-center gap-1.5" style={{ color: isActive ? 'var(--window-title-active, rgb(17 24 39))' : 'var(--window-title-inactive, rgb(156 163 175))' }}>
               {!exposeActive && renderIconButton()}
               <span className="truncate">{exposeActive ? extractTitleText(displayTitle) : displayTitle}</span>
             </div>
@@ -2472,7 +2475,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
         <div onPointerDown={startDrag} data-window-chrome=""
           className={`flex items-center justify-between px-4 py-2.5 border-b border-gray-200 shrink-0 cursor-move select-none rounded-t-2xl ${isActive ? 'backdrop-blur-sm' : ''}`}
           style={{ touchAction: 'none', backgroundColor: isActive ? `rgb(var(--window-header-rgb) / var(--active-header-opacity, 0.8))` : `rgb(var(--window-header-rgb) / var(--inactive-header-opacity, 0.7))` }}>
-          <div data-window-title className="text-base font-medium min-w-0 flex-1 truncate flex items-center gap-2" style={{ color: isActive ? 'var(--window-title-active, rgb(17 24 39))' : 'var(--window-title-inactive, rgb(156 163 175))' }}>
+          <div data-window-title title={titleTooltip} className="text-base font-medium min-w-0 flex-1 truncate flex items-center gap-2" style={{ color: isActive ? 'var(--window-title-active, rgb(17 24 39))' : 'var(--window-title-inactive, rgb(156 163 175))' }}>
             {!exposeActive && renderIconButton()}
             <span className="truncate">{exposeActive ? extractTitleText(displayTitle) : displayTitle}</span>
           </div>
