@@ -38,7 +38,7 @@ export type {
 } from './windowRegistry/types';
 
 // ── Shell components ──
-export { default as Modal, ModalActions, CopyButton, CancelButton, useWindowMenuItem, WindowTitle, useWindowTitle, useModalActive, useIsActiveWindow, useWidgetSettings, setWindowDefaultPosition, setWindowPosition, getWindowPosition, toggleExposeMode, exitExposeMode, setExposeHighlight, getExposeHighlight, subscribeExposeHighlight, commitExposeHighlight, registerModalEscapeInterceptor } from './shell/Modal';
+export { default as Modal, ModalActions, CopyButton, CancelButton, useWindowMenuItem, WindowTitle, useWindowTitle, useModalActive, useIsActiveWindow, useEnclosingModalId, useWidgetSettings, setWindowDefaultPosition, setWindowPosition, getWindowPosition, toggleExposeMode, exitExposeMode, setExposeHighlight, getExposeHighlight, subscribeExposeHighlight, commitExposeHighlight, registerModalEscapeInterceptor } from './shell/Modal';
 export { requestWindowFront } from './shell/Modal';
 export { createWindowTarget, useWindowTarget } from './shell/windowTarget';
 export type { WindowTarget, WindowTargetOptions, StagedTarget } from './shell/windowTarget';
@@ -198,6 +198,11 @@ export { GLASS_INPUT_BG } from './utils/glass';
 // window is active, so they belong to the shell.
 export { default as useNewHotkey } from './hooks/useNewHotkey';
 export { default as useEditHotkey } from './hooks/useEditHotkey';
+// Cmd+S / Alt+Shift+D receivers. These existed here unexported (so every portal
+// kept its own unguarded copy); they are exported now because the window-scoping
+// guard has to live beside the dispatch that supplies the id.
+export { default as useModalSave } from './hooks/useModalSave';
+export { default as useModalDuplicate } from './hooks/useModalDuplicate';
 export { UndoProvider, useUndo, useUndoable, useUndoableState } from './shell/UndoProvider';
 export type { UndoControlsApi, UndoableOptions, UndoProviderProps } from './shell/UndoProvider';
 export type { UndoStep, UndoState, UndoSnapshot } from './hooks/undoHistory';

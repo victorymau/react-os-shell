@@ -145,6 +145,23 @@ interface ModalActionsCtx {
 }
 const ModalActionsContext = createContext<ModalActionsCtx | null>(null);
 
+/**
+ * The id of the `<Modal>` this component is rendered inside, or `''` outside one.
+ *
+ * This is the PRIVATE per-mount id (`modal-xxxxxx`) that `activationOrder` and
+ * the window-scoped CustomEvents carry — not the caller-supplied `windowKey`.
+ * Same context `useWindowMenuItem` and `useWidgetSettings` already read, and it
+ * reaches portal window content the same way theirs does.
+ *
+ * Use it to answer "was this event meant for MY window?", which
+ * {@link useModalActive} cannot: that asks "is the frontmost modal mine", and
+ * every nested dialog a form opens pushes itself onto `activationOrder`, so a
+ * form with a child dialog open reads as inactive.
+ */
+export function useEnclosingModalId(): string {
+  return useContext(ModalIdContext);
+}
+
 /** Hook to check if the current modal is active (frontmost) */
 export function useModalActive(): boolean {
   const activeId = useSyncExternalStore(subscribeActive, getActiveModalId);
@@ -2159,8 +2176,14 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
       if (activationOrder[activationOrder.length - 1] !== modalId) return;
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); document.dispatchEvent(new CustomEvent('modal-save')); setTouched(false); }
-      else if (e.altKey && e.shiftKey && (e.code === 'KeyD' || e.key === 'D' || e.key === 'd')) { e.preventDefault(); document.dispatchEvent(new CustomEvent('modal-duplicate')); }
+      // `detail.modalId` is LOAD-BEARING, not diagnostic. The dispatch is
+      // correctly restricted to the topmost modal by the line above, but the
+      // event itself was identity-free and went to `document` — so every
+      // mounted window's receiver answered it, and one Cmd+S saved (or
+      // duplicated) every open form at once. Receivers match on this id; see
+      // useModalSave / useModalDuplicate.
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); document.dispatchEvent(new CustomEvent('modal-save', { detail: { modalId } })); setTouched(false); }
+      else if (e.altKey && e.shiftKey && (e.code === 'KeyD' || e.key === 'D' || e.key === 'd')) { e.preventDefault(); document.dispatchEvent(new CustomEvent('modal-duplicate', { detail: { modalId } })); }
     };
     window.addEventListener('keydown', handler, true);
     return () => window.removeEventListener('keydown', handler, true);

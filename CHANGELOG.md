@@ -4,6 +4,42 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [4.31.0] — 2026-08-12
+
+### Fixed
+- **Cmd+S and Alt+Shift+D no longer fire in every open window.** `Modal`
+  restricted the *dispatch* to the frontmost window, then sent an identity-free
+  `CustomEvent` to `document` — and every consuming form subscribed
+  unconditionally, so a single keystroke ran the save (or duplicate) callback of
+  every window that was open. Depending on each form's mode that PATCHed a
+  background record or created a brand new one, each with its own success toast,
+  so nothing looked broken: the user simply could not tell which window had
+  written.
+
+  `modal-save` and `modal-duplicate` now carry `detail.modalId`, and the
+  receiving hooks match on it.
+
+  The guard is deliberately NOT `useModalActive`. That answers "is the frontmost
+  modal mine", and every nested dialog a form opens pushes itself onto the
+  activation order — so a form with a child dialog open would read as inactive
+  and Cmd+S would silently do nothing where it used to save. Matching the
+  originating id asks the right question and is immune to nesting.
+
+### Added
+- `useModalSave` and `useModalDuplicate` are **exported**. They existed here
+  unexported, which is why each portal kept its own unguarded copy; the scoping
+  rule has to live beside the dispatch that supplies the id, so the canonical
+  implementation is now the shared one. A consuming portal should delete its
+  local copy and import these instead.
+- `useEnclosingModalId()` — the id of the `<Modal>` a component is rendered
+  inside, or `''` outside one. Reads the same context `useWindowMenuItem` and
+  `useWidgetSettings` already use.
+
+### Compatibility
+- An event carrying no `detail.modalId` is still answered, so an app on 4.31.0
+  running against an older shell keeps a working Cmd+S rather than losing the
+  shortcut. The two halves can land in either order.
+
 ## [4.30.1] — 2026-08-12
 
 ### Fixed
