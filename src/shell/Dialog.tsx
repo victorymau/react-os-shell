@@ -40,6 +40,13 @@ export interface DialogProps {
    * that does the irreversible thing.
    */
   initialFocus?: RefObject<HTMLElement | null>;
+  /**
+   * Names the dialog when it carries no visible `title`. Without a name it is
+   * announced as just "dialog", which tells a screen reader user nothing about
+   * what opened. Ignored when `title` is set — a visible label always wins over
+   * a parallel invisible one, or the two drift.
+   */
+  'aria-label'?: string;
   className?: string;
 }
 
@@ -50,10 +57,12 @@ const SIZES: Record<DialogSize, string> = {
 };
 
 export default function Dialog({
-  open, onClose, title, children, footer, blocking = false, size = 'md', initialFocus, className = '',
+  open, onClose, title, children, footer, blocking = false, size = 'md', initialFocus,
+  'aria-label': ariaLabel, className = '',
 }: DialogProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const bodyId = useId();
+  const titleId = useId();
 
   useFocusTrap(panelRef, open, initialFocus);
   useScrollLock(open);
@@ -87,7 +96,12 @@ export default function Dialog({
           ref={panelRef}
           role="dialog"
           aria-modal="true"
-          aria-label={typeof title === 'string' ? title : undefined}
+          // Points at the rendered heading rather than re-deriving the name
+          // from the prop: `title` is a ReactNode, so an element title — an
+          // icon beside a word, a count in a badge — used to fall through the
+          // string check and leave the dialog with no name at all.
+          aria-labelledby={title ? titleId : undefined}
+          aria-label={title ? undefined : ariaLabel}
           // The body is the dialog's description, and saying so is what makes a
           // screen reader read the question along with the title when focus
           // lands here. Without it the user hears "Cancel order, dialog" and
@@ -95,7 +109,7 @@ export default function Dialog({
           aria-describedby={children ? bodyId : undefined}
           className={`relative w-full ${SIZES[size]} rounded-lg bg-white p-6 shadow-xl ${className}`.trim()}
         >
-          {title && <h2 className="text-base font-semibold text-gray-900">{title}</h2>}
+          {title && <h2 id={titleId} className="text-base font-semibold text-gray-900">{title}</h2>}
           {children && <div id={bodyId} className="mt-2 text-sm text-gray-600">{children}</div>}
           {footer && <div className="mt-6 flex justify-end gap-3">{footer}</div>}
         </div>

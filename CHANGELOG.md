@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## 4.56.0
+
+- **`Dialog` and `Drawer` name themselves properly.** Both derived their
+  accessible name from `title`, and only when `title` happened to be a plain
+  string. Two ways that failed, both silent:
+
+  - A title built from elements — an icon beside a word, a count in a badge — is
+    a `ReactNode`, fell through the `typeof === 'string'` check, and left the
+    overlay with no name at all while the heading sat visible on screen.
+  - An overlay with no title had no way to be named. A navigation drawer is
+    exactly that case: its content is its own heading, so there is nothing to put
+    in a title bar, and it was unnamed by construction.
+
+  The name now comes from `aria-labelledby` pointing at the rendered heading, so
+  an element title works. Both also take an **`aria-label`** for the untitled
+  case; it is ignored when `title` is set, because two names for one thing drift
+  and the one a sighted user can read is the one that has to survive.
+
 ## [Unreleased]
 
 ## [4.54.0] — 2026-08-13

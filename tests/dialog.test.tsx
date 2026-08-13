@@ -75,7 +75,11 @@ test('Dialog is an accessible modal with its own label', () => {
   const panel = document.querySelector('[role="dialog"]');
   assert.ok(panel, 'renders a dialog role');
   assert.equal(panel?.getAttribute('aria-modal'), 'true');
-  assert.equal(panel?.getAttribute('aria-label'), 'Confirm');
+  // The NAME, not the attribute that happens to carry it: the title is wired
+  // through aria-labelledby so an element title is named too, and asserting on
+  // aria-label would have locked in the mechanism that could not do that.
+  const labelledBy = panel?.getAttribute('aria-labelledby');
+  assert.equal(document.getElementById(labelledBy ?? '')?.textContent, 'Confirm');
   unmount();
 });
 

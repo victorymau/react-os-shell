@@ -30,6 +30,16 @@ export interface DrawerProps {
   /** Escape and the scrim do nothing. See Dialog's note before reaching for it. */
   blocking?: boolean;
   initialFocus?: RefObject<HTMLElement | null>;
+  /**
+   * Names the drawer when it carries no visible `title`. A dialog without an
+   * accessible name is announced as just "dialog", which tells a screen reader
+   * user nothing about what opened — and a navigation drawer, whose content is
+   * its own heading, is exactly the case that has no title to point at.
+   *
+   * Ignored when `title` is set: a visible label always wins over a parallel
+   * invisible one, or the two drift.
+   */
+  'aria-label'?: string;
   className?: string;
 }
 
@@ -46,10 +56,11 @@ const SIDE_POSITION: Record<DrawerSide, string> = {
 
 export default function Drawer({
   open, onClose, side = 'right', size = 'md', title, footer, children,
-  blocking = false, initialFocus, className = '',
+  blocking = false, initialFocus, 'aria-label': ariaLabel, className = '',
 }: DrawerProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const bodyId = useId();
+  const titleId = useId();
 
   useFocusTrap(panelRef, open, initialFocus);
   useScrollLock(open);
@@ -77,7 +88,12 @@ export default function Drawer({
         ref={panelRef}
         role="dialog"
         aria-modal="true"
-        aria-label={typeof title === 'string' ? title : undefined}
+        // Points at the rendered heading rather than re-deriving the name from
+        // the prop: `title` is a ReactNode, so an element title — an icon beside
+        // a word, a count in a badge — used to fall through the string check and
+        // leave the drawer with no name at all.
+        aria-labelledby={title ? titleId : undefined}
+        aria-label={title ? undefined : ariaLabel}
         // Same reasoning as Dialog: the body is the description, and a screen
         // reader only reads it on open if the panel says so.
         aria-describedby={children ? bodyId : undefined}
@@ -91,7 +107,7 @@ export default function Drawer({
       >
         {(title || !blocking) && (
           <div className="flex shrink-0 items-center justify-between gap-4 border-b border-gray-100 px-4 py-3">
-            {title ? <h2 className="text-base font-semibold text-gray-900">{title}</h2> : <span />}
+            {title ? <h2 id={titleId} className="text-base font-semibold text-gray-900">{title}</h2> : <span />}
             {!blocking && (
               <button
                 type="button"
