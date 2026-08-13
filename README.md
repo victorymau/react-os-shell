@@ -16,7 +16,7 @@ A backend-less playground hosted on GitHub Pages. Wallpapers, themes, sticky not
 
 **Shell:** `<Layout>`, `<StartMenu>`, `<Desktop>` (with sticky notes + folders), `<WindowManager>`, `<Modal>` (standard / compact / widget styles), `<PopupMenu>`, `<ConfirmDialog>`, `<GlobalSearch>` (Cmd-K), `<ShortcutHelp>`, `<NotificationBell>`, `<StatusBadge>`, `<SearchableSelect>`, frosted-glass theming.
 
-**UI primitives:** `<Button>`, `<Input>`, `<Textarea>`, `<Select>`, `<Checkbox>`, `<Radio>`, `<FormField>`, `<Label>`, `<Card>` / `<StatCard>`, `<Avatar>` / `<AvatarGroup>`, `<Banner>`, `<Tabs>`, `<Accordion>`, `<Tooltip>`, `<Pagination>`, `<MetricBar>`, and dependency-free `<Sparkline>` / `<BarChart>` / `<DonutChart>` charts.
+**UI primitives:** `<Button>`, `<Input>`, `<Textarea>`, `<Select>`, `<Checkbox>`, `<Radio>`, `<FormField>`, `<Label>`, `<Card>` / `<StatCard>`, `<Avatar>` / `<AvatarGroup>`, `<Banner>`, `<Tabs>`, `<Accordion>`, `<Tooltip>`, `<Pagination>`, `<MetricBar>`, and dependency-free `<Sparkline>` / `<LineChart>` / `<BarChart>` / `<DonutChart>` charts.
 
 **Page templates:** ready-made screens composed from the primitives — `<DashboardTemplate>`, `<DataTablePage>`, `<FormLayoutPage>`, `<CheckoutTemplate>`, `<EmailTemplate>`, `<ChatTemplate>`, `<GalleryTemplate>`, `<AuthScreen>`, `<ErrorPage>`. `<ErrorBoundary>` catches a render crash and shows the 500 page in place of a blank screen.
 
@@ -212,7 +212,7 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 
 | Export | Purpose |
 |---|---|
-| `Layout` | Top-level shell — desktop + taskbar + start menu. Mount once inside your providers. |
+| `Layout` | Top-level shell — desktop + taskbar + start menu. Mount once inside your providers. `branding={{ productName, logo, tagline }}` sets the visual identity in one object — start-menu button, startup splash, logout cover, mobile landing; its fields win over the older loose `productName`/`productIcon` props. The About dialog and What's New changelog stay on `DesktopHostConfig`. |
 | `StartMenu` / `Desktop` / `WindowManagerProvider` | Used internally by `Layout`; rarely instantiated directly. |
 | `Modal`, `ModalActions`, `CopyButton`, `CancelButton` | Window primitive supporting standard / compact / widget styles. |
 | `PopupMenu`, `PopupMenuItem`, `PopupMenuDivider`, `PopupMenuLabel` | Right-click / context-menu primitive. |
@@ -226,12 +226,15 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 | `SidebarNavItem`, `SidebarGroupLabel` | Filter-sidebar button (optional `count` badge and `severity` marker dot) plus its group heading. Roll the severity up in the app; omitting it renders exactly as before it existed. An unrecognised `severity` renders a visible "unknown" marker and logs — it never silently disappears. |
 | `MetricBar` | Value + proportional bar with optional `warn` / `crit` threshold ticks — the CPU / memory / disk row. `value={null}` renders "no data" (dashed empty track), never a zero-width bar; with no thresholds the fill stays grey rather than claiming health. `max` must be a positive finite number — given `0`/`NaN` the row prints the value but draws no bar, rather than dividing by zero into a full one. |
 | `Button`, `Input`, `Textarea`, `Select`, `Checkbox`, `Radio`, `FormField`, `Label` | Form controls — controlled (`value`/`onChange`); `Input`/`Textarea` forward native props for react-hook-form. |
+| `TagInput` | Multi-value field — chosen values as removable chips, typing filters the option list in the same dropdown SearchableSelect uses. `allowFreeText` admits unlisted entries; Backspace in the empty input removes the last chip. The value array stays duplicate-free by construction. |
+| `DatePicker`, `TimePicker`, `DateTimePicker`, `DateRangePicker` | Date/time fields. The first three wrap the platform's own inputs in the kit's field styling; all are careful to speak LOCAL dates and wall-clock times (never `toISOString`). `TimePicker` hands back an `HH:MM` string — a time of day names no calendar day, so it never invents a Date. |
 | `Card`, `StatCard` | Surface panel (optional header/footer) + dashboard metric tile. |
 | `Avatar`, `AvatarGroup` | User avatar with initials fallback + status dot; overlapping stack with +N overflow. |
 | `Banner` | Static in-flow alert (`tone`: info / success / warning / danger). |
 | `Tabs`, `Accordion`, `Tooltip` | Controlled tab strip, collapsible sections, frosted hover tooltip. |
+| `Stepper` | A linear wizard's progress strip — numbered circles, connectors, `aria-current="step"`. Controlled like Tabs; completed steps are clickable to go back (when `onChange` is wired), upcoming steps never are — moving forward belongs to the wizard's own Continue button, behind its validation. |
 | `Pagination` | Numbered page control (pairs with tables; complements `ListFooter`). |
-| `Sparkline`, `BarChart`, `DonutChart` | Dependency-free inline-SVG charts (`currentColor`-themed). |
+| `Sparkline`, `LineChart`, `BarChart`, `DonutChart` | Dependency-free inline-SVG charts (`currentColor`-themed). `LineChart` is the multi-series trend with optional scale, legend, dots and area fill. |
 | `BulkImportGrid` | Paste-or-upload bulk entry with column mapping, duplicate review and optional sum-merge. Hands resolved rows to `onImport`; owns no persistence. |
 | `UndoProvider`, `UndoControls` | One undo stack per form window, covering its fields, line items and bulk imports. Wrap the form in the provider, register state with `useUndoable`, drop the controls wherever the form's actions live. Binds ⌘Z / ⇧⌘Z (and Ctrl+Y) except while the caret is in a field, where the browser's own undo wins. `WindowManager` already mounts one per window, scoped with `windowId` so a keypress reaches only the frontmost window; pass `windowId` yourself for any provider you mount outside a `<Modal>`, or two open windows will step back together. Offered to anyone who may edit the record — gate with `canEdit` and/or `perms`; a reader sees no controls and records no history. The shell-level provider cannot know the record's permissions, so a read-only form nests its own `<UndoProvider canEdit={false}>` to shadow it. |
 | `Calendar` | Month grid with full keyboard navigation (arrows, Home/End, PageUp/Down) and `role="grid"` semantics. Single or range. The shared grid behind `DatePicker` and `DateRangePicker`. |

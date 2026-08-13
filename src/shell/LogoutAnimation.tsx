@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { playLogout } from '../utils/sounds';
 
-export default function LogoutAnimation({ onComplete, subtitle }: { onComplete: () => void; subtitle?: string }) {
+export default function LogoutAnimation({ onComplete, subtitle, logo = '/favicon.svg' }: { onComplete: () => void; subtitle?: string; logo?: string }) {
   // 'show' → greeting visible; 'out' → logo/title spin and fade away. The
   // full-screen cover itself stays opaque the whole time — it never fades to
   // transparent — so the desktop underneath is never revealed. onComplete
@@ -19,6 +19,7 @@ export default function LogoutAnimation({ onComplete, subtitle }: { onComplete: 
 
   return (
     <div
+      data-logout-animation=""
       className="fixed inset-0 z-[9999] flex flex-col items-center justify-center"
       style={{ background: 'linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%)' }}
     >
@@ -36,7 +37,7 @@ export default function LogoutAnimation({ onComplete, subtitle }: { onComplete: 
       {/* Logo — spins out */}
       <div className={`relative transition-all duration-1000 ease-in ${phase === 'out' ? 'scale-0 opacity-0' : 'scale-100 opacity-100'}`}
         style={phase === 'out' ? { transform: 'scale(0) rotate(180deg)' } : undefined}>
-        <img src="/favicon.svg" alt="" className="h-20 w-20 drop-shadow-[0_0_30px_rgba(124,58,237,0.5)]" />
+        <img src={logo} alt="" className="h-20 w-20 drop-shadow-[0_0_30px_rgba(124,58,237,0.5)]" />
       </div>
 
       {/* Title — fades down */}
@@ -56,6 +57,14 @@ export default function LogoutAnimation({ onComplete, subtitle }: { onComplete: 
         @keyframes logout-glow {
           0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.15; }
           50% { transform: translate(-50%, -50%) scale(1.1); opacity: 0.25; }
+        }
+        /* Reduced motion: same contract as StartupAnimation — fades stay,
+         * movement goes, the 2300ms cover-and-swap timing is untouched. */
+        @media (prefers-reduced-motion: reduce) {
+          [data-logout-animation], [data-logout-animation] * {
+            animation: none !important;
+            transition-property: opacity !important;
+          }
         }
       `}</style>
     </div>

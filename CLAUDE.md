@@ -7,7 +7,7 @@ Shared desktop-shell component library, published to npm and consumed by the EFF
 This package is published and consumed downstream, so version + changelog discipline is load-bearing:
 
 - **Bump the version** in `package.json` — the only place. `src/version.ts` is NOT hand-edited: it reads `__PKG_VERSION__`, which tsup injects from `package.json` at build time (the `define` block in `tsup.config.ts`), so `VERSION` follows the bump on its own. Consumed without a build (e.g. tests) it stays an empty string, by design.
-- **Add a changelog entry** in `CHANGELOG.md` — the only place. `src/changelog.ts` is a deliberate empty stub: the package ships no built-in changelog, and the consumer wires its own through the eventual `branding` prop. Leave it alone.
+- **Add a changelog entry** in `CHANGELOG.md` — the only place. `src/changelog.ts` is a deliberate empty stub: the package ships no built-in changelog, and the consumer wires its own through `DesktopHostConfig.productChangelog` (product name/logo/tagline go through Layout's `branding` prop). Leave it alone.
 - **Bump the app version** in `BUILTIN_APP_INFO` (`src/apps/_about.tsx`) when changing one of the bundled document/web apps (Spreadsheets, Notepad, Documents, Preview, Files, Browser) — each carries its own version, shown in its About dialog.
 - **Update the help docs** for any added feature or change to existing behaviour.
 - **Verify before opening the PR** — the same sequence CI runs (`.github/workflows/ci.yml`, on Node 22 and 24), in this order:
