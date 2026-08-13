@@ -231,3 +231,18 @@ test('toKey and fromKey round-trip', () => {
     assert.equal(toKey(fromKey(k)!), k, k);
   }
 });
+
+
+test('with no selection it opens where the bounds allow, not on today', () => {
+  // Today with a max in the past opens a grid where every day is disabled and
+  // nothing says which way to page out of it.
+  const view = render(<Calendar onSelect={() => {}} min="2020-03-01" max="2020-03-31" />);
+  assert.equal(view.container.querySelector('[role="grid"]')!.getAttribute('aria-label'), 'March 2020');
+  view.unmount();
+});
+
+test('a selection still wins over the bounds', () => {
+  const view = render(<Calendar onSelect={() => {}} value="2020-05-04" min="2020-03-01" />);
+  assert.equal(view.container.querySelector('[role="grid"]')!.getAttribute('aria-label'), 'May 2020');
+  view.unmount();
+});

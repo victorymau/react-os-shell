@@ -100,7 +100,7 @@ function display(key: string): string {
 
 const DatePicker = forwardRef<HTMLInputElement, DatePickerProps>(function DatePicker(
   { value, onChange, min, max, invalid, size, native, weekStartsOn, className = '',
-    'aria-label': ariaLabel, id, name, disabled, placeholder, ...rest },
+    'aria-label': ariaLabel, 'aria-describedby': describedBy, id, name, disabled, placeholder, ...rest },
   ref,
 ) {
   const current = toInputValue(value);
@@ -143,6 +143,7 @@ const DatePicker = forwardRef<HTMLInputElement, DatePickerProps>(function DatePi
         name={name}
         disabled={disabled}
         aria-label={ariaLabel}
+        aria-describedby={describedBy}
         aria-invalid={invalid || undefined}
         value={current}
         min={lo || undefined}
@@ -167,6 +168,7 @@ const DatePicker = forwardRef<HTMLInputElement, DatePickerProps>(function DatePi
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
+        aria-describedby={describedBy}
         aria-invalid={invalid || undefined}
         // The chosen date, spoken. A trigger reading "11/08/2026" is ambiguous
         // between two continents; "11 August 2026" is not.

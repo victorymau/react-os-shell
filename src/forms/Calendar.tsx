@@ -127,7 +127,18 @@ export default function Calendar({
   const today = new Date();
   const todayKey = toKey(today);
 
-  const [innerMonth, setInnerMonth] = useState(() => defaultMonth ?? monthKey(selected ?? today));
+  const [innerMonth, setInnerMonth] = useState(() => {
+    if (defaultMonth) return defaultMonth;
+    if (selected) return monthKey(selected);
+    // With no selection, open somewhere the user can actually pick. Today is
+    // the obvious choice and the wrong one when the bounds are elsewhere: a
+    // month later than `max` opens on a grid where every day is disabled, and
+    // nothing on screen says which way to page.
+    const here = monthKey(today);
+    if (min && here < min.slice(0, 7)) return min.slice(0, 7);
+    if (max && here > max.slice(0, 7)) return max.slice(0, 7);
+    return here;
+  });
   const viewMonth = month ?? innerMonth;
   const view = monthStart(viewMonth);
 
