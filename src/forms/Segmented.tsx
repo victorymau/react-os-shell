@@ -54,8 +54,18 @@ export default function Segmented<T extends string = string>({
   value, onChange, options, name, size = 'md', block = false, label, className = '',
 }: SegmentedProps<T>) {
   const groupId = useId();
-  const track = `inline-flex items-center gap-1 rounded-lg bg-gray-100 p-1 ${block ? 'w-full' : ''} ${className}`.trim();
-  const itemBase = `inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors ${block ? 'flex-1' : ''}`;
+  // `max-w-full` + a scrolling track, and items that never wrap. Without both,
+  // a two-word option on a phone broke the control visibly: the label wrapped
+  // to a second line while the pill kept its fixed `h-9`, so the selected
+  // segment was shorter than its own text and the track sat crooked around it.
+  // Scrolling is the right failure for a segmented control — the alternative,
+  // letting it grow, pushes whatever is beside it off the screen.
+  // The scrollbar is hidden, not the overflow: a segmented control with a
+  // scrollbar under it reads as broken, and the track rounds to a pixel or two
+  // wider than its content often enough that one appears when nothing is
+  // actually clipped. Scrolling still works by touch and by wheel.
+  const track = `inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-lg bg-gray-100 p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${block ? 'w-full' : ''} ${className}`.trim();
+  const itemBase = `inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md font-medium transition-colors ${block ? 'flex-1' : ''}`;
 
   if (name) {
     return (

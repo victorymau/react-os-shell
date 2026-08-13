@@ -54,6 +54,21 @@ const SIDE_POSITION: Record<DrawerSide, string> = {
   bottom: 'inset-x-0 bottom-0',
 };
 
+function CloseButton({ onClose }: { onClose: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClose}
+      aria-label="Close"
+      className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+    >
+      <svg className="h-5 w-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+        <path d="M6 6l8 8M14 6l-8 8" />
+      </svg>
+    </button>
+  );
+}
+
 export default function Drawer({
   open, onClose, side = 'right', size = 'md', title, footer, children,
   blocking = false, initialFocus, 'aria-label': ariaLabel, className = '',
@@ -105,22 +120,23 @@ export default function Drawer({
           className,
         ].filter(Boolean).join(' ')}
       >
-        {(title || !blocking) && (
+        {/* With a title the close button shares a header row with it. WITHOUT
+            one there is nothing to put in that row, and reserving it anyway
+            costs a bordered 48px strip of nothing at the top of the panel —
+            visible on a phone, where a navigation drawer has no title bar by
+            design and its own content is the heading. So the button floats
+            over the body instead. */}
+        {title ? (
           <div className="flex shrink-0 items-center justify-between gap-4 border-b border-gray-100 px-4 py-3">
-            {title ? <h2 id={titleId} className="text-base font-semibold text-gray-900">{title}</h2> : <span />}
-            {!blocking && (
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label="Close"
-                className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-              >
-                <svg className="h-5 w-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                  <path d="M6 6l8 8M14 6l-8 8" />
-                </svg>
-              </button>
-            )}
+            <h2 id={titleId} className="text-base font-semibold text-gray-900">{title}</h2>
+            {!blocking && <CloseButton onClose={onClose} />}
           </div>
+        ) : (
+          !blocking && (
+            <div className="absolute right-2 top-2 z-10">
+              <CloseButton onClose={onClose} />
+            </div>
+          )
         )}
         {/* Only the body scrolls, so the header and actions stay reachable in a
             long form — the thing a drawer is usually chosen for. */}

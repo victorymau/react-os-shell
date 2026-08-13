@@ -120,3 +120,25 @@ test('a blocking drawer offers no close control', () => {
   assert.equal(document.querySelector('[aria-label="Close"]'), null);
   unmount();
 });
+
+test('with no title the close button does not cost a header row', () => {
+  // A navigation drawer has no title bar by design — its own content is the
+  // heading — and reserving the row anyway put a bordered strip of nothing at
+  // the top of the panel, which is exactly the space a phone does not have.
+  const view = mount(<Drawer open onClose={() => {}} aria-label="Navigation menu">body</Drawer>);
+  const panel = document.querySelector('[role="dialog"]')!;
+  const close = document.querySelector('[aria-label="Close"]')!;
+
+  assert.ok(close, 'the way out is still there');
+  assert.equal(panel.querySelector('.border-b'), null, 'and it costs no header row');
+  view.unmount();
+});
+
+test('with a title the close button shares the header row with it', () => {
+  const view = mount(<Drawer open onClose={() => {}} title="Filters">body</Drawer>);
+  const panel = document.querySelector('[role="dialog"]')!;
+  const header = panel.querySelector('.border-b')!;
+  assert.ok(header, 'a titled drawer keeps its header');
+  assert.ok(header.querySelector('[aria-label="Close"]'), 'and the button sits in it');
+  view.unmount();
+});
