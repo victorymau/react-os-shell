@@ -19,7 +19,7 @@
  * so `DataTable`, `useSort` and `ResizableTable` all speak the same language and
  * a caller can move between them without a translation layer.
  */
-import { type KeyboardEvent, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type UIEvent } from 'react';
 import Pagination from './Pagination';
 import type { SortState } from './types';
 
@@ -127,6 +127,21 @@ export interface DataTableProps<T> {
   emptyText?: ReactNode;
   /** Rendered under the rows — an infinite-scroll sentinel, a totals strip. */
   footer?: ReactNode;
+  /**
+   * Windowed rendering for large LOADED datasets. Pagination and infinite
+   * scroll bound what is fetched; this bounds what is RENDERED — a few
+   * thousand loaded rows otherwise all get DOM, and every sort or filter
+   * re-lays-out the lot. The wrapper becomes a vertical scroll container of
+   * `height` px, only the rows near the viewport exist in the DOM (padded to
+   * the full scroll height by two spacer rows), and the header pins to the
+   * top of the scroll.
+   *
+   * `rowHeight` is a promise, not a measurement: every row is rendered at
+   * exactly that height (the scroll math depends on it), so `ellipsis` your
+   * long columns rather than letting them wrap. Off-screen rows are absent
+   * for assistive technology too — same trade every windowed list makes.
+   */
+  virtualized?: { height: number; rowHeight: number; overscan?: number };
   className?: string;
 }
 
@@ -159,10 +174,41 @@ function SortIcon({ direction }: { direction: 'asc' | 'desc' | null }) {
 export default function DataTable<T>({
   columns, data, rowKey, sort = null, onSortChange, pagination, caption, loading = false,
   bordered = false, size = 'md', minWidth, rowClassName, onRow, emptyText = 'Nothing to show',
-  footer, className = '',
+  footer, virtualized, className = '',
 }: DataTableProps<T>) {
   const keyOf = (row: T, i: number): string =>
     typeof rowKey === 'function' ? rowKey(row, i) : String(row[rowKey]);
+
+  // ── Row window ──
+  // `startRow` is the only scroll-derived state, and it is a row index, not a
+  // pixel offset: the setter bails until the scroll crosses a row boundary, so
+  // a table not being scrolled re-renders nothing.
+  const [startRow, setStartRow] = useState(0);
+  const overscan = virtualized?.overscan ?? 6;
+  const onBodyScroll = virtualized
+    ? (e: UIEvent<HTMLDivElement>) => {
+        const next = Math.max(0, Math.floor(e.currentTarget.scrollTop / virtualized.rowHeight) - overscan);
+        setStartRow(prev => (prev === next ? prev : next));
+      }
+    : undefined;
+  const windowSize = virtualized
+    ? Math.ceil(virtualized.height / virtualized.rowHeight) + overscan * 2
+    : data.length;
+  const start = virtualized ? Math.min(startRow, Math.max(0, data.length - windowSize)) : 0;
+  const end = Math.min(data.length, start + windowSize);
+  const topPad = virtualized ? start * virtualized.rowHeight : 0;
+  const bottomPad = virtualized ? (data.length - end) * virtualized.rowHeight : 0;
+
+  // The grouped header's SECOND row pins below the first, which means knowing
+  // the first row's height — measured, because it depends on `size` and on
+  // whatever the group titles wrap to.
+  const headRowRef = useRef<HTMLTableRowElement>(null);
+  const [headRowH, setHeadRowH] = useState(0);
+  useLayoutEffect(() => {
+    if (!virtualized) return;
+    const h = headRowRef.current?.offsetHeight ?? 0;
+    setHeadRowH(prev => (prev === h ? prev : h));
+  });
 
   const fieldOf = (col: DataTableColumn<T>) => col.sortField ?? col.key;
 
@@ -195,7 +241,7 @@ export default function DataTable<T>({
    * are drawn by the same code as an ungrouped table's — the sort button, the
    * aria-sort, the pinning and the alignment are not worth having twice.
    */
-  const headerCell = (col: DataTableColumn<T>, ci: number, rowSpan: number) => {
+  const headerCell = (col: DataTableColumn<T>, ci: number, rowSpan: number, topOffset = 0) => {
     const dir = directionFor(col);
     // A figures column right-aligns unless the caller says otherwise: the
     // decimal point is the thing being compared, and it only lines up at the
@@ -218,12 +264,21 @@ export default function DataTable<T>({
           : col.sortable && onSortChange ? 'none'
           : undefined
         }
-        style={{ width: col.width, ...(pinned ? { left: offsets[ci] ?? 0 } : {}) }}
+        style={{
+          width: col.width,
+          ...(pinned ? { left: offsets[ci] ?? 0 } : {}),
+          // A virtualized header pins to the top of the vertical scroll; one
+          // sticky box can hold both axes, so a pinned column's header corner
+          // stays put in both directions.
+          ...(virtualized ? { top: topOffset } : {}),
+        }}
         className={[
           cellBase, align,
           'font-semibold uppercase tracking-wide text-gray-500',
           size === 'sm' ? 'text-[10px]' : 'text-xs',
-          pinned ? 'sticky z-10 bg-gray-50' : '',
+          pinned
+            ? (virtualized ? 'sticky z-20 bg-gray-50' : 'sticky z-10 bg-gray-50')
+            : (virtualized ? 'sticky z-10 bg-gray-50' : ''),
           col.headerClassName ?? '',
         ].filter(Boolean).join(' ')}
       >
@@ -252,7 +307,11 @@ export default function DataTable<T>({
 
   return (
     <div className={className}>
-      <div className={`relative overflow-x-auto ${bordered ? 'rounded-lg border border-gray-200' : ''}`.trim()}>
+      <div
+        onScroll={onBodyScroll}
+        style={virtualized ? { maxHeight: virtualized.height } : undefined}
+        className={`relative overflow-x-auto ${virtualized ? 'overflow-y-auto' : ''} ${bordered ? 'rounded-lg border border-gray-200' : ''}`.trim()}
+      >
         {loading && (
           // An overlay rather than replacing the rows: the table keeps its
           // height and its scroll position, so re-sorting does not throw the
@@ -265,7 +324,7 @@ export default function DataTable<T>({
         <table className="w-full border-collapse tabular-nums" style={minWidth ? { minWidth } : undefined}>
           {caption && <caption className="sr-only">{caption}</caption>}
           <thead>
-            <tr className="border-b border-gray-200 bg-gray-50">
+            <tr ref={headRowRef} className="border-b border-gray-200 bg-gray-50">
               {columns.map((h, hi) => {
                 if (isGroup(h)) {
                   return (
@@ -273,11 +332,13 @@ export default function DataTable<T>({
                       key={h.key ?? `group-${hi}`}
                       scope="colgroup"
                       colSpan={h.columns.length}
+                      style={virtualized ? { top: 0 } : undefined}
                       className={[
                         cellBase, 'text-center',
                         'font-semibold uppercase tracking-wide text-gray-500',
                         size === 'sm' ? 'text-[10px]' : 'text-xs',
                         'border-b border-gray-200',
+                        virtualized ? 'sticky z-10 bg-gray-50' : '',
                         h.headerClassName ?? '',
                       ].filter(Boolean).join(' ')}
                     >
@@ -294,7 +355,7 @@ export default function DataTable<T>({
             {grouped && (
               <tr className="border-b border-gray-200 bg-gray-50">
                 {columns.flatMap(h => (isGroup(h) ? h.columns : [])).map(col =>
-                  headerCell(col, leaves.indexOf(col), 1),
+                  headerCell(col, leaves.indexOf(col), 1, headRowH),
                 )}
               </tr>
             )}
@@ -307,11 +368,23 @@ export default function DataTable<T>({
                 </td>
               </tr>
             ) : (
-              data.map((row, i) => {
+              <>
+              {/* Spacer rows stand in for everything scrolled out of the
+                * window, so the scrollbar's size and position tell the truth
+                * about the whole dataset. aria-hidden: they are geometry, not
+                * data. */}
+              {topPad > 0 && (
+                <tr aria-hidden="true">
+                  <td colSpan={leaves.length} style={{ height: topPad, padding: 0, border: 0 }} />
+                </tr>
+              )}
+              {data.slice(start, end).map((row, si) => {
+                const i = start + si;
                 const rowProps = onRow?.(row, i);
                 return (
                   <tr
                     key={keyOf(row, i)}
+                    style={virtualized ? { height: virtualized.rowHeight } : undefined}
                     onClick={rowProps?.onClick}
                     // A clickable row that only answers a mouse is unreachable
                     // for everyone else — there is no other control in it to
@@ -370,7 +443,13 @@ export default function DataTable<T>({
                     })}
                   </tr>
                 );
-              })
+              })}
+              {bottomPad > 0 && (
+                <tr aria-hidden="true">
+                  <td colSpan={leaves.length} style={{ height: bottomPad, padding: 0, border: 0 }} />
+                </tr>
+              )}
+              </>
             )}
           </tbody>
         </table>

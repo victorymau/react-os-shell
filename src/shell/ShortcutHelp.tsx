@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Dialog, DialogBackdrop, DialogPanel } from '@headlessui/react';
-import { CMD_ENTER, CMD_S, CMD_K, CMD_DOT, CMD_A, CMD_Z, CMD_SHIFT_Z, ALT_SHIFT_D, ALT_SHIFT_E, ALT_SHIFT_N } from './Kbd';
+import { CMD_ENTER, CMD_S, CMD_K, CMD_DOT, CMD_A, CMD_Z, CMD_SHIFT_Z, ALT_SHIFT_D, ALT_SHIFT_E, ALT_SHIFT_N, MOD, SHIFT, ENTER } from './Kbd';
 
 const sections = [
   {
@@ -11,6 +11,18 @@ const sections = [
       { keys: 'Ctrl F11', description: 'Toggle fullscreen' },
       { keys: 'ESC', description: 'Exit fullscreen (when no windows open)' },
       { keys: '?', description: 'Show keyboard shortcuts' },
+    ],
+  },
+  {
+    // The title bar is a tab stop; these act on the focused window's bar.
+    title: 'Windows (title bar focused)',
+    shortcuts: [
+      { keys: '←↑→↓', description: 'Move window' },
+      { keys: `${SHIFT} Arrows`, description: 'Resize window' },
+      { keys: `${MOD} ←/→`, description: 'Snap to left / right half' },
+      { keys: `${MOD} ↑`, description: 'Maximize' },
+      { keys: `${MOD} ↓`, description: 'Restore / minimize' },
+      { keys: ENTER, description: 'Toggle maximize' },
     ],
   },
   {

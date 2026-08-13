@@ -50,7 +50,27 @@ export {
 export type { NavItem, NavSection };
 export type { MobileAppConfig };
 
+/**
+ * The product's visual identity, in one object: the start-menu button, the
+ * startup splash, the logout cover and the mobile landing all read from it.
+ * The About dialog and What's New changelog belong to `DesktopHostConfig`
+ * (`productName`, `productIcon`, `productChangelog`, …), which configures the
+ * desktop; this configures the chrome around it.
+ */
+export interface ShellBranding {
+  /** Product name — start-menu button, startup splash, mobile landing. */
+  productName?: string;
+  /** Logo URL — start-menu button, splash and logout covers. Defaults to `/favicon.svg`. */
+  logo?: string;
+  /** Line under the product name on the splash and logout covers —
+   *  typically the company name. */
+  tagline?: string;
+}
+
 export interface LayoutProps {
+  /** One-object form of the brand fields below; its fields win over them, so
+   *  a consumer can move over field by field. */
+  branding?: ShellBranding;
   /** Brand label rendered on the start-menu button. */
   productName?: string;
   /** Icon URL rendered next to the brand label. Defaults to `/favicon.svg`. */
@@ -721,6 +741,7 @@ function TaskbarFavorites({ favorites, vertical, taskbarPosition, navSections, n
 }
 
 export default function Layout({
+  branding,
   productName = 'react-os-shell',
   productIcon = '/favicon.svg',
   wallpapers,
@@ -734,6 +755,11 @@ export default function Layout({
   clockCalendar,
   mobileApp,
 }: LayoutProps = {}) {
+  // `branding` wins over the loose props — one object, one place, and a
+  // consumer can move over field by field.
+  const brandName = branding?.productName ?? productName;
+  const brandIcon = branding?.logo ?? productIcon;
+  const brandTagline = branding?.tagline;
   const host = useDesktopHost();
   const { user, logout, hasAnyPerm } = useAuth();
   const { openPage, openEntity, openWindows } = useWindowManager();
@@ -943,8 +969,8 @@ export default function Layout({
 
   return (
     <div className="flex flex-col h-screen">
-      {showStartup && <StartupAnimation onComplete={() => setShowStartup(false)} ready={!!profile} productName={productName} />}
-      {showLogout && <LogoutAnimation onComplete={() => { sessionStorage.removeItem('erp_startup_shown'); logout(); }} />}
+      {showStartup && <StartupAnimation onComplete={() => setShowStartup(false)} ready={!!profile} productName={brandName} logo={brandIcon} subtitle={brandTagline} />}
+      {showLogout && <LogoutAnimation onComplete={() => { sessionStorage.removeItem('erp_startup_shown'); logout(); }} logo={brandIcon} subtitle={brandTagline} />}
       {/* Start Menu — suppressed in sidebar mode (Sidebar replaces it). */}
       {!sidebarMode && (
         <StartMenu
@@ -985,8 +1011,8 @@ export default function Layout({
             navIcons={navIcons}
             sectionIcons={sectionIcons}
             categories={categories}
-            productName={productName}
-            productIcon={productIcon}
+            productName={brandName}
+            productIcon={brandIcon}
           />
         </Suspense>
       )}
@@ -1012,8 +1038,8 @@ export default function Layout({
         if (isMobile) {
           return (
             <MobileAppLanding
-              productName={productName}
-              productIcon={productIcon}
+              productName={brandName}
+              productIcon={brandIcon}
               config={mobileApp}
               wallpaperStyle={wallpaperStyle}
             />
@@ -1072,8 +1098,8 @@ export default function Layout({
             onMouseLeave={e => { e.currentTarget.style.boxShadow = ''; e.currentTarget.style.borderColor = ''; }}>
             <span className="absolute inset-0 opacity-0 group-hover/erp:opacity-100 transition-opacity duration-200 pointer-events-none"
               style={{ background: 'radial-gradient(circle 60px at var(--mx, 50%) var(--my, 50%), rgba(255,255,255,0.25) 0%, transparent 100%)' }} />
-            {productIcon && <img src={productIcon} alt="" className="relative z-10 h-3.5 w-3.5 shrink-0 opacity-60" />}
-            <span className="relative z-10 truncate">{productName}</span>
+            {brandIcon && <img src={brandIcon} alt="" className="relative z-10 h-3.5 w-3.5 shrink-0 opacity-60" />}
+            <span className="relative z-10 truncate">{brandName}</span>
           </button>
         </div>}
 

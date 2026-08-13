@@ -69,6 +69,10 @@ export { default as DateRangePicker, toISODate } from '../forms/DateRangePicker'
 export type { DateRangePickerProps } from '../forms/DateRangePicker';
 export { default as DatePicker } from '../forms/DatePicker';
 export type { DatePickerProps } from '../forms/DatePicker';
+export { default as TimePicker } from '../forms/TimePicker';
+export type { TimePickerProps } from '../forms/TimePicker';
+export { default as DateTimePicker } from '../forms/DateTimePicker';
+export type { DateTimePickerProps } from '../forms/DateTimePicker';
 export { INPUT_BASE, INPUT_SIZES, inputClasses } from '../forms/styles';
 export type { InputSize } from '../forms/styles';
 
@@ -88,6 +92,8 @@ export { default as FilePicker } from '../forms/FilePicker';
 export type { FilePickerProps } from '../forms/FilePicker';
 export { default as SearchableSelect } from '../shell/SearchableSelect';
 export type { SearchableOption, SearchableSelectProps } from '../shell/SearchableSelect';
+export { default as TagInput } from '../forms/TagInput';
+export type { TagInputOption, TagInputProps } from '../forms/TagInput';
 
 // ── Display primitives ──
 export { default as Card, StatCard } from '../shell/Card';
@@ -119,6 +125,8 @@ export type { BannerProps, BannerTone, BannerEmphasis } from '../shell/Banner';
 export { default as Tabs } from '../shell/Tabs';
 export { tabButtonId, tabPanelId } from '../shell/Tabs';
 export type { TabsProps, TabItem } from '../shell/Tabs';
+export { default as Stepper } from '../shell/Stepper';
+export type { StepperProps, StepItem } from '../shell/Stepper';
 export { default as Accordion } from '../shell/Accordion';
 export type { AccordionProps, AccordionItem } from '../shell/Accordion';
 export { default as Tooltip } from '../shell/Tooltip';
@@ -193,7 +201,8 @@ export type { ColumnDef, SortState, PaginatedResponse } from '../data/types';
 export { default as Sparkline } from '../charts/Sparkline';
 export { default as BarChart } from '../charts/BarChart';
 export { default as DonutChart } from '../charts/DonutChart';
-export type { SparklineProps, BarChartProps, DonutChartProps, DonutSegment } from '../charts/types';
+export { default as LineChart } from '../charts/LineChart';
+export type { SparklineProps, BarChartProps, DonutChartProps, DonutSegment, LineChartProps, LineChartSeries } from '../charts/types';
 
 // ── Page templates (starter screens; see src/templates) ──
 export { default as DashboardTemplate } from '../templates/DashboardTemplate';
