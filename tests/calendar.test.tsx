@@ -246,3 +246,14 @@ test('a selection still wins over the bounds', () => {
   assert.equal(view.container.querySelector('[role="grid"]')!.getAttribute('aria-label'), 'May 2020');
   view.unmount();
 });
+
+
+test('a day is a touch target on a phone, and compact above it', () => {
+  // Seven cells side by side is exactly the case where four pixels short picks
+  // the wrong day rather than nothing at all.
+  const view = setup();
+  const cellClass = cell(view, '15 August 2026').className;
+  assert.match(cellClass, /min-h-11/, '44px below the sm breakpoint');
+  assert.match(cellClass, /sm:min-h-0/, 'and out of the way above it');
+  view.unmount();
+});

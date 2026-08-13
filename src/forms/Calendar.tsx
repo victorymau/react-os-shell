@@ -362,7 +362,11 @@ export default function Calendar({
                     aria-current={key === todayKey ? 'date' : undefined}
                     onClick={() => { setActive(key); onSelect(key); }}
                     className={[
-                      'w-full rounded-md py-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400',
+                      // 44px below `sm`, compact above it. A 32px cell is under
+                      // every touch-target guideline there is, and a date grid
+                      // is seven of them side by side — the case where missing
+                      // by four pixels picks the wrong day rather than nothing.
+                      'w-full rounded-md py-1.5 min-h-11 sm:min-h-0 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400',
                       disabled ? 'cursor-not-allowed text-gray-300'
                         : isSelected ? 'bg-blue-600 font-semibold text-white'
                         : between ? 'bg-blue-100 text-blue-800'
