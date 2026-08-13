@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## 4.57.0
+
+- **`Calendar`** — a month grid that can be driven from the keyboard. `DateRangePicker`
+  had one inline: 42 buttons in a `<div>`, no arrow keys (reaching the 20th meant twenty
+  presses of Tab), each cell named by its number alone — "15", of which month? — and no
+  grid semantics, so a screen reader announced a list of buttons rather than a date table.
+
+  Now `role="grid"` with rows, column headers and `aria-selected`; a roving tabindex so the
+  whole grid is one tab stop; arrows to move, Home/End for the week, PageUp/PageDown for the
+  month and Shift+PageUp/Down for the year; each day named as "15 August 2026"; `aria-current`
+  on today; `min`/`max` honoured by mouse and key alike; and the month/year quick-jump panels
+  the range picker had. Single or `range` mode.
+
+- **`TimePicker`** — the kit had no time control, so portals reached for `<input type="time">`
+  and got the browser's own widget beside a kit-drawn calendar. A typed field plus a listbox
+  at a configurable `step`, with `min`/`max`, a 12-hour display option, and a parser that
+  reads what people actually type: `9`, `930`, `0930`, `9.30`, `2:30 pm`. The value stays a
+  `HH:mm` string — a time with no date is not a moment, and a `Date` would drift across a
+  timezone. An entry it cannot read reverts visibly rather than being stored or dropped.
+
+- **`DatePicker` draws the kit's calendar.** It was a native `<input type="date">`, which
+  renders one widget in Chrome and another in Safari and neither is the one `DateRangePicker`
+  draws — two date fields on a row looked like two products. The platform control is still
+  one prop away (`native`), which is the right call on a mobile-first surface. The value still
+  rides a hidden input, so a plain `<form>` posts it exactly as before.
+
+- **`DateRangePicker` uses `Calendar`** rather than its own copy of one — 481 lines down to
+  338, and it inherits every keyboard and ARIA fix above. No API change.
+
 ## [Unreleased]
 
 ## [4.54.0] — 2026-08-13
