@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## 4.58.0
+## 4.65.0
 
 - **`Segmented` no longer breaks when an option wraps.** A two-word label on a phone
   wrapped to a second line while the pill kept its fixed height, so the selected segment
@@ -16,7 +16,7 @@ All notable changes to this project will be documented in this file. The format 
   and the reserved row cost a bordered strip of nothing at the top of the panel, which is
   exactly the space a phone does not have.
 
-## 4.56.0
+## 4.64.0
 
 - **`Dialog` and `Drawer` name themselves properly.** Both derived their
   accessible name from `title`, and only when `title` happened to be a plain
@@ -33,6 +33,152 @@ All notable changes to this project will be documented in this file. The format 
   an element title works. Both also take an **`aria-label`** for the untitled
   case; it is ignored when `title` is set, because two names for one thing drift
   and the one a sighted user can read is the one that has to survive.
+## 4.63.0
+
+- **`Layout` takes `branding`** — `{ productName, logo, tagline }`, the
+  product's visual identity in one object. The start-menu button, the startup
+  splash, the logout cover and the mobile landing all read from it; its
+  fields win over the older loose `productName` / `productIcon` props, so a
+  consumer can move over field by field. The two full-screen covers also stop
+  hard-coding `/favicon.svg`: both take a `logo`, and the logout cover takes
+  the `tagline` the splash already showed. Defaults are exactly what they
+  were, which a spec pins.
+
+  The About dialog and What's New changelog were already configurable and
+  stay where they belong, on `DesktopHostConfig` (`productName`,
+  `productIcon`, `productChangelog`, …) — that is the desktop's identity;
+  `branding` is the chrome around it. `src/changelog.ts` keeps its empty stub
+  role, and its comment now points at the real wiring instead of an
+  "eventual" one.
+
+## 4.62.0
+
+- **`Stepper`** — the progress strip of a linear wizard, Tabs' one-way
+  sibling: the consumer owns the current step and renders the body, the strip
+  draws the numbered circles, connectors and labels. Semantically an `<ol>`
+  with `aria-current="step"` on the current item; the circles are decoration
+  and hidden from assistive technology, the label names the step.
+
+  The one-way rule is the design: completed steps are clickable to go back
+  (when `onChange` is wired — omitted, the strip is a pure indicator with no
+  controls), and upcoming steps never are. Moving forward belongs to the
+  wizard's own Continue button, behind whatever validation the current step
+  demands — a strip that lets the user jump to Payment from Contact has
+  silently promised that nothing in between mattered.
+
+## 4.61.0
+
+- **`DataTable` takes `virtualized`** — `{ height, rowHeight, overscan? }`.
+  Pagination and infinite scroll bound what is *fetched*; nothing bounded what
+  is *rendered*, so a few thousand loaded rows all got DOM and every sort or
+  filter re-laid-out the lot. With the prop, the wrapper becomes a vertical
+  scroll container, only the rows near the viewport exist (two spacer rows
+  keep the scrollbar honest about the rest), and the header pins to the top —
+  including the corner cell of a pinned column, which stays put in both axes,
+  and a grouped header's second row, which pins below the first at a measured
+  offset.
+
+  Rows keep their ABSOLUTE index: `render`, `rowClassName` and `rowKey` never
+  see window-relative positions, so striping and identity survive scrolling.
+  `rowHeight` is a promise, not a measurement — every row renders at exactly
+  that height, so `ellipsis` long columns rather than letting them wrap.
+  Off-screen rows are absent for assistive technology too, the trade every
+  windowed list makes. A table without the prop renders exactly as before,
+  which a spec pins.
+
+## 4.60.0
+
+- **`TagInput`** — SearchableSelect's multi-value sibling. The field holds the
+  chosen values as removable chips with an inline input after them; typing
+  filters the option list in the same portaled frosted dropdown, and picking
+  an option appends it and keeps the list open, because multi-add is the
+  entire point. Assigning several categories, roles or suppliers to a record
+  is this shape, and each portal was one afternoon away from hand-rolling it.
+
+  The contracts: the value array stays duplicate-free by construction (chosen
+  options leave the list, re-adding is a no-op); `allowFreeText` gates
+  unlisted entries (Enter / comma / Tab / clicking away commit, and it is off
+  by default); Backspace in the empty input removes the last chip.
+
+- **The dropdown positioning hook moved to `src/forms/dropdownPosition`** —
+  promoted out of SearchableSelect verbatim when TagInput needed the identical
+  flip/track/clamp behaviour. No behaviour change; SearchableSelect now
+  imports it.
+
+- **Specs can type into portal-rendering components.** The test runner now
+  preloads a DOM (`node --import`) before spec bundles evaluate. esbuild
+  hoists external imports above the bundled modules, so a component that
+  statically imports `react-dom` (Modal, SearchableSelect, TagInput) evaluated
+  it before `tests/dom.ts` could install the globals — react-dom's one-time
+  environment sniff then concluded `input` events are unsupported and routed
+  text-input events through its IE polyfill, where onChange never fires and a
+  keydown throws. Specs in such files could click and press keys on divs, but
+  never type; now they can.
+
+## 4.59.0
+
+- **`TimePicker` and `DateTimePicker`** — the form kit had `DatePicker` and
+  `DateRangePicker` but nothing for time, so a delivery window or a scheduled
+  report run could not be expressed. Both follow the DatePicker bargain: a
+  native input (`type="time"` / `type="datetime-local"`) wearing the kit's
+  field styling, so the browser supplies the wheel, the locale's 12/24-hour
+  convention and the keyboard behaviour.
+
+  The timezone rules are the DatePicker ones, applied one step further.
+  TimePicker's `onChange` hands back an `HH:MM` string, never a Date — a time
+  of day names no calendar day, so a Date built from one has a made-up date
+  inside it. A Date passed as `value` contributes its LOCAL wall-clock fields
+  (never `toISOString`). DateTimePicker serialises and parses local fields
+  only, hands `onChange` a Date built from the parsed integers with the local
+  constructor, and rejects rolled-over values (`2026-02-31T10:00`) rather than
+  letting the constructor slide them into March. A sub-minute `step` makes
+  TimePicker speak seconds, in both directions.
+
+## 4.58.0
+
+- **`LineChart`** — the chart family stopped at `Sparkline` for trends: no
+  axes, no series, fixed pixel width. Any page showing orders-per-week had
+  nothing to reach for. LineChart is Sparkline's big sibling — multi-series
+  over shared x positions, container-filling width, optional scale gutter with
+  reference lines, color-dot legend, point dots with tooltips, per-series area
+  fill — and still a dependency-free inline SVG themed by `currentColor`, like
+  the rest of the family.
+
+  The plot is a stretched 0–100 viewBox so it can fill whatever the dashboard
+  gives it; `vector-effect: non-scaling-stroke` keeps lines a uniform
+  screen-space width under that stretch, and the dots are zero-length
+  round-capped strokes because a stretched circle is an ellipse. Decorative
+  like its siblings (`aria-hidden`) — the numbers it draws should also exist
+  as text on the page.
+
+## 4.57.0
+
+- **The startup and logout covers respect `prefers-reduced-motion`.** They are
+  the two longest animations in the shell — spin-in, bouncing dots, a pulsing
+  glow, a spin-out — and the two that ignored the setting, while WindowManager
+  and Modal already honour it. Under reduced motion the fades stay and the
+  movement goes: keyframe animations park at their base state and the
+  slide/scale phases become plain cross-fades. Timings, the startup `ready`
+  gating and the logout cover-and-swap are untouched — the preference is about
+  motion, not about how long a splash holds.
+
+## 4.56.0
+
+- **Keyboard window management.** The title bar is the pointer's drag handle,
+  and it is now the keyboard's too: a tab stop where plain arrows move the
+  window in 24 px steps, Shift+arrows resize it against the same 384×400 floor
+  the pointer resize enforces, Ctrl/Cmd+←/→ snap to the half-screen zones,
+  Ctrl/Cmd+↑ maximizes, Ctrl/Cmd+↓ restores the pre-snap box — or minimizes
+  when there is nothing to restore — and Enter mirrors the maximize button.
+  Moving, resizing and snapping a window were pointer-only, which left the
+  window itself outside WCAG 2.1.1 — the same reasoning that put clickable
+  table rows into the tab order in 4.53.0.
+
+  Keys pressed on the bar's own controls stay theirs (Enter on Close still
+  closes), locked layouts (sidebar mode) and exposé get no tab stop because
+  the keys could do nothing there, and `ShortcutHelp` gained a Windows
+  section listing the keys.
+
 ## 4.55.0
 
 - **`ErrorBoundary`** — catches a render crash and shows the 500 page instead of a

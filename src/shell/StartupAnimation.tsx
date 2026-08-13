@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
  * Startup splash animation — shown once when the app first loads after login.
  * Fades out after the animation completes, then unmounts.
  */
-export default function StartupAnimation({ onComplete, ready = false, productName = 'react-os-shell', subtitle }: { onComplete: () => void; ready?: boolean; productName?: string; subtitle?: string }) {
+export default function StartupAnimation({ onComplete, ready = false, productName = 'react-os-shell', subtitle, logo = '/favicon.svg' }: { onComplete: () => void; ready?: boolean; productName?: string; subtitle?: string; logo?: string }) {
   const [phase, setPhase] = useState<'logo' | 'text' | 'fade'>('logo');
   const [minTimePassed, setMinTimePassed] = useState(false);
   const onCompleteRef = useRef(onComplete);
@@ -32,6 +32,7 @@ export default function StartupAnimation({ onComplete, ready = false, productNam
 
   return (
     <div
+      data-startup-animation=""
       className={`fixed inset-0 z-[9999] flex flex-col items-center justify-center transition-opacity duration-500 ${phase === 'fade' ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
       style={{ background: 'linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%)' }}
     >
@@ -43,7 +44,7 @@ export default function StartupAnimation({ onComplete, ready = false, productNam
 
       {/* Logo */}
       <div className={`relative transition-all duration-700 ease-out ${phase === 'logo' ? 'scale-75 opacity-0' : 'scale-100 opacity-100'}`}>
-        <img src="/favicon.svg" alt="" className="h-20 w-20 drop-shadow-[0_0_30px_rgba(124,58,237,0.5)]"
+        <img src={logo} alt="" className="h-20 w-20 drop-shadow-[0_0_30px_rgba(124,58,237,0.5)]"
           style={{ animation: 'spin-in 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards' }} />
       </div>
 
@@ -77,6 +78,18 @@ export default function StartupAnimation({ onComplete, ready = false, productNam
         @keyframes pulse-glow {
           0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.15; }
           50% { transform: translate(-50%, -50%) scale(1.1); opacity: 0.25; }
+        }
+        /* Reduced motion: the fades stay, the movement goes. animation:none
+         * (stylesheet !important beats the inline animation shorthands) parks
+         * the spin/bounce/pulse at their base state; restricting transitions
+         * to opacity turns the slide/scale phases into plain cross-fades.
+         * Timings and the ready-gating are untouched — this is about motion,
+         * not about how long the splash holds. */
+        @media (prefers-reduced-motion: reduce) {
+          [data-startup-animation], [data-startup-animation] * {
+            animation: none !important;
+            transition-property: opacity !important;
+          }
         }
       `}</style>
     </div>

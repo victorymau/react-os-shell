@@ -24,7 +24,7 @@ import { build } from 'esbuild';
 import { spawn } from 'node:child_process';
 import { readdirSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const testsDir = join(root, 'tests');
@@ -79,7 +79,14 @@ const bundled = readdirSync(outDir)
   .filter((f) => f.endsWith('.js'))
   .map((f) => join(outDir, f));
 
-const child = spawn(process.execPath, ['--test', ...bundled], {
+// `--import` puts a DOM in place before the spec bundles' hoisted external
+// imports evaluate — react-dom capability-sniffs at module scope, and without
+// this any spec whose component statically imports react-dom (createPortal)
+// gets the IE input-event polyfill instead of working text inputs. The full
+// story is in scripts/test-dom-preload.mjs.
+const preload = pathToFileURL(join(root, 'scripts', 'test-dom-preload.mjs')).href;
+
+const child = spawn(process.execPath, ['--import', preload, '--test', ...bundled], {
   stdio: 'inherit',
   env: { ...process.env, REPO_ROOT: root },
 });

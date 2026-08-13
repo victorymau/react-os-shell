@@ -643,6 +643,11 @@ function workArea(): Box {
 const CAPTION_H = 40;    // title-bar height that must stay inside the work area
 const MIN_VISIBLE_X = 80; // horizontal strip that must stay grabbable
 
+// Smallest size a user gesture may leave a window at — shared by the pointer
+// resize and the keyboard resize so the two paths cannot disagree about it.
+const MIN_W = 384;
+const MIN_H = 400;
+
 /** Smallest move that keeps `box` grabbable. Never resizes. Returns `box`
  *  itself when nothing moved, so callers can `setBox(clampReachable)` without
  *  forcing a re-render or re-persisting an untouched window. */
@@ -2055,8 +2060,6 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     const oy = rect ? rect.top : boxRef.current.y;
     const ow = rect ? rect.width : boxRef.current.w;
     const oh = rect ? rect.height : boxRef.current.h;
-    const MIN_W = 384;
-    const MIN_H = 400;
     const isWest = corner === 'sw' || corner === 'nw' || corner === 'w';
     const isNorth = corner === 'ne' || corner === 'nw' || corner === 'n';
     const isEast = corner === 'se' || corner === 'ne' || corner === 'e';
@@ -2124,6 +2127,75 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
   }, []);
+
+  // ── Keyboard window management ──
+  // The title bar is the pointer's move handle, so it is also the keyboard's:
+  // a tab stop whose arrows move the window, WCAG 2.1.1 for the window itself.
+  // Plain arrows move, Shift+arrows resize from the bottom-right corner,
+  // Ctrl/Cmd+arrows snap (left/right half, maximize, restore/minimize) and
+  // Enter mirrors the maximize button. Discrete steps go through setBox — the
+  // compositor-layer machinery above exists for pointer-rate updates, which a
+  // keypress is not.
+  const KEY_STEP = 24;
+  const onTitleBarKeyDown = useCallback((e: React.KeyboardEvent) => {
+    // Keys pressed on the bar's own controls stay theirs — Enter on the close
+    // button must close, not toggle maximize.
+    if ((e.target as HTMLElement).closest('button, input, a, kbd, select, textarea')) return;
+    const arrows: Record<string, [number, number]> = {
+      ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1],
+    };
+    const dir = arrows[e.key];
+    if (!dir && e.key !== 'Enter') return;
+    e.preventDefault();
+    e.stopPropagation();
+    activateModal(modalId);
+
+    if (e.key === 'Enter') {
+      if (maximized) { setMaximized(false); setBox(calcWindowed()); } else { setMaximized(true); setBox(calcMaximized()); }
+      return;
+    }
+    const [dx, dy] = dir!;
+    if (e.ctrlKey || e.metaKey) {
+      // Snap. Save the pre-snap box exactly like a snap-drop does, so the next
+      // drag (or Ctrl+Down) restores the window's natural size.
+      const savePreSnap = () => { if (!preSnapBoxRef.current) preSnapBoxRef.current = { ...boxRef.current }; };
+      if (dy < 0) { savePreSnap(); setMaximized(true); setBox(calcMaximized()); return; }
+      if (dy > 0) {
+        if (maximized) { setMaximized(false); setBox(calcWindowed()); return; }
+        if (preSnapBoxRef.current) {
+          const restore = clampReachable(preSnapBoxRef.current);
+          preSnapBoxRef.current = null;
+          boxRef.current = restore;
+          setBox(restore);
+          return;
+        }
+        _minimizeModal(modalId);
+        return;
+      }
+      savePreSnap();
+      setMaximized(false);
+      const snapped = calcSnapBox(dx < 0 ? 'left' : 'right');
+      boxRef.current = snapped;
+      setBox(snapped);
+      return;
+    }
+    if (maximized) return; // a maximized window is pinned, same as the pointer path
+    const b = boxRef.current;
+    const next = e.shiftKey
+      ? { ...b, w: Math.max(MIN_W, b.w + dx * KEY_STEP), h: Math.max(MIN_H, b.h + dy * KEY_STEP) }
+      : clampReachable({ ...b, x: b.x + dx * KEY_STEP, y: Math.max(0, b.y + dy * KEY_STEP) });
+    boxRef.current = next;
+    setBox(next);
+  }, [modalId, maximized, calcWindowed, calcMaximized]);
+  // Spread onto each desktop title-bar variant. Locked layouts (sidebar mode)
+  // and exposé get no tab stop — there is nothing the keys could do there.
+  const titleBarKeyProps = alwaysMaximized || exposeActive ? {} : {
+    tabIndex: 0,
+    role: 'group',
+    'aria-label': titleTooltip ? `${titleTooltip} — window` : 'Window',
+    'aria-keyshortcuts': 'ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight Control+ArrowUp Control+ArrowDown Control+ArrowLeft Control+ArrowRight Enter',
+    onKeyDown: onTitleBarKeyDown,
+  } as const;
 
   const reset = () => { setMaximized(true); setBox(calcMaximized()); };
   const handleMinimize = () => {
@@ -2432,8 +2504,8 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
           null
         ) : compact ? (
           /* Compact: smaller title bar with title + close only */
-          <div onPointerDown={startDrag} data-window-chrome=""
-            className={`flex items-center justify-between px-3 py-1.5 border-b border-gray-200 shrink-0 cursor-move select-none rounded-t-2xl ${isActive ? 'backdrop-blur-sm' : ''}`}
+          <div onPointerDown={startDrag} data-window-chrome="" {...titleBarKeyProps}
+            className={`flex items-center justify-between px-3 py-1.5 border-b border-gray-200 shrink-0 cursor-move select-none rounded-t-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-400 ${isActive ? 'backdrop-blur-sm' : ''}`}
             style={{ touchAction: 'none', backgroundColor: isActive ? `rgb(var(--window-header-rgb) / var(--active-header-opacity, 0.8))` : `rgb(var(--window-header-rgb) / var(--inactive-header-opacity, 0.7))` }}>
             <div data-window-title title={titleTooltip} className="text-sm font-medium min-w-0 flex-1 truncate flex items-center gap-1.5" style={{ color: isActive ? 'var(--window-title-active, rgb(17 24 39))' : 'var(--window-title-inactive, rgb(156 163 175))' }}>
               {!exposeActive && renderIconButton()}
@@ -2455,8 +2527,8 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
           </div>
         ) : appStyle ? (
           /* App style: small title bar like compact, but keeps minimize/maximize for full window control. */
-          <div onPointerDown={startDrag} data-window-chrome=""
-            className={`flex items-center justify-between px-3 py-1.5 border-b border-gray-200 shrink-0 cursor-move select-none rounded-t-2xl ${isActive ? 'backdrop-blur-sm' : ''}`}
+          <div onPointerDown={startDrag} data-window-chrome="" {...titleBarKeyProps}
+            className={`flex items-center justify-between px-3 py-1.5 border-b border-gray-200 shrink-0 cursor-move select-none rounded-t-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-400 ${isActive ? 'backdrop-blur-sm' : ''}`}
             style={{ touchAction: 'none', backgroundColor: isActive ? `rgb(var(--window-header-rgb) / var(--active-header-opacity, 0.8))` : `rgb(var(--window-header-rgb) / var(--inactive-header-opacity, 0.7))` }}>
             <div data-window-title title={titleTooltip} className="text-sm font-medium min-w-0 flex-1 truncate flex items-center gap-1.5" style={{ color: isActive ? 'var(--window-title-active, rgb(17 24 39))' : 'var(--window-title-inactive, rgb(156 163 175))' }}>
               {!exposeActive && renderIconButton()}
@@ -2481,8 +2553,8 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
             )}
           </div>
         ) : (
-        <div onPointerDown={startDrag} data-window-chrome=""
-          className={`flex items-center justify-between px-4 py-2.5 border-b border-gray-200 shrink-0 cursor-move select-none rounded-t-2xl ${isActive ? 'backdrop-blur-sm' : ''}`}
+        <div onPointerDown={startDrag} data-window-chrome="" {...titleBarKeyProps}
+          className={`flex items-center justify-between px-4 py-2.5 border-b border-gray-200 shrink-0 cursor-move select-none rounded-t-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-400 ${isActive ? 'backdrop-blur-sm' : ''}`}
           style={{ touchAction: 'none', backgroundColor: isActive ? `rgb(var(--window-header-rgb) / var(--active-header-opacity, 0.8))` : `rgb(var(--window-header-rgb) / var(--inactive-header-opacity, 0.7))` }}>
           <div data-window-title title={titleTooltip} className="text-base font-medium min-w-0 flex-1 truncate flex items-center gap-2" style={{ color: isActive ? 'var(--window-title-active, rgb(17 24 39))' : 'var(--window-title-inactive, rgb(156 163 175))' }}>
             {!exposeActive && renderIconButton()}
