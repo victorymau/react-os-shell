@@ -16,10 +16,14 @@
  *    part; in production it hands a visitor the internal module layout. Here
  *    the detail is opt-in and off by default.
  *  - They swap the content out silently. A crash is exactly the moment a screen
- *    reader user is owed an announcement, so the fallback is `role="alert"`.
+ *    reader user is owed an announcement, so the PAGE is `role="alert"` — the
+ *    page, not the whole fallback: `alert` is read wholesale and assertively,
+ *    and a region spanning the opt-in stack trace would recite `error.stack`
+ *    at the user before they could act on it.
  */
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import ErrorPage from './ErrorPage';
+import Button from '../forms/Button';
 
 export interface ErrorBoundaryProps {
   children: ReactNode;
@@ -75,8 +79,14 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, State> 
 
   componentDidUpdate(prev: ErrorBoundaryProps) {
     if (!this.state.error) return;
-    const [a, b] = [prev.resetKeys, this.props.resetKeys];
-    if (a && b && (a.length !== b.length || a.some((k, i) => !Object.is(k, b[i])))) {
+    // A missing side counts as empty rather than as "skip". Guarding on both
+    // being present meant a consumer whose keys are conditional — a router
+    // hook returning undefined on the first render after a crash, then
+    // `[path]` — never recovered, and that transition IS the navigation the
+    // prop exists to catch.
+    const a = prev.resetKeys ?? [];
+    const b = this.props.resetKeys ?? [];
+    if (a.length !== b.length || a.some((k, i) => !Object.is(k, b[i]))) {
       this.reset();
     }
   }
@@ -89,24 +99,34 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, State> 
     if (this.props.fallback) return this.props.fallback(error, this.reset);
 
     return (
-      <div role="alert" className="h-full">
-        <ErrorPage
-          code={500}
-          actions={
-            <>
-              <button
-                type="button"
-                onClick={this.reset}
-                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-              >
-                Try again
-              </button>
-              {this.props.actions}
-            </>
-          }
-        />
+      // A column, not a bare wrapper: `ErrorPage` is `h-full`, so a `<details>`
+      // rendered as its sibling inside an `h-full` box starts at the 100% mark
+      // and sits below the fold — unreachable under an `overflow-hidden`
+      // ancestor, which is the usual app shell. As a flex child it takes the
+      // room it needs and the page gives it back.
+      <div className="flex h-full flex-col">
+        {/* The live region is the PAGE, not everything on screen. `alert` is
+            announced wholesale and assertively, so a region spanning the stack
+            trace reads a developer's `error.stack` at a screen-reader user
+            before they can act. The details sit outside it deliberately. */}
+        <div role="alert" className="min-h-0 flex-1">
+          <ErrorPage
+            code={500}
+            actions={
+              <>
+                {/* The kit's Button, not a hand-written class string. This
+                    component's whole argument is that the portals' own
+                    boundaries "hard-coded its own colours" — re-typing
+                    Button's primary here would be the same mistake one layer
+                    up, and would miss every rung and state Button grows. */}
+                <Button onClick={this.reset}>Try again</Button>
+                {this.props.actions}
+              </>
+            }
+          />
+        </div>
         {this.props.showDetails && (
-          <details className="mx-auto mt-4 max-w-2xl px-6 pb-6">
+          <details className="mx-auto w-full max-w-2xl shrink-0 px-6 pb-6">
             <summary className="cursor-pointer text-sm font-medium text-gray-600">Error details</summary>
             <pre className="mt-2 overflow-auto rounded-md bg-gray-100 p-3 text-xs text-gray-700">
               {error.stack ?? error.message}
