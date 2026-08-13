@@ -209,6 +209,8 @@ export { default as ChatTemplate } from '../templates/ChatTemplate';
 export { default as GalleryTemplate } from '../templates/GalleryTemplate';
 export { default as AuthScreen } from '../templates/AuthScreen';
 export type { AuthScreenProps } from '../templates/AuthScreen';
+export { default as ErrorBoundary } from '../templates/ErrorBoundary';
+export type { ErrorBoundaryProps } from '../templates/ErrorBoundary';
 export { default as ErrorPage } from '../templates/ErrorPage';
 export type { ErrorPageProps } from '../templates/ErrorPage';
 

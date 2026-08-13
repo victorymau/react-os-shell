@@ -18,7 +18,7 @@ A backend-less playground hosted on GitHub Pages. Wallpapers, themes, sticky not
 
 **UI primitives:** `<Button>`, `<Input>`, `<Textarea>`, `<Select>`, `<Checkbox>`, `<Radio>`, `<FormField>`, `<Label>`, `<Card>` / `<StatCard>`, `<Avatar>` / `<AvatarGroup>`, `<Banner>`, `<Tabs>`, `<Accordion>`, `<Tooltip>`, `<Pagination>`, `<MetricBar>`, and dependency-free `<Sparkline>` / `<BarChart>` / `<DonutChart>` charts.
 
-**Page templates:** ready-made screens composed from the primitives — `<DashboardTemplate>`, `<DataTablePage>`, `<FormLayoutPage>`, `<CheckoutTemplate>`, `<EmailTemplate>`, `<ChatTemplate>`, `<GalleryTemplate>`, `<AuthScreen>`, `<ErrorPage>`.
+**Page templates:** ready-made screens composed from the primitives — `<DashboardTemplate>`, `<DataTablePage>`, `<FormLayoutPage>`, `<CheckoutTemplate>`, `<EmailTemplate>`, `<ChatTemplate>`, `<GalleryTemplate>`, `<AuthScreen>`, `<ErrorPage>`. `<ErrorBoundary>` catches a render crash and shows the 500 page in place of a blank screen.
 
 **Apps:**
 - **Utilities:** Calculator, Notepad, Spreadsheet, Weather, CurrencyConverter, PomodoroTimer, WorldClock, TodoList
@@ -237,6 +237,7 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 | `Calendar` | Month grid with full keyboard navigation (arrows, Home/End, PageUp/Down) and `role="grid"` semantics. Single or range. The shared grid behind `DatePicker` and `DateRangePicker`. |
 | `TimePicker` | A time of day: typed or picked from a stepped list. Value is `HH:mm`; 12-hour is display only. |
 | `DashboardTemplate`, `DataTablePage`, `FormLayoutPage`, `CheckoutTemplate`, `EmailTemplate`, `ChatTemplate`, `GalleryTemplate`, `AuthScreen`, `ErrorPage` | Zero-prop starter page templates composed from the primitives. |
+| `ErrorBoundary` | Catches a render crash and shows `ErrorPage` 500 rather than a blank screen. `showDetails` is off by default, so a visitor is never shown the stack; the fallback is `role="alert"`. Takes `onError` for reporting and `resetKeys` to recover on navigation. |
 
 ### Providers + setters
 

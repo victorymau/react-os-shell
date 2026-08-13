@@ -30,6 +30,22 @@ All notable changes to this project will be documented in this file. The format 
 
 - **`DateRangePicker` uses `Calendar`** rather than its own copy of one — 481 lines down to
   338, and it inherits every keyboard and ARIA fix above. No API change.
+## 4.55.0
+
+- **`ErrorBoundary`** — catches a render crash and shows the 500 page instead of a
+  blank screen. `WindowErrorBoundary` guards one desktop window's body; this one is
+  for a plain React app, which is what the portals are. Each portal had written its
+  own, and each hard-coded its own colours to do it.
+
+  Two defects the hand-written ones shared, and the reason this is a component
+  rather than a snippet: they printed `error.stack` into the page unconditionally,
+  which hands a visitor the internal module layout — here the detail is opt-in via
+  `showDetails` and off by default; and they replaced the content in silence, so
+  the fallback is now `role="alert"`.
+
+  Takes `onError` for reporting to Sentry or the app's own logger, `resetKeys` so
+  navigating away from a crashed page recovers without a reload, `actions` for a
+  link home, and `fallback` to replace the page entirely.
 
 ## [Unreleased]
 
