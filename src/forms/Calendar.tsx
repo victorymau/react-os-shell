@@ -12,9 +12,9 @@
  *    than a date table, and there was no way to know which one was chosen.
  *
  * It is one component rather than one per picker because the grid is the same
- * grid whether the caller wants one date or two: `DatePicker`, `TimePicker`'s
- * sibling `DateRangePicker`, and anything a portal writes later all get the
- * keyboard model and the ARIA from here, once.
+ * grid whether the caller wants one date or two: `DatePicker`, `DateRangePicker`
+ * and anything a portal writes later all get the keyboard model and the ARIA
+ * from here, once.
  *
  * ── Dates are local, never UTC ──
  * Same rule the rest of the kit follows: `new Date('2026-08-11')` is UTC

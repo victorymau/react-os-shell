@@ -15,12 +15,6 @@ All notable changes to this project will be documented in this file. The format 
   on today; `min`/`max` honoured by mouse and key alike; and the month/year quick-jump panels
   the range picker had. Single or `range` mode.
 
-- **`TimePicker`** — the kit had no time control, so portals reached for `<input type="time">`
-  and got the browser's own widget beside a kit-drawn calendar. A typed field plus a listbox
-  at a configurable `step`, with `min`/`max`, a 12-hour display option, and a parser that
-  reads what people actually type: `9`, `930`, `0930`, `9.30`, `2:30 pm`. The value stays a
-  `HH:mm` string — a time with no date is not a moment, and a `Date` would drift across a
-  timezone. An entry it cannot read reverts visibly rather than being stored or dropped.
 
 - **`DatePicker` draws the kit's calendar.** It was a native `<input type="date">`, which
   renders one widget in Chrome and another in Safari and neither is the one `DateRangePicker`

@@ -69,12 +69,10 @@ export { default as DateRangePicker, toISODate } from '../forms/DateRangePicker'
 export type { DateRangePickerProps } from '../forms/DateRangePicker';
 export { default as Calendar, toKey as toDateKey, fromKey as fromDateKey } from '../forms/Calendar';
 export type { CalendarProps, CalendarMode } from '../forms/Calendar';
-export { default as TimePicker, parseTime, formatTime } from '../forms/TimePicker';
+export { default as TimePicker } from '../forms/TimePicker';
 export type { TimePickerProps } from '../forms/TimePicker';
 export { default as DatePicker } from '../forms/DatePicker';
 export type { DatePickerProps } from '../forms/DatePicker';
-export { default as TimePicker } from '../forms/TimePicker';
-export type { TimePickerProps } from '../forms/TimePicker';
 export { default as DateTimePicker } from '../forms/DateTimePicker';
 export type { DateTimePickerProps } from '../forms/DateTimePicker';
 export { INPUT_BASE, INPUT_SIZES, inputClasses } from '../forms/styles';
