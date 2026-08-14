@@ -24,6 +24,37 @@ All notable changes to this project will be documented in this file. The format 
 
 - **`DateRangePicker` uses `Calendar`** rather than its own copy of one — 481 lines down to
   338, and it inherits every keyboard and ARIA fix above. No API change.
+## 4.65.0
+
+- **`Segmented` no longer breaks when an option wraps.** A two-word label on a phone
+  wrapped to a second line while the pill kept its fixed height, so the selected segment
+  was shorter than its own text and the track sat crooked around it. Options are now one
+  line each and the track scrolls when they do not fit — the right failure for a segmented
+  control, since letting it grow pushes whatever is beside it off the screen.
+
+- **`Drawer` without a title no longer reserves an empty header row.** The close button
+  shares the header with a title when there is one and floats over the body when there is
+  not. A navigation drawer has no title bar by design — its own content is the heading —
+  and the reserved row cost a bordered strip of nothing at the top of the panel, which is
+  exactly the space a phone does not have.
+
+## 4.64.0
+
+- **`Dialog` and `Drawer` name themselves properly.** Both derived their
+  accessible name from `title`, and only when `title` happened to be a plain
+  string. Two ways that failed, both silent:
+
+  - A title built from elements — an icon beside a word, a count in a badge — is
+    a `ReactNode`, fell through the `typeof === 'string'` check, and left the
+    overlay with no name at all while the heading sat visible on screen.
+  - An overlay with no title had no way to be named. A navigation drawer is
+    exactly that case: its content is its own heading, so there is nothing to put
+    in a title bar, and it was unnamed by construction.
+
+  The name now comes from `aria-labelledby` pointing at the rendered heading, so
+  an element title works. Both also take an **`aria-label`** for the untitled
+  case; it is ignored when `title` is set, because two names for one thing drift
+  and the one a sighted user can read is the one that has to survive.
 ## 4.63.0
 
 - **`Layout` takes `branding`** — `{ productName, logo, tagline }`, the

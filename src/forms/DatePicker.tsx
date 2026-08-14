@@ -30,6 +30,7 @@ import Calendar from './Calendar';
 import { useDropdownPosition } from './dropdownPosition';
 import { toISODate } from './DateRangePicker';
 import { inputClasses, type InputSize } from './styles';
+import { registerModalEscapeInterceptor } from '../shell/escapeInterceptors';
 
 /** What a native date input speaks, and what this component stores. */
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -133,21 +134,35 @@ const DatePicker = forwardRef<HTMLInputElement, DatePickerProps>(function DatePi
       if (wrapRef.current?.contains(target) || panelRef.current?.contains(target)) return;
       setOpen(false);
     };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      e.preventDefault();
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, [open]);
+
+  // Escape, on the shell's interceptor seam rather than a listener of our own.
+  //
+  // A `document` listener cannot win, in either phase. `Modal` listens on
+  // `window` in the CAPTURE phase, and capture runs window BEFORE document —
+  // so Modal took the key first, closed the whole window, and called
+  // stopPropagation(). A user with a form open in a window who pressed Escape
+  // to dismiss the calendar lost the window and their unsaved edits instead.
+  //
+  // The seam is the one place Modal consults before closing, and since 4.27.0
+  // it drains itself where no shell is mounted, so a routed page and a till are
+  // covered by the same registration. `Select` and `FilterBar` have always been
+  // on it; `Tooltip` moved to it in 4.30.1 and `DropdownMenu` in 4.54.0 — this
+  // is the same rule, and the focus-restore below is the one this file already
+  // credited DropdownMenu for.
+  useEffect(() => {
+    if (!open) return;
+    return registerModalEscapeInterceptor(event => {
+      if (event.key !== 'Escape') return false;
       setOpen(false);
       // Focus goes back to the trigger. Closing without it unmounts the focused
       // cell, focus falls to <body>, and the next Tab restarts from the top of
-      // the document — the same rule DropdownMenu follows.
+      // the document.
       triggerRef.current?.focus();
-    };
-    document.addEventListener('pointerdown', onPointerDown, true);
-    document.addEventListener('keydown', onKeyDown, true);
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown, true);
-      document.removeEventListener('keydown', onKeyDown, true);
-    };
+      return true;
+    });
   }, [open]);
 
   if (native) {
