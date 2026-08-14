@@ -228,14 +228,28 @@ test('a click INSIDE the panel does not close it', () => {
   unmount();
 });
 
-test('a dismissible dialog offers a visible way out; a blocking one does not', () => {
-  // Escape and the backdrop both work now, but neither is on screen. `blocking`
-  // is the opt-out, for the dialogs that must be answered rather than left.
-  const open = mount(<Dialog open onClose={() => {}} title="Larger image">body</Dialog>);
+test('a dialog with no actions of its own offers a visible way out', () => {
+  // Escape and the backdrop both work now, but neither is on screen — a dialog
+  // whose body is just an image could be left only by a shortcut nothing
+  // announces.
+  const view = mount(<Dialog open onClose={() => {}} title="Larger image">body</Dialog>);
   assert.ok(document.querySelector('[aria-label="Close"]'), 'a way out you can see');
-  open.unmount();
+  view.unmount();
+});
+
+test('a dialog that already offers choices does not add a nameless third', () => {
+  // A confirm gives two labelled ways out. An unlabelled cross beside them says
+  // nothing about which it means, which is worst on the decision where it
+  // matters most — and it puts a stop in the middle of that dialog's Tab cycle.
+  const withFooter = mount(
+    <Dialog open onClose={() => {}} title="Discard changes?" footer={<button type="button">Keep Editing</button>}>
+      body
+    </Dialog>,
+  );
+  assert.equal(document.querySelector('[aria-label="Close"]'), null);
+  withFooter.unmount();
 
   const blocking = mount(<Dialog open blocking onClose={() => {}} title="Confirm">body</Dialog>);
-  assert.equal(document.querySelector('[aria-label="Close"]'), null);
+  assert.equal(document.querySelector('[aria-label="Close"]'), null, 'blocking opts out too');
   blocking.unmount();
 });

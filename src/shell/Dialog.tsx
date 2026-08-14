@@ -107,15 +107,21 @@ export default function Dialog({
           {title && <h2 className="pr-8 text-base font-semibold text-gray-900">{title}</h2>}
           {children && <div id={bodyId} className="mt-2 text-sm text-gray-600">{children}</div>}
           {footer && <div className="mt-6 flex justify-end gap-3">{footer}</div>}
-          {/* A way out that is visible. Escape and the backdrop both work, but
-              neither is on screen, and `blocking` exists for the dialogs that
-              must be answered rather than left.
+          {/* A way out that is visible, for a dialog that offers none of its
+              own. Escape and the backdrop both work, but neither is on screen,
+              so a dialog whose body is just an image could be left only by a
+              keyboard shortcut nothing announces.
 
-              LAST in the DOM though it is drawn top-right: put first, it became
-              the dialog's first tab stop and the first button a focus trap
-              finds, which on a confirm shadows the actual choice — a delete
-              dialog offered "close" before it offered Cancel. */}
-          {!blocking && (
+              NOT when there is a footer. A confirm already offers two labelled
+              choices, and an unlabelled cross beside "Discard" and "Keep
+              Editing" is a third exit that says nothing about which one it
+              means — worse on the decision where it matters most. It also put
+              a stop in the middle of that dialog's Tab cycle, which is the
+              thing the browser test guards.
+
+              LAST in the DOM though drawn top-right: first, it became the
+              dialog's first tab stop and the first button a focus trap finds. */}
+          {!blocking && !footer && (
             <button
               type="button"
               onClick={onClose}

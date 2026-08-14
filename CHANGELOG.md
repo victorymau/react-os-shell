@@ -22,9 +22,12 @@ All notable changes to this project will be documented in this file. The format 
 
   The backdrop dismissal moved to the layer that actually receives the click, and
   a close button sits in the corner. `blocking` opts out of both, for the dialogs
-  that must be answered. The button is LAST in the DOM though drawn top-right:
-  first, it became the dialog's first tab stop and shadowed the real choice — a
-  delete confirmation offered "close" before it offered Cancel.
+  that must be answered, and so does having a `footer`: a confirm already gives
+  two labelled ways out, and an unlabelled cross beside "Discard" and "Keep
+  Editing" is a third exit that says nothing about which it means — worst on the
+  decision where it matters most. The button is LAST in the DOM though drawn
+  top-right: first, it became the dialog's first tab stop and shadowed the real
+  choice.
 
 - **A spec that fails no longer costs the file's timeout.** A React root keeps the
   event loop alive, so a test whose assertion threw before its own `unmount()` did
