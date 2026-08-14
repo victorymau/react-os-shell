@@ -24,8 +24,10 @@
  * local constructor. `Calendar` and `DateRangePicker` follow the same rule.
  */
 import { forwardRef, useEffect, useId, useRef, useState, type InputHTMLAttributes } from 'react';
+import { createPortal } from 'react-dom';
 
 import Calendar from './Calendar';
+import { useDropdownPosition } from './dropdownPosition';
 import { toISODate } from './DateRangePicker';
 import { inputClasses, type InputSize } from './styles';
 
@@ -111,6 +113,12 @@ const DatePicker = forwardRef<HTMLInputElement, DatePickerProps>(function DatePi
   const wrapRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelId = useId();
+  // The kit's shared placement rather than a local `absolute left-0`: it flips
+  // above when there is no room below, right-aligns when the panel would run
+  // off the right edge, and tracks a trigger that moves. A calendar is 288px
+  // wide and a date field is often the last control in a filter row, which is
+  // exactly where a left-anchored popover leaves half the month off screen.
+  const pos = useDropdownPosition(triggerRef, open);
 
   useEffect(() => {
     if (!open) return;
@@ -184,12 +192,18 @@ const DatePicker = forwardRef<HTMLInputElement, DatePickerProps>(function DatePi
         </svg>
       </button>
 
-      {open && (
+      {open && createPortal(
         <div
           id={panelId}
           role="dialog"
           aria-label={ariaLabel ?? 'Choose a date'}
-          className="absolute left-0 z-50 mt-1 w-72 rounded-xl border border-gray-200 bg-white p-3 shadow-lg"
+          className="fixed z-[400] w-72 rounded-xl border border-gray-200 bg-white p-3 shadow-lg"
+          style={{
+            left: pos?.left, right: pos?.right, top: pos?.top, bottom: pos?.bottom,
+            // Hidden for the first paint until the layout effect measures the
+            // trigger, so the panel never flashes at (0,0).
+            visibility: pos ? undefined : 'hidden',
+          }}
         >
           <Calendar
             value={current || null}
@@ -218,7 +232,8 @@ const DatePicker = forwardRef<HTMLInputElement, DatePickerProps>(function DatePi
               Today
             </button>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

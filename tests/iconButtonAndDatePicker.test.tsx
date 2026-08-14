@@ -221,6 +221,10 @@ test('DatePicker: a cleared field is reported as no date', () => {
  * is that the change did not cost the two things the native control gave away
  * for free — a value that still posts in a plain form, and a date a screen
  * reader can read without guessing the continent.
+ *
+ * Panel queries go to the DOCUMENT rather than the render host: the popover is
+ * portalled to <body> so the kit's shared placement can position it against the
+ * viewport, which leaves only the trigger inside `host`.
  */
 
 test('DatePicker: the trigger says the date in words, not in digits', () => {
@@ -231,7 +235,7 @@ test('DatePicker: the trigger says the date in words, not in digits', () => {
   assert.match(trigger.textContent ?? '', /Select a date/, 'and it says so when empty');
 
   act(() => { trigger.click(); });
-  const grid = host.querySelector('[role="grid"]')!;
+  const grid = document.querySelector('[role="grid"]')!;
   const today = grid.querySelector<HTMLButtonElement>('[aria-current="date"]')!;
   const spoken = today.getAttribute('aria-label')!;
   act(() => { today.click(); });
@@ -245,10 +249,10 @@ test('DatePicker: the trigger points at the panel it opens', () => {
   const trigger = host.querySelector('button')!;
   assert.equal(trigger.getAttribute('aria-haspopup'), 'dialog');
   assert.equal(trigger.getAttribute('aria-expanded'), 'false');
-  assert.equal(host.querySelector('[role="dialog"]'), null);
+  assert.equal(document.querySelector('[role="dialog"]'), null);
 
   act(() => { trigger.click(); });
-  const panel = host.querySelector('[role="dialog"]')!;
+  const panel = document.querySelector('[role="dialog"]')!;
   assert.ok(panel);
   assert.equal(host.querySelector('button')!.getAttribute('aria-expanded'), 'true');
   assert.equal(host.querySelector('button')!.getAttribute('aria-controls'), panel.id);
@@ -258,22 +262,22 @@ test('DatePicker: the trigger points at the panel it opens', () => {
 test('DatePicker: choosing a day reports LOCAL midnight and closes', () => {
   const { host, reported, unmount } = mount();
   act(() => { host.querySelector('button')!.click(); });
-  const cell = host.querySelector<HTMLButtonElement>('[aria-current="date"]')!;
+  const cell = document.querySelector<HTMLButtonElement>('[aria-current="date"]')!;
   act(() => { cell.click(); });
 
   const got = reported.at(-1);
   assert.ok(got instanceof Date);
   assert.equal(got.getHours(), 0, 'local midnight, not a UTC instant');
-  assert.equal(host.querySelector('[role="dialog"]'), null, 'and the panel closes');
+  assert.equal(document.querySelector('[role="dialog"]'), null, 'and the panel closes');
   unmount();
 });
 
 test('DatePicker: Clear reports no date', () => {
   const { host, reported, unmount } = mount();
   act(() => { host.querySelector('button')!.click(); });
-  act(() => { host.querySelector<HTMLButtonElement>('[aria-current="date"]')!.click(); });
+  act(() => { document.querySelector<HTMLButtonElement>('[aria-current="date"]')!.click(); });
   act(() => { host.querySelector('button')!.click(); });
-  const clear = [...host.querySelectorAll('button')].find(b => b.textContent === 'Clear')!;
+  const clear = [...document.querySelectorAll('button')].find(b => b.textContent === 'Clear')!;
   act(() => { clear.click(); });
 
   assert.equal(reported.at(-1), null);
