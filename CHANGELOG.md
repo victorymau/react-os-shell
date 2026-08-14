@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## 4.67.0
+
+- **A side `Drawer` is full width on a phone**, its asked-for width from the `sm`
+  breakpoint up. A 320px drawer on a 375px screen left a 55px strip of scrim — too
+  narrow to aim at, too wide to read as an edge — and made the panel look like a
+  desktop rail that had been squeezed rather than a sheet built for the screen.
+
+  The width moved from an inline style to a class to make that possible: an inline
+  width beats every `sm:` variant, so the responsive step could never have taken.
+  The classes are written out rather than interpolated, because Tailwind emits a
+  utility only when it has seen the literal string.
+
+- **A spec that fails no longer costs the file's timeout.** A React root keeps the
+  event loop alive, so a test whose assertion threw before its own `unmount()` did
+  not merely fail — the file stopped exiting, node waited out the per-file timeout,
+  and reported "the file timed out" with the actual assertion nowhere in the
+  output. Measured on `drawer.test.tsx`: 82 seconds and no failure named, against
+  1.4ms and a named failure once the unmount was guaranteed.
+
+  `tests/dom.ts` now tracks every root it hands out and unmounts the survivors in
+  an `afterEach`, so no individual spec has to remember.
+
 ## 4.63.0
 
 - **`Layout` takes `branding`** — `{ productName, logo, tagline }`, the

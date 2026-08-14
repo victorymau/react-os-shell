@@ -38,6 +38,18 @@ export interface DrawerProps {
 // Avatar and Skeleton size themselves this way.
 const SIZE_PX: Record<DrawerSize, number> = { sm: 320, md: 448, lg: 640 };
 
+/**
+ * The same widths as classes, written out rather than interpolated: Tailwind
+ * emits a utility only when it has SEEN the literal string in a scanned file,
+ * so `sm:w-[${n}px]` produces no rule at all and every drawer would silently
+ * stay full width.
+ */
+const SIZE_CLASS: Record<DrawerSize, string> = {
+  sm: 'sm:w-[320px]',
+  md: 'sm:w-[448px]',
+  lg: 'sm:w-[640px]',
+};
+
 const SIDE_POSITION: Record<DrawerSide, string> = {
   right: 'inset-y-0 right-0',
   left: 'inset-y-0 left-0',
@@ -66,9 +78,9 @@ export default function Drawer({
   if (!open) return null;
 
   const isBottom = side === 'bottom';
-  const panelStyle = isBottom
-    ? { maxHeight: '85vh' }
-    : { width: SIZE_PX[size], maxWidth: '100vw' };
+  // A side drawer's width is a CLASS, not an inline style: an inline width
+  // beats every `sm:` variant, so the responsive step could never take.
+  const panelStyle = isBottom ? { maxHeight: '85vh' } : undefined;
 
   return (
     <div className="fixed inset-0 z-[9999]" role="presentation">
@@ -84,6 +96,12 @@ export default function Drawer({
         style={panelStyle}
         className={[
           'fixed flex flex-col bg-white shadow-xl',
+          // Full width on a phone, the asked-for width from `sm` up. A 320px
+          // drawer on a 375px screen leaves a 55px strip of scrim: too narrow
+          // to aim at, too wide to read as an edge, and it makes the panel look
+          // like a desktop rail that was squeezed rather than a sheet built for
+          // the screen it is on.
+          isBottom ? '' : `w-full max-w-full ${SIZE_CLASS[size]}`,
           SIDE_POSITION[side],
           isBottom ? 'rounded-t-xl' : '',
           className,

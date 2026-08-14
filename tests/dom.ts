@@ -36,6 +36,7 @@
  * Node's test runner gives each spec file its own process, so these globals
  * never leak between specs.
  */
+import { afterEach } from 'node:test';
 import { JSDOM } from 'jsdom';
 
 const jsdom = new JSDOM('<!doctype html><html><body></body></html>', {
@@ -93,7 +94,42 @@ define('IS_REACT_ACT_ENVIRONMENT', true);
 
 // Loaded now, not at the top: react-dom reads the globals above once, as it
 // evaluates, to decide whether it is in a browser.
-export const { createRoot } = await import('react-dom/client');
+const { createRoot: reactCreateRoot } = await import('react-dom/client');
+
+/**
+ * Every root handed out here, so one left mounted cannot outlive its test.
+ *
+ * It matters more than tidiness. A React root keeps the event loop alive, so a
+ * spec whose assertion throws BEFORE its own `unmount()` does not merely fail —
+ * the file stops exiting, node waits out the whole per-file timeout, and then
+ * reports "the file timed out" with the actual assertion nowhere in the output.
+ * Eighty seconds, and the one fact you needed is gone.
+ *
+ * Measured on `drawer.test.tsx`: an assertion made to fail with the unmount
+ * skipped took 82s and printed no failure; the same assertion with the unmount
+ * guaranteed took 1.4ms and named itself.
+ */
+const liveRoots = new Set<{ unmount: () => void }>();
+
+export const createRoot: typeof reactCreateRoot = (container, options) => {
+  const root = reactCreateRoot(container, options);
+  liveRoots.add(root);
+  const unmount = root.unmount.bind(root);
+  root.unmount = () => { liveRoots.delete(root); unmount(); };
+  return root;
+};
+
+// Registered at module scope, which is per SPEC FILE: the runner bundles this
+// module into each one and gives each its own process.
+afterEach(() => {
+  if (liveRoots.size === 0) return;
+  for (const root of [...liveRoots]) {
+    // A root whose container is already gone throws on unmount; the point is
+    // that nothing survives the test, not that every teardown is graceful.
+    try { act(() => { root.unmount(); }); } catch { /* already torn down */ }
+  }
+  liveRoots.clear();
+});
 
 // `React.act` from 18.3 on; the react-dom/test-utils copy is where it lived
 // before that, and warns about itself on newer versions. The package supports

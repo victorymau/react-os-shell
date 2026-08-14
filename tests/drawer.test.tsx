@@ -74,11 +74,17 @@ test('a Drawer opened over a Dialog takes Escape first', () => {
   unmount();
 });
 
-test('sizes are inline px, where arbitrary values actually work', () => {
-  // `w-[28rem]` produces no style in the compiled stylesheet.
+test('a side drawer is full width on a phone, its own width above that', () => {
+  // Was an inline px width, on the reasoning that `w-[28rem]` produces no rule
+  // in the compiled stylesheet. True, and it also made the width unresponsive:
+  // an inline style beats every `sm:` variant. Arbitrary values in a STATIC
+  // class work — what does not is building one by interpolation, which Tailwind
+  // never sees and so never emits.
   const { unmount } = mount(<Drawer open size="md" onClose={() => {}}>body</Drawer>);
   const panel = document.querySelector('[role="dialog"]') as HTMLElement;
-  assert.equal(panel.style.width, '448px');
+  assert.equal(panel.style.width, '', 'no inline width to beat the variant');
+  assert.match(panel.className, /(^|\s)w-full(\s|$)/, 'the phone case is the default');
+  assert.match(panel.className, /sm:w-\[448px\]/, 'and md is 448 from sm up');
   unmount();
 });
 
