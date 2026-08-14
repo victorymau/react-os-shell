@@ -14,6 +14,18 @@ All notable changes to this project will be documented in this file. The format 
   The classes are written out rather than interpolated, because Tailwind emits a
   utility only when it has seen the literal string.
 
+- **`Dialog` can be dismissed, and shows it.** Clicking away did nothing: the
+  scrim carried the handler and the centring layer sat on top of it covering the
+  same viewport, so every click outside landed on the layer and reached nothing.
+  And there was no close button at all — a dialog whose body was, say, an image
+  could be left only with Escape, which is on no screen.
+
+  The backdrop dismissal moved to the layer that actually receives the click, and
+  a close button sits in the corner. `blocking` opts out of both, for the dialogs
+  that must be answered. The button is LAST in the DOM though drawn top-right:
+  first, it became the dialog's first tab stop and shadowed the real choice — a
+  delete confirmation offered "close" before it offered Cancel.
+
 - **A spec that fails no longer costs the file's timeout.** A React root keeps the
   event loop alive, so a test whose assertion threw before its own `unmount()` did
   not merely fail — the file stopped exiting, node waited out the per-file timeout,

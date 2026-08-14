@@ -82,7 +82,16 @@ export default function Dialog({
         onClick={blocking ? undefined : onClose}
         aria-hidden="true"
       />
-      <div className="fixed inset-0 flex items-center justify-center p-4">
+      {/* The scrim above covers the viewport, and so does this — which sits on
+          top of it. A click "outside the dialog" therefore landed HERE and
+          never reached the scrim's handler, so clicking away never dismissed
+          anything and a dialog with no buttons could only be left with Escape.
+          The dismissal lives on this layer as well, gated on the target being
+          the layer itself so a click inside the panel does not bubble into it. */}
+      <div
+        className="fixed inset-0 flex items-center justify-center p-4"
+        onClick={blocking ? undefined : (e => { if (e.target === e.currentTarget) onClose(); })}
+      >
         <div
           ref={panelRef}
           role="dialog"
@@ -95,9 +104,29 @@ export default function Dialog({
           aria-describedby={children ? bodyId : undefined}
           className={`relative w-full ${SIZES[size]} rounded-lg bg-white p-6 shadow-xl ${className}`.trim()}
         >
-          {title && <h2 className="text-base font-semibold text-gray-900">{title}</h2>}
+          {title && <h2 className="pr-8 text-base font-semibold text-gray-900">{title}</h2>}
           {children && <div id={bodyId} className="mt-2 text-sm text-gray-600">{children}</div>}
           {footer && <div className="mt-6 flex justify-end gap-3">{footer}</div>}
+          {/* A way out that is visible. Escape and the backdrop both work, but
+              neither is on screen, and `blocking` exists for the dialogs that
+              must be answered rather than left.
+
+              LAST in the DOM though it is drawn top-right: put first, it became
+              the dialog's first tab stop and the first button a focus trap
+              finds, which on a confirm shadows the actual choice — a delete
+              dialog offered "close" before it offered Cancel. */}
+          {!blocking && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="absolute right-3 top-3 rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+            >
+              <svg className="h-5 w-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <path d="M6 6l8 8M14 6l-8 8" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
     </div>

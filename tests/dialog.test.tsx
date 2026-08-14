@@ -37,7 +37,14 @@ function mount(ui: React.ReactElement) {
  * of the provider's dialogs mounted at all times.
  */
 const openDialog = () => document.querySelector('[role="dialog"]') as HTMLElement;
-const buttons = () => Array.from(openDialog().querySelectorAll('button'));
+/**
+ * The dialog's own ACTIONS, which is what these specs are about — not every
+ * button inside it. The close affordance in the corner is a button too, and
+ * scoping to the footer keeps "the confirming action is last" a claim about
+ * the choice the user is being offered rather than about DOM order in general.
+ */
+const buttons = () =>
+  Array.from((openDialog().querySelector('.justify-end') ?? openDialog()).querySelectorAll('button'));
 const byLabel = (label: string) => buttons().find(b => b.textContent === label)!;
 
 /**
@@ -193,4 +200,42 @@ test('a second confirm queues rather than being dropped', async () => {
   act(() => { byLabel('OK').click(); });
   assert.equal(await second, true);
   unmount();
+});
+
+test('a click away from the panel closes it', () => {
+  // The scrim carried the handler and the centring layer sat on top of it,
+  // covering the same viewport — so every click "outside" landed on the layer
+  // and reached nothing. A dialog with no buttons of its own could be left
+  // only with Escape, and nothing on screen said so.
+  let closed = 0;
+  const { unmount } = mount(<Dialog open onClose={() => { closed += 1; }} title="Larger image">body</Dialog>);
+  const layer = document.querySelector('.fixed.inset-0.flex') as HTMLElement;
+
+  act(() => { layer.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); });
+  assert.equal(closed, 1);
+  unmount();
+});
+
+test('a click INSIDE the panel does not close it', () => {
+  // The same handler sees clicks that bubble up from the body, so it has to
+  // tell "the backdrop was clicked" from "something in the dialog was".
+  let closed = 0;
+  const { unmount } = mount(<Dialog open onClose={() => { closed += 1; }} title="Larger image">body</Dialog>);
+  const panel = document.querySelector('[role="dialog"]') as HTMLElement;
+
+  act(() => { panel.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); });
+  assert.equal(closed, 0);
+  unmount();
+});
+
+test('a dismissible dialog offers a visible way out; a blocking one does not', () => {
+  // Escape and the backdrop both work now, but neither is on screen. `blocking`
+  // is the opt-out, for the dialogs that must be answered rather than left.
+  const open = mount(<Dialog open onClose={() => {}} title="Larger image">body</Dialog>);
+  assert.ok(document.querySelector('[aria-label="Close"]'), 'a way out you can see');
+  open.unmount();
+
+  const blocking = mount(<Dialog open blocking onClose={() => {}} title="Confirm">body</Dialog>);
+  assert.equal(document.querySelector('[aria-label="Close"]'), null);
+  blocking.unmount();
 });
