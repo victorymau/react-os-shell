@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file. The format 
 
 ## 4.67.0
 
+- **A dropdown opened inside a dialog is no longer hidden behind it.** `Select`,
+  `SearchableSelect` and `TagInput` all portal their menu to `<body>` at
+  `z-[400]`, and the modal layer is `z-[9999]` — so a select inside a Dialog or
+  Drawer, which is where form controls usually are, opened its list behind the
+  thing that owns it. Nothing looked broken; the options simply were not there.
+
+  All three now open above the modal layer, and a spec pins the ordering.
+
 - **A side `Drawer` is full width on a phone**, its asked-for width from the `sm`
   breakpoint up. A 320px drawer on a 375px screen left a 55px strip of scrim — too
   narrow to aim at, too wide to read as an edge — and made the panel look like a

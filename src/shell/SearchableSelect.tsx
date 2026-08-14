@@ -239,7 +239,17 @@ export default function SearchableSelect({
       {open && createPortal(
         <div
           ref={menuRef}
-          className="fixed z-[400] rounded-2xl overflow-hidden"
+          // The dropdown must sit ABOVE the modal layer, not below it.
+          //
+          // It was z-[400], under Dialog and Drawer at z-[9999] — so a Select
+          // inside a dialog, which is where form controls usually are, opened
+          // its menu behind the dialog that owns it. Nothing looked broken;
+          // the list simply was not there.
+          //
+          // Above the toasts too, deliberately: a menu is open only while the
+          // user is holding it open, and a notification arriving underneath it
+          // is better than one that covers what they are choosing from.
+          className="fixed z-[10000] rounded-2xl overflow-hidden"
           style={{
             left: menuPos?.left,
             right: menuPos?.right,

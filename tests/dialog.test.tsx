@@ -1,6 +1,8 @@
 import './dom';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { createRoot, act } from './dom';
 import Dialog from '../src/shell/Dialog';
 import { ConfirmProvider, confirm, confirmDestructive } from '../src/shell/ConfirmDialog';
@@ -252,4 +254,30 @@ test('a dialog that already offers choices does not add a nameless third', () =>
   const blocking = mount(<Dialog open blocking onClose={() => {}} title="Confirm">body</Dialog>);
   assert.equal(document.querySelector('[aria-label="Close"]'), null, 'blocking opts out too');
   blocking.unmount();
+});
+
+test('a dropdown opened inside a dialog renders above it', () => {
+  // The three portalled menus were z-[400] and the modal layer is z-[9999], so
+  // a Select inside a Dialog — which is where form controls usually are — put
+  // its list behind the dialog that owns it. Nothing looked broken; the options
+  // simply were not there.
+  //
+  // Read from the source rather than from a render: the menu portals to <body>
+  // and jsdom computes no stacking, so what can be checked is the number each
+  // component ships, which is the thing that was wrong.
+  const root = process.env.REPO_ROOT ?? resolve(import.meta.dirname, '..');
+  const layerOf = (file: string, marker: RegExp) => {
+    const src = readFileSync(join(root, 'src', file), 'utf-8');
+    const line = src.split('\n').find(l => marker.test(l)) ?? '';
+    return Number(/z-\[(\d+)\]/.exec(line)?.[1] ?? NaN);
+  };
+
+  const modal = layerOf('shell/Dialog.tsx', /fixed inset-0 z-\[/);
+  for (const [file, marker] of [
+    ['forms/Select.tsx', /fixed z-\[\d+\] overflow-y-auto/],
+    ['shell/SearchableSelect.tsx', /fixed z-\[\d+\] rounded-2xl/],
+    ['forms/TagInput.tsx', /fixed z-\[\d+\] rounded-2xl/],
+  ] as const) {
+    assert.ok(layerOf(file, marker) > modal, `${file} must open above the modal layer (${modal})`);
+  }
 });
