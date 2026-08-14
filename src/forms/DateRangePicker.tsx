@@ -19,6 +19,8 @@
  * edge — see `clipBounds` below and the alignment effect in the component.
  */
 import { useState, useRef, useCallback, useLayoutEffect } from 'react';
+
+import Calendar from './Calendar';
 import { glassStyle } from '../utils/glass';
 import useClickOutside from '../hooks/useClickOutside';
 
@@ -46,11 +48,10 @@ export interface DateRangePickerProps {
 
 const PRESET_LABELS = ['Last 2 Weeks', 'Last Month', 'Last 3 Months', 'Last 6 Months', 'Last 12 Months'];
 
-const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /** The year grid pages in 12s so it reuses the month grid's 3x4 shape. */
-const YEARS_PER_PAGE = 12;
-const yearPageStart = (y: number) => Math.floor(y / YEARS_PER_PAGE) * YEARS_PER_PAGE;
+/** `YYYY-MM` for Calendar's controlled view. */
+const monthKeyOf = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -126,14 +127,10 @@ export default function DateRangePicker({
   const [align, setAlign] = useState<'left' | 'right'>('left');
 
   const now = new Date();
-  const [month, setMonth] = useState(from ? parseDate(from).getMonth() : now.getMonth());
-  const [year, setYear] = useState(from ? parseDate(from).getFullYear() : now.getFullYear());
-  // Which panel the calendar column is showing. Days is the leaf; the header
-  // label drills up to months, then years.
-  const [view, setView] = useState<'days' | 'months' | 'years'>('days');
-  // Paging the year grid must not mutate `year` — backing out of the panel
-  // without picking would otherwise silently move the day calendar.
-  const [yearPage, setYearPage] = useState(() => yearPageStart(year));
+  // The grid, the month/year panels, the paging and the keyboard all live in
+  // `Calendar` now. What is left here is which month it is showing, so a preset
+  // can move it — and the range state, which is this component's actual job.
+  const [viewMonth, setViewMonth] = useState(() => monthKeyOf(from ? parseDate(from) : now));
 
   const displayDate = (s: string) => (s ? formatDisplay(s) : '');
 
@@ -182,11 +179,7 @@ export default function DateRangePicker({
     setTempFrom(from);
     setTempTo(to);
     setActivePreset(null);
-    const anchor = from ? parseDate(from) : now;
-    setMonth(anchor.getMonth());
-    setYear(anchor.getFullYear());
-    setYearPage(yearPageStart(anchor.getFullYear()));
-    setView('days');
+    setViewMonth(monthKeyOf(from ? parseDate(from) : now));
     setOpen(true);
   };
 
@@ -219,10 +212,7 @@ export default function DateRangePicker({
     setTempFrom(toISODate(start));
     setTempTo(toISODate(end));
     setActivePreset(label);
-    setMonth(start.getMonth());
-    setYear(start.getFullYear());
-    setYearPage(yearPageStart(start.getFullYear()));
-    setView('days');
+    setViewMonth(monthKeyOf(start));
   };
 
   const handleCalendarSelect = (date: string) => {
@@ -248,60 +238,6 @@ export default function DateRangePicker({
   const handleClear = () => {
     onChange('', '');
     setOpen(false);
-  };
-
-  const changeMonth = (delta: number) => {
-    let m = month + delta, y = year;
-    if (m < 0) { m = 11; y--; } else if (m > 11) { m = 0; y++; }
-    setMonth(m); setYear(y);
-  };
-
-  // The arrows step whatever the current panel is a grid of.
-  const handleStep = (delta: number) => {
-    if (view === 'days') changeMonth(delta);
-    else if (view === 'months') setYear(year + delta);
-    else setYearPage(yearPage + delta * YEARS_PER_PAGE);
-  };
-
-  const selectMonth = (m: number) => {
-    setMonth(m);
-    setView('days');
-  };
-
-  const selectYear = (y: number) => {
-    setYear(y);
-    setView('months');
-  };
-
-  const openYears = () => {
-    setYearPage(yearPageStart(year));
-    setView('years');
-  };
-
-  // Calendar cells
-  const firstDay = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const prevDays = new Date(year, month, 0).getDate();
-  const monthName = new Date(year, month).toLocaleString('default', { month: 'long' });
-
-  const cells: { day: number; current: boolean; date: string }[] = [];
-  for (let i = firstDay - 1; i >= 0; i--) {
-    const d = new Date(year, month - 1, prevDays - i);
-    cells.push({ day: prevDays - i, current: false, date: toISODate(d) });
-  }
-  for (let d = 1; d <= daysInMonth; d++) {
-    cells.push({ day: d, current: true, date: toISODate(new Date(year, month, d)) });
-  }
-  const remaining = 42 - cells.length;
-  for (let d = 1; d <= remaining; d++) {
-    cells.push({ day: d, current: false, date: toISODate(new Date(year, month + 1, d)) });
-  }
-
-  const isInRange = (date: string) => {
-    if (!tempFrom || !tempTo) return false;
-    const s = tempFrom < tempTo ? tempFrom : tempTo;
-    const e = tempFrom < tempTo ? tempTo : tempFrom;
-    return date > s && date < e;
   };
 
   const displayText = from && to
@@ -351,102 +287,23 @@ export default function DateRangePicker({
           </div>
 
           <div className="flex gap-4">
-            {/* Single Calendar */}
+            {/* The grid, its keyboard model and its ARIA all come from Calendar,
+                which is also what DatePicker draws — so a range and a single
+                date look and behave like the same control. This used to be 95
+                lines of hand-built cells here with no arrow keys and a day
+                whose accessible name was its number. */}
             <div className="w-64">
-              <div className="flex items-center justify-between mb-2 px-1">
-                <button type="button" onClick={() => handleStep(-1)} aria-label="Previous" className="p-1 rounded-full hover:bg-gray-100 text-gray-600">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
-                </button>
-                {/* Month and year are separately clickable, so jumping to a far
-                    year is one click rather than drilling month -> year. */}
-                <div className="flex items-center gap-1 text-sm font-semibold text-gray-800">
-                  {view === 'days' && (
-                    <button type="button" onClick={() => setView('months')}
-                      className="px-1.5 py-0.5 rounded-md hover:bg-gray-100 transition-colors">
-                      {monthName}
-                    </button>
-                  )}
-                  {view === 'years' ? (
-                    <span className="px-1.5 py-0.5">{yearPage} – {yearPage + YEARS_PER_PAGE - 1}</span>
-                  ) : (
-                    <button type="button" onClick={openYears}
-                      className="px-1.5 py-0.5 rounded-md hover:bg-gray-100 transition-colors">
-                      {year}
-                    </button>
-                  )}
-                </div>
-                <button type="button" onClick={() => handleStep(1)} aria-label="Next" className="p-1 rounded-full hover:bg-gray-100 text-gray-600">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
-                </button>
-              </div>
-              {/* Fixed height keeps the popup from resizing as panels swap. */}
-              <div className="min-h-[13.75rem]">
-                {view === 'days' && (
-                  <>
-                    <div className="grid grid-cols-7 text-center text-xs font-medium text-gray-500 mb-1">
-                      {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => <div key={d} className="py-1">{d}</div>)}
-                    </div>
-                    <div className="grid grid-cols-7 text-center text-sm">
-                      {cells.map((c, i) => {
-                        const isStart = c.date === tempFrom;
-                        const isEnd = c.date === tempTo;
-                        const isSelected = isStart || isEnd;
-                        const inRange = isInRange(c.date);
-                        return (
-                          <button key={i} type="button" onClick={() => handleCalendarSelect(c.date)}
-                            className={`py-1.5 rounded-md transition-colors ${
-                              !c.current ? 'text-gray-300' :
-                              isSelected ? 'bg-blue-600 text-white font-semibold' :
-                              inRange ? 'bg-blue-100 text-blue-800' :
-                              'text-gray-700 hover:bg-gray-100'
-                            }`}>
-                            {c.day}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </>
-                )}
-
-                {view === 'months' && (
-                  <div className="grid grid-cols-3 gap-1 text-center text-sm">
-                    {MONTH_NAMES.map((name, m) => {
-                      const isCurrent = m === month;
-                      const isThisMonth = m === now.getMonth() && year === now.getFullYear();
-                      return (
-                        <button key={name} type="button" onClick={() => selectMonth(m)}
-                          className={`py-4 rounded-md transition-colors ${
-                            isCurrent ? 'bg-blue-600 text-white font-semibold' :
-                            isThisMonth ? 'text-blue-600 font-medium hover:bg-gray-100' :
-                            'text-gray-700 hover:bg-gray-100'
-                          }`}>
-                          {name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {view === 'years' && (
-                  <div className="grid grid-cols-3 gap-1 text-center text-sm">
-                    {Array.from({ length: YEARS_PER_PAGE }, (_, i) => yearPage + i).map(y => {
-                      const isCurrent = y === year;
-                      const isThisYear = y === now.getFullYear();
-                      return (
-                        <button key={y} type="button" onClick={() => selectYear(y)}
-                          className={`py-4 rounded-md transition-colors ${
-                            isCurrent ? 'bg-blue-600 text-white font-semibold' :
-                            isThisYear ? 'text-blue-600 font-medium hover:bg-gray-100' :
-                            'text-gray-700 hover:bg-gray-100'
-                          }`}>
-                          {y}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+              <Calendar
+                mode="range"
+                value={tempFrom || null}
+                endValue={tempTo || null}
+                month={viewMonth}
+                onMonthChange={setViewMonth}
+                onSelect={handleCalendarSelect}
+                aria-label="Date range"
+              />
             </div>
+
 
             {/* Presets */}
             <div className="border-l border-gray-200 pl-4 flex flex-col gap-1 min-w-[130px]">

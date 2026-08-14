@@ -30,13 +30,18 @@ export interface DrawerProps {
   /** Escape and the scrim do nothing. See Dialog's note before reaching for it. */
   blocking?: boolean;
   initialFocus?: RefObject<HTMLElement | null>;
+  /**
+   * Names the drawer when it carries no visible `title`. A dialog without an
+   * accessible name is announced as just "dialog", which tells a screen reader
+   * user nothing about what opened — and a navigation drawer, whose content is
+   * its own heading, is exactly the case that has no title to point at.
+   *
+   * Ignored when `title` is set: a visible label always wins over a parallel
+   * invisible one, or the two drift.
+   */
+  'aria-label'?: string;
   className?: string;
 }
-
-// Px, applied inline. `w-[28rem]` is an arbitrary value and produces no style
-// in the compiled stylesheet the design-sync previews use — the same reason
-// Avatar and Skeleton size themselves this way.
-const SIZE_PX: Record<DrawerSize, number> = { sm: 320, md: 448, lg: 640 };
 
 /**
  * The same widths as classes, written out rather than interpolated: Tailwind
@@ -56,12 +61,28 @@ const SIDE_POSITION: Record<DrawerSide, string> = {
   bottom: 'inset-x-0 bottom-0',
 };
 
+function CloseButton({ onClose }: { onClose: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClose}
+      aria-label="Close"
+      className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+    >
+      <svg className="h-5 w-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+        <path d="M6 6l8 8M14 6l-8 8" />
+      </svg>
+    </button>
+  );
+}
+
 export default function Drawer({
   open, onClose, side = 'right', size = 'md', title, footer, children,
-  blocking = false, initialFocus, className = '',
+  blocking = false, initialFocus, 'aria-label': ariaLabel, className = '',
 }: DrawerProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const bodyId = useId();
+  const titleId = useId();
 
   useFocusTrap(panelRef, open, initialFocus);
   useScrollLock(open);
@@ -89,7 +110,12 @@ export default function Drawer({
         ref={panelRef}
         role="dialog"
         aria-modal="true"
-        aria-label={typeof title === 'string' ? title : undefined}
+        // Points at the rendered heading rather than re-deriving the name from
+        // the prop: `title` is a ReactNode, so an element title — an icon beside
+        // a word, a count in a badge — used to fall through the string check and
+        // leave the drawer with no name at all.
+        aria-labelledby={title ? titleId : undefined}
+        aria-label={title ? undefined : ariaLabel}
         // Same reasoning as Dialog: the body is the description, and a screen
         // reader only reads it on open if the panel says so.
         aria-describedby={children ? bodyId : undefined}
@@ -107,22 +133,23 @@ export default function Drawer({
           className,
         ].filter(Boolean).join(' ')}
       >
-        {(title || !blocking) && (
+        {/* With a title the close button shares a header row with it. WITHOUT
+            one there is nothing to put in that row, and reserving it anyway
+            costs a bordered 48px strip of nothing at the top of the panel —
+            visible on a phone, where a navigation drawer has no title bar by
+            design and its own content is the heading. So the button floats
+            over the body instead. */}
+        {title ? (
           <div className="flex shrink-0 items-center justify-between gap-4 border-b border-gray-100 px-4 py-3">
-            {title ? <h2 className="text-base font-semibold text-gray-900">{title}</h2> : <span />}
-            {!blocking && (
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label="Close"
-                className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-              >
-                <svg className="h-5 w-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                  <path d="M6 6l8 8M14 6l-8 8" />
-                </svg>
-              </button>
-            )}
+            <h2 id={titleId} className="text-base font-semibold text-gray-900">{title}</h2>
+            {!blocking && <CloseButton onClose={onClose} />}
           </div>
+        ) : (
+          !blocking && (
+            <div className="absolute right-2 top-2 z-10">
+              <CloseButton onClose={onClose} />
+            </div>
+          )
         )}
         {/* Only the body scrolls, so the header and actions stay reachable in a
             long form — the thing a drawer is usually chosen for. */}

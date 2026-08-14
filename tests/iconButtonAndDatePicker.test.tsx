@@ -103,7 +103,9 @@ test('DatePicker: a Date is serialised from its LOCAL calendar fields', () => {
 });
 
 test('DatePicker: min and max normalise exactly as value does', () => {
-  const markup = html(<DatePicker value={null} min="2026-01-01" max={new Date(2026, 11, 31)} />);
+  // `native`, because min/max reach the platform control as attributes; the
+  // calendar path takes the same normalised strings and is covered below.
+  const markup = html(<DatePicker native value={null} min="2026-01-01" max={new Date(2026, 11, 31)} />);
   assert.match(markup, /min="2026-01-01"/);
   assert.match(markup, /max="2026-12-31"/);
 });
@@ -121,12 +123,12 @@ test('DatePicker: no value is an empty field, never the text "null"', () => {
 });
 
 test('DatePicker: touch uses the kit ladder, and md is the untouched default', () => {
-  assert.match(classOf(html(<DatePicker size="touch" />)), /h-14 px-4 text-base/);
-  assert.equal(html(<DatePicker />), html(<DatePicker size="md" />));
+  assert.match(classOf(html(<DatePicker native size="touch" />)), /h-14 px-4 text-base/);
+  assert.equal(html(<DatePicker native />), html(<DatePicker native size="md" />));
 });
 
 test('DatePicker: invalid gets the same error treatment as Input', () => {
-  assert.match(classOf(html(<DatePicker invalid />)), /border-red-300/);
+  assert.match(classOf(html(<DatePicker native invalid />)), /border-red-300/);
 });
 
 // ── DatePicker: what it hands back ────────────────────────────────────────
@@ -152,10 +154,12 @@ function setValue(input: HTMLInputElement, next: string) {
  * over '' — no change, no event, and the spec passes or fails for a reason
  * that has nothing to do with the component.
  */
-function Harness({ onReport }: { onReport: (value: Date | null) => void }) {
+function Harness({ onReport, native }: { onReport: (value: Date | null) => void; native?: boolean }) {
   const [value, setValue] = useState<Date | null>(null);
   return (
     <DatePicker
+      native={native}
+      aria-label="Delivery date"
       value={value}
       onChange={next => {
         setValue(next);
@@ -165,16 +169,17 @@ function Harness({ onReport }: { onReport: (value: Date | null) => void }) {
   );
 }
 
-function mount() {
+function mount(native = false) {
   const host = document.createElement('div');
   document.body.appendChild(host);
   const root = createRoot(host);
   const reported: (Date | null)[] = [];
   act(() => {
-    root.render(<Harness onReport={v => reported.push(v)} />);
+    root.render(<Harness native={native} onReport={v => reported.push(v)} />);
   });
   const input = host.querySelector('input') as HTMLInputElement;
   return {
+    host,
     input,
     reported,
     unmount: () => {
@@ -185,7 +190,7 @@ function mount() {
 }
 
 test('DatePicker: reports the chosen day at LOCAL midnight', () => {
-  const { input, reported, unmount } = mount();
+  const { input, reported, unmount } = mount(true);
   act(() => { setValue(input, '2026-08-11'); });
 
   const got = reported.at(-1);
@@ -200,9 +205,119 @@ test('DatePicker: reports the chosen day at LOCAL midnight', () => {
 });
 
 test('DatePicker: a cleared field is reported as no date', () => {
-  const { input, reported, unmount } = mount();
+  const { input, reported, unmount } = mount(true);
   act(() => { setValue(input, '2026-08-11'); });
   act(() => { setValue(input, ''); });
   assert.equal(reported.at(-1), null);
   unmount();
+});
+
+
+// ── DatePicker: the kit's own calendar ────────────────────────────────────
+
+/**
+ * The default path since the field stopped being a native `<input type="date">`.
+ * The reason it changed is in the component's docstring; what these specs hold
+ * is that the change did not cost the two things the native control gave away
+ * for free — a value that still posts in a plain form, and a date a screen
+ * reader can read without guessing the continent.
+ *
+ * Panel queries go to the DOCUMENT rather than the render host: the popover is
+ * portalled to <body> so the kit's shared placement can position it against the
+ * viewport, which leaves only the trigger inside `host`.
+ */
+
+test('DatePicker: the trigger says the date in words, not in digits', () => {
+  // "11/08/2026" is the 11th of August or the 8th of November depending on
+  // where the reader is. The written month is not ambiguous anywhere.
+  const { host, unmount } = mount();
+  const trigger = host.querySelector('button')!;
+  assert.match(trigger.textContent ?? '', /Select a date/, 'and it says so when empty');
+
+  act(() => { trigger.click(); });
+  const grid = document.querySelector('[role="grid"]')!;
+  const today = grid.querySelector<HTMLButtonElement>('[aria-current="date"]')!;
+  const spoken = today.getAttribute('aria-label')!;
+  act(() => { today.click(); });
+
+  assert.match(host.querySelector('button')!.textContent ?? '', new RegExp(spoken.replace(/(\d+) (\w+) (\d+)/, '$1 $2 $3')));
+  unmount();
+});
+
+test('DatePicker: the trigger points at the panel it opens', () => {
+  const { host, unmount } = mount();
+  const trigger = host.querySelector('button')!;
+  assert.equal(trigger.getAttribute('aria-haspopup'), 'dialog');
+  assert.equal(trigger.getAttribute('aria-expanded'), 'false');
+  assert.equal(document.querySelector('[role="dialog"]'), null);
+
+  act(() => { trigger.click(); });
+  const panel = document.querySelector('[role="dialog"]')!;
+  assert.ok(panel);
+  assert.equal(host.querySelector('button')!.getAttribute('aria-expanded'), 'true');
+  assert.equal(host.querySelector('button')!.getAttribute('aria-controls'), panel.id);
+  unmount();
+});
+
+test('DatePicker: choosing a day reports LOCAL midnight and closes', () => {
+  const { host, reported, unmount } = mount();
+  act(() => { host.querySelector('button')!.click(); });
+  const cell = document.querySelector<HTMLButtonElement>('[aria-current="date"]')!;
+  act(() => { cell.click(); });
+
+  const got = reported.at(-1);
+  assert.ok(got instanceof Date);
+  assert.equal(got.getHours(), 0, 'local midnight, not a UTC instant');
+  assert.equal(document.querySelector('[role="dialog"]'), null, 'and the panel closes');
+  unmount();
+});
+
+test('DatePicker: Clear reports no date', () => {
+  const { host, reported, unmount } = mount();
+  act(() => { host.querySelector('button')!.click(); });
+  act(() => { document.querySelector<HTMLButtonElement>('[aria-current="date"]')!.click(); });
+  act(() => { host.querySelector('button')!.click(); });
+  const clear = [...document.querySelectorAll('button')].find(b => b.textContent === 'Clear')!;
+  act(() => { clear.click(); });
+
+  assert.equal(reported.at(-1), null);
+  unmount();
+});
+
+test('DatePicker: a day survives the pointerdown that precedes its own click', () => {
+  // The specs above call .click() directly, which dispatches no pointerdown —
+  // and that is exactly what hid this. The panel is portalled to <body>, so it
+  // is not inside the wrapper the outside-click listener tests against. With
+  // only the wrapper checked, a real pointer on a DAY read as a click outside:
+  // the panel closed on pointerdown and the cell was gone before its own click
+  // event, so the calendar opened and could never be used. Nothing in the DOM
+  // said so afterwards — the panel simply was not there.
+  const { host, reported, unmount } = mount();
+  act(() => { host.querySelector('button')!.click(); });
+
+  const cell = document.querySelector<HTMLButtonElement>('[aria-current="date"]')!;
+  const win = cell.ownerDocument.defaultView as Window & typeof globalThis;
+  // A MouseEvent of type `pointerdown`: jsdom ships no PointerEvent
+  // constructor, and the listener reads the event's type and target.
+  act(() => { cell.dispatchEvent(new win.MouseEvent('pointerdown', { bubbles: true })); });
+
+  assert.ok(cell.isConnected, 'the cell must survive its own pointerdown');
+  act(() => { cell.click(); });
+  assert.ok(reported.at(-1) instanceof Date, 'and the click must still report a date');
+  unmount();
+});
+
+test('DatePicker: the value still posts in a plain form', () => {
+  // The native input carried the value into a <form> by itself. Replacing it
+  // with a button would have quietly broken every uncontrolled form using one.
+  const markup = html(<DatePicker name="delivery" value="2026-08-11" />);
+  assert.match(markup, /type="hidden"/);
+  assert.match(markup, /name="delivery"/);
+  assert.match(markup, /value="2026-08-11"/);
+});
+
+test('DatePicker: native is still one prop away', () => {
+  const markup = html(<DatePicker native value="2026-08-11" />);
+  assert.match(markup, /type="date"/);
+  assert.doesNotMatch(markup, /role="dialog"/);
 });

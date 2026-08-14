@@ -40,6 +40,13 @@ export interface DialogProps {
    * that does the irreversible thing.
    */
   initialFocus?: RefObject<HTMLElement | null>;
+  /**
+   * Names the dialog when it carries no visible `title`. Without a name it is
+   * announced as just "dialog", which tells a screen reader user nothing about
+   * what opened. Ignored when `title` is set — a visible label always wins over
+   * a parallel invisible one, or the two drift.
+   */
+  'aria-label'?: string;
   className?: string;
 }
 
@@ -50,10 +57,15 @@ const SIZES: Record<DialogSize, string> = {
 };
 
 export default function Dialog({
-  open, onClose, title, children, footer, blocking = false, size = 'md', initialFocus, className = '',
+  open, onClose, title, children, footer, blocking = false, size = 'md', initialFocus,
+  'aria-label': ariaLabel, className = '',
 }: DialogProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const bodyId = useId();
+  // One source of truth for the close control: the button and the title's
+  // gutter are the same decision, and computing it twice is how they drift.
+  const showClose = !blocking && !footer;
+  const titleId = useId();
 
   useFocusTrap(panelRef, open, initialFocus);
   useScrollLock(open);
@@ -77,11 +89,12 @@ export default function Dialog({
 
   return (
     <div className="fixed inset-0 z-[9999]" role="presentation">
-      <div
-        className="fixed inset-0 bg-black/30"
-        onClick={blocking ? undefined : onClose}
-        aria-hidden="true"
-      />
+      {/* No handler here. The dismissal layer below is also `fixed inset-0`
+          and sits on top of this, so a click in this region never reaches the
+          scrim — an onClick here would be unreachable in every case, and two
+          dismissal paths where only one can fire is how the next reader loses
+          an afternoon. */}
+      <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
       {/* The scrim above covers the viewport, and so does this — which sits on
           top of it. A click "outside the dialog" therefore landed HERE and
           never reached the scrim's handler, so clicking away never dismissed
@@ -96,7 +109,12 @@ export default function Dialog({
           ref={panelRef}
           role="dialog"
           aria-modal="true"
-          aria-label={typeof title === 'string' ? title : undefined}
+          // Points at the rendered heading rather than re-deriving the name
+          // from the prop: `title` is a ReactNode, so an element title — an
+          // icon beside a word, a count in a badge — used to fall through the
+          // string check and leave the dialog with no name at all.
+          aria-labelledby={title ? titleId : undefined}
+          aria-label={title ? undefined : ariaLabel}
           // The body is the dialog's description, and saying so is what makes a
           // screen reader read the question along with the title when focus
           // lands here. Without it the user hears "Cancel order, dialog" and
@@ -104,7 +122,15 @@ export default function Dialog({
           aria-describedby={children ? bodyId : undefined}
           className={`relative w-full ${SIZES[size]} rounded-lg bg-white p-6 shadow-xl ${className}`.trim()}
         >
-          {title && <h2 className="pr-8 text-base font-semibold text-gray-900">{title}</h2>}
+          {/* `id` for the accessible name, and a right gutter ONLY when the
+              close button is actually there to need it — a dialog with a
+              footer draws no cross, and reserving 2rem beside its title just
+              indents the heading away from the edge for nothing. */}
+          {title && (
+            <h2 id={titleId} className={`${showClose ? 'pr-8 ' : ''}text-base font-semibold text-gray-900`}>
+              {title}
+            </h2>
+          )}
           {children && <div id={bodyId} className="mt-2 text-sm text-gray-600">{children}</div>}
           {footer && <div className="mt-6 flex justify-end gap-3">{footer}</div>}
           {/* A way out that is visible, for a dialog that offers none of its
@@ -121,7 +147,7 @@ export default function Dialog({
 
               LAST in the DOM though drawn top-right: first, it became the
               dialog's first tab stop and the first button a focus trap finds. */}
-          {!blocking && !footer && (
+          {showClose && (
             <button
               type="button"
               onClick={onClose}

@@ -150,6 +150,24 @@ test('Segmented with a name is a real radio group, without one it is buttons', (
   assert.match(asButtons, /aria-pressed="true"/);
 });
 
+test('Segmented options never wrap, and the track scrolls instead', () => {
+  // A two-word option on a phone used to wrap to a second line while the pill
+  // kept its fixed h-9, so the selected segment was shorter than its own text
+  // and the track sat crooked around it. Scrolling is the right failure for a
+  // segmented control: letting it grow pushes whatever is beside it off screen.
+  const markup = html(
+    <Segmented
+      value="outstanding"
+      onChange={() => {}}
+      options={[{ value: 'outstanding', label: 'Outstanding Only' }, { value: 'full', label: 'Full Activities' }]}
+    />,
+  );
+  assert.match(markup, /whitespace-nowrap/, 'an option is one line');
+  assert.match(markup, /overflow-x-auto/, 'and the track takes the overflow');
+  assert.match(markup, /max-w-full/, 'never wider than what contains it');
+  assert.match(markup, /scrollbar-width:none/, 'and no scrollbar under it — the track rounds a pixel wide often enough that one would appear when nothing is clipped');
+});
+
 test('Switch is a real switch, not a styled checkbox', () => {
   const on = html(<Switch checked onChange={() => {}} />);
   assert.match(on, /role="switch"/);

@@ -37,7 +37,11 @@ test('an open Drawer is an accessible modal', () => {
   const panel = document.querySelector('[role="dialog"]');
   assert.ok(panel);
   assert.equal(panel?.getAttribute('aria-modal'), 'true');
-  assert.equal(panel?.getAttribute('aria-label'), 'Filters');
+  // The NAME, not the attribute that happens to carry it: the title is wired
+  // through aria-labelledby so an element title is named too, and asserting on
+  // aria-label would have locked in the mechanism that could not do that.
+  const labelledBy = panel?.getAttribute('aria-labelledby');
+  assert.equal(document.getElementById(labelledBy ?? '')?.textContent, 'Filters');
   unmount();
 });
 
@@ -121,4 +125,26 @@ test('a blocking drawer offers no close control', () => {
   const { unmount } = mount(<Drawer open blocking onClose={() => {}} title="Working">body</Drawer>);
   assert.equal(document.querySelector('[aria-label="Close"]'), null);
   unmount();
+});
+
+test('with no title the close button does not cost a header row', () => {
+  // A navigation drawer has no title bar by design — its own content is the
+  // heading — and reserving the row anyway put a bordered strip of nothing at
+  // the top of the panel, which is exactly the space a phone does not have.
+  const view = mount(<Drawer open onClose={() => {}} aria-label="Navigation menu">body</Drawer>);
+  const panel = document.querySelector('[role="dialog"]')!;
+  const close = document.querySelector('[aria-label="Close"]')!;
+
+  assert.ok(close, 'the way out is still there');
+  assert.equal(panel.querySelector('.border-b'), null, 'and it costs no header row');
+  view.unmount();
+});
+
+test('with a title the close button shares the header row with it', () => {
+  const view = mount(<Drawer open onClose={() => {}} title="Filters">body</Drawer>);
+  const panel = document.querySelector('[role="dialog"]')!;
+  const header = panel.querySelector('.border-b')!;
+  assert.ok(header, 'a titled drawer keeps its header');
+  assert.ok(header.querySelector('[aria-label="Close"]'), 'and the button sits in it');
+  view.unmount();
 });
