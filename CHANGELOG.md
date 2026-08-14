@@ -12,6 +12,12 @@ All notable changes to this project will be documented in this file. The format 
 
   All three now open above the modal layer, and a spec pins the ordering.
 
+- **A `Select` menu is the width of its field.** It set `minWidth` from the trigger
+  and capped nothing, so the list grew to its longest option — in a 512px dialog a
+  464px field opened a 583px menu that hung 95px past the dialog edge. It takes the
+  field's width now, clamped to the viewport, and the rows truncate as a native
+  `<select>` does.
+
 - **A side `Drawer` is full width on a phone**, its asked-for width from the `sm`
   breakpoint up. A 320px drawer on a 375px screen left a 55px strip of scrim — too
   narrow to aim at, too wide to read as an edge — and made the panel look like a

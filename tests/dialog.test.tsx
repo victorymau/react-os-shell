@@ -281,3 +281,23 @@ test('a dropdown opened inside a dialog renders above it', () => {
     assert.ok(layerOf(file, marker) > modal, `${file} must open above the modal layer (${modal})`);
   }
 });
+
+test('a Select menu is the width of its field, not of its longest option', () => {
+  // It set `minWidth` from the trigger and capped nothing, so the list grew to
+  // its longest option: in a 512px dialog a 464px field opened a 583px menu
+  // that hung 95px past the dialog's edge. A native <select> matches its field
+  // and truncates what does not fit.
+  //
+  // Read from the source: the menu portals to <body> and jsdom lays nothing
+  // out, so what can be checked is that the width is DRIVEN by the trigger
+  // rect rather than left to the content — which is the thing that was wrong.
+  const root = process.env.REPO_ROOT ?? resolve(import.meta.dirname, '..');
+  const src = readFileSync(join(root, 'src', 'forms', 'Select.tsx'), 'utf-8');
+
+  assert.match(src, /width:\s*menuPos\?\.width/, 'the menu takes a computed width');
+  assert.doesNotMatch(src, /minWidth:\s*menuPos/, 'not a minimum it may exceed');
+  assert.match(src, /Math\.min\(rect\.width/, 'and that width comes from the trigger, clamped to the viewport');
+  // Every row truncates, which is what makes a bounded width readable rather
+  // than merely narrow.
+  assert.match(src, /cursor-pointer truncate/);
+});

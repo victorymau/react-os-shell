@@ -97,7 +97,7 @@ export const NativeSelect = forwardRef<HTMLSelectElement, SelectProps>(function 
  * Anchors below the trigger, flips above when below is cramped. Mirrors
  * SearchableSelect's `useDropdownPosition`.
  */
-interface MenuPos { left: number; top?: number; bottom?: number; minWidth: number; maxHeight: number }
+interface MenuPos { left: number; top?: number; bottom?: number; width: number; maxHeight: number }
 function useAnchoredPosition(triggerRef: React.RefObject<HTMLElement | null>, open: boolean): MenuPos | null {
   const [pos, setPos] = useState<MenuPos | null>(null);
   useLayoutEffect(() => {
@@ -112,7 +112,18 @@ function useAnchoredPosition(triggerRef: React.RefObject<HTMLElement | null>, op
       const placeAbove = spaceBelow < Math.min(MENU_MAX_HEIGHT, 160) && spaceAbove > spaceBelow;
       const maxHeight = Math.max(96, Math.min(MENU_MAX_HEIGHT, placeAbove ? spaceAbove : spaceBelow));
       const left = Math.max(VIEWPORT_MARGIN, Math.min(rect.left, window.innerWidth - rect.width - VIEWPORT_MARGIN));
-      const next: MenuPos = { left, minWidth: rect.width, maxHeight };
+      // The menu is the WIDTH of the field, not a minimum for it.
+      //
+      // It was `minWidth` with nothing capping the other end, so the list grew
+      // to its longest option: in a 512px dialog, a field of 464px opened a
+      // menu of 583px that hung 95px past the dialog's edge. A native <select>
+      // matches its field and truncates what does not fit, and that is the
+      // shape people read a select as having.
+      //
+      // Still clamped to the viewport, for the field that is itself near an
+      // edge or wider than the room left beside it.
+      const width = Math.min(rect.width, window.innerWidth - 2 * VIEWPORT_MARGIN);
+      const next: MenuPos = { left, width, maxHeight };
       if (placeAbove) next.bottom = window.innerHeight - rect.top + MENU_GAP;
       else next.top = rect.bottom + MENU_GAP;
       setPos(next);
@@ -342,7 +353,7 @@ const ListboxSelect = forwardRef<HTMLSelectElement, SelectProps>(function Listbo
             left: menuPos?.left,
             top: menuPos?.top,
             bottom: menuPos?.bottom,
-            minWidth: menuPos?.minWidth,
+            width: menuPos?.width,
             maxHeight: menuPos?.maxHeight ?? MENU_MAX_HEIGHT,
             visibility: menuPos ? undefined : 'hidden',
             ...glassStyle(),
