@@ -252,12 +252,19 @@ function RestoredRegistryModal({ item, onClose, onMinimize, accentRgb }: { item:
     return () => window.removeEventListener('modal-reorder', handler);
   }, [refetch, entry.selfFetching, isDuplicate, isDraft]);
 
-  // When editing, close/ESC exits edit mode instead of closing the window.
+  // Chrome close (the title-bar X / ESC) while editing exits edit mode instead
+  // of closing the window.
   //
   // Unless a registration says the window is dirty: the Modal's close guard has
   // then already asked "discard changes?" and been told yes, and dropping the
   // user back into a still-open detail view would answer a different question
   // than the one they were asked.
+  //
+  // This guard is for the CHROME only. entry.render() gets the raw `onClose`:
+  // a render-callback close is the app saying "this window is done" — most
+  // critically after a delete, where the guard used to swallow the close and
+  // strand the window on a detail view of a record that no longer existed
+  // (`onDeleted={onClose}` was a silent no-op for a pristine form).
   const handleClose = useCallback(() => {
     if (editing && !dirty) {
       setEditing(false);
@@ -284,7 +291,7 @@ function RestoredRegistryModal({ item, onClose, onMinimize, accentRgb }: { item:
     if (entry.selfFetching) {
       return (
         <Suspense fallback={<LoadingSpinner />}>
-          {entry.render(entity ?? item.entitySnapshot, handleClose, item.entityId, editing, setEditing)}
+          {entry.render(entity ?? item.entitySnapshot, onClose, item.entityId, editing, setEditing)}
         </Suspense>
       );
     }
@@ -293,7 +300,7 @@ function RestoredRegistryModal({ item, onClose, onMinimize, accentRgb }: { item:
         {isLoading && !entity ? (
           <LoadingSpinner />
         ) : entity ? (
-          entry.render(entity, handleClose, item.entityId, editing, setEditing)
+          entry.render(entity, onClose, item.entityId, editing, setEditing)
         ) : (
           <Modal open={true} onClose={onClose} title={item.label} size={(entry.size || '2xl') as any}>
             <p className="text-sm text-gray-500 py-8 text-center">Not found.</p>
@@ -326,11 +333,11 @@ function RestoredRegistryModal({ item, onClose, onMinimize, accentRgb }: { item:
       <WindowDirtyContext.Provider value={registerDirty}>
         <Suspense fallback={<LoadingSpinner />}>
           {entry.selfFetching ? (
-            entry.render(null, handleClose, item.entityId, editing, setEditing)
+            entry.render(null, onClose, item.entityId, editing, setEditing)
           ) : isLoading && !entity ? (
             <LoadingSpinner />
           ) : entity ? (
-            entry.render(entity, handleClose, item.entityId, editing, setEditing)
+            entry.render(entity, onClose, item.entityId, editing, setEditing)
           ) : (
             <p className="text-sm text-gray-500 py-8 text-center">Not found.</p>
           )}

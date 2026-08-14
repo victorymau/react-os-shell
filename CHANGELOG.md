@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## 4.74.1
+
+- **Entity windows: a render-callback close actually closes while editing.**
+  The chrome close (title-bar X / ESC) deliberately exits edit mode first on
+  a pristine editing window — but `entry.render()` received that same guarded
+  close as its `onClose`, so a programmatic close from inside the window was
+  silently converted into "exit edit mode". The flagship casualty was every
+  delete flow wired `onDeleted={onClose}`: the record was deleted, the close
+  was swallowed, and the window fell back to a detail view of a record that
+  no longer existed. `entry.render()` now gets the raw close; the chrome's
+  exit-edit-first behaviour is unchanged (both spec-pinned).
+
 ## 4.74.0
 
 - **Snap layouts picker.** Rest the pointer on — or focus — a window's
