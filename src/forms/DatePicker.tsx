@@ -112,6 +112,7 @@ const DatePicker = forwardRef<HTMLInputElement, DatePickerProps>(function DatePi
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const panelId = useId();
   // The kit's shared placement rather than a local `absolute left-0`: it flips
   // above when there is no room below, right-aligns when the panel would run
@@ -123,7 +124,14 @@ const DatePicker = forwardRef<HTMLInputElement, DatePickerProps>(function DatePi
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (e: PointerEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+      // BOTH, because the panel is portalled to <body> and is therefore not
+      // inside the wrapper. Checking the wrapper alone made every click on a
+      // DAY read as a click outside: the panel closed on pointerdown and the
+      // cell was gone before its own click event, so the calendar could be
+      // opened and never used.
+      const target = e.target as Node;
+      if (wrapRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      setOpen(false);
     };
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
@@ -194,6 +202,7 @@ const DatePicker = forwardRef<HTMLInputElement, DatePickerProps>(function DatePi
 
       {open && createPortal(
         <div
+          ref={panelRef}
           id={panelId}
           role="dialog"
           aria-label={ariaLabel ?? 'Choose a date'}

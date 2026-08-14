@@ -284,6 +284,29 @@ test('DatePicker: Clear reports no date', () => {
   unmount();
 });
 
+test('DatePicker: a day survives the pointerdown that precedes its own click', () => {
+  // The specs above call .click() directly, which dispatches no pointerdown —
+  // and that is exactly what hid this. The panel is portalled to <body>, so it
+  // is not inside the wrapper the outside-click listener tests against. With
+  // only the wrapper checked, a real pointer on a DAY read as a click outside:
+  // the panel closed on pointerdown and the cell was gone before its own click
+  // event, so the calendar opened and could never be used. Nothing in the DOM
+  // said so afterwards — the panel simply was not there.
+  const { host, reported, unmount } = mount();
+  act(() => { host.querySelector('button')!.click(); });
+
+  const cell = document.querySelector<HTMLButtonElement>('[aria-current="date"]')!;
+  const win = cell.ownerDocument.defaultView as Window & typeof globalThis;
+  // A MouseEvent of type `pointerdown`: jsdom ships no PointerEvent
+  // constructor, and the listener reads the event's type and target.
+  act(() => { cell.dispatchEvent(new win.MouseEvent('pointerdown', { bubbles: true })); });
+
+  assert.ok(cell.isConnected, 'the cell must survive its own pointerdown');
+  act(() => { cell.click(); });
+  assert.ok(reported.at(-1) instanceof Date, 'and the click must still report a date');
+  unmount();
+});
+
 test('DatePicker: the value still posts in a plain form', () => {
   // The native input carried the value into a <form> by itself. Replacing it
   // with a button would have quietly broken every uncontrolled form using one.
