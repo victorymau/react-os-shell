@@ -7,16 +7,18 @@ All notable changes to this project will be documented in this file. The format 
 - **`Select` sizes its touch branch for a finger.** On touch it already swapped
   the custom listbox for the native `<select>` — the OS picker being the better
   affordance — but it passed the caller's desktop rung straight through, so it
-  rendered a 39px control under a finger at `size="lg"`, and about 30px at the
-  default `md`. Both are below the 44px WCAG 2.5.5 floor every `Button` touch
-  rung is held above. The touch branch now takes the `touch` rung and discards
+  rendered a 39px control under a finger at `size="lg"` (measured), and a rung
+  shorter again at the default `md`. Both are below the 44px WCAG 2.5.5 floor
+  every `Button` touch rung is held above. The touch branch now takes the `touch` rung and discards
   the desktop one: `sm`/`md`/`lg` are the desktop ladder, and this branch only
   renders when there is no desktop.
 
   **This changes the height of every mobile `Select` in every consumer.** A
   `size="lg"` Select goes 39-40px → 56px; a Select with no `size` — the common
   case, and 15 of the 21 mobile call sites in the dealer portal — goes from the
-  `md` rung to 56px, close to double, and from `text-sm` to `text-base`.
+  `md` rung to 56px, close to double, and from `text-sm` to `text-base`. The
+  unsized ones are the bigger jump, and they are the ones nobody thought about
+  when reading this.
 
   Worth a look on any phone layout that puts a Select in a row or stack with
   another control. `Select` is currently the only control in the kit that picks

@@ -70,8 +70,9 @@ export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement
    * `DatePicker`, `TimePicker`, `InputNumber` and `TagInput` all render the
    * rung they are given on every viewport, and `SearchableSelect` is pinned to
    * `INPUT_BASE` (the `md` rung) with no size axis at all — so a phone form
-   * that puts a Select beside any of them now steps 56px against ~30px. Pass
-   * `touchSize="md"` on that Select to line the row back up.
+   * that puts a Select beside an unsized one of those now steps 56px against a
+   * control a little over half that. Pass `touchSize="md"` on the Select to
+   * line the row back up.
    *
    * Only `Select` reads it. `NativeSelect` and `ListboxSelect` accept it and
    * ignore it, so it never reaches the DOM as an unknown attribute.
@@ -436,8 +437,10 @@ const ListboxSelect = forwardRef<HTMLSelectElement, SelectProps>(function Listbo
  * component already decided "this is touch, give it the native picker" and then
  * passed the desktop rung straight through, handing a finger a target under the
  * 44px WCAG 2.5.5 floor that `touchPrimitives.test.tsx` holds every Button rung
- * above. Measured: `size="lg"` came out 39px, and the default `md` about 30px.
- * The dealer portal's order filters were exactly that.
+ * above. `size="lg"` was measured at 39px on a device; the default `md` is a
+ * rung shorter again (`py-1.5 text-sm` against `py-2 text-base`, so 8px off the
+ * box), which puts it around 31px. The dealer portal's order filters were
+ * exactly that.
  *
  * Note this reads the same signal that already picks the branch
  * (`(max-width: 767px), (pointer: coarse)`), so a narrow desktop window has
@@ -455,10 +458,10 @@ const ListboxSelect = forwardRef<HTMLSelectElement, SelectProps>(function Listbo
  * rung. `Input`, `Textarea`, `DatePicker`, `TimePicker`, `DateTimePicker`,
  * `InputNumber` and `TagInput` all render what they are given on every
  * viewport, and `SearchableSelect` has no size axis at all — it is pinned to
- * `INPUT_BASE`. So a phone form that stacks a Select against any of them steps
- * 56px against roughly 30px, and a field that renders a Select or an Input
- * depending on its data (a country with states versus one without, say)
- * changes height with the data.
+ * `INPUT_BASE`. So a phone form that stacks a Select against an unsized one of
+ * those steps 56px against a control a little over half that, and a field that
+ * renders a Select or an Input depending on its data (a country with states
+ * versus one without, say) changes height with the data.
  *
  * That is a real cost and it is not paid off here: whether the whole ladder
  * should follow a finger is a bigger question than one control's hit target,
