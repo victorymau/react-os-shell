@@ -2,6 +2,44 @@
 
 All notable changes to this project will be documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## 4.78.1
+
+- **Removed the window-restore path that has been unreachable since the portals
+  stopped writing `access_token`.** `restoreWindowState()` gated everything it
+  did on `localStorage.getItem('access_token')`. Every portal moved its tokens
+  into memory on 2026-08-17 and now only ever *removes* that key, and the shell
+  has never written it — so the guard has been permanently false and the
+  function returned `[]` on every call. Its initial state is now simply `[]`,
+  which is exactly what it already produced.
+
+  **No behaviour changes.** Session restore itself is unaffected: that is
+  `SessionWindowRestore`, which replays per-user `prefs.session_windows`
+  through `ShellPrefs` and never consulted a token. Deleted alongside the
+  guard, all of it reachable only through it: `healWindowIds` (a heal for an
+  id-collision bug fixed in 3.14.1, applied only to the legacy blob),
+  `DEFAULT_WIDGETS` and `seedDefaultWidgetPositions`.
+
+  Worth knowing, because it inverts the obvious reading: the seeding was NOT
+  quietly still working. `SessionWindowRestore` skips its restore when a window
+  is already open, so while `restoreWindowState()` returned the three default
+  widgets it *suppressed* the per-user restore on every load. The dead guard is
+  the reason per-user restore runs at all today, and reviving the guard would
+  switch it back off.
+
+  A brand-new account therefore opens on an empty desktop rather than a seeded
+  Weather / Currency / World Clock stack. That is the state on 4.78.0 as well —
+  this release removes the code, not the behaviour. Seeding first-run widgets is
+  worth doing again, but it belongs in `SessionWindowRestore` beside the prefs
+  it would have to respect.
+
+- **Stopped writing `erp_open_windows`.** `saveWindowState` wrote the open-window
+  list to that key on every window change and nothing read it back — the only
+  reader was the removed path. The key is browser-global, so it also carried
+  record-bound window labels and entity ids across accounts on a shared machine
+  (the supplier portal namespaces it per user for exactly that reason,
+  BG#00340). Consumers scoping or pruning it can drop that handling once they
+  are on this version; it is inert either way.
+
 ## 4.78.0
 
 - **`Select` sizes its touch branch for a finger.** On touch it already swapped

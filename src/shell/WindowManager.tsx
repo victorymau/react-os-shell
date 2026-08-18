@@ -6,7 +6,7 @@ import apiClient, { isShellApiClientConfigured } from '../api/client';
 import { useShellStrings } from './strings';
 import { entityDetailUrl, entityRefetchInterval, shouldRetryEntityFetch } from './entityFetchPolicy';
 import { WINDOW_REGISTRY, isPageEntry, isEntityEntry, type PageRegistryEntry, type ModalRegistryEntry } from '../windowRegistry/types';
-import Modal, { triggerSplitView, modalDepthRef, getActiveModalId, subscribeActive, activateModal, ExposeBackdrop, WindowShortcutProvider, setWindowDefaultPosition, isPanelFullyVisible, panelOffscreenBearing, revealWindow, requestModalClose, type WindowShortcutSpec } from './Modal';
+import Modal, { triggerSplitView, modalDepthRef, getActiveModalId, subscribeActive, activateModal, ExposeBackdrop, WindowShortcutProvider, isPanelFullyVisible, panelOffscreenBearing, revealWindow, requestModalClose, type WindowShortcutSpec } from './Modal';
 import WindowErrorBoundary, { WindowCrashedFallback } from './WindowErrorBoundary';
 import { UndoProvider } from './UndoProvider';
 import PartNumberDetailPopup from './PartNumberDetailPopup';
@@ -841,104 +841,6 @@ function TaskbarWindows({ openWindows, onRemove, onSplitView, onActivate, onActi
   );
 }
 
-const SESSION_KEY = 'erp_open_windows';
-
-function saveWindowState(windows: MinimizedItem[]) {
-  try {
-    const serializable = windows.map(w => ({ ...w, entitySnapshot: undefined }));
-    localStorage.setItem(SESSION_KEY, JSON.stringify(serializable));
-  } catch { /* storage full */ }
-}
-
-const DEFAULT_WIDGETS: MinimizedItem[] = [
-  { id: 'page:/weather', type: 'page', label: 'Weather', route: '/weather' },
-  { id: 'page:/currency', type: 'page', label: 'Currency Converter', route: '/currency' },
-  { id: 'page:/world-clock', type: 'page', label: 'World Clock', route: '/world-clock' },
-];
-
-/**
- * Lay the first-run default widgets out in a tidy top-left column — mirroring
- * the Widget Manager's placement — so a brand-new account opens with its widgets
- * stacked down the left edge instead of piled in the centre (which is what
- * Modal's `calcWindowed` no-saved-position fallback does). We seed the shared
- * window-position store *before* the widgets mount, so each Modal restores from
- * it on open. `setWindowDefaultPosition` is a no-op once a real saved position
- * exists, so this never disturbs a returning user who has dragged things around.
- *
- * Every default widget is `autoHeight`, so it re-measures to its content on open
- * — the heights here are only first-paint estimates for a non-overlapping stack.
- */
-function seedDefaultWidgetPositions(widgets: MinimizedItem[]) {
-  const PAD = 20, GAP = 16, MAX_AUTO_H = 220;
-  const cs = getComputedStyle(document.documentElement);
-  const tbH = parseInt(cs.getPropertyValue('--taskbar-height')) || 0;
-  const tbW = parseInt(cs.getPropertyValue('--taskbar-width')) || 0;
-  const tbPos = cs.getPropertyValue('--taskbar-position').trim() || 'bottom';
-  const sidebarW = parseInt(cs.getPropertyValue('--sidebar-width')) || 0;
-  const leftStart = (tbPos === 'left' ? tbW : 0) + sidebarW + PAD;
-  const topStart = (tbPos === 'top' ? tbH : 0) + PAD;
-  const maxBottom = window.innerHeight - (tbPos === 'bottom' ? tbH : 0) - PAD;
-  const rightLimit = window.innerWidth - PAD;
-
-  let x = leftStart, y = topStart;
-  for (const item of widgets) {
-    if (!item.route) continue;
-    const e = WINDOW_REGISTRY[item.route];
-    if (!e || !isPageEntry(e)) continue;
-    const entry = e as PageRegistryEntry;
-    const w = entry.dimensions?.[0] ?? 320;
-    const h = entry.dimensions?.[1] ?? 240;
-    const stackH = entry.autoHeight ? Math.min(h, MAX_AUTO_H) : h;
-    // Wrap to a fresh column when this one is full — but only if the next column
-    // still fits on-screen, so a widget never gets pushed off the right edge.
-    if (y > topStart && y + stackH > maxBottom && x + (w + GAP) + w <= rightLimit) {
-      x += w + GAP;
-      y = topStart;
-    }
-    setWindowDefaultPosition(item.id, { x, y, w, h });
-    y += stackH + GAP;
-  }
-}
-
-/** Heal a restored session against the legacy id-collision bug. Builds before
- *  3.14.1 derived a modal window's `id` from its (non-unique) label, so two
- *  records sharing a label persisted with the same `id` — duplicate React keys
- *  left one window un-closeable, and a plain reload restored it just as broken.
- *  Re-key any collided modal to its stable entity identity (matching what
- *  `openEntity` now emits) and drop any that still collide (the same entity
- *  persisted twice), so a reload resolves a stuck pair instead of resurrecting
- *  it. Non-collided windows keep their stored id so their saved box/z-order is
- *  preserved. */
-function healWindowIds(items: MinimizedItem[]): MinimizedItem[] {
-  const counts = new Map<string, number>();
-  for (const it of items) counts.set(it.id, (counts.get(it.id) ?? 0) + 1);
-  const seen = new Set<string>();
-  const out: MinimizedItem[] = [];
-  for (const it of items) {
-    let id = it.id;
-    if ((counts.get(it.id) ?? 0) > 1 && it.type === 'modal' && it.entityType && it.entityId) {
-      id = `${it.entityType}:${it.entityId}`;
-    }
-    if (seen.has(id)) continue;
-    seen.add(id);
-    out.push(id === it.id ? it : { ...it, id });
-  }
-  return out;
-}
-
-function restoreWindowState(): MinimizedItem[] {
-  try {
-    if (window.location.pathname === '/login') return [];
-    if (!localStorage.getItem('access_token')) return [];
-    const stored = localStorage.getItem(SESSION_KEY);
-    if (stored) return healWindowIds(JSON.parse(stored));
-  } catch { /* corrupt data */ }
-  // First run for this account — no saved session yet. Seed a top-left stack so
-  // the default widgets don't open piled in the centre of the desktop.
-  seedDefaultWidgetPositions(DEFAULT_WIDGETS);
-  return DEFAULT_WIDGETS;
-}
-
 const AUTH_PAGES = ['/login', '/forgot-password', '/reset-password', '/force-change-password'];
 
 export function WindowManagerProvider({ children, windowAccentForRoute }: {
@@ -956,16 +858,11 @@ export function WindowManagerProvider({ children, windowAccentForRoute }: {
 }) {
   const location = useLocation();
   const isAuthPage = AUTH_PAGES.some(p => location.pathname.startsWith(p));
-  const [openWindows, setOpenWindows] = useState<MinimizedItem[]>(() => restoreWindowState());
+  const [openWindows, setOpenWindows] = useState<MinimizedItem[]>([]);
   const openWindowsRef = useRef(openWindows);
   useLayoutEffect(() => { openWindowsRef.current = openWindows; }, [openWindows]);
 
-  // Persist window state on every change — but don't save empty on initial mount (login page)
-  const hasUserActed = useRef(false);
   useEffect(() => {
-    if (openWindows.length > 0) hasUserActed.current = true;
-    if (hasUserActed.current) saveWindowState(openWindows);
-
     // Mirror windowKey → route into the module-level map exported as
     // `getActiveWindowRoute()`. Snapshot semantics: we rebuild from
     // scratch on every change so closed windows drop out cleanly.
