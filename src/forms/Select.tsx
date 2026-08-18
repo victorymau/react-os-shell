@@ -12,10 +12,12 @@
  * (Arrow/Home/End/Enter/Space/typeahead) with combobox/listbox ARIA.
  *
  * On MOBILE (touch) this renders the native `<select>` — the OS wheel/sheet
- * picker is the better touch affordance and hotkeys are irrelevant there. The
- * native element is also where the forwarded `HTMLSelectElement` ref and any
- * spread native attributes land, so `NativeSelect` is exported for callers that
- * need a raw native control on every viewport.
+ * picker is the better touch affordance and hotkeys are irrelevant there —
+ * AT THE `touch` RUNG, not at whatever desktop rung the caller asked for. See
+ * the Select doc-block below for why, and `touchSize` for how to override it.
+ * The native element is also where the forwarded `HTMLSelectElement` ref and
+ * any spread native attributes land, so `NativeSelect` is exported for callers
+ * that need a raw native control on every viewport.
  *
  * Use SearchableSelect instead when the list is long or needs type-to-filter /
  * free-text entry; use Select for a handful of known options.
@@ -43,12 +45,38 @@ export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement
   /**
    * Desktop rung, or `touch`. Defaults to `md`.
    *
+   * On `Select` this sizes the DESKTOP branch only: the touch branch takes
+   * `touchSize` instead and ignores this entirely. `NativeSelect` and
+   * `ListboxSelect` are literal and use it on every viewport.
+   *
    * This shadows the native `size` attribute (the number of rows a select
    * shows when it is rendered as a list box), which is omitted above rather
    * than left to collide. Nothing here has ever rendered as a list box — the
    * kit's Select is a dropdown — so no capability is lost.
    */
   size?: InputSize;
+  /**
+   * Rung for `Select`'s TOUCH branch. Defaults to `touch` (56px), which is the
+   * point of the branch — see the Select doc-block.
+   *
+   * It exists because the default is not right for everyone and the previous
+   * escape hatch was too expensive. `NativeSelect` sizes a select freely, but
+   * it is a native `<select>` on the desktop too, which is BG#00421: the OS
+   * popup swallows every key event, so shell hotkeys die while it is open.
+   * That is the whole reason the desktop listbox exists, and no one should
+   * have to give it up to render a 40px select on a phone.
+   *
+   * The case it is really for is a row of mixed controls. `Input`, `Textarea`,
+   * `DatePicker`, `TimePicker`, `InputNumber` and `TagInput` all render the
+   * rung they are given on every viewport, and `SearchableSelect` is pinned to
+   * `INPUT_BASE` (the `md` rung) with no size axis at all — so a phone form
+   * that puts a Select beside any of them now steps 56px against ~30px. Pass
+   * `touchSize="md"` on that Select to line the row back up.
+   *
+   * Only `Select` reads it. `NativeSelect` and `ListboxSelect` accept it and
+   * ignore it, so it never reaches the DOM as an unknown attribute.
+   */
+  touchSize?: InputSize;
   options: SelectOption[];
   /** Shown as a disabled first option when no value is selected. */
   placeholder?: string;
@@ -65,9 +93,17 @@ const MENU_MAX_HEIGHT = 240;
  * Raw native `<select>` styled to match the kit's inputs. This is the original
  * Select — kept as the mobile rendering and exported for callers that need a
  * real `HTMLSelectElement` (form posts, native attribute spread, focus).
+ *
+ * Literal about `size`: it renders the rung it is handed on every viewport,
+ * which is what makes it the opt-out from `Select`'s branch entirely. Prefer
+ * `Select`'s `touchSize` when you only want a different touch rung — this one
+ * costs you the desktop listbox, and with it BG#00421.
+ *
+ * `touchSize` is pulled out and dropped: it is `Select`'s prop, and letting it
+ * through `rest` would put an unknown attribute on the `<select>`.
  */
 export const NativeSelect = forwardRef<HTMLSelectElement, SelectProps>(function NativeSelect(
-  { value, onChange, options, placeholder, invalid, className = '', size, ...rest },
+  { value, onChange, options, placeholder, invalid, className = '', size, touchSize: _touchSize, ...rest },
   ref,
 ) {
   return (
@@ -148,7 +184,10 @@ function useAnchoredPosition(triggerRef: React.RefObject<HTMLElement | null>, op
 /** Desktop custom listbox. Keeps DOM focus on the trigger and tracks the active
  *  option with `aria-activedescendant` (the standard combobox pattern). */
 const ListboxSelect = forwardRef<HTMLSelectElement, SelectProps>(function ListboxSelect(
+  // `touchSize` is pulled out and dropped for the same reason as NativeSelect:
+  // it is Select's prop, and `rest` lands on the hidden native <select>.
   { value, onChange, options, placeholder, invalid, className = '', id, disabled, size,
+    touchSize: _touchSize,
     'aria-describedby': describedBy, 'aria-label': ariaLabel, 'aria-labelledby': labelledBy, ...rest },
   ref,
 ) {
@@ -387,17 +426,18 @@ const ListboxSelect = forwardRef<HTMLSelectElement, SelectProps>(function Listbo
 /**
  * Smart Select: native `<select>` on touch, custom listbox on desktop.
  *
- * The touch branch takes the `touch` rung and DISCARDS whatever desktop rung
- * the caller asked for. That is not the component second-guessing the caller —
- * `sm`/`md`/`lg` are the desktop ladder, and this branch only ever renders when
- * there is no desktop. A rung off that ladder has nothing to say about how big
- * an OS picker should be under a finger.
+ * The touch branch takes `touchSize`, default `touch`, and DISCARDS whatever
+ * desktop rung the caller asked for. That is not the component second-guessing
+ * the caller — `sm`/`md`/`lg` are the desktop ladder, and this branch only ever
+ * renders when there is no desktop. A rung off that ladder has nothing to say
+ * about how big an OS picker should be under a finger.
  *
  * It had to be said out loud because the omission was a real defect: this
  * component already decided "this is touch, give it the native picker" and then
- * passed `size="lg"` straight through, handing a finger a 39px target — under
- * the 44px WCAG 2.5.5 floor that `touchPrimitives.test.tsx` holds every Button
- * rung above. The dealer portal's order filters were exactly that.
+ * passed the desktop rung straight through, handing a finger a target under the
+ * 44px WCAG 2.5.5 floor that `touchPrimitives.test.tsx` holds every Button rung
+ * above. Measured: `size="lg"` came out 39px, and the default `md` about 30px.
+ * The dealer portal's order filters were exactly that.
  *
  * Note this reads the same signal that already picks the branch
  * (`(max-width: 767px), (pointer: coarse)`), so a narrow desktop window has
@@ -409,13 +449,38 @@ const ListboxSelect = forwardRef<HTMLSelectElement, SelectProps>(function Listbo
  * still holds: it is about a DESKTOP portal not growing finger-sized controls
  * by accident. This branch cannot run on a desktop pointer at a desktop width.
  *
- * The opt-out is `NativeSelect`, which is exported precisely so a caller can
- * take a raw native control and size it themselves on every viewport.
+ * ── Where this leaves a mixed row ───────────────────────────────────────────
+ *
+ * Select is, for now, the ONLY control in the kit that picks its own touch
+ * rung. `Input`, `Textarea`, `DatePicker`, `TimePicker`, `DateTimePicker`,
+ * `InputNumber` and `TagInput` all render what they are given on every
+ * viewport, and `SearchableSelect` has no size axis at all — it is pinned to
+ * `INPUT_BASE`. So a phone form that stacks a Select against any of them steps
+ * 56px against roughly 30px, and a field that renders a Select or an Input
+ * depending on its data (a country with states versus one without, say)
+ * changes height with the data.
+ *
+ * That is a real cost and it is not paid off here: whether the whole ladder
+ * should follow a finger is a bigger question than one control's hit target,
+ * and answering it in `inputClasses` would move every text field in every
+ * consumer. `touchSize="md"` is the seam until it is answered — it lines a
+ * Select back up with its neighbours without giving up the desktop listbox.
+ *
+ * `NativeSelect` remains the way out of the branch ENTIRELY, for a caller who
+ * wants one raw native control on every viewport. It is the heavier door:
+ * native on the desktop is BG#00421, the OS popup that swallows every key
+ * event. Reach for `touchSize` first.
  */
-const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(props, ref) {
+const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(
+  { touchSize = 'touch', ...props },
+  ref,
+) {
   const isMobile = useIsMobile();
+  // `touchSize` is destructured off on BOTH branches, so the desktop listbox
+  // never sees it either — it would otherwise ride `rest` onto the hidden
+  // native <select>.
   return isMobile
-    ? <NativeSelect ref={ref} {...props} size="touch" />
+    ? <NativeSelect ref={ref} {...props} size={touchSize} />
     : <ListboxSelect ref={ref} {...props} />;
 });
 

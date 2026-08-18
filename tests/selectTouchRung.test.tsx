@@ -114,3 +114,65 @@ test('NativeSelect stays literal — it is the opt-out, so it obeys the caller',
     restore();
   }
 });
+
+/**
+ * ── touchSize ───────────────────────────────────────────────────────────────
+ *
+ * The default above is the fix; this is the seam out of it. It exists because
+ * Select is the only control in the kit that picks its own touch rung, so a
+ * phone form that stacks one against an `Input` or a `SearchableSelect` steps
+ * 56px against roughly 30px. `touchSize` lines that row back up without the
+ * caller having to drop to `NativeSelect` and lose the desktop listbox (and
+ * with it BG#00421's hotkeys).
+ */
+
+/** Render either branch and hand back the visible control's element. */
+function renderSelect(matches: boolean, props: Record<string, unknown>) {
+  const restore = setViewport(matches);
+  try {
+    const { container, unmount } = render(
+      <Select value="a" onChange={() => {}} options={OPTIONS} {...props} />,
+    );
+    const el = container.querySelector('select:not([aria-hidden]), [role="combobox"]');
+    const result = {
+      cls: el?.getAttribute('class') ?? '',
+      // Every attribute on every element, so a leaked prop cannot hide on the
+      // hidden shadow select rather than the visible control.
+      attrs: [...container.querySelectorAll('*')].flatMap(n => [...n.attributes].map(a => a.name)),
+    };
+    unmount();
+    return result;
+  } finally {
+    restore();
+  }
+}
+
+test('touchSize overrides the touch rung without touching the branch', () => {
+  const { cls } = renderSelect(true, { size: 'lg', touchSize: 'md' });
+  assert.match(cls, /px-3 py-1\.5 text-sm/, 'touchSize=md did not reach the touch branch');
+  assert.doesNotMatch(cls, /h-14/, 'touchSize=md still rendered the 56px rung');
+});
+
+test('touchSize defaults to touch, so the fix is what you get for free', () => {
+  const { cls } = renderSelect(true, { size: 'lg' });
+  assert.match(cls, /h-14/, 'the default stopped being the touch rung');
+});
+
+test('touchSize is inert on desktop — it sizes one branch, not both', () => {
+  const { cls } = renderSelect(false, { size: 'lg', touchSize: 'sm' });
+  assert.match(cls, /px-3\.5 py-2 text-base/, 'touchSize leaked into the desktop rung');
+});
+
+test('touchSize never reaches the DOM as an attribute', () => {
+  // It is Select's prop, not a native one. Both leaf components spread their
+  // `rest` onto a real <select> — NativeSelect onto the visible one, the
+  // listbox onto the hidden shadow — so a missed destructure shows up here as
+  // React warning about an unknown attribute, and renders it.
+  for (const matches of [true, false]) {
+    const { attrs } = renderSelect(matches, { size: 'lg', touchSize: 'md' });
+    assert.ok(
+      !attrs.some(a => a.toLowerCase() === 'touchsize'),
+      `touchSize leaked onto the DOM (isMobile=${matches})`,
+    );
+  }
+});
