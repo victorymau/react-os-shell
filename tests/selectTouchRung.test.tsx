@@ -164,15 +164,41 @@ test('touchSize is inert on desktop — it sizes one branch, not both', () => {
 });
 
 test('touchSize never reaches the DOM as an attribute', () => {
-  // It is Select's prop, not a native one. Both leaf components spread their
-  // `rest` onto a real <select> — NativeSelect onto the visible one, the
-  // listbox onto the hidden shadow — so a missed destructure shows up here as
-  // React warning about an unknown attribute, and renders it.
+  // It is Select's prop, not a native one, and both leaf components spread
+  // their `rest` onto a real <select> — NativeSelect onto the visible one, the
+  // listbox onto the hidden shadow. A missed destructure renders it as an
+  // unknown attribute (and React warns).
   for (const matches of [true, false]) {
     const { attrs } = renderSelect(matches, { size: 'lg', touchSize: 'md' });
     assert.ok(
       !attrs.some(a => a.toLowerCase() === 'touchsize'),
       `touchSize leaked onto the DOM (isMobile=${matches})`,
     );
+  }
+});
+
+test('NativeSelect drops touchSize too — it is reachable directly', () => {
+  // Not redundant with the case above, and the first draft of this file made
+  // exactly that mistake: `Select` strips `touchSize` before it spreads, so a
+  // test that goes through `Select` cannot see whether the leaf strips it. It
+  // passed with NativeSelect's own destructure deleted.
+  //
+  // NativeSelect is exported and shares `SelectProps`, so a caller can hand it
+  // `touchSize` with the type checker's blessing. That is the path that leaks.
+  const restore = setViewport(true);
+  try {
+    const { container, unmount } = render(
+      <NativeSelect value="a" onChange={() => {}} options={OPTIONS} size="md" touchSize="lg" />,
+    );
+    const el = container.querySelector('select');
+    assert.ok(el, 'no select rendered');
+    const attrs = [...el.attributes].map(a => a.name.toLowerCase());
+    assert.ok(!attrs.includes('touchsize'), `touchSize leaked onto the DOM: ${attrs.join(' ')}`);
+    // And it is still literal about `size` — dropping the prop must not have
+    // been done by letting it win.
+    assert.match(el.getAttribute('class') ?? '', /px-3 py-1\.5 text-sm/, 'NativeSelect stopped obeying size');
+    unmount();
+  } finally {
+    restore();
   }
 });
