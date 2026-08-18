@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## 4.78.0
+
+- **`Select` sizes its touch branch for a finger.** On touch it already swapped
+  the custom listbox for the native `<select>` — the OS picker being the better
+  affordance — but it passed the caller's desktop rung straight through, so a
+  `size="lg"` Select rendered a 39px control under a finger, below the 44px
+  WCAG 2.5.5 floor every `Button` touch rung is held above. The touch branch now
+  takes the `touch` rung and discards the desktop one: `sm`/`md`/`lg` are the
+  desktop ladder, and this branch only renders when there is no desktop. This
+  changes the height of every mobile `Select` in every consumer (39-40px → 56px);
+  `NativeSelect` is unchanged and remains the opt-out for a caller who wants to
+  size the raw control themselves on every viewport.
+
 ## 4.77.0
 
 - **`EntityList` can name the entity in its load error.** New optional

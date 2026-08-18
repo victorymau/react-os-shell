@@ -384,10 +384,39 @@ const ListboxSelect = forwardRef<HTMLSelectElement, SelectProps>(function Listbo
   );
 });
 
-/** Smart Select: native `<select>` on touch, custom listbox on desktop. */
+/**
+ * Smart Select: native `<select>` on touch, custom listbox on desktop.
+ *
+ * The touch branch takes the `touch` rung and DISCARDS whatever desktop rung
+ * the caller asked for. That is not the component second-guessing the caller —
+ * `sm`/`md`/`lg` are the desktop ladder, and this branch only ever renders when
+ * there is no desktop. A rung off that ladder has nothing to say about how big
+ * an OS picker should be under a finger.
+ *
+ * It had to be said out loud because the omission was a real defect: this
+ * component already decided "this is touch, give it the native picker" and then
+ * passed `size="lg"` straight through, handing a finger a 39px target — under
+ * the 44px WCAG 2.5.5 floor that `touchPrimitives.test.tsx` holds every Button
+ * rung above. The dealer portal's order filters were exactly that.
+ *
+ * Note this reads the same signal that already picks the branch
+ * (`(max-width: 767px), (pointer: coarse)`), so a narrow desktop window has
+ * been getting the native picker all along — it now gets a native picker at a
+ * touch size rather than a desktop size, which is the smaller surprise of the
+ * two.
+ *
+ * `Button`'s docblock says nothing picks a touch size automatically, and that
+ * still holds: it is about a DESKTOP portal not growing finger-sized controls
+ * by accident. This branch cannot run on a desktop pointer at a desktop width.
+ *
+ * The opt-out is `NativeSelect`, which is exported precisely so a caller can
+ * take a raw native control and size it themselves on every viewport.
+ */
 const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(props, ref) {
   const isMobile = useIsMobile();
-  return isMobile ? <NativeSelect ref={ref} {...props} /> : <ListboxSelect ref={ref} {...props} />;
+  return isMobile
+    ? <NativeSelect ref={ref} {...props} size="touch" />
+    : <ListboxSelect ref={ref} {...props} />;
 });
 
 export default Select;
