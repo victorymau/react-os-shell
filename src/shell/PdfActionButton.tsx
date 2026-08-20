@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { PopupMenu, PopupMenuItem, PopupMenuDivider } from './PopupMenu';
 import { useWindowManager } from './WindowManager';
 import { setPdfPreview } from '../apps/_previewStage';
+import { withTimeout, TIMED_OUT } from './withTimeout';
 import toast from './toast';
 
 export interface PdfActionButtonProps {
@@ -37,7 +38,23 @@ export interface PdfActionButtonProps {
   onPreviewOpened?: (filename: string) => void;
   /** Optional leading icon override for the button (defaults to a document glyph). */
   icon?: ReactNode;
+  /**
+   * How long to wait for `fetchPdf()` before giving up, in milliseconds.
+   * Defaults to 30 seconds. Pass `0` (or `Infinity`) to wait for ever.
+   *
+   * This exists because a promise that never settles used to leave the Preview
+   * window on its "LOADING PDF" placeholder indefinitely, so a slow document
+   * and a dead one were indistinguishable to the person waiting. Timing out
+   * turns that silence into a stated failure. The request itself is not
+   * cancelled — the consumer owns the transport (see `withTimeout`).
+   */
+  timeoutMs?: number;
 }
+
+/** Long enough that a genuinely slow document still arrives (the slowest
+ *  observed in production was ~4 s through the live stack), short enough that
+ *  nobody sits in front of a dead placeholder wondering. */
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 const DEFAULT_BUTTON_CLASS =
   'inline-flex items-center gap-1.5 bg-white text-gray-700 border border-gray-300 px-3 py-1.5 text-sm font-medium rounded-lg hover:bg-gray-50 disabled:opacity-50';
@@ -67,6 +84,7 @@ export default function PdfActionButton({
   onEmail,
   onPreviewOpened,
   icon,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
 }: PdfActionButtonProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -83,10 +101,10 @@ export default function PdfActionButton({
 
   // Wrap the consumer's resolver so the spinner reflects in-flight fetches no
   // matter which action triggered them.
-  const resolvePdf = async (): Promise<Blob | null> => {
+  const resolvePdf = async (): Promise<Blob | null | typeof TIMED_OUT> => {
     setLoading(true);
     try {
-      return await fetchPdf();
+      return await withTimeout(fetchPdf(), timeoutMs);
     } finally {
       setLoading(false);
     }
@@ -95,6 +113,12 @@ export default function PdfActionButton({
   const handleDownload = async () => {
     setOpen(false);
     const blob = await resolvePdf();
+    // `null` means the consumer already told the user why. A timeout is ours,
+    // so it would otherwise vanish with no explanation at all.
+    if (blob === TIMED_OUT) {
+      toast.error(`${filename} took too long to load. Please try again.`);
+      return;
+    }
     if (!blob) return;
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -112,6 +136,17 @@ export default function PdfActionButton({
     const handle = setPdfPreview({ filename, converting: true, convertingMessage: 'LOADING PDF' });
     openPage('/preview');
     const blob = await resolvePdf();
+    // Two different failures, deliberately worded differently: "took too long"
+    // means the fetch never settled and we stopped waiting, "Failed to load"
+    // means it settled with nothing. Telling them apart on screen is what lets
+    // someone reporting a problem say which one they saw.
+    if (blob === TIMED_OUT) {
+      handle.update({
+        filename, converting: false,
+        convertingMessage: 'This document took too long to load. Close this window and try again.',
+      });
+      return;
+    }
     if (!blob) {
       handle.update({ filename, converting: false, convertingMessage: 'Failed to load PDF.' });
       return;
@@ -125,6 +160,12 @@ export default function PdfActionButton({
   const handleEmail = async () => {
     setOpen(false);
     const blob = await resolvePdf();
+    // TIMED_OUT is a symbol, so it is truthy — a plain `!blob` check would hand
+    // it to the consumer's composer as if it were the document.
+    if (blob === TIMED_OUT) {
+      toast.error(`${filename} took too long to load. Please try again.`);
+      return;
+    }
     if (!blob || !onEmail) return;
     onEmail(blob);
   };
