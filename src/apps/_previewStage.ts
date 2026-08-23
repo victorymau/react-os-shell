@@ -36,15 +36,23 @@ export interface PdfPreviewData {
  *  payload so a later `.update()` only targets the window that picked it up
  *  (not every open Preview, which would clobber unrelated windows). */
 export interface PdfPreviewHandle {
-  /** Replace the data shown in the window that consumed this staging.
-   *  No-op if no window ever consumed it, or if that window has been closed. */
+  /** Replace the data shown in the window that consumed this staging. Safe to
+   *  call before that window exists — an update that lands while the payload
+   *  is still staged replaces the staged payload, so the window opens on the
+   *  resolved file instead of the placeholder it was staged with.
+   *  No-op only once the window that consumed the staging has been closed. */
   update(next: PdfPreviewData): void;
 }
 
 /** @internal Event carrying `.update()` payloads to the claiming window. */
 export const PDF_PREVIEW_UPDATE_EVENT = 'react-os-shell:pdf-preview-update';
 
-/** @internal Staged payload awaiting the next Preview window mount. */
+/** @internal Staged payload awaiting the next Preview window mount.
+ *
+ *  `data` is MUTABLE and deliberately so: `update()` rewrites it in place
+ *  while the stage is still unclaimed. Restaging a fresh object instead would
+ *  break the identity that `claimPdfPreviewStage` and the claimant's own
+ *  `consumedRef` are holding. */
 export interface PendingPdfStage {
   token: number;
   data: PdfPreviewData;
@@ -58,9 +66,22 @@ let nextToken = 0;
  *  to replace a `converting: true` placeholder with the resolved file. */
 export function setPdfPreview(data: PdfPreviewData): PdfPreviewHandle {
   const token = ++nextToken;
-  pending = { token, data };
+  const stage: PendingPdfStage = { token, data };
+  pending = stage;
   return {
     update(next: PdfPreviewData) {
+      // The window is opened by `openPage('/preview')` and Preview is a lazy
+      // chunk, so a consumer that resolves quickly — a cached PDF, a fast
+      // endpoint, a second preview in the same session — can call this before
+      // any window has mounted to listen. The event is fire-and-forget, so on
+      // its own it would be dropped and the window would open on the
+      // placeholder and sit there for ever. Rewrite the stage as well while it
+      // is still ours: whoever drains it next gets the current payload.
+      //
+      // `pending === stage` is exactly "no window has claimed this yet".
+      // Claiming and binding the listener happen in the same commit (see
+      // Preview.tsx), so there is no third state where both paths miss.
+      if (pending === stage) stage.data = next;
       if (typeof window === 'undefined') return;
       window.dispatchEvent(new CustomEvent(PDF_PREVIEW_UPDATE_EVENT, { detail: { token, data: next } }));
     },

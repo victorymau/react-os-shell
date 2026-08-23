@@ -80,6 +80,17 @@ if (typeof window !== 'undefined' && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
 // pull this module — and its static pdfjs-dist import — into their startup
 // bundle. This component drains the stage via the @internal peek/claim pair.
 
+/** Swap what a Preview window shows, releasing the blob URL being dropped.
+ *  Content arrives by two routes — drained from the stage on mount, or by
+ *  update event afterwards — and both must revoke, or a preview that resolves
+ *  after its placeholder leaks the object URL for the life of the document. */
+function swapPreviewData(prev: PdfPreviewData | null, next: PdfPreviewData): PdfPreviewData {
+  if (prev?.url && prev.url !== next.url && prev.url.startsWith('blob:')) {
+    URL.revokeObjectURL(prev.url);
+  }
+  return next;
+}
+
 export default function Preview() {
   // One-shot drain: this instance claims whatever was staged and stores the
   // token so it can recognise later `.update()` calls aimed at it. The render
@@ -92,16 +103,25 @@ export default function Preview() {
   if (consumedRef.current === undefined) {
     consumedRef.current = peekPdfPreviewStage();
   }
+  const [data, setData] = useState<PdfPreviewData | null>(consumedRef.current?.data ?? null);
+
   useEffect(() => {
+    const stage = consumedRef.current;
+    if (stage == null) return;
     // Claim the stage for real once mounted. The identity check (inside
     // claimPdfPreviewStage) keeps a payload staged *after* our render-phase
     // peek (e.g. a second preview opened in quick succession) available for
     // the window it belongs to.
-    if (consumedRef.current != null) {
-      claimPdfPreviewStage(consumedRef.current);
-    }
+    claimPdfPreviewStage(stage);
+    // An `.update()` that landed between that peek and this commit had no
+    // listener to reach — the effect below had not run yet — so it rewrote the
+    // stage instead, and the stage is now the only copy of it. Adopt it, or a
+    // preview whose file resolved faster than this chunk loaded would sit on
+    // the "LOADING PDF" placeholder for ever. Claim first: from here on the
+    // event path is live, and the two effects run in one commit, so nothing
+    // can slip between them.
+    setData(prev => (prev === stage.data ? prev : swapPreviewData(prev, stage.data)));
   }, []);
-  const [data, setData] = useState<PdfPreviewData | null>(consumedRef.current?.data ?? null);
 
   // Only respond to update events whose token matches our claim.
   useEffect(() => {
@@ -110,12 +130,7 @@ export default function Preview() {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<PendingPdfStage>).detail;
       if (!detail || detail.token !== myToken) return;
-      setData(prev => {
-        if (prev?.url && prev.url !== detail.data.url && prev.url.startsWith('blob:')) {
-          URL.revokeObjectURL(prev.url);
-        }
-        return detail.data;
-      });
+      setData(prev => swapPreviewData(prev, detail.data));
     };
     window.addEventListener(PDF_PREVIEW_UPDATE_EVENT, handler);
     return () => window.removeEventListener(PDF_PREVIEW_UPDATE_EVENT, handler);

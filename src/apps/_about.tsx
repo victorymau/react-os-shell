@@ -29,7 +29,7 @@ export interface BuiltinAppInfo {
 export const BUILTIN_APP_INFO = {
   spreadsheet: {
     name: 'Spreadsheets',
-    version: '1.1.1',
+    version: '1.1.2',
     route: '/spreadsheet',
     description: 'Multi-sheet spreadsheet editor with CSV / TSV import and export.',
   },
@@ -47,7 +47,7 @@ export const BUILTIN_APP_INFO = {
   },
   preview: {
     name: 'Preview',
-    version: '1.2.1',
+    version: '1.2.2',
     route: '/preview',
     description: 'Viewer for PDF documents, images, DXF drawings and 3D models — CAD-style measuring with object snap and an AutoCAD-like command bar.',
   },

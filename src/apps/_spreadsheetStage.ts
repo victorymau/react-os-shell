@@ -22,15 +22,23 @@ export interface SpreadsheetPreviewData {
  *  staged payload so a later `.update()` only targets the window that picked
  *  it up — opening a second Spreadsheet never clobbers the first. */
 export interface SpreadsheetPreviewHandle {
-  /** Replace the data shown in the window that consumed this staging.
-   *  No-op if no window ever consumed it, or if that window has been closed. */
+  /** Replace the data shown in the window that consumed this staging. Safe to
+   *  call before that window exists — an update that lands while the payload
+   *  is still staged replaces the staged payload, so the window opens on the
+   *  resolved sheet instead of whatever it was staged with.
+   *  No-op only once the window that consumed the staging has been closed. */
   update(next: SpreadsheetPreviewData): void;
 }
 
 /** @internal Event carrying `.update()` payloads to the claiming window. */
 export const SPREADSHEET_PREVIEW_UPDATE_EVENT = 'react-os-shell:spreadsheet-preview-update';
 
-/** @internal Staged payload awaiting the next Spreadsheet window mount. */
+/** @internal Staged payload awaiting the next Spreadsheet window mount.
+ *
+ *  `data` is MUTABLE and deliberately so: `update()` rewrites it in place
+ *  while the stage is still unclaimed. Restaging a fresh object instead would
+ *  break the identity that `claimSpreadsheetPreviewStage` and the claimant's
+ *  own `consumedRef` are holding. */
 export interface PendingSpreadsheetStage {
   token: number;
   data: SpreadsheetPreviewData;
@@ -43,9 +51,16 @@ let nextSpreadsheetToken = 0;
  *  handle's `update()` method swaps content in *that* specific window only. */
 export function setSpreadsheetPreview(data: SpreadsheetPreviewData): SpreadsheetPreviewHandle {
   const token = ++nextSpreadsheetToken;
-  pendingSpreadsheet = { token, data };
+  const stage: PendingSpreadsheetStage = { token, data };
+  pendingSpreadsheet = stage;
   return {
     update(next: SpreadsheetPreviewData) {
+      // Same delivery gap the Preview stage has (see _previewStage.ts): the
+      // window is a lazy chunk, so a consumer that resolves quickly can call
+      // this before any window has mounted to hear the event, and the payload
+      // would be dropped. Rewrite the stage as well while it is still ours —
+      // `pendingSpreadsheet === stage` is exactly "nobody has claimed it yet".
+      if (pendingSpreadsheet === stage) stage.data = next;
       if (typeof window === 'undefined') return;
       window.dispatchEvent(new CustomEvent(SPREADSHEET_PREVIEW_UPDATE_EVENT, { detail: { token, data: next } }));
     },

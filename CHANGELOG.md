@@ -2,6 +2,39 @@
 
 All notable changes to this project will be documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## 4.79.2
+
+- **A preview whose file arrives before its window no longer hangs on "LOADING
+  PDF".** `PdfActionButton` stages a placeholder, opens the window, and
+  swaps the document in with `handle.update()` once `fetchPdf()` resolves. That
+  update travels as a DOM event, and Preview is a lazy chunk — so whenever the
+  fetch won the race against the chunk load, the event was dispatched to a
+  window that had not mounted yet, nobody was listening, and the payload was
+  gone. The window then sat on the placeholder for ever. Reliably reproducible
+  as the FIRST preview of a session (the chunk is uncached and the document
+  usually is not); the second preview always worked, which is what made it look
+  intermittent.
+
+  The 4.79.0 timeout cannot catch this one: `fetchPdf()` settles perfectly
+  normally, so there is nothing to time out. The fetch succeeded, the blob was
+  built, and the only thing lost was the delivery.
+
+  `update()` now rewrites the staged payload as well as dispatching the event,
+  for as long as the staging is unclaimed — so a window that mounts later drains
+  the resolved file instead of the placeholder it was staged with. The window
+  adopts it in the same commit that claims the stage, before the listener is
+  bound, so the two delivery paths meet with no gap between them. An update
+  after the claiming window has closed is still a no-op, and still cannot leak
+  into the next Preview someone opens.
+
+- **The Spreadsheets stage had the identical hole, and is fixed the same way.**
+  `setSpreadsheetPreview` is the same protocol against the same lazy chunk, so
+  an `.update()` that resolved before the window mounted was dropped exactly as
+  the PDF one was. Nothing shipped triggers it today — `openPreviewFile` and
+  the portals' attachment handler both fetch the CSV before they stage it — so
+  this is a latent contract fix rather than a bug anyone has hit, and it keeps
+  the two staging surfaces reading the same.
+
 ## 4.79.1
 
 - **The notification dropdown no longer grows a horizontal scrollbar.** The list

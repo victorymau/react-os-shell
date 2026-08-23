@@ -102,15 +102,9 @@ export default function Spreadsheet() {
   if (consumedRef.current === undefined) {
     consumedRef.current = peekSpreadsheetPreviewStage();
   }
-  useEffect(() => {
-    // Claim the stage for real once mounted. The identity check (inside
-    // claimSpreadsheetPreviewStage) keeps a payload staged *after* our
-    // render-phase peek (e.g. a second preview opened in quick succession)
-    // available for the window it belongs to.
-    if (consumedRef.current != null) {
-      claimSpreadsheetPreviewStage(consumedRef.current);
-    }
-  }, []);
+  // What the initial state below was derived from, so the mount effect can
+  // tell whether `.update()` has replaced it since.
+  const stagedAtRenderRef = useRef<SpreadsheetPreviewData | null>(consumedRef.current?.data ?? null);
   const initialPreview = (() => {
     const p = consumedRef.current;
     if (!p) return null;
@@ -159,6 +153,33 @@ export default function Spreadsheet() {
     () => consumedRef.current?.data.onEmail,
   );
 
+  // Show a payload that arrived after this window was built. Shared by the two
+  // delivery routes below — the stage, drained on mount, and the update event.
+  const applyPreview = useCallback((next: SpreadsheetPreviewData) => {
+    const sheet = sheetFromCSV(next.csv, 'Sheet 1');
+    if (!sheet) return;
+    setSheets([sheet]);
+    setActiveIdx(0);
+    setTitle(next.filename.replace(/\.(csv|tsv|txt)$/i, ''));
+    setEmailHandler(() => next.onEmail);
+  }, []);
+
+  useEffect(() => {
+    const stage = consumedRef.current;
+    if (stage == null) return;
+    // Claim the stage for real once mounted. The identity check (inside
+    // claimSpreadsheetPreviewStage) keeps a payload staged *after* our
+    // render-phase peek (e.g. a second preview opened in quick succession)
+    // available for the window it belongs to.
+    claimSpreadsheetPreviewStage(stage);
+    // An `.update()` that landed between that peek and this commit had no
+    // listener to reach — the effect below had not run yet — so it rewrote the
+    // stage instead, and the stage is now the only copy of it. Claim first:
+    // from here on the event path is live, and the two effects run in one
+    // commit, so nothing can slip between them.
+    if (stage.data !== stagedAtRenderRef.current) applyPreview(stage.data);
+  }, []);
+
   // Only respond to update events whose token matches our claim.
   useEffect(() => {
     const myToken = consumedRef.current?.token;
@@ -166,12 +187,7 @@ export default function Spreadsheet() {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<PendingSpreadsheetStage>).detail;
       if (!detail || detail.token !== myToken) return;
-      const sheet = sheetFromCSV(detail.data.csv, 'Sheet 1');
-      if (!sheet) return;
-      setSheets([sheet]);
-      setActiveIdx(0);
-      setTitle(detail.data.filename.replace(/\.(csv|tsv|txt)$/i, ''));
-      setEmailHandler(() => detail.data.onEmail);
+      applyPreview(detail.data);
     };
     window.addEventListener(SPREADSHEET_PREVIEW_UPDATE_EVENT, handler);
     return () => window.removeEventListener(SPREADSHEET_PREVIEW_UPDATE_EVENT, handler);

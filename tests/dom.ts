@@ -88,6 +88,20 @@ win.HTMLElement.prototype.scrollIntoView ??= function scrollIntoView() {};
 };
 define('ResizeObserver', (win as unknown as Record<string, unknown>).ResizeObserver);
 
+// Canvas 2D types jsdom does not implement. Nothing here draws — pdfjs-dist
+// (a static import of the Preview app) reads them while it EVALUATES, so
+// without these a spec that so much as imports Preview dies on
+// "DOMMatrix is not defined" before its first assertion. Constructors, not
+// implementations: a spec that needs real rasterising needs a real browser.
+for (const name of ['DOMMatrix', 'Path2D', 'ImageData'] as const) {
+  if ((win as unknown as Record<string, unknown>)[name] === undefined) {
+    const Stub = class {};
+    Object.defineProperty(Stub, 'name', { value: name });
+    (win as unknown as Record<string, unknown>)[name] = Stub;
+  }
+  define(name, (win as unknown as Record<string, unknown>)[name]);
+}
+
 // Tells React that `act` is available, so it does not warn about updates
 // outside of it.
 define('IS_REACT_ACT_ENVIRONMENT', true);
