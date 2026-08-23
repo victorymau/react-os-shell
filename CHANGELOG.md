@@ -2,6 +2,45 @@
 
 All notable changes to this project will be documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## 4.79.0
+
+- **`PdfActionButton` stops waiting for a document that is never coming.** The
+  Preview window opens on a "LOADING PDF" placeholder and swaps in the document
+  when the consumer's `fetchPdf()` resolves. If that promise never settles — a
+  connection torn down mid-flight, a worker killed, a request the browser
+  abandoned — the placeholder stayed on screen indefinitely, so a document that
+  was merely slow and one that was genuinely dead looked identical to the person
+  waiting. A new `timeoutMs` prop gives up after 30 s by default (the slowest
+  document measured through the live stack arrived in ~4 s); `0` or `Infinity`
+  waits for ever, which is the old behaviour.
+
+  That ambiguity is report BG#00511 — a proforma preview that "would not load",
+  with no backend error recorded anywhere for that tenant on the day. The only
+  evidence left afterwards was the user's memory of what the screen showed, and
+  a placeholder that says nothing is not evidence.
+
+  **A timeout and a failure deliberately say different things.** Internally the
+  timeout resolves to a `TIMED_OUT` sentinel rather than rejecting, because it is
+  not an error the consumer raised — it is this side deciding to stop waiting.
+  The preview placeholder now reads "This document took too long to load. Close
+  this window and try again."; a `fetchPdf()` that settles with nothing still
+  reads "Failed to load PDF." Download and email toast the timeout rather than
+  dropping it, since `null` means the consumer has already told the user why and
+  a timeout is ours to explain. All three actions test for the sentinel
+  explicitly — it is a symbol, so it is truthy, and the existing `!blob` guard
+  in `handleEmail` would otherwise have handed it to the consumer's email
+  composer as if it were the document.
+
+  **The losing request is not cancelled.** The shell is transport-agnostic and
+  never owns it, so a `fetchPdf()` that settles at 45 s still settles — its
+  result is simply dropped, and the person has already been told the document was
+  too slow. Consumers whose documents legitimately outrun 30 s should raise
+  `timeoutMs`, or pass `0` to opt out; real cancellation means wiring an
+  `AbortController` into their own `fetchPdf`. Rejections are untouched: this
+  converts silence into a value, never a failure into a success. The helper
+  behind it (`withTimeout`, `TIMED_OUT`) is internal and not exported from the
+  package entry — `timeoutMs` is the whole public surface.
+
 ## 4.78.1
 
 - **Removed the window-restore path that has been unreachable since the portals
