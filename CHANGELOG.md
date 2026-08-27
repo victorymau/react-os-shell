@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## 4.79.4
+
+- **PDF preview works with pdfjs-dist 6.x.** The Preview viewer called
+  `getDocument(url)` with a bare string, an overload pdfjs-dist removed in
+  6.x — on a consumer with pdfjs 6 installed every PDF preview failed with
+  "Failed to load PDF" and a 0-page document. The call now passes the
+  parameter-object form, which both 5.x and 6.x accept.
+
 ## 4.79.3
 
 - **Dropdown menus can open above their trigger.** `DropdownMenu` now accepts

@@ -445,7 +445,11 @@ function PdfPanel({ url, filename, onDownload, onEmail }: PdfPanelProps) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    pdfjsLib.getDocument(url).promise.then(doc => {
+    // Parameter-object form, not the bare string: pdfjs-dist 6.x removed the
+    // string overload ("expected either `data`, `range`, or `url` parameter"),
+    // so a consumer on 6.x had every preview die on this line. The object form
+    // works on 5.x too.
+    pdfjsLib.getDocument({ url }).promise.then(doc => {
       if (cancelled) return;
       setPdf(doc);
       setTotalPages(doc.numPages);
