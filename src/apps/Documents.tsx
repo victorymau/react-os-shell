@@ -17,16 +17,11 @@ import { WindowTitle } from '../shell/Modal';
 import { PopupMenu, PopupMenuItem, PopupMenuDivider, PopupMenuLabel } from '../shell/PopupMenu';
 import toast from '../shell/toast';
 import AboutApp from './_about';
+import { escapeHtml } from '../utils/escapeHtml';
 
 const TITLE_DISPLAY_MAX = 24;
 function truncateForTitle(s: string) {
   return s.length > TITLE_DISPLAY_MAX ? `${s.slice(0, TITLE_DISPLAY_MAX - 1)}…` : s;
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  }[c] || c));
 }
 
 const TEXT_EXTS = new Set([

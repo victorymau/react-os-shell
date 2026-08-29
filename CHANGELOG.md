@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## 4.83.1
+
+- **A spreadsheet cell is shown as text, not run as markup.** `EditableGrid`
+  rendered each cell by setting `innerHTML` on its `contentEditable` node with
+  the raw value, so a cell could carry an element into the page. The value is
+  not always the product's own: the admin portal's CSV preview feeds this grid
+  an export of storefront form submissions, which anonymous visitors type. Cell
+  values are now escaped. Every read path already took `textContent`, so nothing
+  wanted markup, and escaping round-trips through `textContent` unchanged — a
+  cell holding `a < b` still reads back `a < b`.
+
+  This also stops a quieter data bug. A cell whose text looked like markup was
+  rendered as an element, so `textContent` read back less than was stored, and
+  the blur handler wrote that shorter value over the row — `<b>x</b>` silently
+  became `x` on a blur the user never edited.
+
+- `escapeHtml` moved to `src/utils/escapeHtml.ts`; `Documents` now imports the
+  same function it used to define privately. Its own two sinks were already
+  correct and are unchanged.
 ## 4.83.0
 
 - **The `pdfjs-dist` peer range no longer admits an unreviewed major.** It was

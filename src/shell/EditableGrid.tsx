@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { escapeHtml } from '../utils/escapeHtml';
 
 export interface GridColumn {
   key: string;
@@ -799,7 +800,12 @@ export default function EditableGrid({ columns, data, onChange, onColumnsChange,
                           }
                           handleKeyDown(e, ri, ci);
                         }}
-                        dangerouslySetInnerHTML={{ __html: row[ci] || '' }}
+                        // Escaped, NOT raw: a cell can hold text this grid never
+                        // authored — a CSV export of storefront form answers is
+                        // typed by anonymous visitors. Every read path below takes
+                        // `textContent`, so nothing here wants markup, and escaping
+                        // round-trips through `textContent` unchanged.
+                        dangerouslySetInnerHTML={{ __html: escapeHtml(row[ci] || '') }}
                       />
                       {isFillCorner && (
                         <div
