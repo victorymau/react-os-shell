@@ -75,6 +75,78 @@ if (typeof window !== 'undefined' && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
     `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 }
 
+// pdf.js does not ship its JBIG2 and JPEG 2000 decoders as JavaScript any
+// more: both are WebAssembly modules it loads at decode time, and it will only
+// load them from a location the caller supplies. With neither `wasmUrl` nor a
+// `BinaryDataFactory` configured — this package's state until now — the
+// decoder asks for one, pdf.js's own base factory throws "Ensure that the
+// `wasmUrl` API parameter is provided", and the worker swallows that as a
+// `warn()`. The page still renders; the scanned or JPEG-2000 image on it is
+// just missing. Nothing reaches the user, which is why it went unnoticed.
+//
+// The fix follows the mechanism the admin portal already uses for the pdf
+// WORKER (`import ... from 'pdfjs-dist/build/pdf.worker.min.mjs?url'`, which
+// Vite emits as /assets/pdf.worker.min-<hash>.mjs): let the CONSUMER'S bundler
+// emit the file and hand pdf.js the URL it produced. `new URL(spec,
+// import.meta.url)` is the bundler-neutral spelling of that — Vite resolves
+// the bare specifier and emits the binary as its own hashed asset (verified on
+// Vite 5 and 7), and a bundler that does not understand the form leaves it
+// alone and lands back on today's warn-and-degrade rather than on an error.
+//
+// The specifier points at the CONSUMER'S installed `pdfjs-dist`, not at a copy
+// vendored into this package. That is deliberate: these binaries are built
+// alongside the worker that instantiates them, and a vendored copy would pin
+// them to THIS package's devDependency instead of to the peer they actually
+// run against.
+const PDF_WASM_MODULES: Record<string, string> = {
+  'jbig2.wasm': new URL('pdfjs-dist/wasm/jbig2.wasm', import.meta.url).href,
+  'openjpeg.wasm': new URL('pdfjs-dist/wasm/openjpeg.wasm', import.meta.url).href,
+};
+
+/** pdf.js instantiates this itself (it is passed to `getDocument` as a class,
+ *  not an instance) and calls `fetch` once per binary it needs.
+ *
+ *  Only the `wasmUrl` kind is served. cMap and standard-font data are the other
+ *  two kinds pdf.js can ask for, and this package has never configured a URL
+ *  for either — so those keep the exact message pdf.js's own base factory
+ *  raises for an unconfigured URL, and behave as they always have. */
+class BundledPdfWasmFactory {
+  async fetch({ kind, filename }: { kind: string; filename: string }): Promise<Uint8Array> {
+    if (kind !== 'wasmUrl') {
+      throw new Error(`Ensure that the \`${kind}\` API parameter is provided.`);
+    }
+    const href = PDF_WASM_MODULES[filename];
+    if (!href) {
+      throw new Error(`No bundled pdf.js wasm module for "${filename}".`);
+    }
+    const res = await fetch(href);
+    if (!res.ok) {
+      throw new Error(`Unable to load wasm data at: ${href}`);
+    }
+    return new Uint8Array(await res.arrayBuffer());
+  }
+}
+
+/** The `getDocument` parameters that give pdf.js somewhere to load its wasm
+ *  decoders from.
+ *
+ *  A consumer that serves the whole `pdfjs-dist/wasm/` directory itself (copied
+ *  into `public/`, say, or on an air-gapped host) points us at it with
+ *  `window.__REACT_OS_SHELL_PDF_WASM__` — same escape hatch as
+ *  `__REACT_OS_SHELL_O3DV_LIBS__` below. pdf.js requires a trailing slash on
+ *  that value and throws "Invalid factory url" without one, so add it here
+ *  rather than making every consumer remember. Everyone else gets the
+ *  bundler-emitted modules and configures nothing. */
+function pdfWasmParams(): { wasmUrl?: string; BinaryDataFactory?: object } {
+  const dir = typeof window !== 'undefined'
+    ? (window as unknown as { __REACT_OS_SHELL_PDF_WASM__?: unknown }).__REACT_OS_SHELL_PDF_WASM__
+    : undefined;
+  if (typeof dir === 'string' && dir) {
+    return { wasmUrl: dir.endsWith('/') ? dir : `${dir}/` };
+  }
+  return { BinaryDataFactory: BundledPdfWasmFactory };
+}
+
 // The consumer-facing staging surface (`setPdfPreview`, PdfPreviewData,
 // PdfPreviewHandle) lives in ./_previewStage so that hosts importing it don't
 // pull this module — and its static pdfjs-dist import — into their startup
@@ -448,8 +520,8 @@ function PdfPanel({ url, filename, onDownload, onEmail }: PdfPanelProps) {
     // Parameter-object form, not the bare string: pdfjs-dist 6.x removed the
     // string overload ("expected either `data`, `range`, or `url` parameter"),
     // so a consumer on 6.x had every preview die on this line. The object form
-    // works on 5.x too.
-    pdfjsLib.getDocument({ url }).promise.then(doc => {
+    // works on 5.x too. tests/pdfjsContract.test.ts fails if it reverts.
+    pdfjsLib.getDocument({ url, ...pdfWasmParams() }).promise.then(doc => {
       if (cancelled) return;
       setPdf(doc);
       setTotalPages(doc.numPages);

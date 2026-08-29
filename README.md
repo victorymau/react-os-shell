@@ -48,6 +48,20 @@ shell's components need them — a portal that drops one gets a module-not-found
 build — but a consumer taking only `react-os-shell/markup` needs none of them, and
 `autoInstallPeers` would otherwise install the lot on its behalf.
 
+**`pdfjs-dist` is ranged, not wildcarded.** The Preview viewer accepts
+`^5.6.205 || ^6.0.0`. pdf.js removes API across majors — 6.0 dropped the
+bare-string `getDocument(url)` this viewer used to call, and an unbounded range
+let that arrive as a routine upgrade — so a new major goes into the range only
+once the viewer has been checked against it.
+
+Preview needs no wiring for pdf.js's WebAssembly decoders. It names
+`pdfjs-dist/wasm/jbig2.wasm` and `pdfjs-dist/wasm/openjpeg.wasm` through
+`new URL(..., import.meta.url)`, so your bundler emits them from your own
+installed copy and the viewer decodes scanned (JBIG2) and JPEG 2000 imagery
+without reaching a CDN. A host that would rather serve the whole
+`pdfjs-dist/wasm/` directory itself sets `window.__REACT_OS_SHELL_PDF_WASM__` to
+its URL before opening a Preview window.
+
 ## Quick start (~50 lines)
 
 ```tsx

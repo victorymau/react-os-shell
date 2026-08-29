@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## 4.83.0
+
+- **The `pdfjs-dist` peer range no longer admits an unreviewed major.** It was
+  `*` while the devDependency pinned `^5.6.205`, so the viewer was tested at
+  5.x and consumed at 6.x; pdf.js 6 removed the bare-string `getDocument(url)`
+  overload and every PDF preview in the admin portal failed for ten days before
+  4.79.4 repaired the call. The range is now `^5.6.205 || ^6.0.0` and the
+  devDependency sits at the top of it, so a future pdf.js 7 has to be added
+  deliberately. A new test fails if the call reverts to the bare form, if a
+  peer clause loses its major ceiling, or if the devDependency drops below the
+  highest major the range promises.
+
+- **Preview decodes scanned and JPEG 2000 imagery.** pdf.js loads its
+  JBIG2 and OpenJPEG decoders from WebAssembly and refuses to fetch them
+  without a location from the caller, so those images were silently dropped
+  from an otherwise-rendered page — a `warn()` in the worker and nothing on
+  screen. The viewer now names the two modules through
+  `new URL('pdfjs-dist/wasm/...', import.meta.url)`, which the consumer's own
+  bundler resolves and emits, and serves them to pdf.js through a
+  `BinaryDataFactory`. No consumer wiring, no CDN, and the binaries always come
+  from the same `pdfjs-dist` install as the worker that instantiates them. A
+  host serving the whole `pdfjs-dist/wasm/` directory itself can point at it
+  with `window.__REACT_OS_SHELL_PDF_WASM__`.
+
 ## 4.82.0
 
 - **Tenant portal branding has one shared lifecycle.** `BrandMark` renders
