@@ -181,6 +181,65 @@ export async function flush() {
 }
 
 /**
+ * Drive the tree until `condition()` holds, or fail saying what was there.
+ *
+ * `flush()` advances by exactly ONE microtask, so `await flush()` twice is a
+ * guess about how many hops the thing being waited on takes. The guess held
+ * locally and on Node 22 and lost on Node 24: `entityWindowLoading` asserted a
+ * react-query error state that had not reached the DOM yet and read the
+ * still-loading text instead. Nothing ever promised the number two — and no
+ * count of microtasks reaches work deferred by a timer, which the shell's own
+ * open path does (`activateAfterMount`).
+ *
+ * So wait for the STATE, not for a fixed number of turns. Each attempt drains
+ * the microtask queue AND one timer turn inside `act`, so effects, react-query
+ * notifications and deferred shell work are all committed before the condition
+ * is read. Waiting costs nothing when the state is already there: the common
+ * case returns on the first attempt.
+ *
+ * A condition that never holds fails here, naming itself, rather than as a
+ * mismatched assertion further down whose message describes a symptom.
+ */
+export async function waitFor(
+  condition: () => boolean,
+  message: string | (() => string),
+  { timeout = 5000 }: { timeout?: number } = {},
+): Promise<void> {
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+    if (condition()) return;
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `waitFor timed out after ${timeout}ms: ${typeof message === 'function' ? message() : message}`,
+      );
+    }
+  }
+}
+
+/** `waitFor` over the rendered text, reporting what WAS rendered on failure. */
+export async function waitForText(pattern: RegExp, opts?: { timeout?: number }): Promise<void> {
+  await waitFor(
+    () => pattern.test(document.body.textContent ?? ''),
+    () => `nothing matching ${pattern} was rendered. Body text: ${JSON.stringify(document.body.textContent ?? '')}`,
+    opts,
+  );
+}
+
+/** `waitFor` over a selector, handing back the element it settled on. */
+export async function waitForElement<E extends Element = Element>(
+  selector: string,
+  opts?: { timeout?: number },
+): Promise<E> {
+  await waitFor(
+    () => document.querySelector(selector) !== null,
+    () => `no element matched \`${selector}\`. Body text: ${JSON.stringify(document.body.textContent ?? '')}`,
+    opts,
+  );
+  return document.querySelector<E>(selector)!;
+}
+
+/**
  * Press a key on `window`, the way a user would.
  *
  * `target` defaults to `document.body`; pass an element to reproduce the

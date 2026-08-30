@@ -14,7 +14,7 @@
  * editing, and the chrome's exit-edit-first behaviour survives unchanged.
  */
 
-import { flush, pressKey, render, act } from './dom';
+import { flush, pressKey, render, act, waitFor } from './dom';
 import { useEffect } from 'react';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -76,9 +76,10 @@ async function mountEntity() {
       </QueryClientProvider>
     </MemoryRouter>,
   );
-  await flush();
-  await flush();
-  assert.ok(document.querySelector(panelSelector), 'the entity window opened');
+  await waitFor(
+    () => document.querySelector(panelSelector) !== null,
+    'the entity window never opened',
+  );
   return mounted;
 }
 

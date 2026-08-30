@@ -1,4 +1,4 @@
-import { act, flush, pressKey, render } from './dom';
+import { act, flush, pressKey, render, waitFor } from './dom';
 import { lazy, useEffect, useState } from 'react';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -115,9 +115,10 @@ async function mountEntity() {
       </QueryClientProvider>
     </MemoryRouter>,
   );
-  await flush();
-  await flush();
-  assert.ok(document.querySelector(entityPanelSelector), 'the real entity window opened');
+  await waitFor(
+    () => document.querySelector(entityPanelSelector) !== null,
+    'the real entity window never opened',
+  );
   return mounted;
 }
 
@@ -151,9 +152,10 @@ async function mountPage(route = ROUTE) {
       </ConfirmProvider>
     </MemoryRouter>,
   );
-  await flush();
-  await flush();
-  assert.ok(document.querySelector(panelSelector(route)), 'the real PageWindow opened');
+  await waitFor(
+    () => document.querySelector(panelSelector(route)) !== null,
+    'the real PageWindow never opened',
+  );
   return mounted;
 }
 
@@ -183,10 +185,11 @@ async function mountDirtyWidgets() {
       </ConfirmProvider>
     </MemoryRouter>,
   );
-  await flush();
-  await flush();
-  assert.ok(document.querySelector(panelSelector(WIDGET_ROUTE)), 'the first dirty widget opened');
-  assert.ok(document.querySelector(panelSelector(SECOND_WIDGET_ROUTE)), 'the second dirty widget opened');
+  await waitFor(
+    () => document.querySelector(panelSelector(WIDGET_ROUTE)) !== null
+      && document.querySelector(panelSelector(SECOND_WIDGET_ROUTE)) !== null,
+    'both dirty widget windows never opened',
+  );
   return mounted;
 }
 

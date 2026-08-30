@@ -22,7 +22,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { render, flush, act } from './dom';
+import { render, flush, act, waitFor } from './dom';
 import { useState } from 'react';
 import type { AxiosInstance } from 'axios';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -113,8 +113,9 @@ async function exportAll(container: HTMLElement) {
     .find((el) => el.textContent === 'Export selected to CSV');
   assert.ok(item, 'the bulk menu offers the export');
   act(() => { item!.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true })); });
-  await flush();
-  await flush();
+  // The export is a request away, so wait for the announcement it produces
+  // rather than for a fixed number of turns — every caller reads `announced()`.
+  await waitFor(() => /rows/.test(announced()), 'the export never announced a result');
 }
 
 /** What the user was told — toasts and notifications both render their text. */

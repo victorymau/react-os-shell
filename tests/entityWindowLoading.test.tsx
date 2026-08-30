@@ -1,4 +1,4 @@
-import { act, flush, render } from './dom';
+import { act, render, waitFor, waitForText } from './dom';
 import { useEffect } from 'react';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -94,10 +94,7 @@ test('Command K entity stays in loading until its detail request resolves', asyn
     </MemoryRouter>,
   );
 
-  await flush();
-  await flush();
-
-  assert.match(document.body.textContent ?? '', /Loading record/);
+  await waitForText(/Loading record/);
   assert.doesNotMatch(document.body.textContent ?? '', /not found/i);
   assert.ok(document.querySelector('[role="status"]'), 'the wait is announced');
 
@@ -111,11 +108,11 @@ test('Command K entity stays in loading until its detail request resolves', asyn
     });
     await request;
   });
-  await flush();
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
-
+  await waitFor(
+    () => document.querySelector('[data-testid="entity-detail"]') !== null,
+    'the loaded detail never replaced the wait',
+  );
   assert.match(document.body.textContent ?? '', /Speed/);
-  assert.ok(document.querySelector('[data-testid="entity-detail"]'), 'the loaded detail replaces the wait');
   assert.doesNotMatch(document.body.textContent ?? '', /Loading record|not found/i);
 
   await act(async () => { view.unmount(); });
@@ -143,13 +140,11 @@ test('the shell does not interfere with a self-fetching owner retry', async () =
     </MemoryRouter>,
   );
 
-  await flush();
-  await flush();
+  await waitForText(/Owner error/);
   assert.equal(calls, 1);
-  assert.match(document.body.textContent ?? '', /Owner error/);
 
   await queryClient.invalidateQueries({ queryKey: ['self-fetching-owner', ENTITY_ID] });
-  await flush();
+  await waitFor(() => calls === 2, () => `the owner never refetched; queryFn ran ${calls} time(s)`);
   assert.equal(calls, 2);
 
   await act(async () => { view.unmount(); });
@@ -182,12 +177,9 @@ test('a window whose detail query never runs does not wait on it forever', async
     </MemoryRouter>,
   );
 
-  await flush();
-  await flush();
-
+  await waitForText(/Record not found/);
   assert.equal(requests, 0, 'a draft id is never fetched');
   assert.doesNotMatch(document.body.textContent ?? '', /Loading record/);
-  assert.match(document.body.textContent ?? '', /Record not found/);
 
   await act(async () => { view.unmount(); });
   queryClient.clear();
