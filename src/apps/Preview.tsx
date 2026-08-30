@@ -15,6 +15,7 @@ import toast from '../shell/toast';
 import { WindowTitle, getActiveModalId } from '../shell/Modal';
 import { registerModalEscapeInterceptor } from '../shell/escapeInterceptors';
 import AboutApp from './_about';
+import { hasWasmPreamble, wasmBytesError } from './_wasmBytes';
 import ImageAnnotator, { type ImageAnnotatorHandle } from './ImageAnnotator';
 import {
   PDF_PREVIEW_UPDATE_EVENT,
@@ -123,7 +124,12 @@ class BundledPdfWasmFactory {
     if (!res.ok) {
       throw new Error(`Unable to load wasm data at: ${href}`);
     }
-    return new Uint8Array(await res.arrayBuffer());
+    // A 200 is not proof the bundler emitted the binary — see _wasmBytes.ts.
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    if (!hasWasmPreamble(bytes)) {
+      throw wasmBytesError(href, filename, bytes);
+    }
+    return bytes;
   }
 }
 

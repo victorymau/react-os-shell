@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## 4.83.2
+
+- **A missing wasm decoder is now reported instead of quietly ignored.** The
+  factory added in 4.83.0 accepted any response the host answered with, and
+  every portal consuming this package is a single-page app — an SPA serves its
+  own `index.html` under HTTP 200 for a path its router does not recognise, so
+  a build that failed to emit `jbig2.wasm` or `openjpeg.wasm` returned a PAGE
+  rather than a 404. `res.ok` was true, pdf.js was handed `<!doctype html>`,
+  and it instantiated that inside a `try` that only warns before dropping to
+  its JS fallback. The result was the exact silent degrading 4.83.0 set out to
+  remove, with nothing in the console pointing at the emit. The bytes are now
+  checked for the four-byte WebAssembly preamble, and a response that fails it
+  raises an error naming the file, the URL, what arrived instead, and the
+  `window.__REACT_OS_SHELL_PDF_WASM__` escape hatch.
+
+  This is a guard against a future build regression rather than a fix for a
+  fault anyone has hit: real builds of the admin and customer portals at
+  4.83.1 do emit both binaries. What changes is that if one ever stops, it
+  fails loudly at the point of the fault.
+
 ## 4.83.1
 
 - **A spreadsheet cell is shown as text, not run as markup.** `EditableGrid`
