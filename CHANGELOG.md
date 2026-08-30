@@ -14,7 +14,7 @@ All notable changes to this project will be documented in this file. The format 
   peer clause loses its major ceiling, or if the devDependency drops below the
   highest major the range promises.
 
-- **Preview decodes scanned and JPEG 2000 imagery.** pdf.js loads its
+- **Preview now supplies pdf.js's WebAssembly decoders.** pdf.js loads its
   JBIG2 and OpenJPEG decoders from WebAssembly and refuses to fetch them
   without a location from the caller, so those images were silently dropped
   from an otherwise-rendered page — a `warn()` in the worker and nothing on

@@ -56,11 +56,17 @@ once the viewer has been checked against it.
 
 Preview needs no wiring for pdf.js's WebAssembly decoders. It names
 `pdfjs-dist/wasm/jbig2.wasm` and `pdfjs-dist/wasm/openjpeg.wasm` through
-`new URL(..., import.meta.url)`, so your bundler emits them from your own
-installed copy and the viewer decodes scanned (JBIG2) and JPEG 2000 imagery
-without reaching a CDN. A host that would rather serve the whole
-`pdfjs-dist/wasm/` directory itself sets `window.__REACT_OS_SHELL_PDF_WASM__` to
-its URL before opening a Preview window.
+`new URL(..., import.meta.url)`, so a production bundle emits them from your own
+installed copy and hands them to pdf.js without reaching a CDN. Those are the
+decoders JBIG2 (scanned) and JPEG 2000 images need; without a location pdf.js
+declines to fetch them and drops such images from an otherwise-rendered page.
+
+Two caveats worth knowing. The specifier is resolved by your bundler at build
+time, so this is verified for production builds; a dev server that pre-bundles
+dependencies may not resolve it, in which case you get exactly the previous
+behaviour rather than a new failure. And a host that would rather serve the
+whole `pdfjs-dist/wasm/` directory itself sets
+`window.__REACT_OS_SHELL_PDF_WASM__` to its URL before opening a Preview window.
 
 ## Quick start (~50 lines)
 
