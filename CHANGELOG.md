@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## 4.89.1
+
+- **"Reset" in the column picker no longer un-hides every `defaultHidden`
+  column.** `useColumnConfig`'s `resetColumns` rebuilt the column state as
+  `{ key, width }` and never wrote `hidden`, so a reset made every column the
+  consumer had marked `defaultHidden` visible — and reset also persists, to
+  `localStorage` and then to the user's profile on the `PATCH /auth/me/`
+  debounce, so the saved config won on every later load and nothing healed it.
+  On a wide list this was drastic rather than cosmetic: a grid whose
+  `ColumnDef` list hides 35 of 45 columns by default came back with all 45,
+  permanently, from one click. Reset now carries `defaultHidden` through and
+  pins `_select` first and visible, which is what the hook's two sibling paths
+  — the initial state and the server-prefs merge — already did.
+
+  Configs already saved with the columns un-hidden are left alone. Re-hiding
+  them would mean rewriting state a user may since have chosen deliberately,
+  and telling those two cases apart is not something the data supports.
+
+- **Consistency, not the bug above:** the `localStorage` merge in the same
+  hook also dropped `defaultHidden` for columns absent from the cache, where
+  its server-side twin kept it. That one only affected a column added to a
+  consumer's `ColumnDef` list after the cache was written, and only until the
+  profile fetch landed a moment later — a first-paint flash, not persisted
+  state. Both merges now read the same.
+
 ## 4.89.0
 
 The follow-ups deferred from the charts-tier audit

@@ -38,7 +38,11 @@ export function useColumnConfig(tableId: string, defaultColumns: ColumnDef[]) {
         const existing = new Set(parsed.map(c => c.key));
         const merged = pinSelectColumn([
           ...parsed.filter(c => defaultColumns.some(d => d.key === c.key)),
-          ...defaultColumns.filter(d => !existing.has(d.key)).map(d => ({ key: d.key, width: d.defaultWidth || 150 })),
+          // `hidden: d.defaultHidden` matches the server-prefs merge below.
+          // A column added to the consumer's ColumnDef list since this cache
+          // was written has no entry in it, so its `defaultHidden` is the
+          // only opinion there is.
+          ...defaultColumns.filter(d => !existing.has(d.key)).map(d => ({ key: d.key, width: d.defaultWidth || 150, hidden: d.defaultHidden })),
         ]);
         return merged;
       } catch { /* fall through */ }
@@ -200,7 +204,16 @@ export function useColumnConfig(tableId: string, defaultColumns: ColumnDef[]) {
   }, [persistColumns]);
 
   const resetColumns = useCallback(() => {
-    const defaults = defaultColumns.map(d => ({ key: d.key, width: d.defaultWidth || 150 }));
+    // Carry `defaultHidden` through, exactly as the initial state and the
+    // server-prefs merge above do. Dropping it made Reset un-hide every
+    // column the consumer had hidden by default — and reset persists, to
+    // localStorage and then to the user's profile, so nothing healed it on a
+    // later load (BG#00576).
+    const defaults = pinSelectColumn(defaultColumns.map(d => ({
+      key: d.key,
+      width: d.defaultWidth || 150,
+      hidden: d.defaultHidden,
+    })));
     setColumns(defaults);
     persistColumns(defaults);
   }, [defaultColumns, persistColumns]);
