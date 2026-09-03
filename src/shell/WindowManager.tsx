@@ -6,7 +6,8 @@ import apiClient, { isShellApiClientConfigured } from '../api/client';
 import { useShellStrings } from './strings';
 import { entityDetailUrl, entityRefetchInterval, shouldRetryEntityFetch } from './entityFetchPolicy';
 import { WINDOW_REGISTRY, isPageEntry, isEntityEntry, type PageRegistryEntry, type ModalRegistryEntry } from '../windowRegistry/types';
-import Modal, { triggerSplitView, modalDepthRef, getActiveModalId, subscribeActive, activateModal, ExposeBackdrop, WindowShortcutProvider, isPanelFullyVisible, panelOffscreenBearing, revealWindow, requestModalClose, type WindowShortcutSpec } from './Modal';
+import Modal, { triggerSplitView, modalDepthRef, getActiveModalId, subscribeActive, activateModal, ExposeBackdrop, WindowShortcutProvider, isPanelFullyVisible, panelOffscreenBearing, revealWindow, requestModalClose, minimizeWindowByKey, type WindowShortcutSpec } from './Modal';
+import { PopupMenu, PopupMenuItem, PopupMenuDivider, PopupMenuLabel } from './PopupMenu';
 import WindowErrorBoundary, { WindowCrashedFallback } from './WindowErrorBoundary';
 import { UndoProvider } from './UndoProvider';
 import PartNumberDetailPopup from './PartNumberDetailPopup';
@@ -700,6 +701,19 @@ function TaskbarTabPreview({ items, anchorEl, onActivate, onClose, onMouseEnter,
   );
 }
 
+/** Anchor a taskbar menu so it opens AWAY from the taskbar edge, never
+ *  underneath it. Same rules as the favourites menu in Layout, which takes the
+ *  position as a prop; the taskbar tabs render into the bar through a portal
+ *  and have no such prop, so read the position Layout publishes as a CSS
+ *  variable. */
+function taskbarMenuStyle(x: number, y: number): React.CSSProperties {
+  const pos = getComputedStyle(document.documentElement).getPropertyValue('--taskbar-position')?.trim() || 'bottom';
+  return pos === 'top' ? { left: Math.min(x, window.innerWidth - 220), top: y + 4 }
+    : pos === 'left' ? { left: x + 4, top: Math.min(y, window.innerHeight - 160) }
+    : pos === 'right' ? { right: window.innerWidth - x + 4, top: Math.min(y, window.innerHeight - 160) }
+    : { left: Math.min(x, window.innerWidth - 220), bottom: window.innerHeight - y + 4 };
+}
+
 function TaskbarWindows({ openWindows, onRemove, onSplitView, onActivate, onActivateById }: {
   openWindows: MinimizedItem[]; onRemove: (id: string) => void; onSplitView: () => void;
   onActivate: (label: string) => void;
@@ -746,6 +760,11 @@ function TaskbarWindows({ openWindows, onRemove, onSplitView, onActivate, onActi
 
   const [hoveredItems, setHoveredItems] = useState<MinimizedItem[] | null>(null);
   const [hoveredAnchor, setHoveredAnchor] = useState<HTMLElement | null>(null);
+  // Right-click on a tab that stands for SEVERAL windows. A single-window tab
+  // delegates to that window's own menu instead (it carries per-window items
+  // the taskbar knows nothing about — pin on top, Add to desktop, whatever the
+  // page registered), so this state is only ever set for a group.
+  const [groupMenu, setGroupMenu] = useState<{ x: number; y: number; items: MinimizedItem[]; label: string } | null>(null);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleEnter = (items: MinimizedItem[], el: HTMLElement) => {
     if (hoverTimerRef.current) { clearTimeout(hoverTimerRef.current); hoverTimerRef.current = null; }
@@ -813,8 +832,16 @@ function TaskbarWindows({ openWindows, onRemove, onSplitView, onActivate, onActi
           <button key={group.key} onClick={() => onActivateById(primary.id)}
             onMouseEnter={(e) => handleEnter(group.items, e.currentTarget)}
             onMouseLeave={handleLeave}
-            onDoubleClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('modal-center', { detail: { label: primary.label } })); }}
-            onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); window.dispatchEvent(new CustomEvent('modal-context-menu', { detail: { label: primary.label, x: e.clientX, y: e.clientY } })); }}
+            onDoubleClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('modal-center', { detail: { windowKey: primary.id, label: primary.label } })); }}
+            onContextMenu={(e) => {
+              e.preventDefault(); e.stopPropagation();
+              // A grouped tab is not one window, so it cannot borrow one
+              // window's menu: "Close" there would silently pick a single
+              // instance out of the stack. Give the group its own menu whose
+              // items say what they act on.
+              if (isGrouped) { setGroupMenu({ x: e.clientX, y: e.clientY, items: group.items, label: group.label }); return; }
+              window.dispatchEvent(new CustomEvent('modal-context-menu', { detail: { windowKey: primary.id, label: primary.label, x: e.clientX, y: e.clientY } }));
+            }}
             style={{ width: 'var(--window-tab-width, 200px)', fontSize: 'var(--window-tab-font-size, 12px)' }}
             data-tab-group={group.key}
             className={`group relative flex items-center gap-1.5 rounded-lg px-3 py-2 font-medium transition-all min-w-0 shrink ${
@@ -852,6 +879,31 @@ function TaskbarWindows({ openWindows, onRemove, onSplitView, onActivate, onActi
           </svg>
           Exposé
         </button>
+      )}
+      {groupMenu && (
+        <PopupMenu portal minWidth={200} style={taskbarMenuStyle(groupMenu.x, groupMenu.y)} onClose={() => setGroupMenu(null)}>
+          {/* Name the group, so "all" is not left to guess at. */}
+          <PopupMenuLabel>{groupMenu.label}</PopupMenuLabel>
+          <PopupMenuItem onClick={() => { setGroupMenu(null); groupMenu.items.forEach(it => minimizeWindowByKey(it.id)); }}>
+            <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 12h-15" /></svg>
+            {shellStrings.taskbar.minimizeAllWindows}
+          </PopupMenuItem>
+          {/* Raise them in open order, so the tab's own primary — the one a
+           *  plain click activates — still lands on top. */}
+          <PopupMenuItem onClick={() => { setGroupMenu(null); groupMenu.items.forEach(it => onActivateById(it.id)); }}>
+            <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75h6.5v6.5h-6.5zM13.75 8.75h6.5v6.5h-6.5z" /></svg>
+            {shellStrings.taskbar.restoreAllWindows}
+          </PopupMenuItem>
+          <PopupMenuDivider />
+          {/* One close request per window, each through that window's own
+           *  guard — a dirty one still gets to ask. Confirms queue rather than
+           *  drop (see ConfirmDialog), so several unsaved windows produce
+           *  several prompts in turn, each naming its own window. */}
+          <PopupMenuItem danger onClick={() => { setGroupMenu(null); groupMenu.items.forEach(it => onRemove(it.id)); }}>
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+            {`${shellStrings.taskbar.closeAllWindows} (${groupMenu.items.length})`}
+          </PopupMenuItem>
+        </PopupMenu>
       )}
       {hoveredItems && hoveredAnchor && (
         <TaskbarTabPreview

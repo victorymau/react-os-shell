@@ -2,6 +2,42 @@
 
 All notable changes to this project will be documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## 4.90.0
+
+- **Right-clicking a grouped taskbar tab now acts on the group.** A tab that
+  stands for several windows — same-route `multiInstance` copies, or a
+  cross-route `taskbarGroup` — used to borrow one window's own menu, so
+  "Close" there closed a single instance and left the rest of the stack open.
+  That made the item no better than closing each window by hand, which is the
+  one thing a group menu exists to save you. A grouped tab now gets its own
+  menu, headed by the group's name: **Minimize all**, **Restore all**, and
+  **Close all (N)** with the count spelled out. A tab standing for one window
+  is unchanged — it still delegates to that window's menu, which carries
+  per-window items the taskbar knows nothing about (pin on top, Add to
+  desktop, anything the page registered).
+
+- **A taskbar menu opened on exactly one window, instead of on every window
+  sharing its label.** `modal-context-menu` and `modal-center` addressed a
+  window by matching its title against a label, but multi-instance windows
+  deliberately share one registry label so the taskbar can group them. Every
+  copy therefore claimed the event: three open purchase invoices meant three
+  identical context menus stacked at the same point, and the "Close" you
+  clicked belonged to whichever one happened to draw on top. Both events now
+  carry the `windowKey` and are claimed by that window alone; the label match
+  survives only as the fallback for a sender with no key.
+
+- **The discard prompt names the window it would discard.** "Close all" fires
+  one close per window, each through that window's own guard, and confirms
+  queue rather than drop — so several unsaved windows produce several prompts
+  in turn. An unnamed *"You have unsaved changes"* is unanswerable in that
+  queue: every dialog looks the same and none says what it is about to throw
+  away. The message now opens with the window's title, falling back to the old
+  wording for a title carrying no plain text.
+
+  Deliberately *not* one aggregated dialog listing every unsaved window: that
+  needs a public close path that bypasses the per-window guard, which is the
+  thing `forceRemoveWindow` is kept private to prevent.
+
 ## 4.89.1
 
 - **"Reset" in the column picker no longer un-hides every `defaultHidden`

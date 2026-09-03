@@ -216,7 +216,10 @@ function clickTaskbarClose() {
 function assertDiscardConfirmation() {
   const text = document.body.textContent ?? '';
   assert.match(text, /Discard changes\?/);
-  assert.match(text, /You have unsaved changes\. Are you sure you want to close\? All changes will be lost\./);
+  // The sentence opens with the window's own name where it has one (see
+  // `guardedClose`), so this shared assertion checks the tail. The naming
+  // itself is asserted below, in its own test.
+  assert.match(text, /unsaved changes\. Are you sure you want to close\? All changes will be lost\./);
   assert.match(text, /Keep Editing/);
 }
 
@@ -231,6 +234,24 @@ test('a dirty PageWindow registration uses the existing Modal close confirmation
   clickButton('Keep Editing');
   await flush();
   assert.ok(document.querySelector(panelSelector()), 'canceling the existing confirmation keeps the page open');
+});
+
+test('the discard prompt names the window it would discard', async (t) => {
+  const mounted = await mountPage();
+  t.after(() => mounted.unmount());
+
+  pressKey('Escape');
+  await flush();
+
+  // "Close all" on a grouped taskbar tab asks once per unsaved window, and
+  // confirms queue rather than drop — so an unnamed prompt would leave the
+  // user answering identical dialogs with no way to tell them apart.
+  assert.match(
+    document.body.textContent ?? '',
+    /“Window dirty test” has unsaved changes\./,
+  );
+  clickButton('Keep Editing');
+  await flush();
 });
 
 test('clearing or unmounting the only dirty registration removes the close guard', async (t) => {

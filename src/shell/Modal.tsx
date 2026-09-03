@@ -989,6 +989,16 @@ export function requestModalClose(windowKey: string): void {
   }));
 }
 
+/** Minimize the window identified by `windowKey`, from shell chrome that has
+ * no reference to the Modal. Unlike close there is nothing to guard — a
+ * minimized window keeps all its state — so this maps the key to its modal id
+ * and calls the same helper the title-bar ─ button does, rather than routing
+ * an event through the panel. Unknown keys are a no-op. */
+export function minimizeWindowByKey(windowKey: string): void {
+  const modalId = _modalIdByKey.get(windowKey);
+  if (modalId) _minimizeModal(modalId);
+}
+
 /** Hook: returns true if this modal ID is the frontmost */
 function useIsActiveModal(modalId: string): boolean {
   const activeId = useSyncExternalStore(subscribeActive, getActiveModalId);
@@ -1575,12 +1585,24 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     // the prior wiring keeps working until every consumer migrates.
     const onSplitView = () => { /* no-op: exposé toggle handled by setExposeState */ };
 
+    // Which window did the taskbar mean? `windowKey` names exactly one; the
+    // label match is the older fallback, kept for senders that have no key
+    // (a keyless modal never gets one). The label alone is NOT enough:
+    // multi-instance windows deliberately share one registry label so the
+    // taskbar can group them (see WindowManager), so a label-addressed event
+    // was claimed by every copy at once — N stacked context menus at the same
+    // point, and a "Close" that hit whichever one happened to draw on top.
+    const addressesThisWindow = (detail: { windowKey?: string; label?: string } | undefined): boolean => {
+      if (!detail) return false;
+      if (detail.windowKey) return detail.windowKey === windowKey;
+      if (!detail.label) return false;
+      const titleEl = panelRef.current?.querySelector('[data-window-title]');
+      return !!titleEl?.textContent?.includes(detail.label);
+    };
+
     // Center window on double-click from taskbar
     const onCenter = (e: Event) => {
-      const label = (e as CustomEvent).detail?.label;
-      if (!label) return;
-      const titleEl = panelRef.current?.querySelector('[data-window-title]');
-      if (!titleEl?.textContent?.includes(label)) return;
+      if (!addressesThisWindow((e as CustomEvent).detail)) return;
       activateModal(modalId);
       const taskbarH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--taskbar-height')) || 0;
       const taskbarW = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--taskbar-width')) || 0;
@@ -1599,12 +1621,10 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     };
     // Context menu from taskbar right-click
     const onCtxMenu = (e: Event) => {
-      const { label, x, y } = (e as CustomEvent).detail || {};
-      if (!label) return;
-      const titleEl = panelRef.current?.querySelector('[data-window-title]');
-      if (!titleEl?.textContent?.includes(label)) return;
+      const detail = (e as CustomEvent).detail;
+      if (!addressesThisWindow(detail)) return;
       activateModal(modalId);
-      setWindowMenu({ x, y });
+      setWindowMenu({ x: detail.x, y: detail.y });
     };
 
     // Rescue a window the user can't reach: the smallest move that puts it
@@ -1981,12 +2001,27 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     if (closingRef.current) return;
     if (isDirty) {
       closingRef.current = true;
-      const ok = await confirm({ title: 'Discard changes?', message: 'You have unsaved changes. Are you sure you want to close? All changes will be lost.', confirmLabel: 'Discard', cancelLabel: 'Keep Editing', variant: 'warning' });
+      // Name the window. One close asks one question, but "Close all" on a
+      // grouped taskbar tab fires a close per instance, and confirms QUEUE
+      // (see ConfirmDialog) — so the user can face several of these in a row.
+      // An unnamed "You have unsaved changes" is unanswerable in that queue:
+      // every dialog looks identical and none says which window it will
+      // discard. Falls back to the old wording for an icon-only title.
+      const name = titleTooltip;
+      const ok = await confirm({
+        title: 'Discard changes?',
+        message: name
+          ? `“${name}” has unsaved changes. Are you sure you want to close? All changes will be lost.`
+          : 'You have unsaved changes. Are you sure you want to close? All changes will be lost.',
+        confirmLabel: 'Discard',
+        cancelLabel: 'Keep Editing',
+        variant: 'warning',
+      });
       closingRef.current = false;
       if (!ok) return;
     }
     onClose();
-  }, [isDirty, onClose]);
+  }, [isDirty, onClose, titleTooltip]);
 
   // Shell chrome outside the panel (taskbar tabs and their previews) cannot
   // call this Modal's guardedClose directly. Route keyed close requests back

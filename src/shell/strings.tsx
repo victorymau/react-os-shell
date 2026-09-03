@@ -52,6 +52,11 @@ export interface ShellStrings {
     expose: string;
     addToDesktop: string;
     removeFromDesktop: string;
+    /** Group menu — a taskbar tab standing for more than one window. The
+     *  count is appended by the caller, e.g. "Close all (3)". */
+    minimizeAllWindows: string;
+    restoreAllWindows: string;
+    closeAllWindows: string;
   };
   /** The logout cover. */
   logout: {
@@ -139,6 +144,9 @@ export const DEFAULT_SHELL_STRINGS: ShellStrings = {
     expose: 'Exposé — show all open windows as thumbnails',
     addToDesktop: 'Add to desktop',
     removeFromDesktop: 'Remove from desktop',
+    minimizeAllWindows: 'Minimize all',
+    restoreAllWindows: 'Restore all',
+    closeAllWindows: 'Close all',
   },
   logout: {
     goodbye: 'Goodbye',
