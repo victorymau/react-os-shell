@@ -14,18 +14,27 @@
  * Tailwind v4 setup scans the shell's `dist`, so the arbitrary class is
  * generated.
  *
- * The fix is the Modal's own body scroll — the house mechanism every other
- * flowing-content window in the shell already uses (`WidgetSettingsModal`,
- * the entity windows) — instead of an inner box with a viewport-fraction
- * ceiling. So the claims below are: the body is the scroller, nothing inside
- * it re-caps the height, and the empty state fills rather than stranding one
- * grey line at the top of a 750px window.
+ * What this file pins down is the PROPERTY, not the mechanism. There is more
+ * than one correct shape here — the modal's own body scroll (what ships), or
+ * `bodyScroll={false}` with a `flex-1 min-h-0 overflow-y-auto` wrapper (the
+ * house flex-fill idiom, as at `Drawer.tsx:156` and `SidebarLayout.tsx:139`).
+ * Both remove the dead space, so a guard that names one of them rejects a
+ * correct fix. The property both satisfy and the defect does not:
+ *
+ *   walking from a rendered changelog entry up to `[data-modal-panel]`,
+ *   exactly ONE element scrolls vertically, and it carries no `max-h-[Nvh]`.
+ *
+ * The pre-fix arrangement fails it on the second clause: its one scroller was
+ * the capped inner box.
  *
  * These are assertions about classes, not about pixels, and deliberately so:
  * the specs run in jsdom, which does no layout and never loads Tailwind, so
  * there is no height here to measure. What can be pinned down is the contract
- * that produces the height — which element scrolls, and that nothing between
- * the body and the list caps itself to a fraction of the viewport.
+ * that produces the height.
+ *
+ * The last test covers the second half of the report's screenshot: the
+ * entries are Markdown, and this window used to print the `**` on screen
+ * while the portal's own two changelog surfaces rendered them properly.
  */
 import { act, render, waitForElement } from './dom';
 import { test } from 'node:test';
@@ -37,7 +46,7 @@ import type { ChangelogEntry } from '../src/changelog';
 const VERSION = '16.10.0-bg600';
 
 const CHANGELOG: ChangelogEntry[] = [
-  { version: '16.10.0', date: '2026-07-22', changes: ['Vehicle fitment filter on Stock on Hand'] },
+  { version: '16.10.0', date: '2026-07-22', changes: ['**Commission Plans** on Stock on Hand'] },
   { version: '16.9.0', date: '2026-07-22', changes: ['Will Call pickup'] },
 ];
 
@@ -67,17 +76,25 @@ async function openWhatsNew(host: DesktopHostConfig) {
   return waitForElement<HTMLElement>('[data-modal-panel]');
 }
 
-/** Every class on `el` and its ancestors up to (and including) the panel. */
-function classesUpTo(el: Element, panel: Element): string[] {
-  const out: string[] = [];
+/** `el` and its ancestors up to (and including) the window panel. */
+function chainUpTo(el: Element, panel: Element): Element[] {
+  const out: Element[] = [];
   for (let node: Element | null = el; node; node = node.parentElement) {
-    out.push(...node.classList);
+    out.push(node);
     if (node === panel) break;
   }
   return out;
 }
 
-test('the changelog list is not capped to a fraction of the viewport', async (t) => {
+/** Tailwind classes that make an element scroll on the vertical axis. */
+const SCROLLS_Y = /^overflow(?:-y)?-(?:auto|scroll)$/;
+/** A height ceiling written as a fraction of the viewport. */
+const VIEWPORT_CAP = /^max-h-\[.*vh\]$/;
+
+const describe = (el: Element) =>
+  `<${el.tagName.toLowerCase()} class="${el.className}">`;
+
+test('exactly one uncapped scroller stands between the window and a changelog entry', async (t) => {
   const panel = await openWhatsNew({ productVersion: VERSION, productChangelog: CHANGELOG });
   t.after(() => { document.body.innerHTML = ''; });
 
@@ -87,32 +104,23 @@ test('the changelog list is not capped to a fraction of the viewport', async (t)
     .find((s) => s.textContent === '16.10.0');
   assert.ok(entry, 'the changelog entries should be rendered in the window');
 
-  const capped = classesUpTo(entry, panel).filter((c) => /^max-h-\[.*vh\]$/.test(c));
+  const chain = chainUpTo(entry, panel);
+  const scrollers = chain.filter((el) => [...el.classList].some((c) => SCROLLS_Y.test(c)));
+
+  assert.deepEqual(
+    scrollers.map(describe),
+    scrollers.slice(0, 1).map(describe),
+    'exactly one element between a changelog entry and the window panel may scroll vertically — '
+    + 'a second one nested inside the first is the arrangement that left the gap',
+  );
+  assert.equal(scrollers.length, 1, 'the changelog must be scrolled by something inside the window');
+
+  const capped = [...scrollers[0].classList].filter((c) => VIEWPORT_CAP.test(c));
   assert.deepEqual(
     capped,
     [],
-    'nothing between the window panel and a changelog entry may cap its height to a viewport '
-    + 'fraction — a fixed-height window is taller than the cap, and the difference is blank space',
-  );
-});
-
-test('the window body is the scroller for the changelog', async (t) => {
-  const panel = await openWhatsNew({ productVersion: VERSION, productChangelog: CHANGELOG });
-  t.after(() => { document.body.innerHTML = ''; });
-
-  const list = panel.querySelector('.space-y-5');
-  assert.ok(list, 'the changelog list should be rendered');
-  const body = list.parentElement!;
-  assert.ok(body.classList.contains('flex-1'), 'the list should sit directly in the modal body');
-
-  assert.ok(
-    body.classList.contains('overflow-y-auto'),
-    'the modal body must scroll the changelog itself, rather than hand overflow to an inner box '
-    + 'that cannot grow to fill the window',
-  );
-  assert.ok(
-    !list.classList.contains('overflow-y-auto'),
-    'the list must not scroll inside the body as well — two scrollers is what left the gap',
+    'the scroller may not cap its height to a fraction of the viewport — a fixed-height window is '
+    + 'taller than the cap, and the difference is blank space under the last entry',
   );
 });
 
@@ -125,10 +133,26 @@ test('an empty changelog fills the window instead of stranding a line at the top
   assert.ok(message, 'the no-changelog message should be rendered');
 
   // The window is the same fixed height whether there is a changelog or not,
-  // so the empty state has the same blank area to answer for.
+  // so the empty state has the same blank area to answer for. `flex-1` is how
+  // it claims that space; the `HelpCenter` empty state does the same thing
+  // with the same classes (`HelpCenter.tsx:257`).
   const filler = message.parentElement!;
   assert.ok(
     filler.classList.contains('flex-1') && filler.classList.contains('items-center'),
     'the no-changelog message must be centred in the space the window actually has',
   );
+});
+
+test('Markdown in a changelog entry is rendered, not printed', async (t) => {
+  const panel = await openWhatsNew({ productVersion: VERSION, productChangelog: CHANGELOG });
+  t.after(() => { document.body.innerHTML = ''; });
+
+  assert.ok(
+    !(panel.textContent ?? '').includes('**'),
+    'a bold marker must not survive to the rendered text — consumers write these entries in '
+    + 'Markdown, and this window used to print the asterisks on screen',
+  );
+  const bold = [...panel.querySelectorAll('strong')]
+    .find((s) => s.textContent === 'Commission Plans');
+  assert.ok(bold, 'the bold span should be rendered as <strong>, as the portal already does');
 });

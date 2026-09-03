@@ -4,6 +4,7 @@ import { useWindowManager } from './WindowManager';
 import { useShellStrings } from './strings';
 import { useShellPrefs } from './ShellPrefs';
 import Modal from './Modal';
+import MarkdownLite from './Markdown';
 import WidgetManager from './WidgetManager';
 import PerfStats, { type PerfReport } from './PerfStats';
 import { APP_VERSION } from '../version';
@@ -1443,13 +1444,26 @@ export default function Desktop({ profile }: { profile: any }) {
       {/* What's New dialog — the modal body is the scroller. An inner box
           capped at a viewport fraction cannot grow into a fixed-height
           window, so everything below the cap was blank (BG#00600); worst
-          maximized, where the window is the whole work area. */}
+          maximized, where the window is the whole work area.
+
+          `bodyScroll={false}` with a `min-h-0 flex-1 overflow-y-auto` wrapper
+          (the idiom at Drawer.tsx:156 and SidebarLayout.tsx:139) is equally
+          correct — this shape is one element shorter, and the guard in
+          tests/whatsNewFillsWindow.test.tsx accepts either. What neither
+          shape does is size the WINDOW to the changelog: a host with two
+          entries still gets an `md` window with room to spare, and asks for
+          the other behaviour with `autoHeight` / `autoMinHeight`.
+
+          Entries are Markdown — every consumer writes them that way — so
+          they go through MarkdownLite, the same renderer and the same
+          wrapper classes the admin portal's VersionsPanel and AboutSettings
+          use on these exact strings. */}
       {whatsNewOpen && (() => {
         const entries = host.productChangelog ?? changelog;
         return (
         <Modal open={true} onClose={() => setWhatsNewOpen(false)} title={shellStrings.about.whatsNew} size="md">
           {entries.length === 0 ? (
-            <div className="flex-1 min-h-0 flex items-center justify-center">
+            <div className="flex-1 flex items-center justify-center">
               <p className="text-sm text-gray-400 text-center">{shellStrings.about.noChangelog}</p>
             </div>
           ) : (
@@ -1464,7 +1478,7 @@ export default function Desktop({ profile }: { profile: any }) {
                     {entry.changes.map((change, j) => (
                       <li key={j} className="flex items-start gap-2 text-sm text-gray-600">
                         <span className="text-blue-500 mt-1 shrink-0">&#8226;</span>
-                        {change}
+                        <MarkdownLite className="min-w-0 [&_p]:m-0">{change}</MarkdownLite>
                       </li>
                     ))}
                   </ul>

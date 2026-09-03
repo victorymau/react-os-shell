@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## 4.90.1
+## 4.91.0
 
 - **The What's New window no longer ends in a large blank area.** Its body was
   a single box capped at `max-h-[60vh]`, which cannot grow into a window whose
@@ -14,10 +14,17 @@ All notable changes to this project will be documented in this file. The format 
   window in the shell already does. An empty changelog is centred in the space
   the window has, rather than leaving one grey line at the top of it.
 
-  Not fixed here: the changelog entries render as raw text, so a consumer
-  writing them in Markdown (all of them do) sees the `**` and `*` on screen.
-  That needs a renderer and changes what every consumer's entries look like at
-  once, so it is filed separately.
+  The window sizes its CONTENT to the window, not the window to its content.
+  A host with a two-line changelog still gets a `md`-ladder window with room
+  to spare; `autoHeight` / `autoMinHeight` are how a host asks for the other
+  behaviour.
+
+- **Changelog entries render their Markdown instead of printing it.** Every
+  consumer writes these entries in Markdown, and this window put them on
+  screen as a raw text node, so a heading like `**Commission Plans**` showed
+  its asterisks. It now goes through `MarkdownLite`, the renderer the package
+  already ships and the one the admin portal's own two changelog surfaces
+  (`VersionsPanel`, `AboutSettings`) already use for the same strings.
 
 ## 4.90.0
 
