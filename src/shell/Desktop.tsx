@@ -1440,32 +1440,39 @@ export default function Desktop({ profile }: { profile: any }) {
         </button>
       )}
 
-      {/* What's New dialog */}
+      {/* What's New dialog — the modal body is the scroller. An inner box
+          capped at a viewport fraction cannot grow into a fixed-height
+          window, so everything below the cap was blank (BG#00600); worst
+          maximized, where the window is the whole work area. */}
       {whatsNewOpen && (() => {
         const entries = host.productChangelog ?? changelog;
         return (
-        <Modal open={true} onClose={() => setWhatsNewOpen(false)} title={shellStrings.about.whatsNew} size="md" bodyScroll={false}>
-          <div className="space-y-5 max-h-[60vh] overflow-y-auto px-1">
-            {entries.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-6">{shellStrings.about.noChangelog}</p>
-            ) : entries.map((entry, i) => (
-              <div key={entry.version}>
-                <div className="flex items-center gap-3 mb-2">
-                  <span className="text-sm font-bold text-gray-900 font-mono">{entry.version}</span>
-                  <span className="text-xs text-gray-400">{formatDate(entry.date)}</span>
+        <Modal open={true} onClose={() => setWhatsNewOpen(false)} title={shellStrings.about.whatsNew} size="md">
+          {entries.length === 0 ? (
+            <div className="flex-1 min-h-0 flex items-center justify-center">
+              <p className="text-sm text-gray-400 text-center">{shellStrings.about.noChangelog}</p>
+            </div>
+          ) : (
+            <div className="space-y-5 px-1">
+              {entries.map((entry, i) => (
+                <div key={entry.version}>
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className="text-sm font-bold text-gray-900 font-mono">{entry.version}</span>
+                    <span className="text-xs text-gray-400">{formatDate(entry.date)}</span>
+                  </div>
+                  <ul className="space-y-1.5 ml-1">
+                    {entry.changes.map((change, j) => (
+                      <li key={j} className="flex items-start gap-2 text-sm text-gray-600">
+                        <span className="text-blue-500 mt-1 shrink-0">&#8226;</span>
+                        {change}
+                      </li>
+                    ))}
+                  </ul>
+                  {i < entries.length - 1 && <div className="border-b border-gray-200 mt-4" />}
                 </div>
-                <ul className="space-y-1.5 ml-1">
-                  {entry.changes.map((change, j) => (
-                    <li key={j} className="flex items-start gap-2 text-sm text-gray-600">
-                      <span className="text-blue-500 mt-1 shrink-0">&#8226;</span>
-                      {change}
-                    </li>
-                  ))}
-                </ul>
-                {i < entries.length - 1 && <div className="border-b border-gray-200 mt-4" />}
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </Modal>
         );
       })()}
