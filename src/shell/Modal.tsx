@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useCallback, useMemo, useRef, useState, cre
 import { createPortal } from 'react-dom';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { confirm } from './ConfirmDialog';
-import { useWindowManager } from './WindowManager';
+import { useWindowManager, useWindowDirty } from './WindowManager';
 import { glassStyle as getGlassStyle } from '../utils/glass';
 import { PopupMenu, PopupMenuItem, PopupMenuDivider } from './PopupMenu';
 import { useShellStrings } from './strings';
@@ -2110,6 +2110,24 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   }, [open, dirty]);
 
   const isDirty = dirty === 'auto' ? touched : dirty === true;
+
+  // A dialog opened INSIDE a window — a create form, a detail popup — carries
+  // no `windowKey`, so it is not a taskbar window and nothing on the taskbar
+  // can see that it holds unsaved edits. Closing the window it lives in just
+  // unmounts it: its own guard never runs and the edits go without a word.
+  // That was survivable while closing meant one deliberate click on one
+  // window's ✕. "Close all" on a grouped tab makes it N windows at once, so
+  // report the state to the enclosing window's registry instead and let THAT
+  // window's guard ask — the same question on whichever surface the user
+  // reached for.
+  //
+  // Scoped to while this dialog is open: closing it drops the registration and
+  // the window is clean again. That scoping is the difference from BG#00500,
+  // where a `dirty="auto"` latch poisoned a window for the rest of its life —
+  // a report made here cannot outlive the dialog that made it. `windowKey`
+  // guards the other direction: a window's OWN Modal sits above the registry
+  // it provides, so it must never register against whatever is outside it.
+  useWindowDirty(!windowKey && open ? isDirty : false);
 
   const guardedClose = useCallback(async () => {
     if (closingRef.current) return;

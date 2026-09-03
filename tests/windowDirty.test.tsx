@@ -6,6 +6,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ConfirmProvider } from '../src/shell/ConfirmDialog';
 import { WindowManagerProvider, useWindowDirty, useWindowManager } from '../src/shell/WindowManager';
+import Modal from '../src/shell/Modal';
 import { useWindowDirty as publicUseWindowDirty } from '../src/index';
 import WidgetManager from '../src/shell/WidgetManager';
 import { setShellWindowRegistry } from '../src/windowRegistry/types';
@@ -13,6 +14,7 @@ import { setShellWindowRegistry } from '../src/windowRegistry/types';
 const ROUTE = '/window-dirty-test';
 const WIDGET_ROUTE = '/window-dirty-widget-test';
 const SECOND_WIDGET_ROUTE = '/window-dirty-widget-test-2';
+const NESTED_ROUTE = '/window-dirty-nested-dialog';
 const panelSelector = (route = ROUTE) => `[data-modal-panel][data-window-key="page:${route}"]`;
 
 function Registration({ dirty }: { dirty: boolean }) {
@@ -34,6 +36,21 @@ function DirtyTestPage() {
       <button type="button" data-testid="first-unmount" onClick={() => setShowFirst(false)}>Unmount first</button>
       <button type="button" data-testid="second-true" onClick={() => setSecondDirty(true)}>Second dirty</button>
       <button type="button" data-testid="second-unmount" onClick={() => setShowSecond(false)}>Unmount second</button>
+    </div>
+  );
+}
+
+/** A window whose body opens a dialog of its own — a create form, the shape
+ *  every list window uses. The dialog is a Modal with no `windowKey`, so it is
+ *  NOT a taskbar window; the window it sits in is. */
+function NestedDialogPage() {
+  const [open, setOpen] = useState(true);
+  return (
+    <div>
+      <button type="button" data-testid="nested-close" onClick={() => setOpen(false)}>Close the dialog</button>
+      <Modal open={open} onClose={() => setOpen(false)} title="New thing" dirty="auto">
+        <input data-testid="nested-field" defaultValue="" />
+      </Modal>
     </div>
   );
 }
@@ -72,6 +89,10 @@ setShellWindowRegistry({
     label: 'Window dirty widget test 2',
     component: lazy(() => Promise.resolve({ default: DirtyTestPage })),
     widget: true,
+  },
+  [NESTED_ROUTE]: {
+    label: 'Window with a dialog',
+    component: lazy(() => Promise.resolve({ default: NestedDialogPage })),
   },
   // `selfFetching` keeps the detail query out of the way; this spec is about
   // the close guard, not about entity loading.
@@ -234,6 +255,62 @@ test('a dirty PageWindow registration uses the existing Modal close confirmation
   clickButton('Keep Editing');
   await flush();
   assert.ok(document.querySelector(panelSelector()), 'canceling the existing confirmation keeps the page open');
+});
+
+function typeInNestedDialog(text: string) {
+  const field = document.querySelector<HTMLInputElement>('[data-testid="nested-field"]');
+  assert.ok(field, 'the dialog field exists');
+  act(() => {
+    field.value = text;
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
+
+test('a window whose dialog holds unsaved edits asks before closing', async (t) => {
+  const mounted = await mountPage(NESTED_ROUTE);
+  t.after(() => mounted.unmount());
+
+  // Nothing typed yet: the window is clean and closes without a question.
+  assert.doesNotMatch(document.body.textContent ?? '', /Discard changes\?/);
+
+  typeInNestedDialog('half-written');
+  await flush();
+
+  // The taskbar route — the one "Close all" uses. The dialog is not a taskbar
+  // window, so without the report this close would discard it in silence.
+  clickTestButton('public-close');
+  await flush();
+
+  assert.match(document.body.textContent ?? '', /Discard changes\?/);
+  assert.match(
+    document.body.textContent ?? '',
+    /“Window with a dialog” has unsaved changes\./,
+    'the prompt names the WINDOW being closed, not the dialog inside it',
+  );
+  clickButton('Keep Editing');
+  await flush();
+  assert.ok(document.querySelector(panelSelector(NESTED_ROUTE)), 'Keep Editing kept the window');
+});
+
+test('closing the dialog clears the window it reported to', async (t) => {
+  const mounted = await mountPage(NESTED_ROUTE);
+  t.after(() => mounted.unmount());
+
+  typeInNestedDialog('half-written');
+  await flush();
+  clickTestButton('nested-close');
+  await flush();
+
+  // The report cannot outlive the dialog that made it — this is what keeps the
+  // propagation from becoming BG#00500, where a latch poisoned a window for the
+  // rest of its life.
+  clickTestButton('public-close');
+  await flush();
+  assert.doesNotMatch(
+    document.body.textContent ?? '', /Discard changes\?/,
+    'a window whose dialog is gone is clean again',
+  );
+  assert.equal(document.querySelector(panelSelector(NESTED_ROUTE)), null, 'and it closed');
 });
 
 test('the discard prompt names the window it would discard', async (t) => {
