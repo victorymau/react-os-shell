@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file. The format 
 
 ## 4.94.0
 
+> **This is the release `4.93.0` was going to be.** That number was published
+> to npm by hand from a branch on 2026-09-04, carrying only the anchored-popup
+> fix, and npm is append-only — a shipped number describes one tarball for
+> ever. The nine commits below were then assembled under the same number two
+> hours later, so two different artifacts briefly claimed it. The registry
+> keeps the number it has and this release moves; npm's `4.93.0` is a strict
+> subset of what follows. Nothing was published between `4.88.0` and it, so
+> `4.89.0` through `4.92.0` exist only in the entries further down this file —
+> their content is all in this release's ancestry, with nothing to recover.
+
 - **A number the registry has already spent is no longer handed out again.**
   `4.93.0` was published to npm by hand on 2026-09-04 at 04:41, from the
   `4.92.0` tree; nine commits merged afterwards and the assembler stamped the
@@ -25,8 +35,6 @@ All notable changes to this project will be documented in this file. The format 
   This entry's own number is the first one the guard produces: everything the
   changelog files under `4.93.0` reaches npm here, under a number the registry
   has not spent.
-
-## 4.93.0
 
 - **New `react-os-shell/brand.css`.** A surface rendered outside a portal
   window — a report, a published artifact, a proposal, an HTML email, a printed
