@@ -23,7 +23,7 @@ import path, { resolve } from 'node:path';
 
 import {
   FragmentError, parseFragment, pendingFragments, nextVersion,
-  renderSection, prependSection, writeVersion, readCurrentVersion,
+  renderSection, prependSection, writeVersion, readCurrentVersion, publishedVersion,
 } from '../scripts/release-fragments.mjs';
 
 const PREAMBLE = '# Changelog\n\nAll notable changes to this project will be documented in this file.\n\n';
@@ -203,4 +203,43 @@ test('the assembler module runs nothing on import', () => {
     readFileSync(path.join(root, 'scripts/assemble-release.mjs'), 'utf8'), /assemble\(\)/,
     'and assemble-release.mjs must actually call it',
   );
+});
+
+// ── the registry floor ──────────────────────────────────────────────────────
+//
+// Added after 2026-09-04, when this repository and npm each held a different
+// artifact under the number 4.93.0: it was published by hand from the 4.92.0
+// tree at 04:41, and the assembler stamped the same number onto nine later
+// commits at 06:44 because `package.json` was the only thing it asked.
+
+test('a version the registry already spent cannot be handed out again', () => {
+  // package.json and the registry disagree; the higher one is the floor.
+  assert.equal(nextVersion('4.92.0', ['minor'], '4.93.0'), '4.94.0');
+  assert.equal(nextVersion('4.92.0', ['patch'], '4.93.0'), '4.93.1');
+  assert.equal(nextVersion('4.93.0', ['minor'], '4.93.0'), '4.94.0');
+});
+
+test('the registry only ever raises the floor, never lowers it', () => {
+  // A registry BEHIND this file is the normal state between assembling and
+  // cutting the release — every unpublished release commit looks like this,
+  // and none of them may be renumbered downwards.
+  assert.equal(nextVersion('4.93.0', ['minor'], '4.88.0'), '4.94.0');
+  assert.equal(nextVersion('5.0.0', ['patch'], '4.99.9'), '5.0.1');
+});
+
+test('an unreachable registry does not hold up a release', () => {
+  // Null is what publishedVersion() returns for a network failure, a private
+  // package, or a name that has never been published. Each must fall back to
+  // package.json rather than stopping the one job that writes to main.
+  assert.equal(nextVersion('4.93.0', ['minor'], null), '4.94.0');
+  assert.equal(publishedVersion('react-os-shell', () => null), null);
+  assert.equal(publishedVersion('react-os-shell', () => ''), null);
+});
+
+test('a registry answer that is not a plain version is ignored, not trusted', () => {
+  // `npm view` prints a prerelease or a tag list for some packages, and a
+  // floor this code cannot compare is worse than no floor at all.
+  assert.equal(publishedVersion('x', () => '4.94.0-rc.1'), null);
+  assert.equal(publishedVersion('x', () => 'npm ERR! code E404'), null);
+  assert.equal(publishedVersion('x', () => '4.94.0'), '4.94.0');
 });

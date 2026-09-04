@@ -42,12 +42,14 @@
  * for a dry run. Exported for `tests/releaseFragments.test.ts`.
  */
 import { readFileSync, writeFileSync, readdirSync, unlinkSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 
 export const CHANGES_DIR = '.changes';
 export const PACKAGE_JSON = 'package.json';
 export const PACKAGE_LOCK = 'package-lock.json';
 export const CHANGELOG_MD = 'CHANGELOG.md';
+export const PACKAGE_NAME = 'react-os-shell';
 
 const BUMP_LEVELS = ['major', 'minor', 'patch'];
 const ALLOWED_KEYS = ['bump', 'title'];
@@ -106,11 +108,60 @@ export function pendingFragments(dir = CHANGES_DIR) {
     .map(n => parseFragment(readFileSync(path.join(dir, n), 'utf8'), path.join(dir, n)));
 }
 
-export function nextVersion(current, bumps) {
+/**
+ * The highest version the registry already serves, or null when it cannot be
+ * asked.
+ *
+ * Null on any failure — an unreachable registry must not hold up a release.
+ * It only lowers the floor back to package.json, which is where it was before
+ * this function existed.
+ *
+ * @param {string} [name]
+ * @param {(name: string) => string | null} [run]
+ * @returns {string | null}
+ */
+export function publishedVersion(name = PACKAGE_NAME, run = npmViewVersion) {
+  const version = run(name);
+  return /^\d+\.\d+\.\d+$/.test(version ?? '') ? version : null;
+}
+
+function npmViewVersion(name) {
+  try {
+    return execFileSync('npm', ['view', name, 'version'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 30_000,
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
+/** a.b.c ordering, -1 / 0 / 1. */
+function compare(a, b) {
+  const [x, y] = [a, b].map(v => v.split('.').map(Number));
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1;
+  return 0;
+}
+
+/**
+ * @param {string} current
+ * @param {string[]} bumps
+ * @param {string | null} [published] the registry's latest, when it could be asked
+ */
+export function nextVersion(current, bumps, published = null) {
   if (!/^\d+\.\d+\.\d+$/.test(current)) {
     throw new FragmentError(`current version ${JSON.stringify(current)} is not plain MAJOR.MINOR.PATCH`);
   }
-  const [major, minor, patch] = current.split('.').map(Number);
+  // The floor is whichever is higher, package.json or the registry. They agree
+  // on every ordinary release; they disagreed on 2026-09-04, when 4.93.0 was
+  // published by hand from an older tree while this file still said 4.92.0 —
+  // and the assembler then handed the SAME number to nine commits the
+  // registry's 4.93.0 does not contain. A number the registry has spent is
+  // spent whatever this file thinks, and `npm publish` is where that would
+  // otherwise surface: after the tag, at the last step.
+  const floor = published && compare(published, current) > 0 ? published : current;
+  const [major, minor, patch] = floor.split('.').map(Number);
   // One release per run: merges that race batch under the highest bump asked
   // for, which is why no branch ever has to guess at a number.
   if (bumps.includes('major')) return `${major + 1}.0.0`;
@@ -172,12 +223,16 @@ export function assemble() {
   const fragments = pendingFragments();
   if (!fragments.length) throw new FragmentError('no pending fragments under .changes/ — nothing to assemble');
   const current = readCurrentVersion();
-  const version = nextVersion(current, fragments.map(f => f.bump));
+  const published = publishedVersion();
+  const version = nextVersion(current, fragments.map(f => f.bump), published);
   prependSection(renderSection(version, fragments));
   writeVersion(version);
   for (const f of fragments) unlinkSync(f.name);
   console.error(
     `${current} -> ${version} (${fragments.length} fragment(s): ${fragments.map(f => path.basename(f.name)).join(', ')})`,
   );
+  if (published && compare(published, current) > 0) {
+    console.error(`  registry is ahead at ${published}; ${current} + bump would have collided`);
+  }
   return version;
 }
