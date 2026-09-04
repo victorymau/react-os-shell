@@ -28,7 +28,7 @@
  * twice — once by a live tree and once by a dead one holding a stale anchor.
  * That silently turns the tests after the first failure green.
  */
-import { test } from 'node:test';
+import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { render, flush, act } from './dom';
 import { useState } from 'react';
@@ -39,9 +39,15 @@ interface Row { id: number; name: string }
 
 const ROWS: Row[] = Array.from({ length: 6 }, (_, i) => ({ id: i + 1, name: `Row ${i + 1}` }));
 
-// ResizableTable's column config saves through a mutation, so the tree needs a
-// client. Nothing here fetches; retries off keeps a stray one from lingering.
+// ResizableTable's column config reads the table's admin defaults through a
+// react-query query (it used to save through a mutation, which is what this
+// note used to say). Nothing here fetches — no api client is wired, so the
+// query is disabled — and retries off keeps a stray one from lingering. The
+// entry still exists in the cache, though, and an idle entry holds a
+// five-minute garbage-collection timer that node's runner will not exit past,
+// hence the `clear()` below.
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+afterEach(() => { queryClient.clear(); });
 
 function List({ onRowClick = () => {} }: { onRowClick?: (r: Row) => void }) {
   const [selected, setSelected] = useState<Set<string | number>>(new Set());

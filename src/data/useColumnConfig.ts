@@ -1,12 +1,21 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { useMutation } from '@tanstack/react-query';
-import apiClient from '../api/client';
+import { useShellPrefs } from '../shell/ShellPrefs';
+import { useDefaultColumnConfig } from './useDefaultColumnConfig';
 import type { ColumnDef } from './types';
 
 interface ColumnState {
   key: string;
   width: number;
   hidden?: boolean;
+}
+
+/** Whether two column states are the same arrangement. Used to turn a
+ *  re-delivery of unchanged prefs into a no-op rather than a re-render: the
+ *  prefs adapter hands the same value back after a refetch, and the effects
+ *  below run on every change of it. */
+function sameColumns(a: ColumnState[], b: ColumnState[]): boolean {
+  return a.length === b.length &&
+    a.every((c, i) => c.key === b[i].key && c.width === b[i].width && !!c.hidden === !!b[i].hidden);
 }
 
 /** Ensure _select column (if present) is always at index 0 and never hidden */
@@ -80,13 +89,46 @@ function reconcileColumns(
 /**
  * Resizable + reorderable + hideable column state for `<ResizableTable>`.
  *
- * Persists per-user via `PATCH /auth/me/` (`preferences.columns_{tableId}`)
- * with a 1-second debounce, and per-viewport admin defaults via
- * `GET /auth/default-columns/{tableId}?viewport=…`. The consumer wires these
- * endpoints on its backend; the shell's `apiClient` proxy resolves to the
- * consumer-registered axios instance (`setShellApiClient`).
+ * Reads and persists per-user through the `<ShellPrefsProvider>` adapter
+ * (`prefs.columns_{tableId}`), with a 1-second debounce on the save, and reads
+ * per-viewport admin defaults through the shared
+ * `GET /auth/default-columns/{tableId}?viewport=…` probe.
+ *
+ * The prefs half used to be a raw `GET /auth/me/` fired from a `[tableId]`
+ * effect, outside react-query — so every list mount re-fetched the whole user
+ * profile (~1.5 MB on prod), on a client with no cache adapter and no in-flight
+ * dedupe, and a screen that also renders a column-aware CSV export paid for it
+ * twice. The adapter already holds that profile in one cached query, which is
+ * the same object the raw GET was reading `preferences` off (SG#00590).
+ *
+ * Three consequences worth knowing, because this is NOT behaviour-preserving:
+ *
+ *  - **A `<ShellPrefsProvider>` is now required for server-side persistence.**
+ *    Without one, `useShellPrefs()` reads empty and drops saves, so column
+ *    config degrades to localStorage-only. All three consumers that render
+ *    `<EntityList>`/`<ResizableTable>` mount the provider.
+ *  - **Prefs and admin defaults resolve independently**, where the raw pair was
+ *    a single `Promise.all`. If the admin default lands while prefs are still
+ *    loading it applies first and the user's own config replaces it a beat
+ *    later, rather than never showing. `useSort` has always behaved this way;
+ *    the two hooks now agree. The precedence that used to be one `if/else if`
+ *    is now the `userSavedRef` guard below plus the order the two effects fire
+ *    in — `tests/columnConfigDefaultsPrecedence.test.tsx` pins both directions.
+ *  - **A failed save is silent here.** The old `useMutation` let a rejected
+ *    `PATCH` reach a consumer's global `MutationCache({ onError })` — the admin
+ *    portal toasted it. The adapter's `save` owns its own failures now, so a
+ *    consumer that wants that toast raises it inside the adapter.
+ *
+ * What it does NOT require is a `<QueryClientProvider>` — it used to, for the
+ * `useMutation`. `useDefaultColumnConfig` falls back to a client the package
+ * owns when no provider is mounted.
  */
 export function useColumnConfig(tableId: string, defaultColumns: ColumnDef[]) {
+  const { prefs, save } = useShellPrefs();
+  const prefKey = `columns_${tableId}`;
+  const userSaved = prefs[prefKey];
+  const { defaultConfig } = useDefaultColumnConfig(tableId);
+
   const [columns, setColumns] = useState<ColumnState[]>(() => {
     const cached = localStorage.getItem(`col-config-${tableId}`);
     if (cached) {
@@ -111,61 +153,74 @@ export function useColumnConfig(tableId: string, defaultColumns: ColumnDef[]) {
   const [dropGap, setDropGap] = useState<number | null>(null);
   const resizingRef = useRef<{ idx: number; startX: number; startWidth: number } | null>(null);
 
+  // A change made in THIS mount always wins over an async restore below —
+  // needed now that the restore effects are keyed on values that can arrive
+  // (or be re-delivered by a refetch) long after mount. Same guard `useSort`
+  // has always carried.
+  const touchedRef = useRef(false);
+  const userSavedRef = useRef(userSaved);
+  userSavedRef.current = userSaved;
+
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const saveMut = useMutation({
-    mutationFn: (cols: ColumnState[]) =>
-      apiClient.patch('/auth/me/', {
-        preferences: { [`columns_${tableId}`]: cols },
-      }),
-  });
+  const saveRef = useRef(save);
+  saveRef.current = save;
 
   const persistColumns = useCallback((cols: ColumnState[]) => {
+    touchedRef.current = true;
     localStorage.setItem(`col-config-${tableId}`, JSON.stringify(cols));
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => saveMut.mutate(cols), 1000);
-  }, [tableId, saveMut]);
+    // Through the adapter, not a raw `PATCH /auth/me/`: the adapter patches the
+    // cached profile optimistically and invalidates it, so the value the
+    // restore effect below reads back is the one we just saved. A raw PATCH
+    // left that cache stale, and the next window opened would have restored the
+    // pre-change columns over the fresh ones.
+    saveTimer.current = setTimeout(() => { void saveRef.current({ [prefKey]: cols }); }, 1000);
+  }, [tableId, prefKey]);
 
+  // The debounce deliberately outlives unmount, as it always has: resizing a
+  // column and closing the window inside the second must still reach the
+  // server. `saveRef` keeps the adapter callback reachable for that; the
+  // adapter's own work (cache write + PATCH) is not tied to this component.
+
+  // The user's own saved config. It arrives from the prefs adapter, which is
+  // backed by the consumer's single cached `/auth/me/` query — no request of
+  // our own. Adapters resolve async, so a window opened before prefs land
+  // starts on the localStorage/`ColumnDef` state and picks this up after.
   useEffect(() => {
-    // Pick the viewport once at mount, using the same query as `useIsMobile`
-    // so the column-defaults split lines up with the rest of the UI's mobile
-    // affordances. Refresh covers users who resize past the breakpoint
-    // mid-session.
-    const viewport: 'desktop' | 'mobile' =
-      typeof window !== 'undefined' &&
-      window.matchMedia('(max-width: 767px), (pointer: coarse)').matches
-        ? 'mobile' : 'desktop';
-
-    Promise.all([
-      apiClient.get('/auth/me/').catch(() => null),
-      apiClient.get(`/auth/default-columns/${tableId}/`, { params: { viewport } }).catch(() => null),
-    ]).then(([userRes, defaultRes]) => {
-      const prefs = userRes?.data?.preferences;
-      const userSaved = prefs?.[`columns_${tableId}`];
-
-      if (userSaved && Array.isArray(userSaved)) {
-        const existing = new Set(userSaved.map((c: any) => c.key));
-        const merged = pinSelectColumn([
-          ...userSaved.filter((c: any) => defaultColumns.some(d => d.key === c.key)),
-          ...defaultColumns.filter(d => !existing.has(d.key)).map(d => ({ key: d.key, width: d.defaultWidth || 150, hidden: d.defaultHidden })),
-        ]);
-        setColumns(merged);
-        localStorage.setItem(`col-config-${tableId}`, JSON.stringify(merged));
-      } else if (Array.isArray(defaultRes?.data?.visible_columns) && defaultRes.data.visible_columns.length > 0) {
-        // Non-empty system defaults — apply them. (An empty array is treated
-        // as "no admin opinion" and we leave the initial useState value alone,
-        // which uses the per-column `defaultHidden` flag from each ColumnDef.)
-        const visibleSet = new Set(defaultRes.data.visible_columns as string[]);
-        const systemCols = pinSelectColumn(defaultColumns.map(d => ({
-          key: d.key,
-          width: d.defaultWidth || 150,
-          hidden: !visibleSet.has(d.key),
-        })));
-        setColumns(systemCols);
-        localStorage.setItem(`col-config-${tableId}`, JSON.stringify(systemCols));
-      }
-    });
+    if (touchedRef.current || !Array.isArray(userSaved)) return;
+    const existing = new Set(userSaved.map((c: any) => c.key));
+    const merged = pinSelectColumn([
+      // Copied, not referenced: `pinSelectColumn` writes `hidden` on the entry
+      // it pins, and these objects belong to the consumer's cached profile now.
+      ...userSaved.filter((c: any) => defaultColumns.some(d => d.key === c.key)).map((c: any) => ({ ...c })),
+      ...defaultColumns.filter(d => !existing.has(d.key)).map(d => ({ key: d.key, width: d.defaultWidth || 150, hidden: d.defaultHidden })),
+    ]);
+    setColumns(prev => (sameColumns(prev, merged) ? prev : merged));
+    localStorage.setItem(`col-config-${tableId}`, JSON.stringify(merged));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tableId]);
+  }, [tableId, userSaved]);
+
+  // The admin-saved default — only consulted while the user has no config of
+  // their own, exactly as the `else if` it replaces did. Read through the ref
+  // so this reflects whatever prefs have resolved by the time the probe lands;
+  // if they resolve later still, the effect above overrides.
+  useEffect(() => {
+    if (touchedRef.current || Array.isArray(userSavedRef.current)) return;
+    const visible = defaultConfig?.visible_columns;
+    // Non-empty system defaults — apply them. (An empty array is treated
+    // as "no admin opinion" and we leave the initial useState value alone,
+    // which uses the per-column `defaultHidden` flag from each ColumnDef.)
+    if (!Array.isArray(visible) || visible.length === 0) return;
+    const visibleSet = new Set(visible);
+    const systemCols = pinSelectColumn(defaultColumns.map(d => ({
+      key: d.key,
+      width: d.defaultWidth || 150,
+      hidden: !visibleSet.has(d.key),
+    })));
+    setColumns(prev => (sameColumns(prev, systemCols) ? prev : systemCols));
+    localStorage.setItem(`col-config-${tableId}`, JSON.stringify(systemCols));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tableId, defaultConfig]);
 
   // Follow the consumer's column list for as long as this stays mounted.
   // Deliberately NOT persisted: a column set that comes and goes with a UI

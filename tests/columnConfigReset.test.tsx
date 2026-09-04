@@ -36,9 +36,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useColumnConfig } from '../src/data/useColumnConfig';
 import type { ColumnDef } from '../src/data/types';
 
-// `useColumnConfig` persists through a react-query mutation, so the tree needs
-// a client. Nothing here reaches a network: no `setShellApiClient` call has
-// been made, so the shell's `apiClient` proxy no-ops every HTTP method.
+// The react-query client is for the shared admin-defaults probe
+// (`useDefaultColumnConfig`), not for a mutation — persistence goes through the
+// prefs adapter since 4.92.0. Nor is a client REQUIRED any more: the probe
+// falls back to one the package owns. Mounting one here keeps that entry inside
+// this file, and `clear()` on the way out keeps its five-minute
+// garbage-collection timer from holding the runner open. Nothing here reaches a
+// network either way: no `setShellApiClient` call has been made, so the probe
+// is disabled and the shell's `apiClient` proxy no-ops every HTTP method.
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
 });
@@ -69,7 +74,7 @@ function mountHook(tableId: string) {
       <Probe />
     </QueryClientProvider>,
   );
-  return { ref, unmount };
+  return { ref, unmount: () => { unmount(); queryClient.clear(); } };
 }
 
 const hiddenKeys = (hook: Hook) =>

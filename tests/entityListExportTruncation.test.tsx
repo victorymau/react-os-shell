@@ -20,7 +20,7 @@
  * each spec FILE its own process, so the stub is swapped per test rather than
  * torn down.
  */
-import { test } from 'node:test';
+import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { render, flush, act, waitFor } from './dom';
 import { useState } from 'react';
@@ -34,6 +34,10 @@ interface Row { id: number; name: string }
 const ROWS: Row[] = Array.from({ length: 3 }, (_, i) => ({ id: i + 1, name: `Row ${i + 1}` }));
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+// `ResizableTable` puts the table's admin-defaults query in this cache, and an
+// idle react-query entry holds a five-minute garbage-collection timer that
+// node's runner will not exit past. Drop the entries with the tree.
+afterEach(() => { queryClient.clear(); });
 
 /**
  * A stub api client that answers the export GET with `headers`.
