@@ -2,6 +2,88 @@
 
 All notable changes to this project will be documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## 4.93.0
+
+- **`StatusBadge` takes an optional `label`.** It derived its text from the raw
+  status — underscores to spaces, title case — with no way to override it. That
+  is right for a status the system named itself and wrong for one that arrived
+  from somewhere else: Stripe's `trialing` reads as "Trialing" rather than
+  "Trial", and its `canceled` puts an American spelling in front of a
+  British-English tenant.
+
+  A consumer needing one word changed had to abandon the badge and hand-roll
+  the whole pill — and took the colours with it, which is exactly the drift
+  this component exists to prevent. In admin-portal that is five files, each
+  carrying its own status→colour literals.
+
+  The tone still comes from `status`, so the group mapping stays the single
+  source of truth for colour whatever is written on the pill. An empty string
+  is honoured rather than falling back, for an icon-only pill.
+
+## 4.92.3
+
+- **A field now points at its own error message.** `FormField` rendered the
+  hint and the error with ids — `${htmlFor}-hint`, `${htmlFor}-error` — and
+  pointed nothing at them, so those ids referenced nothing. A screen-reader
+  user who focused a field that had failed validation heard the label and
+  "invalid" and never the reason.
+
+  `role="alert"` is not a substitute: it announces the message the moment it
+  appears, while `aria-describedby` is what re-reads it when the user tabs BACK
+  to fix the field — which is exactly the moment they need it.
+
+  A single element child is cloned with `aria-describedby`. An
+  `aria-describedby` the control already carries is kept and appended to rather
+  than replaced; several children, a fragment or a bare string are left exactly
+  as they were, for the caller to wire as `MediaUploadField` and
+  `MediaUploadGrid` already do by hand.
+
+## 4.92.2
+
+- **A wide table now scrolls sideways instead of crushing its columns.**
+  `ResizableTable` turned each column's width into a percentage of the running
+  total and put it on a `w-full` table, which made every width a RATIO and
+  never a size. The table therefore always measured exactly its container:
+  thirteen columns in a 1118px window came out at 91px each, and every currency
+  figure truncated to `A$514…`. Adding a column made every other column
+  narrower, and a list with 45 columns had nowhere to go at all.
+
+  Two things followed from the same line. The body's `overflow-x-auto` was dead
+  code — a table that can never exceed its container never overflows, so there
+  was nothing to scroll to. And a resize handle could only STEAL width from
+  other columns: widening one narrowed its neighbours and the total never
+  moved, which is not what dragging a column edge means anywhere else.
+
+  Widths are pixels now, with the table floored at `min-width: 100%`. Under-full
+  it still stretches to the container and `table-layout: fixed` distributes the
+  slack proportionally, exactly as the percentages did — narrow lists are
+  unchanged. Over-full it is finally wider than its container and scrolls. The
+  header is its own table outside that scroller, so it is driven by the body's
+  scroll; left alone it would sit still while the rows moved under it and the
+  labels would stop naming the columns beneath them.
+
+## 4.92.1
+
+- **A table now follows a column list that changes while it is open.**
+  `useColumnConfig` seeded its state once, in the `useState` initialiser, and
+  never looked at `defaultColumns` again. A consumer whose columns change while
+  the window stays mounted — a comparison period switched on, a mode revealing
+  extra measures, a permission resolving after the first paint — got nothing:
+  the new definitions never entered the state, so `orderedColumns` never
+  mentioned them and the table simply did not draw them. Closing the window and
+  opening it again was the only way to see them, and nothing on screen
+  suggested that.
+
+  Withdrawing a column had the mirror problem: its key stayed in the state
+  after its definition was gone, and `orderedColumns` spreads
+  `defaultColumns.find(...)!` over each entry — a non-null assertion on
+  `undefined`, leaving a column with a width and no key or label.
+
+  The user's decisions win wherever they exist: a column that is still declared
+  keeps its width, its hidden flag and its position. A new one lands beside the
+  column it was DECLARED next to rather than at the far right. A column that is
+  withdrawn and then comes back returns as the user left it.
+
 ## 4.92.0
 
 - **`Meter` can draw a fill made of parts.** Business Central and NetSuite both
