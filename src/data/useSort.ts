@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useShellPrefs } from '../shell/ShellPrefs';
-import apiClient, { isShellApiClientConfigured } from '../api/client';
+import { useDefaultColumnConfig } from './useDefaultColumnConfig';
 import type { SortState } from './types';
 
 /** Guard for values restored from prefs / localStorage / the backend —
@@ -26,6 +26,13 @@ function isValidSort(v: unknown): v is SortState {
  * the first render (before async prefs arrive) already uses the last-known
  * sort instead of flashing the default and refetching. Without `tableId` the
  * hook is pure in-memory state, exactly as before.
+ *
+ * The admin default is read through `useDefaultColumnConfig`, shared with
+ * `useColumnConfig` so a list page fetches that row once rather than twice
+ * (SG#00590). That probe is a react-query query, but this hook still needs no
+ * `<QueryClientProvider>` in either form: with no provider above it the probe
+ * falls back to a client the package owns (see `useDefaultColumnConfig`), and
+ * the `tableId`-less form issues no request at all, as before.
  */
 export function useSort(defaultField: string, defaultDir: 'asc' | 'desc' = 'asc', tableId?: string) {
   const { prefs, save } = useShellPrefs();
@@ -61,24 +68,20 @@ export function useSort(defaultField: string, defaultDir: 'asc' | 'desc' = 'asc'
 
   // Admin-saved default — only consulted while the user has no pref of their
   // own (the per-user branch above overrides it whenever prefs resolve later).
+  //
+  // Shared with `useColumnConfig`, which wants `visible_columns` off the same
+  // row: a list page calls both hooks, and each used to fire its own raw GET
+  // for it (SG#00590). One react-query key, one request per screen.
+  const { defaultConfig } = useDefaultColumnConfig(tableId);
   useEffect(() => {
-    if (!tableId || !isShellApiClientConfigured()) return;
-    // Same viewport heuristic as useColumnConfig, so the sort default rides
-    // the same per-viewport row the column defaults live on.
-    const viewport: 'desktop' | 'mobile' =
-      typeof window !== 'undefined' &&
-      window.matchMedia('(max-width: 767px), (pointer: coarse)').matches
-        ? 'mobile' : 'desktop';
-    apiClient.get(`/auth/default-columns/${tableId}/`, { params: { viewport } })
-      .then(res => {
-        const dflt = res?.data?.sort;
-        if (touchedRef.current || isValidSort(savedRef.current) || !isValidSort(dflt)) return;
-        setSort(dflt);
-        try { localStorage.setItem(`sort-config-${tableId}`, JSON.stringify(dflt)); } catch { /* ignore */ }
-      })
-      .catch(() => { /* no admin default — keep the page default */ });
+    const dflt = defaultConfig?.sort;
+    if (touchedRef.current || isValidSort(savedRef.current) || !isValidSort(dflt)) return;
+    setSort(prev =>
+      prev.field === dflt.field && prev.direction === dflt.direction ? prev : dflt,
+    );
+    try { localStorage.setItem(`sort-config-${tableId}`, JSON.stringify(dflt)); } catch { /* ignore */ }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tableId]);
+  }, [tableId, defaultConfig]);
 
   const onSort = (field: string) => {
     touchedRef.current = true;

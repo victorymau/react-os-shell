@@ -285,7 +285,7 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 | Export | Use |
 |---|---|
 | `<ShellAuthProvider value={{ hasAnyPerm }}>` | Permission-filter nav items. |
-| `<ShellPrefsProvider value={{ prefs, save }}>` | Where the shell reads/writes user prefs (theme, taskbar pos, sticky notes, …). Use `useLocalStoragePrefs(key)` for a backend-less default. |
+| `<ShellPrefsProvider value={{ prefs, save }}>` | Where the shell reads/writes user prefs (theme, taskbar pos, sticky notes, …). Use `useLocalStoragePrefs(key)` for a backend-less default. Since 4.92.0 it is also how `<EntityList>` / `<ResizableTable>` column config and sort persist: with no provider mounted, `useShellPrefs()` reads empty and drops saves, so both silently degrade to localStorage-only and never reach the user's profile. |
 | `<ShellStringsProvider value={{ … }}>` | Translates the shell's own strings — window controls, taskbar hints, the logout cover, About/What's New, picker and table defaults, the help viewer. English works with NO provider; the override is a typed partial merged per section, so an incomplete catalog falls back rather than breaking. Prop-level text (`emptyText`, placeholders) always wins over the catalog. |
 | `<ShellEntityFetcherProvider value={(endpoint, id) => …}>` | How the modal stack fetches entity data. |
 | `<BugReportConfigProvider value={{ submit, list?, resolve? }}>` | Wire the bug-report flow to your backend. |
