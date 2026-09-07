@@ -31,6 +31,12 @@ const Stock = lazy(() => import('./Stock'));
 
 // ── Document apps ──
 const Preview = lazy(() => import('./Preview'));
+/** The PDF reader out of the Preview window, for embedding in a pane of your
+ *  own (a preview beside a form, a document tab). Lazy for the same reason
+ *  every app here is: its static `pdfjs-dist` import must not land in a host's
+ *  startup bundle — so render it inside a `<Suspense>`, and give it a parent
+ *  with a resolved height. See `PdfViewerProps` for `fit`. */
+const PdfViewer = lazy(() => import('./PdfViewer'));
 const Documents = lazy(() => import('./Documents'));
 const Files = lazy(() => import('./Files'));
 
@@ -74,6 +80,7 @@ export {
   WorldClock,
   Stock,
   Preview,
+  PdfViewer,
   Documents,
   Files,
   Browser,
@@ -90,4 +97,6 @@ export { setBrowserStartUrl } from './_browserStage';
 export { openFilesInTrashMode, setFilesDemoTree } from './_filesShared';
 export type { FilesDemoNode } from './_filesShared';
 export type { PdfPreviewData, PdfPreviewHandle } from './_previewStage';
+// Type-only, so this re-export is erased at build and never pulls the module.
+export type { PdfViewerProps } from './PdfViewer';
 export type { SpreadsheetPreviewData, SpreadsheetPreviewHandle } from './_spreadsheetStage';

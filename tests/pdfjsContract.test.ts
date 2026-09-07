@@ -16,23 +16,26 @@ import { join, resolve } from 'node:path';
  *
  * These are source assertions rather than behavioural ones on purpose. pdfjs
  * is bundled into the spec build (it is not in scripts/test.mjs's external
- * list), the viewer only reaches getDocument from a mounted window with a
- * staged file, and neither the wasm fetch nor the peer range has any runtime
- * surface here at all — the failure they guard against happens in a
- * CONSUMER'S build, against a version this repo does not install.
+ * list), the viewer only reaches getDocument once it has a document to load,
+ * and neither the wasm fetch nor the peer range has any runtime surface here
+ * at all — the failure they guard against happens in a CONSUMER'S build,
+ * against a version this repo does not install.
+ *
+ * The source they read is `src/apps/PdfViewer.tsx`, which is where the viewer
+ * moved when it stopped being the Preview window's private panel.
  */
 
 const ROOT = process.env.REPO_ROOT ?? resolve(import.meta.dirname, '..');
-const PREVIEW = readFileSync(join(ROOT, 'src/apps/Preview.tsx'), 'utf-8');
+const VIEWER = readFileSync(join(ROOT, 'src/apps/PdfViewer.tsx'), 'utf-8');
 const PKG = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf-8'));
 
 test('every getDocument call passes a parameter object, never a bare argument', () => {
-  const calls = [...PREVIEW.matchAll(/getDocument\(\s*(.)/g)];
+  const calls = [...VIEWER.matchAll(/getDocument\(\s*(.)/g)];
 
   // A vacuous pass would be the worst outcome here: if the viewer stops
   // calling getDocument under a name this regex recognises, that is a signal
   // to update the test, not a green tick.
-  assert.ok(calls.length > 0, 'expected at least one getDocument call in Preview.tsx');
+  assert.ok(calls.length > 0, 'expected at least one getDocument call in PdfViewer.tsx');
 
   for (const call of calls) {
     assert.equal(
@@ -83,12 +86,12 @@ test('pdf.js wasm decoders resolve from the consumer\'s own pdfjs-dist', () => {
   // so the consumer's bundler can see and emit them; a template string or a
   // computed path is invisible to Vite and silently falls back to a runtime
   // path that does not exist.
-  const specifiers = [...PREVIEW.matchAll(/new URL\('(pdfjs-dist\/wasm\/[^']+)', import\.meta\.url\)/g)]
+  const specifiers = [...VIEWER.matchAll(/new URL\('(pdfjs-dist\/wasm\/[^']+)', import\.meta\.url\)/g)]
     .map((m) => m[1]);
 
   assert.ok(
     specifiers.length > 0,
-    'Preview.tsx must reference pdf.js\'s wasm decoders through ' +
+    'PdfViewer.tsx must reference pdf.js\'s wasm decoders through ' +
       "new URL('pdfjs-dist/wasm/<file>', import.meta.url) so the consumer's " +
       'bundler emits them. Without a wasmUrl or a BinaryDataFactory, pdf.js ' +
       'drops JBIG2 and JPEG 2000 images with nothing but a console warning.',
@@ -107,7 +110,7 @@ test('pdf.js wasm decoders resolve from the consumer\'s own pdfjs-dist', () => {
   }
 
   assert.equal(
-    /getDocument\(\{[^}]*pdfWasmParams\(\)/.test(PREVIEW),
+    /getDocument\(\{[^}]*pdfWasmParams\(\)/.test(VIEWER),
     true,
     'the getDocument call must spread pdfWasmParams(), or the wasm modules are ' +
       'emitted into the consumer\'s bundle and then never handed to pdf.js.',

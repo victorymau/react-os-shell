@@ -322,7 +322,48 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 | `bundledApps` | `WindowRegistry` — 12 ready-to-mount apps. |
 | `utilityApps`, `documentApps`, `webApps` | Subsets of `bundledApps`. |
 | `Calculator`, `Spreadsheet`, `Weather`, `CurrencyConverter`, `PomodoroTimer`, `TodoList`, `Browser` | Lazy components — use directly in custom registry entries. |
+| `PdfViewer` | Lazy component — the PDF reader on its own, for embedding. See below. |
 | `BUILTIN_APP_INFO` | Per-app metadata for the document/web apps (Spreadsheets, Notepad, Documents, Preview, Files, Browser): display name, independent app version and one-line description. Drives each app's "About" dialog (window title menu → About <App>), which also shows the shell version. |
+
+#### An embedded PDF — `PdfViewer`
+
+`PdfActionButton` and `setPdfPreview` open a PDF in a Preview **window**. When
+the document belongs *inside* something else — a preview beside the form that
+generates it, a document tab on a record — render `PdfViewer` directly:
+
+```tsx
+import { lazy, Suspense } from 'react';
+const PdfViewer = lazy(() => import('react-os-shell/apps').then(m => ({ default: m.PdfViewer })));
+
+<div className="h-[32rem]">
+  <Suspense fallback={<p>Loading viewer…</p>}>
+    <PdfViewer url={objectUrl} filename="Statement.pdf" fit="page" />
+  </Suspense>
+</div>
+```
+
+| Prop | |
+|---|---|
+| `url` | Object URL or remote URL. |
+| `filename` | Display name, and the filename the built-in Download uses. |
+| `fit` | `'width'` (default) fills the container's width and lets a tall page scroll — right for a viewer that owns a window. `'page'` fits the whole page, which is what a pane inside a dialog wants. Either way it is the *initial* mode: the reader can still zoom, and the Fit button re-arms it. |
+| `onDownload` | Replaces the built-in "save `url` as `filename`". |
+| `onEmail` | Adds an Email button to the toolbar. Omit it and there is none. |
+
+It fills its parent and scrolls inside, so **give the parent a resolved
+height** — `h-full` inside a flex column, or an explicit height. It brings its
+own toolbar (page nav, zoom, Fit, Print, Download); inside the Preview window
+those same buttons merge into the window's single toolbar row instead.
+
+Import it **lazily**, as above. It statically imports `pdfjs-dist`, and the
+whole reason the bundled apps are `lazy()` is to keep a PDF parser out of a
+host's startup bundle — `scripts/verify-dist.mjs` fails the build if one gets
+in. `pdfjs-dist` is an optional peer: a consumer that never renders a PDF need
+not install it.
+
+The alternative this replaces is `<iframe src={objectUrl}>`, which hands the
+document to the browser's own plugin — its toolbar, its thumbnail rail, its
+idea of the zoom, none of it themeable and none of it testable.
 
 ### UI kit without the window manager — `react-os-shell/ui`
 
