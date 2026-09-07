@@ -23,8 +23,12 @@ const html = (el: React.ReactElement) => renderToStaticMarkup(el);
 const classOf = (markup: string) => /class="([^"]*)"/.exec(markup)?.[1] ?? '';
 
 test('a tone resolves to the shared table', () => {
+  // Compared as substrings, not as a regex: since the table became
+  // token-backed the class strings contain `[`, `(` and `)`, and a pattern
+  // built from one of them stops meaning what it looks like.
   for (const tone of ['success', 'warning', 'danger', 'info', 'neutral'] as const) {
-    assert.match(classOf(html(<ColoredBadge tone={tone}>Paid</ColoredBadge>)), new RegExp(GROUP_COLORS[tone].split(' ')[0]), tone);
+    const cls = classOf(html(<ColoredBadge tone={tone}>Paid</ColoredBadge>));
+    for (const one of GROUP_COLORS[tone].split(' ')) assert.ok(cls.includes(one), `${tone}: ${one}`);
   }
 });
 
@@ -56,7 +60,8 @@ test('raw classes still win, and still work alone', () => {
 test('neither given is neutral', () => {
   // `colorClass` used to be required, so this state could not be reached. It
   // must not render an unstyled pill.
-  assert.match(classOf(html(<ColoredBadge>Unlabelled</ColoredBadge>)), /bg-gray-100/);
+  const cls = classOf(html(<ColoredBadge>Unlabelled</ColoredBadge>));
+  for (const one of GROUP_COLORS.neutral.split(' ')) assert.ok(cls.includes(one), one);
 });
 
 test('className is appended, not swallowed', () => {
@@ -65,7 +70,9 @@ test('className is appended, not swallowed', () => {
   const cls = classOf(html(<ColoredBadge tone="info" className="ml-1 font-mono tabular-nums">7</ColoredBadge>));
   assert.match(cls, /ml-1/);
   assert.match(cls, /tabular-nums/);
-  assert.match(cls, /bg-sky-100/, 'and the tone survives alongside it');
+  for (const one of GROUP_COLORS.info.split(' ')) {
+    assert.ok(cls.includes(one), `and the tone survives alongside it: ${one}`);
+  }
 });
 
 test('size and capitalize are unchanged', () => {

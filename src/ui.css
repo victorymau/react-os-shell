@@ -260,6 +260,117 @@ html.rosh-reduce-transparency *::after {
   --viz-surface: var(--surface);
 }
 
+/* ── Status tokens ──────────────────────────────────────────────────────────
+ * The nine semantic groups (`SemanticGroup` in shell/StatusBadge.tsx), as two
+ * registers a caller picks between with one prop rather than by hand-writing
+ * colours: SOFT for a badge inside a dense row, SOLID for the same fact in a
+ * detail header.
+ *
+ * WHY THE SOFT FILL IS TRANSPARENT. A status used to be an opaque tint —
+ * `bg-green-100` — calibrated against one backdrop: the flat white surface. On
+ * a raised panel or a hovered row that tint is still the same flat patch, and
+ * it reads as a hole rather than as a badge, because it does not know what is
+ * behind it. A wash of the group's own hue at a fixed alpha composites with
+ * whatever it sits on, so ONE value is right on `--surface`, `--surface-raised`
+ * and a hovered row alike. That is also why each `-soft` is declared once and
+ * never re-declared for dark: a transparent wash has no theme, the surface
+ * under it does.
+ *
+ * WHY THE INK IS NOT THE `-text` ROLE. The obvious ink for a status is
+ * `--success-text` / `--warning-text` / `--danger-text` from brand.css, which
+ * are calibrated to clear 4.5:1 on the FLAT surface. Over the wash they do not,
+ * and the worst backdrop (`--surface-raised`) is the one nobody checks:
+ *
+ *     light  --success-text #15803d  4.02:1     --warning-text #b45309  3.91:1
+ *            --danger-text  #dc2626  3.59:1     --accent-text  #1d4ed8  5.12:1
+ *     dark   --success-text #16a34a  2.82:1     --warning-text #f59e0b  4.58:1
+ *            --danger-text  #f87171  3.86:1     --accent-text  #60a5fa  4.00:1
+ *
+ * Six of those eight are under AA. So the soft tier carries its own ink, moved
+ * one step along the same hue until the WORST of the three backdrops clears
+ * 4.5:1. The floor it actually achieves is 5.67:1 light and 5.39:1 dark;
+ * `tests/statusSoftTier.test.ts` measures every pair on every backdrop and
+ * fails the build under 4.5, so the tier cannot drift back under.
+ *
+ * `draft` and `neutral` share the grey hue and differ by alpha, which is the
+ * distinction they have always had (`bg-gray-300` against `bg-gray-100`): a
+ * draft is a real state and reads slightly louder than a cancelled one.
+ */
+:root {
+  --status-success-soft: rgba(34, 197, 94, 0.16);
+  --status-active-soft: rgba(59, 130, 246, 0.16);
+  --status-queued-soft: rgba(99, 102, 241, 0.16);
+  --status-info-soft: rgba(14, 165, 233, 0.16);
+  --status-pending-soft: rgba(234, 179, 8, 0.16);
+  --status-warning-soft: rgba(249, 115, 22, 0.16);
+  --status-danger-soft: rgba(239, 68, 68, 0.16);
+  --status-draft-soft: rgba(107, 114, 128, 0.22);
+  --status-neutral-soft: rgba(107, 114, 128, 0.10);
+
+  /* Light ink: the -800 step of each family. The -700 steps are what the
+     `-text` roles use, and they are the ones measured above at 3.59–4.02. */
+  --status-success-soft-ink: #166534;
+  --status-active-soft-ink: #1e40af;
+  --status-queued-soft-ink: #3730a3;
+  --status-info-soft-ink: #075985;
+  --status-pending-soft-ink: #854d0e;
+  --status-warning-soft-ink: #9a3412;
+  --status-danger-soft-ink: #991b1b;
+  --status-draft-soft-ink: var(--ink-strong);
+  --status-neutral-soft-ink: var(--ink);
+
+  /* The loud register. A saturated -700 fill with white on it, literal in both
+     themes for the same reason `--danger` is: a status means the same thing in
+     every product, and a solid badge is read at a glance rather than against a
+     surface. Banner's `emphasis="solid"` is the same decision one size up. */
+  --status-success-solid: #15803d;
+  --status-active-solid: #1d4ed8;
+  --status-queued-solid: #4338ca;
+  --status-info-solid: #0369a1;
+  --status-pending-solid: #a16207;
+  --status-warning-solid: #c2410c;
+  --status-danger-solid: #b91c1c;
+  --status-draft-solid: #374151;
+  --status-neutral-solid: #4b5563;
+  /* 4.92:1 (pending) to 10.31:1 (draft) — the whole solid tier clears AA. */
+  --status-on-solid: #ffffff;
+}
+
+/* Only the ink moves. The washes above hold, because they are transparent. */
+[data-theme="dark"] {
+  --status-success-soft-ink: #86efac;
+  --status-active-soft-ink: #93c5fd;
+  --status-queued-soft-ink: #a5b4fc;
+  --status-info-soft-ink: #7dd3fc;
+  --status-pending-soft-ink: #fde68a;
+  --status-warning-soft-ink: #fdba74;
+  --status-danger-soft-ink: #fca5a5;
+  --status-draft-soft-ink: var(--ink-strongest);
+  --status-neutral-soft-ink: var(--ink-strong);
+}
+
+/* ── Budget overrun hatch ───────────────────────────────────────────────────
+ * `BudgetBar`'s third drawing. A run past its wall clock must not be pictured
+ * as a full bar: a full solid bar is the calm "finished" shape, and this is the
+ * opposite of that. The overrun segment is therefore HATCHED rather than
+ * filled — a texture no in-budget state ever wears, so the difference survives
+ * a glance, a greyscale screenshot and a colour-blind reader alike.
+ *
+ * A gradient rather than an image: no asset, no request, and it reads the
+ * danger tokens so it follows the theme. `background-color` under it keeps the
+ * band visible when a print stylesheet drops background images.
+ */
+.rosh-budget-overrun {
+  background-color: var(--status-danger-soft);
+  background-image: repeating-linear-gradient(
+    135deg,
+    var(--status-danger-solid) 0,
+    var(--status-danger-solid) 2px,
+    transparent 2px,
+    transparent 5px
+  );
+}
+
 /* ── Chart motion ───────────────────────────────────────────────────────────
  * Every animation the chart family uses, as classes, so no chart implements
  * motion itself and none of them can forget the reduced-motion rule below.
