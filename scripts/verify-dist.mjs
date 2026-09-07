@@ -54,14 +54,18 @@ const MARKDOWN_PEERS = ['react-markdown', 'remark-gfm', 'remark-breaks'];
 const UI_ENTRY = join(root, 'dist/ui/index.js');
 const MARKDOWN_ENTRY = join(root, 'dist/markdown/index.js');
 
-function specifiersOf(src) {
+const STATIC_IMPORT_RES = [
+  /(?:^|\n)\s*import\s+[^;'"]*from\s*['"]([^'"]+)['"]/g,
+  /(?:^|\n)\s*import\s*['"]([^'"]+)['"]/g,
+  /(?:^|\n)\s*export\s+[^;'"]*from\s*['"]([^'"]+)['"]/g,
+];
+const DYNAMIC_IMPORT_RE = /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
+
+/** `dynamic: false` reports only what the module pulls in EAGERLY — what a host
+ *  pays for at startup, as opposed to what a lazy chunk fetches on demand. */
+function specifiersOf(src, { dynamic = true } = {}) {
   const out = [];
-  for (const re of [
-    /(?:^|\n)\s*import\s+[^;'"]*from\s*['"]([^'"]+)['"]/g,
-    /(?:^|\n)\s*import\s*['"]([^'"]+)['"]/g,
-    /(?:^|\n)\s*export\s+[^;'"]*from\s*['"]([^'"]+)['"]/g,
-    /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
-  ]) {
+  for (const re of dynamic ? [...STATIC_IMPORT_RES, DYNAMIC_IMPORT_RE] : STATIC_IMPORT_RES) {
     let m;
     while ((m = re.exec(src))) out.push(m[1]);
   }
@@ -70,14 +74,14 @@ function specifiersOf(src) {
 
 /** Walk an entry's built graph, returning every file in it. With `allowed`,
  *  also report any bare import outside that set; pass null to only collect. */
-function walkEntry(entry, allowed, why) {
+function walkEntry(entry, allowed, why, opts) {
   const seen = new Set();
   const queue = [entry];
   while (queue.length) {
     const file = queue.shift();
     if (seen.has(file)) continue;
     seen.add(file);
-    for (const spec of specifiersOf(readFileSync(file, 'utf8'))) {
+    for (const spec of specifiersOf(readFileSync(file, 'utf8'), opts)) {
       if (spec.startsWith('.')) {
         const target = join(dirname(file), spec);
         if (existsSync(target)) queue.push(target);
@@ -137,6 +141,38 @@ for (const [rel, label] of [['dist/index.js', 'react-os-shell'], ['dist/ui/index
           `PARSER LEAK: ${file.slice(root.length + 1)} imports '${spec}', which is ` +
             `reachable from ${label}. It belongs to react-os-shell/markdown alone — ` +
             'anywhere else it turns an optional peer into a required install.',
+        );
+      }
+    }
+  }
+}
+
+// ── 2c. The heavy optional peers stay behind a dynamic import ──────────────
+//
+// `react-os-shell/apps` is imported at startup by every host that composes the
+// bundled window registry, and `PdfViewer`'s static `pdfjs-dist` import is a
+// whole PDF parser — paid for before anyone has opened a document. What keeps
+// it out is that every app here is reached through `lazy(() => import(...))`,
+// and one plausible-looking `export { default as PdfViewer } from './PdfViewer'`
+// in the barrel would undo it: typecheck clean, tests green, nothing to see but
+// a slower first paint on five portals.
+//
+// Walking STATIC edges only is the whole point — the dynamic-import chunk that
+// holds pdfjs is exactly where it belongs, and a walk that follows both kinds
+// of edge cannot tell the two apart.
+const LAZY_ONLY_PEERS = ['pdfjs-dist', 'dxf-viewer', 'online-3d-viewer', 'xlsx', 'mammoth'];
+for (const rel of ['dist/index.js', 'dist/apps/index.js', 'dist/ui/index.js']) {
+  const entry = join(root, rel);
+  if (!existsSync(entry)) continue;
+  for (const file of walkEntry(entry, null, null, { dynamic: false })) {
+    for (const spec of specifiersOf(readFileSync(file, 'utf8'), { dynamic: false })) {
+      const peer = LAZY_ONLY_PEERS.find(p => spec === p || spec.startsWith(`${p}/`));
+      if (peer) {
+        note(
+          `EAGER PEER: ${file.slice(root.length + 1)} imports '${spec}' statically and is ` +
+            `reachable from ${rel} without passing through a dynamic import. ${peer} must ` +
+            'stay inside a lazy chunk — it is an OPTIONAL peer, so for a consumer that has ' +
+            'not installed it this is an unresolvable import at build time, not a slow load.',
         );
       }
     }
