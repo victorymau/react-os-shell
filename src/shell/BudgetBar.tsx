@@ -193,8 +193,11 @@ export default function BudgetBar({
     >
       {/* Rendered even at 0%: a run that started a second ago IS a reading, and
           the empty bar is the picture of it. The state that draws nothing is
-          the one with no reading, and that one draws no track either. */}
-      {!over && (
+          the one with no reading, and that one draws no track either.
+          Past the deadline it stops at the deadline and the hatch takes over —
+          except with no grace, where there is no room past it and the hatch
+          covers the whole track on its own. */}
+      {(!over || scaledOverrun) && (
         <div
           className="absolute inset-y-0 left-0 rounded-full bg-blue-600"
           style={{ width: `${solidWidth}%` }}

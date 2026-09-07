@@ -41,7 +41,11 @@ test('past the deadline: hatched, and never the shape of a full solid bar', () =
   // opposite fact, so it must not borrow that shape — it wears a texture no
   // in-budget state ever wears.
   const overrun = html(<BudgetBar label="Run" elapsed={4200} budget={3600} grace={900} />);
-  assert.doesNotMatch(overrun, SOLID, 'the in-budget fill is gone');
+  // The budget itself is spent, so the solid segment stops AT the deadline and
+  // never past it — the overrun is never drawn as more solid bar.
+  const solid = SOLID.exec(overrun);
+  assert.ok(solid);
+  assert.equal(solid[1], '80%');
   const hatch = HATCH.exec(overrun);
   assert.ok(hatch, 'no overrun band');
   assert.equal(hatch[1], '80%', 'it starts at the deadline');
@@ -68,6 +72,7 @@ test('an overrun with no grace claims no proportion for it', () => {
   assert.ok(hatch);
   assert.equal(hatch[1], '0%');
   assert.equal(hatch[2], '100%');
+  assert.doesNotMatch(markup, SOLID, 'with no room past the deadline there is no solid segment to keep');
   assert.doesNotMatch(markup, /title="budget"/, 'there is no room past the deadline to mark');
   assert.match(markup, />200%</);
 });
