@@ -16,7 +16,7 @@ A backend-less playground hosted on GitHub Pages. Wallpapers, themes, sticky not
 
 **Shell:** `<Layout>`, `<StartMenu>`, `<Desktop>` (with sticky notes + folders), `<WindowManager>`, `<Modal>` (standard / compact / widget styles), `<PopupMenu>`, `<ConfirmDialog>`, `<GlobalSearch>` (Cmd-K), `<ShortcutHelp>`, `<NotificationBell>`, `<StatusBadge>`, `<SearchableSelect>`, frosted-glass theming.
 
-**UI primitives:** `<Button>`, `<Input>`, `<Textarea>`, `<Select>`, `<Checkbox>`, `<Radio>`, `<FormField>`, `<Label>`, `<Card>` / `<StatCard>`, `<Avatar>` / `<AvatarGroup>`, `<Banner>`, `<Tabs>`, `<Accordion>`, `<Tooltip>`, `<Pagination>`, `<MetricBar>`, and dependency-free `<Sparkline>` / `<LineChart>` / `<BarChart>` / `<DonutChart>` charts.
+**UI primitives:** `<Button>`, `<Input>`, `<Textarea>`, `<Select>`, `<Checkbox>`, `<Radio>`, `<FormField>`, `<Label>`, `<Card>` / `<StatCard>`, `<Avatar>` / `<AvatarGroup>`, `<Banner>`, `<Tabs>`, `<Accordion>`, `<Tooltip>`, `<Pagination>`, `<MetricBar>`, `<BudgetBar>`, `<SettingRow>`, and dependency-free `<Sparkline>` / `<LineChart>` / `<BarChart>` / `<DonutChart>` charts.
 
 **Page templates:** ready-made screens composed from the primitives — `<DashboardTemplate>`, `<DataTablePage>`, `<FormLayoutPage>`, `<CheckoutTemplate>`, `<EmailTemplate>`, `<ChatTemplate>`, `<GalleryTemplate>`, `<AuthScreen>`, `<ErrorPage>`. `<ErrorBoundary>` catches a render crash and shows the 500 page in place of a blank screen.
 
@@ -259,11 +259,13 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 | `ShortcutHelp` | The keyboard cheatsheet shown on `?`. |
 | `NotificationBell` | Taskbar bell — config via `<Layout notifications={…}>`. |
 | `BugReportDetail` | Used inside an entity-window registry entry; reads from `<BugReportConfigProvider>`. |
-| `StatusBadge` | Coloured pill rendering a status string. Map status→semantic group via `<StatusBadgeProvider groups={{...}}>`. `label` overrides the derived text for a status that arrived from elsewhere; the colour still comes from `status`. |
+| `StatusBadge` | Coloured pill rendering a status string. Map status→semantic group via `<StatusBadgeProvider groups={{...}}>`. `label` overrides the derived text for a status that arrived from elsewhere; the colour still comes from `status`. `emphasis` (`subtle` default / `solid`, the same two words `Banner` uses) is the volume: the quiet register is a transparent wash that composites over a raised panel and a hovered row, the loud one is a saturated fill for the detail header where the same fact is the headline. Colour comes from the status tokens in `ui.css`, which carry both themes. |
 | `SidebarLayout` | Two-pane layout with a drag-to-resize sidebar (`storageKey` persists the width). Pair with a `flushBody` window so the sidebar runs edge-to-edge. |
 | `SidebarNavItem`, `SidebarGroupLabel` | Filter-sidebar button (optional `count` badge and `severity` marker dot) plus its group heading. Roll the severity up in the app; omitting it renders exactly as before it existed. An unrecognised `severity` renders a visible "unknown" marker and logs — it never silently disappears. |
 | `MetricBar` | Value + proportional bar with optional `warn` / `crit` threshold ticks — the CPU / memory / disk row. `value={null}` renders "no data" (dashed empty track), never a zero-width bar; with no thresholds the fill stays grey rather than claiming health. `max` must be a positive finite number — given `0`/`NaN` the row prints the value but draws no bar, rather than dividing by zero into a full one. |
-| `Button`, `Input`, `Textarea`, `Select`, `Checkbox`, `Radio`, `FormField`, `Label` | Form controls — controlled (`value`/`onChange`); `Input`/`Textarea` forward native props for react-hook-form. |
+| `BudgetBar` | A run's wall clock, drawn as **budget consumed** — not work done, which nothing here knows. Three states a glance separates: within budget (a solid fill), past the deadline (a hatched band, never the shape of a finished bar; with a `grace` the track spans budget + grace so it is only full when the reaper is due), and **no estimate at all** (no bar — not a zero one, not an empty track). Keeps `MetricBar`'s rule that `elapsed={null}` is no reading and `elapsed={0}` is a measurement. `budgetState(elapsed, budget)` is the same verdict for a list to sort by. |
+| `SettingRow` | One setting: its name and current value on one baseline, the explanation at full width beneath in a smaller voice. The value never shrinks, so a short badge keeps its line instead of folding into a narrow column. Handles a value that is a control (`controlId` labels it), a read-only fact, a value nobody knows (an em dash in the faint ink, never an empty cell), and a `quiet` row nothing can write yet. `DescriptionList` is the record-detail neighbour and stays that. |
+| `Button`, `Input`, `Textarea`, `Select`, `Checkbox`, `Radio`, `Switch`, `FormField`, `Label` | Form controls — controlled (`value`/`onChange`); `Input`/`Textarea` forward native props for react-hook-form. `Button` and `Switch` take `disabledReason`: persistent text beside the control wired with `aria-describedby`, never a `title` — a tooltip needs a hover a disabled control does not reliably get. `Switch` also takes `disabledReasonId`, so a panel whose controls are all dead for one reason states it once and points every control at it. |
 | `FormErrorSummary` | The error list at the top of a failed form (WCAG 3.3.1, the GOV.UK pattern): takes focus when errors appear, each message is a link that focuses the offending control by its `FormField` id. Renders nothing while `errors` is empty. |
 | `TagInput` | Multi-value field — chosen values as removable chips, typing filters the option list in the same dropdown SearchableSelect uses. `allowFreeText` admits unlisted entries; Backspace in the empty input removes the last chip. The value array stays duplicate-free by construction. |
 | `DatePicker`, `TimePicker`, `DateTimePicker`, `DateRangePicker` | Date/time fields. The first three wrap the platform's own inputs in the kit's field styling; all are careful to speak LOCAL dates and wall-clock times (never `toISOString`). `TimePicker` hands back an `HH:MM` string — a time of day names no calendar day, so it never invents a Date. `DateRangePicker` takes `fullWidth` to fill a filter-grid cell instead of shrink-wrapping its label. |
@@ -394,7 +396,8 @@ through a shared chunk.
 What you get: every form control, the display and layout primitives
 (`Card`/`StatCard`, `Avatar`, `Banner`, `Tabs`, `Accordion`, `Tooltip`,
 `StatusBadge`, `ColoredBadge`, `EmptyState`, `PageHeader`, `Spinner`,
-`Breadcrumbs`, `TopNav`, `SidebarLayout`, `MetricBar`, `Markdown`,
+`Breadcrumbs`, `TopNav`, `SidebarLayout`, `MetricBar`, `BudgetBar`, `SettingRow`,
+`Markdown`,
 `HelpCenter`, `EditableGrid`, `SearchableSelect`, `PopupMenu`), the charts, all
 nine page templates, the pageless data primitives (`Pagination`, `Kanban`,
 `ListFooter`, `ListLoadError`), `toast`, and the theming hooks (`useTheme`,
@@ -552,6 +555,8 @@ when someone else wrote the text.
 | `glassStyle()` | Returns the theme-aware frosted-glass `style` object. |
 | `reportBug(submit)` | Captures a screenshot via `getDisplayMedia`, opens the dialog, hands the payload to your `submit`. |
 | `formatDate(iso)` | Locale-aware date formatter. |
+| `budgetState(elapsed, budget)` | `no-reading` \| `no-budget` \| `within` \| `over` — the verdict `BudgetBar` draws by, exported so a run list sorts and filters by the same rule rather than re-deriving "late" a second time. |
+| `GROUP_COLORS`, `GROUP_COLORS_SOLID`, `groupColors(group, emphasis?)` | The status palette, both registers, as the class strings the badges emit — for a surface that has to build its own pill (a virtualised cell, a canvas legend) and must not guess at the colours. |
 | `severityOf(value, warn?, crit?)` | The `SeverityTone` (`success` \| `warning` \| `danger`) a reading earns against **inclusive** bounds; `null` when there's no reading or no usable bounds — the shell hardcodes no threshold. Backs `MetricBar`; use it to roll a `SidebarNavItem severity` up. |
 | `isSeverityTone(value)` | Type guard for the three tones. Validate a backend rollup with it at the fetch boundary, where a bad token can still be reported against its payload, rather than letting it surface as a wrong pixel. |
 | `toast.success / .error / .info` | Toast notifications — auto-mounts container. |
