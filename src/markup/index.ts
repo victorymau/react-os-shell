@@ -188,7 +188,7 @@ export const MARKUP_TOOLS: readonly MarkupTool[] = [
   { style: 'bold', label: 'B', title: 'Bold (⌘B)', shortcut: 'b' },
   { style: 'italic', label: 'I', title: 'Italic (⌘I)', shortcut: 'i' },
   { style: 'strike', label: 'S', title: 'Strikethrough' },
-  { style: 'highlight', label: '◆', title: 'Highlight in the brand colour' },
+  { style: 'highlight', label: '◆', title: 'Highlight in the brand color' },
   { style: 'code', label: '‹›', title: 'Code' },
   { style: 'link', label: '🔗', title: 'Link (⌘K)', shortcut: 'k' },
   { style: 'bullet', label: '•', title: 'Bulleted list' },
