@@ -355,6 +355,12 @@ height** — `h-full` inside a flex column, or an explicit height. It brings its
 own toolbar (page nav, zoom, Fit, Print, Download); inside the Preview window
 those same buttons merge into the window's single toolbar row instead.
 
+Handing it a new `url` opens that document **on its first page** — the page
+number belongs to the document, not to the viewer, so re-rendering one viewer
+with a shorter document cannot leave it pointing past the end. No `key` needed.
+The reader's zoom is deliberately kept across the change: it is a preference
+for how large they want text, not a fact about the file.
+
 Import it **lazily**, as above. It statically imports `pdfjs-dist`, and the
 whole reason the bundled apps are `lazy()` is to keep a PDF parser out of a
 host's startup bundle — `scripts/verify-dist.mjs` fails the build if one gets
