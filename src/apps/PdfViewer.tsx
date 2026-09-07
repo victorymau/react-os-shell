@@ -240,6 +240,23 @@ export default function PdfViewer({ url, filename, fit = 'width', onDownload, on
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    // A new document starts at its first page. The page number belongs to the
+    // document being read, not to the viewer, and it used to survive a change
+    // of `url`: sitting on page 3 and being handed a one-page document asked
+    // pdf.js for a page that does not exist, and the canvas went blank with
+    // nothing thrown. The Preview window never saw it because it keys its
+    // panels by url, but an embedder that re-renders one viewer with a new
+    // document — a preview pane next to the options that regenerate it — is
+    // exactly the shape this component was extracted for.
+    //
+    // Reset before the fetch, not in its `.then`: the manual page controls are
+    // live while a document loads, and a reset that landed afterwards would
+    // undo a page the reader had already picked.
+    //
+    // Zoom is deliberately NOT reset. It is the reader's own preference for
+    // how large they want text, and it holds across documents the way it does
+    // in every reader; only the page is a fact about the file.
+    setPage(1);
     // Parameter-object form, not the bare string: pdfjs-dist 6.x removed the
     // string overload ("expected either `data`, `range`, or `url` parameter"),
     // so a consumer on 6.x had every preview die on this line. The object form
@@ -416,11 +433,11 @@ export default function PdfViewer({ url, filename, fit = 'width', onDownload, on
   return (
     <div className="flex flex-col h-full">
       <PanelActions>
-        <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1} className="px-1 py-1 rounded hover:bg-gray-200 disabled:opacity-30 text-gray-600">
+        <button aria-label="Previous page" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1} className="px-1 py-1 rounded hover:bg-gray-200 disabled:opacity-30 text-gray-600">
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
         </button>
         <span className="text-gray-600 font-medium tabular-nums">{page} / {totalPages}</span>
-        <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages} className="px-1 py-1 rounded hover:bg-gray-200 disabled:opacity-30 text-gray-600">
+        <button aria-label="Next page" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages} className="px-1 py-1 rounded hover:bg-gray-200 disabled:opacity-30 text-gray-600">
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
         </button>
         <div className="h-4 w-px bg-gray-300 mx-1" />
