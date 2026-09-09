@@ -132,6 +132,30 @@ export function useDesktopHost(): DesktopHostConfig {
   return useContext(DesktopHostContext);
 }
 
+/**
+ * The taskbar's EFFECTIVE position and thickness, for the desktop furniture
+ * anchored to whichever corner it leaves free — the Trash tile below, and the
+ * version watermark.
+ *
+ * Read from the custom properties `Layout` publishes on `<html>`, not from
+ * `prefs.taskbar_position`, for two reasons: those carry the EFFECTIVE values
+ * (sidebar mode forces the taskbar horizontal whatever the preference says),
+ * and a `<Desktop>` mounted without a `<Layout>` — which is an exported,
+ * supported shape — has no taskbar at all and no preference that says so.
+ *
+ * They are written in an effect, so the first render of a fresh mount reads
+ * zero and the corner settles on the next one. That is the behaviour the Trash
+ * has always had; the watermark now shares it rather than the two disagreeing.
+ */
+function taskbarMetrics() {
+  const cs = typeof document !== 'undefined' ? getComputedStyle(document.documentElement) : null;
+  const position = (cs?.getPropertyValue('--taskbar-position') || 'bottom').trim();
+  const vertical = position === 'left' || position === 'right';
+  const height = parseInt(cs?.getPropertyValue('--taskbar-height') || '0') || 0;
+  const width = parseInt(cs?.getPropertyValue('--taskbar-width') || '0') || 0;
+  return { position, vertical, height, width };
+}
+
 export default function Desktop({ profile }: { profile: any }) {
   const shellStrings = useShellStrings();
   const queryClient = useQueryClient();
@@ -960,12 +984,9 @@ export default function Desktop({ profile }: { profile: any }) {
           click opens the Files app in trash view via the side-channel
           defined in Files.tsx. */}
       {(() => {
-        const cs = typeof document !== 'undefined' ? getComputedStyle(document.documentElement) : null;
-        const tbH = parseInt(cs?.getPropertyValue('--taskbar-height') || '0') || 0;
-        const tbW = parseInt(cs?.getPropertyValue('--taskbar-width') || '0') || 0;
-        const tbPos = (cs?.getPropertyValue('--taskbar-position') || 'bottom').trim();
-        const defaultRight = 20 + (tbPos === 'right' ? tbW : 0);
-        const defaultBottom = 20 + (tbPos === 'bottom' ? tbH : 0);
+        const tb = taskbarMetrics();
+        const defaultRight = 20 + (tb.position === 'right' ? tb.width : 0);
+        const defaultBottom = 20 + (tb.position === 'bottom' ? tb.height : 0);
         const trashPos = (prefs as any).desktop_trash_position as { right: number; bottom: number } | undefined;
         const right = trashPos?.right ?? defaultRight;
         const bottom = trashPos?.bottom ?? defaultBottom;
@@ -1325,7 +1346,6 @@ export default function Desktop({ profile }: { profile: any }) {
       {/* About dialog */}
       {aboutOpen && (() => {
         const version = host.productVersion ?? APP_VERSION;
-        const showVersion: boolean = prefs.show_desktop_version ?? true;
         return (
         <Modal open={true} onClose={() => setAboutOpen(false)} title={`${shellStrings.about.aboutPrefix} ${host.productName ?? shellStrings.about.thisApp}`} size="sm" bodyScroll={false} compact dimensions={[340, 420]}>
           <div className="flex flex-col items-center">
@@ -1427,19 +1447,48 @@ export default function Desktop({ profile }: { profile: any }) {
           consumer apps don't end up with two version labels (the bundled
           one and their own). Set prefs.show_desktop_version = true and
           provide host.productVersion to surface it. */}
-      {prefs.show_desktop_version === true && (host.productVersion ?? APP_VERSION) && (
+      {prefs.show_desktop_version === true && (host.productVersion ?? APP_VERSION) && (() => {
+        const tb = taskbarMetrics();
+        return (
         <button
           onClick={(e) => { e.stopPropagation(); setWhatsNewOpen(true); }}
-          className={`absolute bottom-3 text-[10px] text-white/50 font-mono select-none drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)] hover:text-white/80 transition-colors cursor-pointer ${
-            prefs.taskbar_position === 'top' ? 'right-3' :
-            prefs.taskbar_position === 'left' ? 'right-3' :
-            prefs.taskbar_position === 'right' ? 'left-3' :
-            'right-3 !bottom-16'
-          }`}
+          style={{
+            // ── BG#00623 ──────────────────────────────────────────────────
+            // Above the desktop-icon layer. The icons declare `zIndex: 1`
+            // and this declared nothing, so the Trash — whose default
+            // position is `20 + taskbarHeight` from the same corner — painted
+            // over the digits and took the click. Its handler calls
+            // `stopPropagation()` and only changes the selection, so an
+            // intercepted click did visibly nothing, which is exactly what
+            // the report describes. Measured before this change, at 1851x1301:
+            // 510 of the label's 630 pixels went to the Trash on a small
+            // taskbar, 102 on a medium one.
+            //
+            // 2 and not more: the window layer and the taskbar's z-[250] must
+            // still cover it, and the PerfStats HUD's z-[240] sits between.
+            // Declared inline for the same reason the icons do — a consumer's
+            // Tailwind scan cannot fail to generate a style attribute.
+            zIndex: 2,
+            // Clear of the taskbar at every size. This was a flat 64px, which
+            // is right for a medium taskbar and 8px short of a large one: the
+            // taskbar is `position: fixed` and paints over the desktop, so on
+            // a large taskbar 336 of those same 630 pixels were underneath it.
+            // The +8 below reproduces today's medium placement exactly, so the
+            // label does not move for the common case.
+            bottom: tb.position === 'bottom' ? tb.height + 4 : 8,
+            ...(tb.position === 'right' ? { left: 4 } : { right: 4 }),
+          }}
+          // The padding is the hit target: the glyphs are 10px type at half
+          // opacity in a 42x15 box, which is smaller than anything else on the
+          // desktop you are expected to hit. It grows the box outwards only —
+          // the insets above are pulled in by the same amount the padding adds
+          // back, so the digits stay where they are drawn today.
+          className="absolute px-2 py-1 text-[10px] text-white/50 font-mono select-none drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)] hover:text-white/80 transition-colors cursor-pointer"
         >
           {host.productVersion ?? APP_VERSION}
         </button>
-      )}
+        );
+      })()}
 
       {/* What's New dialog — the modal body is the scroller. An inner box
           capped at a viewport fraction cannot grow into a fixed-height

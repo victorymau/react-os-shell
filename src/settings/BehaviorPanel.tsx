@@ -65,7 +65,13 @@ export default function BehaviorPanel() {
         <label className="flex items-center gap-2 cursor-pointer">
           <input
             type="checkbox"
-            checked={prefs.show_desktop_version ?? true}
+            // `?? false`, matching the render guard in `Desktop.tsx` and the
+            // opt-in neighbour below. It read `?? true` while the watermark
+            // drew only on an explicit `true`, so anyone who had never touched
+            // this box saw it TICKED and had no version number on the desktop
+            // — and, since the watermark is the only way in, no route to
+            // What's New at all (BG#00623).
+            checked={prefs.show_desktop_version ?? false}
             onChange={e => savePref('show_desktop_version', e.target.checked)}
             className="h-4 w-4 rounded border-gray-300 text-blue-600"
           />
