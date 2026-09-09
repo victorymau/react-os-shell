@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode, PointerEvent as ReactPointerEvent } from 'react';
 
 /**
@@ -51,6 +51,10 @@ export interface SidebarLayoutProps {
   sidebarClassName?: string;
   /** Classes for the main content pane. Defaults to a white background. */
   contentClassName?: string;
+  /** Show both panes or one full-width pane. Hidden panes remain mounted. */
+  activePane?: 'both' | 'sidebar' | 'content';
+  /** Accessible name of the keyboard-operable resize separator. */
+  resizeLabel?: string;
 }
 
 const clamp = (n: number, lo: number, hi: number) => Math.min(Math.max(n, lo), hi);
@@ -70,13 +74,18 @@ export default function SidebarLayout({
     ? 'border-l border-gray-200 bg-gray-50'
     : 'border-r border-gray-200 bg-gray-50',
   contentClassName = 'bg-white',
+  activePane = 'both',
+  resizeLabel = 'Sidebar width',
 }: SidebarLayoutProps) {
   const sideRight = side === 'right';
+  const sidebarId = useId();
   const [width, setWidth] = useState<number>(() => {
     if (storageKey && typeof window !== 'undefined') {
-      const saved = window.localStorage.getItem(storageKey);
-      const n = saved ? parseInt(saved, 10) : NaN;
-      if (!Number.isNaN(n)) return clamp(n, minWidth, maxWidth);
+      try {
+        const saved = window.localStorage.getItem(storageKey);
+        const n = saved ? parseInt(saved, 10) : NaN;
+        if (!Number.isNaN(n)) return clamp(n, minWidth, maxWidth);
+      } catch { /* storage may be unavailable in privacy mode */ }
     }
     return clamp(defaultWidth, minWidth, maxWidth);
   });
@@ -121,7 +130,15 @@ export default function SidebarLayout({
   useEffect(() => () => {
     window.removeEventListener('pointermove', onMove);
     window.removeEventListener('pointerup', onUp);
+    if (dragRef.current) {
+      document.body.style.removeProperty('cursor');
+      document.body.style.removeProperty('user-select');
+    }
   }, [onMove, onUp]);
+
+  useEffect(() => {
+    if (activePane !== 'both' && dragRef.current) onUp();
+  }, [activePane, onUp]);
 
   const edge = sideRight ? 'left-0' : 'right-0';
   // With a top/bottom slot the pane becomes a 3-region flex column: a padded
@@ -130,7 +147,8 @@ export default function SidebarLayout({
   // before (the whole pane scrolls) so existing consumers are unaffected.
   const hasSlots = sidebarTop != null || sidebarBottom != null;
   const sidebarPane = (
-    <div className="relative flex h-full shrink-0 flex-col" style={{ width }}>
+    <div id={sidebarId} className="relative flex h-full shrink-0 flex-col" hidden={activePane === 'content'}
+      style={{ width: activePane === 'sidebar' ? '100%' : width, display: activePane === 'content' ? 'none' : undefined }}>
       <div className={`flex h-full flex-col ${hasSlots ? 'overflow-hidden' : 'overflow-y-auto'} ${sidebarClassName}`}>
         {sidebarTop != null && (
           <div className="shrink-0 px-2 pt-3 pb-2">{sidebarTop}</div>
@@ -146,17 +164,39 @@ export default function SidebarLayout({
       </div>
       {/* Resize handle — pinned to the sidebar's inner edge, fixed while it scrolls. */}
       <div
+        role="separator"
+        aria-label={resizeLabel}
+        aria-orientation="vertical"
+        aria-controls={sidebarId}
+        aria-valuemin={minWidth}
+        aria-valuemax={maxWidth}
+        aria-valuenow={Math.round(width)}
+        tabIndex={activePane === 'both' ? 0 : -1}
+        hidden={activePane !== 'both'}
+        style={{ display: activePane !== 'both' ? 'none' : undefined, touchAction: 'none' }}
+        onKeyDown={e => {
+          const direction = sideRight ? -1 : 1;
+          const step = e.shiftKey ? 32 : 16;
+          if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+            e.preventDefault();
+            setWidth(current => clamp(current + (e.key === 'ArrowRight' ? step : -step) * direction, minWidth, maxWidth));
+          } else if (e.key === 'Home' || e.key === 'End' || e.key === 'Enter') {
+            e.preventDefault();
+            setWidth(e.key === 'Home' ? minWidth : e.key === 'End' ? maxWidth : clamp(defaultWidth, minWidth, maxWidth));
+          }
+        }}
         onPointerDown={startDrag}
         onDoubleClick={() => setWidth(clamp(defaultWidth, minWidth, maxWidth))}
-        title="Drag to resize · double-click to reset"
-        className={`group/resize absolute inset-y-0 ${edge} z-10 w-2 cursor-col-resize`}
+        title="Drag or use arrow keys to resize · double-click or Enter to reset"
+        className={`group/resize absolute inset-y-0 ${edge} z-10 w-2 cursor-col-resize focus:outline-none focus:ring-2 focus:ring-blue-400`}
       >
         <div className={`absolute inset-y-0 ${edge} w-px bg-transparent transition-colors group-hover/resize:bg-[var(--accent-500,#3b82f6)]`} />
       </div>
     </div>
   );
   const contentPane = (
-    <div className={`flex min-w-0 flex-1 flex-col ${contentClassName}`}>
+    <div className={`flex min-w-0 flex-1 flex-col ${contentClassName}`} hidden={activePane === 'sidebar'}
+      style={{ display: activePane === 'sidebar' ? 'none' : undefined }}>
       {children}
     </div>
   );

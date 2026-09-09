@@ -209,6 +209,8 @@ export type { SeverityTone } from '../shell/severity';
 // ── Layout & navigation (page furniture, not window chrome) ──
 export { default as SidebarLayout } from '../shell/SidebarLayout';
 export type { SidebarLayoutProps } from '../shell/SidebarLayout';
+export { default as MasterDetailLayout } from '../shell/MasterDetailLayout';
+export type { MasterDetailLayoutProps } from '../shell/MasterDetailLayout';
 export { default as SidebarActionButton } from '../shell/SidebarActionButton';
 export type { SidebarActionButtonProps } from '../shell/SidebarActionButton';
 export { SidebarNavItem, SidebarGroupLabel } from '../shell/SidebarNav';
