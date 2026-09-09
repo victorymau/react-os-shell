@@ -444,6 +444,17 @@ export const modalDepthRef = { get: () => modalDepth, inc: () => ++modalDepth, d
 const activationOrder: string[] = [];
 const activeListeners = new Set<() => void>();
 
+/**
+ * Windows the user minimized BY HAND.
+ *
+ * Leaving the activation order is what hides a window, but it is not the same
+ * question as "did somebody minimize this". "Show desktop" clears the whole
+ * order at once and those windows come back together, so they need no
+ * per-window way back; a hand-minimized window is on its own and does. Only
+ * `_minimizeModal` writes here, which is what keeps the two apart.
+ */
+const _minimizedIds = new Set<string>();
+
 // Bumped by every change to the activation order, and read as the snapshot by
 // `useIsActiveWindow`. The frontmost modal id is not enough on its own: a
 // window can mount *behind* the active one (a restored z-order slots it into
@@ -584,6 +595,7 @@ export function mountModal(modalId: string, key: string | null) {
 export function unmountModal(modalId: string) {
   const idx = activationOrder.indexOf(modalId);
   if (idx !== -1) { activationOrder.splice(idx, 1); notifyActive(); }
+  _minimizedIds.delete(modalId);
   const key = _keyByModalId.get(modalId);
   if (key) { _keyByModalId.delete(modalId); _modalIdByKey.delete(key); }
 }
@@ -592,6 +604,9 @@ export function activateModal(id: string) {
   const idx = activationOrder.indexOf(id);
   if (idx !== -1) activationOrder.splice(idx, 1);
   activationOrder.push(id);
+  // Coming to the front IS the restore — whether the ask arrived from the
+  // window's own restore tab, the taskbar, or `requestWindowFront`.
+  _minimizedIds.delete(id);
   const key = _keyByModalId.get(id);
   if (key) {
     const kidx = _activationOrderKeys.indexOf(key);
@@ -615,6 +630,7 @@ export function activateModal(id: string) {
 function _minimizeModal(modalId: string) {
   const idx = activationOrder.indexOf(modalId);
   if (idx !== -1) activationOrder.splice(idx, 1);
+  _minimizedIds.add(modalId);
   const key = _keyByModalId.get(modalId);
   if (key) {
     const kidx = _activationOrderKeys.indexOf(key);
@@ -1003,6 +1019,12 @@ export function minimizeWindowByKey(windowKey: string): void {
 function useIsActiveModal(modalId: string): boolean {
   const activeId = useSyncExternalStore(subscribeActive, getActiveModalId);
   return activationOrder.length <= 1 || activeId === modalId;
+}
+
+/** Hook: has the user minimized this window by hand (as opposed to it merely
+ *  sitting behind another one, or being swept away by "show desktop")? */
+function useIsMinimizedModal(modalId: string): boolean {
+  return useSyncExternalStore(subscribeActive, () => _minimizedIds.has(modalId));
 }
 
 /**
@@ -1406,7 +1428,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     </button>
   );
   const padding = 40;
-  const { minimize: globalMinimize, items: minimizedItems, restoreIfMinimized } = useWindowManager();
+  const { minimize: globalMinimize, items: minimizedItems, restoreIfMinimized, openWindows } = useWindowManager();
   const modalId = useRef(`modal-${Math.random().toString(36).slice(2, 8)}`).current;
 
   // Mark widget windows so deactivate-all (show desktop) skips them.
@@ -1427,6 +1449,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   }, [modalId]);
   const [zIndex, setZIndex] = useState(50);
   const isActive = useIsActiveModal(modalId);
+  const isMinimized = useIsMinimizedModal(modalId);
 
   // Exposé: when enabled, every tileable modal scales down via CSS
   // transform into its grid cell. Utility, widget, and pinned panels
@@ -2958,11 +2981,60 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     </PopupMenu>
   );
 
+  // ── Restore tab ───────────────────────────────────────────────────────
+  //
+  // A minimized window is hidden, not unmounted — which is how it keeps what
+  // was typed into it. Something has to offer it back, and for a window the
+  // taskbar lists that something is the taskbar tab. An INLINE window is not a
+  // `WindowManager` window: it appears in no taskbar, so minimizing it used to
+  // strand it and everything in it until a reload threw the lot away.
+  //
+  // So the window carries its own way back: a tab at the bottom-centre of the
+  // work area with the window's title, a restore control and a close. It is
+  // deliberately the exception rather than the rule — a window the taskbar
+  // already lists must NOT grow a second, competing affordance.
+  const listedInTaskbar = !!windowKey && openWindows.some(w => w.id === windowKey);
+  const restoreTab = isMinimized && !listedInTaskbar && !widget ? (
+    <div
+      data-modal-restore-tab
+      data-modal-id={modalId}
+      className="fixed left-1/2 z-[1200] flex -translate-x-1/2 items-center gap-1 rounded-lg border border-gray-300 bg-white px-1.5 py-1 shadow-lg"
+      style={{ bottom: 'calc(var(--taskbar-height, 0px) + 12px)' }}
+    >
+      <button
+        type="button"
+        onClick={() => activateModal(modalId)}
+        title={winStr.restore}
+        className="max-w-[16rem] truncate rounded px-2 py-0.5 text-sm font-medium text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+      >
+        {titleTooltip || winStr.windowSuffix}
+      </button>
+      <button
+        type="button"
+        onClick={() => activateModal(modalId)}
+        title={winStr.restore}
+        aria-label={winStr.restore}
+        className="rounded px-1.5 py-0.5 text-xs leading-none text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+      >
+        ▴
+      </button>
+      <button
+        type="button"
+        onClick={() => { void guardedClose(); }}
+        title={winStr.close}
+        aria-label={winStr.close}
+        className="rounded px-1.5 py-0.5 text-xs leading-none text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+      >
+        ✕
+      </button>
+    </div>
+  ) : null;
+
   // Always portal to body — ensures DOM persists when hidden/minimized.
   // Re-providing a null shortcut spec stops dialogs nested inside this
   // window from also offering "Add to Desktop" for it.
   return createPortal(
-    <WindowShortcutContext.Provider value={null}>{content}{windowMenuEl}</WindowShortcutContext.Provider>,
+    <WindowShortcutContext.Provider value={null}>{content}{windowMenuEl}{restoreTab}</WindowShortcutContext.Provider>,
     document.body,
   );
 }
