@@ -19,7 +19,7 @@
  */
 import { forwardRef, useId, useState, type ReactNode } from 'react';
 import FormField from './FormField';
-import { FOCUS_RING, dropzoneClass } from './mediaShared';
+import { CloseGlyph, FOCUS_RING, dropzoneClass } from './mediaShared';
 import { FileIntakeAlert, humanSize, useFileIntake } from './useFileIntake';
 
 export interface FilePickerProps {
@@ -95,9 +95,7 @@ const FilePicker = forwardRef<HTMLButtonElement, FilePickerProps>(function FileP
                 aria-label={`Remove ${file.name}`}
                 className="shrink-0 text-gray-400 hover:text-gray-600"
               >
-                <svg className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                  <path d="M6 6l8 8M14 6l-8 8" />
-                </svg>
+                <CloseGlyph />
               </button>
             </li>
           ))}
