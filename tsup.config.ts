@@ -21,12 +21,20 @@ export default defineConfig({
   // the till and the storefront never resolve it. It must not be reachable from
   // `src/index.ts` or `src/ui/index.ts`; `scripts/verify-dist.mjs` checks both
   // directions against the built output.
+  // `src/file-intake` is its own entry so a page that must never load the
+  // shell — the admin portal's public applicant page, the storefront — can
+  // take the upload intake (harness UI-15) alone. It re-exports one module
+  // that imports React and nothing else; `splitting: true` puts that module in
+  // a chunk the ui entry shares, so the hook stays ONE instance for an app
+  // importing from both. `scripts/verify-dist.mjs` holds the built graph to
+  // React only.
   entry: [
     'src/index.ts',
     'src/apps/index.ts',
     'src/markup/index.ts',
     'src/ui/index.ts',
     'src/markdown/index.tsx',
+    'src/file-intake/index.ts',
   ],
   format: ['esm'],
   dts: true,

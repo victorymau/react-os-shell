@@ -252,6 +252,7 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 | `BrandAssetEditor` | Shared staged upload/remove lifecycle with one enforced file contract and standard browser, search-result and shell-slot previews. Persistence is injected through `onSave` and `onRemove`. |
 | `ComposerAttachments`, `AttachmentDropZone`, `AttachmentList`, `AttachButton` | Files attached to a message being written — a chat reply, a mail compose, a feedback thread. The paperclip ("Attach files"), a drop anywhere on the composer ("Drop files to attach"), and a paste into the text area all reach one pending `File[]` through the same checks, and a rejected file is announced. Holds the list and stops; the composer's send puts the files in its request. `ComposerAttachments` is the standard layout (text area, chips, trigger row); the three parts compose a composer with an icon rail or a footer of its own. `useFileIntake` is the hook behind every upload primitive, exported for exactly that — never so a consumer renders its own file input. |
 | `FilePicker` | Documents on a record: one dashed zone that is a button (click, Enter, Space) and a drop target, listing the chosen `File[]`. It never uploads — the form submits them as it submits everything else. `accept`, `maxSizeBytes` and `maxFiles` are enforced on a drop exactly as on a pick, and a rejected file is announced (`role="alert"`) naming the file and the rule. Forwards its ref to the zone for `FormErrorSummary`. |
+| `useFileIntake`, `acceptsFile`, `FileIntakeAlert` | The intake every upload primitive above takes its files through — the file dialog, a drop and a paste reach one set of checks (`accept`, `maxSizeBytes`, `maxFiles`) and one announced rejection list. For a surface with a layout of its own; never so a consumer renders its own file input. Also on the React-only subpath [`react-os-shell/file-intake`](#upload-intake-without-the-shell--react-os-shellfile-intake) for a page that cannot load the shell. |
 | `MediaUploadField` | The single image / video slot — logo, cover, avatar, favicon. Dashed zone empty, preview with Replace / Remove filled, both take a drop. `onFile` hands the consumer the chosen `File` to upload (the field owns the gesture); `onPick` opens the consumer's own library picker instead; with neither it emits an object-URL. `maxSizeBytes` joins `accept` on every gesture. |
 | `MediaUploadGrid` | The gallery sibling: thumbnails, an Add tile, per-thumb remove, drag-and-keyboard reorder, optional cover badge. `onFiles` receives EVERY file of a multi-file drop or dialog pick; `onPick` defers to a library picker. `maxFiles` counts against the items held. |
 | `StartMenu` / `Desktop` / `WindowManagerProvider` | Used internally by `Layout`; rarely instantiated directly. |
@@ -549,6 +550,41 @@ lists, pipe tables, callouts and rules — and it cannot nest, because a regex
 cannot. It is why the till can render prose at all. Reach for it when the bundle
 is the constraint and the body is short; reach for `react-os-shell/markdown`
 when someone else wrote the text.
+
+### Upload intake without the shell — `react-os-shell/file-intake`
+
+The hook behind every upload primitive, for a page that must not load the rest
+of this package: a public applicant form, a storefront's return request.
+
+```tsx
+import { useFileIntake } from 'react-os-shell/file-intake';
+
+const intake = useFileIntake({
+  onAccept: ([file]) => setCv(file),
+  multiple: false,
+  accept: limits.accept,          // from the endpoint's published limits
+  maxSizeBytes: limits.maxSizeBytes,
+});
+
+<input {...intake.inputProps} />  {/* hidden, never a tab stop */}
+<button type="button" onClick={intake.open} {...intake.zoneProps}>Choose file</button>
+{intake.rejections.length > 0 && (
+  <ul role="alert">{intake.rejections.map(r => <li key={r.file.name}>{r.message}</li>)}</ul>
+)}
+```
+
+**It reaches `react` and nothing else** — not `react-dom`, no stylesheet, no
+toast container, no window manager. `scripts/verify-dist.mjs` walks the built
+graph of `dist/file-intake/index.js` on every build and fails it otherwise, and
+pins the export list below. The exports are the same bindings the kit exports,
+so an app importing from both has one hook.
+
+| Export | Notes |
+|---|---|
+| `useFileIntake(options)` | `inputProps` for the hidden native input, `zoneProps` for the one focusable control that is also the drop target, `pasteProps` for a composer's text area, `open()`, `dragOver`, `rejections`, `clearRejections()`. `accept`, `maxSizeBytes` and `maxFiles` apply to every gesture. It validates and hands back `File[]`; it never uploads. |
+| `acceptsFile(file, accept)` | The `accept` test the hook applies — extension rules match the name, `type/*` the MIME prefix. |
+| `FileIntakeAlert` | The rejection list as `role="alert"`, styled with Tailwind utilities (`text-xs text-red-600`). A page whose Tailwind does not scan this package renders `rejections` itself, as above — keep the `role="alert"`. |
+| `FileIntakeOptions`, `FileIntakeLimits`, `FileRejection`, `FileRejectionReason` | Types. |
 
 ### Misc
 
