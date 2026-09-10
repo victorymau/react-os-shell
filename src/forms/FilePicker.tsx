@@ -8,16 +8,27 @@
  *
  * Rejections are reported, never silent. A file dropped for being too large or
  * the wrong type is the case where a user is most certain they did the thing
- * and most confused that nothing happened.
+ * and most confused that nothing happened — so the reasons are announced
+ * (`role="alert"`), and `accept` is enforced on a drop exactly as the native
+ * dialog enforces it on a pick. Intake is `useFileIntake`, shared with every
+ * other upload primitive in the kit.
+ *
+ * The zone is ONE control: a button that opens the dialog on click, Enter or
+ * Space and takes a drop. The native input behind it is never a tab stop, so a
+ * keyboard user meets the field once (harness UI-15).
  */
-import { useId, useRef, useState, type DragEvent, type ReactNode } from 'react';
-import { mediaFileName } from './mediaShared';
+import { forwardRef, useId, useState, type ReactNode } from 'react';
+import FormField from './FormField';
+import { FOCUS_RING, dropzoneClass } from './mediaShared';
+import { FileIntakeAlert, humanSize, useFileIntake } from './useFileIntake';
 
 export interface FilePickerProps {
   files: File[];
   onChange: (files: File[]) => void;
-  /** `accept` for the native picker, e.g. "image/*,.pdf". */
+  /** `accept` — enforced on the native picker AND on a drop, e.g. "image/*,.pdf". */
   accept?: string;
+  /** Short kind hint, e.g. "PDF · JPG", shown under the CTA and in a type rejection. */
+  acceptHint?: ReactNode;
   multiple?: boolean;
   /** Rejected above this, with the reason shown. */
   maxSizeBytes?: number;
@@ -27,89 +38,49 @@ export interface FilePickerProps {
   label?: ReactNode;
   hint?: ReactNode;
   error?: ReactNode;
+  required?: boolean;
   className?: string;
 }
 
-const humanSize = (bytes: number): string => {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-};
+const FilePicker = forwardRef<HTMLButtonElement, FilePickerProps>(function FilePicker({
+  files, onChange, accept, acceptHint, multiple = true, maxSizeBytes, maxFiles,
+  disabled = false, label, hint, error, required, className = '',
+}, ref) {
+  const zoneId = useId();
+  const [focused, setFocused] = useState(false);
 
-export default function FilePicker({
-  files, onChange, accept, multiple = true, maxSizeBytes, maxFiles,
-  disabled = false, label, hint, error, className = '',
-}: FilePickerProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const inputId = useId();
-  const [dragging, setDragging] = useState(false);
-  const [rejected, setRejected] = useState<string[]>([]);
+  const intake = useFileIntake({
+    accept, acceptHint, maxSizeBytes, maxFiles, multiple, disabled,
+    currentCount: files.length,
+    onAccept: accepted => onChange(multiple ? [...files, ...accepted] : accepted.slice(0, 1)),
+  });
 
-  const add = (incoming: FileList | null) => {
-    if (!incoming || incoming.length === 0) return;
-    const reasons: string[] = [];
-    const accepted: File[] = [];
-
-    for (const file of Array.from(incoming)) {
-      if (maxSizeBytes != null && file.size > maxSizeBytes) {
-        reasons.push(`${mediaFileName(file.name)} is ${humanSize(file.size)} — the limit is ${humanSize(maxSizeBytes)}`);
-        continue;
-      }
-      if (maxFiles != null && files.length + accepted.length >= maxFiles) {
-        reasons.push(`${mediaFileName(file.name)} was not added — ${maxFiles} files is the limit`);
-        continue;
-      }
-      accepted.push(file);
-    }
-
-    setRejected(reasons);
-    if (accepted.length) onChange(multiple ? [...files, ...accepted] : accepted.slice(0, 1));
-    // Reset the native input so re-picking the SAME file fires change again —
-    // without this, removing a file and re-adding it appears to do nothing.
-    if (inputRef.current) inputRef.current.value = '';
-  };
-
-  const onDrop = (e: DragEvent) => {
-    e.preventDefault();
-    setDragging(false);
-    if (!disabled) add(e.dataTransfer.files);
-  };
+  const describedBy = error ? `${zoneId}-error` : hint ? `${zoneId}-hint` : undefined;
 
   return (
-    <div className={className}>
-      {label && <label htmlFor={inputId} className="mb-1 block text-sm font-medium text-gray-700">{label}</label>}
-
-      <div
-        onDragOver={e => { e.preventDefault(); if (!disabled) setDragging(true); }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={onDrop}
-        className={[
-          'rounded-lg border border-dashed px-4 py-6 text-center transition-colors',
-          dragging ? 'border-blue-400 bg-blue-50' : 'border-gray-300 bg-white',
-          disabled ? 'opacity-60' : '',
-        ].filter(Boolean).join(' ')}
+    <FormField label={label} htmlFor={zoneId} hint={hint} error={error} required={required} className={className}>
+      <button
+        ref={ref}
+        type="button"
+        id={zoneId}
+        disabled={disabled}
+        onClick={intake.open}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        aria-invalid={error ? true : undefined}
+        aria-required={required || undefined}
+        aria-describedby={describedBy}
+        {...intake.zoneProps}
+        className={dropzoneClass(intake.dragOver, disabled, 'px-4 py-6')}
+        style={{ outline: 'none', boxShadow: focused && !disabled ? FOCUS_RING : undefined }}
       >
-        <input
-          ref={inputRef}
-          id={inputId}
-          type="file"
-          accept={accept}
-          multiple={multiple}
-          disabled={disabled}
-          onChange={e => add(e.target.files)}
-          className="sr-only"
-        />
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() => inputRef.current?.click()}
-          className="text-sm font-medium text-blue-600 hover:text-blue-700 disabled:cursor-not-allowed"
-        >
-          Choose {multiple ? 'files' : 'a file'}
-        </button>
-        <span className="text-sm text-gray-500"> or drag them here</span>
-        {hint && <p className="mt-1 text-xs text-gray-500">{hint}</p>}
-      </div>
+        <span>
+          <span className="text-sm font-medium text-blue-600">Choose {multiple ? 'files' : 'a file'}</span>
+          <span className="text-sm text-gray-500"> or drag {multiple ? 'them' : 'it'} here</span>
+        </span>
+        {acceptHint && <span className="text-xs text-gray-400">{acceptHint}</span>}
+      </button>
+      <input {...intake.inputProps} />
 
       {files.length > 0 && (
         <ul className="mt-2 flex flex-col gap-1">
@@ -120,7 +91,7 @@ export default function FilePicker({
               <button
                 type="button"
                 disabled={disabled}
-                onClick={() => { setRejected([]); onChange(files.filter((_, j) => j !== i)); }}
+                onClick={() => { intake.clearRejections(); onChange(files.filter((_, j) => j !== i)); }}
                 aria-label={`Remove ${file.name}`}
                 className="shrink-0 text-gray-400 hover:text-gray-600"
               >
@@ -133,12 +104,9 @@ export default function FilePicker({
         </ul>
       )}
 
-      {rejected.length > 0 && (
-        <ul className="mt-2 flex flex-col gap-0.5">
-          {rejected.map(reason => <li key={reason} className="text-xs text-red-600">{reason}</li>)}
-        </ul>
-      )}
-      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
-    </div>
+      <FileIntakeAlert rejections={intake.rejections} />
+    </FormField>
   );
-}
+});
+
+export default FilePicker;

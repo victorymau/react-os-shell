@@ -51,7 +51,7 @@ test('BrandAssetEditor rejects an oversized file before save', async () => {
     value: [new File(['too large'], 'large.png', { type: 'image/png' })],
   });
   await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })); });
-  assert.match(view.container.textContent ?? '', /must be smaller than 2 bytes/i);
+  assert.match(view.container.textContent ?? '', /large\.png is 9 B — the limit is 2 B/);
   const save = [...view.container.querySelectorAll('button')].find(button => button.textContent === 'Save favicon');
   assert.equal(save?.hasAttribute('disabled'), true);
   assert.equal(saves, 0);
@@ -77,7 +77,7 @@ test('BrandAssetEditor rejects a file omitted from the configured accept contrac
     value: [new File(['<svg/>'], 'logo.svg', { type: 'image/svg+xml' })],
   });
   await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })); });
-  assert.match(view.container.textContent ?? '', /supported image \(PNG · JPG\)/i);
+  assert.match(view.container.textContent ?? '', /logo\.svg is not an accepted file type \(PNG · JPG\)/);
   const save = [...view.container.querySelectorAll('button')].find(button => button.textContent === 'Save logo');
   assert.equal(save?.hasAttribute('disabled'), true);
   assert.equal(saves, 0);
