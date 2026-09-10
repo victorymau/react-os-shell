@@ -33,6 +33,11 @@
       "import": "./dist/markup/index.js",
       "default": "./dist/markup/index.js"
     },
+    "./file-intake": {
+      "types": "./dist/file-intake/index.d.ts",
+      "import": "./dist/file-intake/index.js",
+      "default": "./dist/file-intake/index.js"
+    },
     "./markdown": {
       "types": "./dist/markdown/index.d.ts",
       "import": "./dist/markdown/index.js"

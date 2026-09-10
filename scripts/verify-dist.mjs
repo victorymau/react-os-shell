@@ -122,6 +122,41 @@ if (!existsSync(MARKDOWN_ENTRY)) {
   );
 }
 
+// The file-intake entry is React and NOTHING else — not even react-dom. It
+// exists for the two consumers that cannot take the rest of this package: the
+// admin portal's public applicant page (an architecture test keeps the shell's
+// toast container, stylesheet and window manager out of that bundle, and walks
+// this same built graph from its own side) and the public storefront. The hook
+// renders nothing through a portal, so a react-dom edge here would mean the
+// window layer arrived through a shared chunk. A stylesheet edge would be worse
+// than a peer leak: the bundler would inject the shell's theme into a page that
+// has its own.
+const FILE_INTAKE_ENTRY = join(root, 'dist/file-intake/index.js');
+/** What the entry exports, exactly. Growing it is a reviewed change, not a star re-export. */
+const FILE_INTAKE_EXPORTS = ['FileIntakeAlert', 'acceptsFile', 'useFileIntake'];
+if (!existsSync(FILE_INTAKE_ENTRY)) {
+  note('dist/file-intake/index.js does not exist — did tsup lose the src/file-intake entry?');
+} else {
+  const graph = walkEntry(
+    FILE_INTAKE_ENTRY,
+    new Set(['react', 'react/jsx-runtime']),
+    'react-os-shell/file-intake may reach react only — the pages that import it ' +
+      'must not load react-dom through it, let alone the shell.',
+  );
+  for (const file of graph) {
+    for (const spec of specifiersOf(readFileSync(file, 'utf8'))) {
+      if (/\.css(?:[?#].*)?$/.test(spec)) {
+        note(
+          `STYLE LEAK: ${file.slice(root.length + 1)} imports '${spec}', which is reachable ` +
+            'from react-os-shell/file-intake. That entry must carry no stylesheet — its ' +
+            'consumers style their own pages.',
+        );
+      }
+    }
+  }
+  if (graph.size < 2) note(`the file-intake entry graph is only ${graph.size} file(s); expected its chunk`);
+}
+
 // ── 2b. …and the parser must not leak the OTHER way ─────────────────────────
 //
 // react-markdown reaching the root or the ui entry would quietly promote an
@@ -191,11 +226,23 @@ for (const rel of ['dist/index.js', 'dist/apps/index.js', 'dist/ui/index.js']) {
 // The identity half matters just as much: two copies of `toast` would each own
 // their own DOM container and listener set, so an app importing from both
 // entries would lose half its toasts with nothing erroring.
-if (existsSync(UI_ENTRY) && existsSync(join(root, 'dist/index.js'))) {
-  const [rootMod, uiMod] = await Promise.all([
-    import(new URL('../dist/index.js', import.meta.url)),
-    import(new URL('../dist/ui/index.js', import.meta.url)),
-  ]);
+/** Import built entries for the identity checks. A graph that cannot even load
+ *  (a stylesheet edge, an unresolvable chunk) is reported with everything else
+ *  found so far, rather than crashing before the report prints. */
+async function loadEntries(...rels) {
+  try {
+    return await Promise.all(rels.map(rel => import(new URL(`../${rel}`, import.meta.url))));
+  } catch (err) {
+    note(`could not load ${rels.join(' and ')} to compare their exports: ${err.message}`);
+    return null;
+  }
+}
+
+const rootAndUi = existsSync(UI_ENTRY) && existsSync(join(root, 'dist/index.js'))
+  ? await loadEntries('dist/index.js', 'dist/ui/index.js')
+  : null;
+if (rootAndUi) {
+  const [rootMod, uiMod] = rootAndUi;
   const missing = Object.keys(uiMod).filter(n => !(n in rootMod));
   if (missing.length) {
     note(
@@ -210,6 +257,32 @@ if (existsSync(UI_ENTRY) && existsSync(join(root, 'dist/index.js'))) {
       `these are DIFFERENT bindings on the two entries: ${forked.join(', ')}. ` +
         'The entries must share one module instance, or singletons like toast ' +
         'are duplicated for anyone importing from both.',
+    );
+  }
+}
+
+// …and the file-intake entry exports exactly its list, bound to the SAME
+// functions the kit exports. A second copy of the hook is harmless today, but
+// the list drifting is not: a name dropped by a barrel change is a consumer's
+// build failure, and a name added arrives with whatever it imports.
+const intakeAndUi = existsSync(FILE_INTAKE_ENTRY) && existsSync(UI_ENTRY)
+  ? await loadEntries('dist/file-intake/index.js', 'dist/ui/index.js')
+  : null;
+if (intakeAndUi) {
+  const [intakeMod, uiMod] = intakeAndUi;
+  const names = Object.keys(intakeMod).sort();
+  if (names.join() !== FILE_INTAKE_EXPORTS.join()) {
+    note(
+      `react-os-shell/file-intake exports [${names.join(', ')}], expected ` +
+        `[${FILE_INTAKE_EXPORTS.join(', ')}]. Change the list in scripts/verify-dist.mjs ` +
+        'in the same PR as the entry, deliberately.',
+    );
+  }
+  const forked = names.filter(n => intakeMod[n] !== uiMod[n]);
+  if (forked.length) {
+    note(
+      `react-os-shell/file-intake and react-os-shell/ui bind DIFFERENT copies of: ` +
+        `${forked.join(', ')}. Both must re-export the one module in src/forms/.`,
     );
   }
 }
