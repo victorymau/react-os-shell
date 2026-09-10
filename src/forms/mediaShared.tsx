@@ -153,6 +153,15 @@ export function Spinner({ className = 'h-5 w-5' }: { className?: string }) {
   );
 }
 
+/** ✕ — the remove affordance on a chip, a row, a thumbnail. Inherits colour. */
+export function CloseGlyph({ className = 'h-4 w-4' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+      <path d="M6 6l8 8M14 6l-8 8" />
+    </svg>
+  );
+}
+
 /** Upload-arrow glyph — inherits colour, matching the kit's line-icon style. */
 export function UploadGlyph({ className = 'h-6 w-6' }: { className?: string }) {
   return (

@@ -124,6 +124,24 @@ export { default as InputNumber } from '../forms/InputNumber';
 export type { InputNumberProps } from '../forms/InputNumber';
 export { default as FilePicker } from '../forms/FilePicker';
 export type { FilePickerProps } from '../forms/FilePicker';
+export {
+  default as ComposerAttachments,
+  AttachmentDropZone,
+  AttachmentList,
+  AttachButton,
+  PaperclipGlyph,
+} from '../forms/ComposerAttachments';
+export type {
+  ComposerAttachmentsProps,
+  AttachmentDropZoneProps,
+  AttachmentListProps,
+  AttachButtonProps,
+  FileIntake,
+} from '../forms/ComposerAttachments';
+// The intake behind every upload primitive, exported for a composer with a
+// layout of its own — never so a consumer can render its own file input.
+export { useFileIntake, FileIntakeAlert, acceptsFile } from '../forms/useFileIntake';
+export type { FileIntakeOptions, FileIntakeLimits, FileRejection, FileRejectionReason } from '../forms/useFileIntake';
 export { default as SearchableSelect } from '../shell/SearchableSelect';
 export type { SearchableOption, SearchableSelectProps } from '../shell/SearchableSelect';
 export { default as TagInput } from '../forms/TagInput';
