@@ -11,19 +11,29 @@
  * owns NO picker modal and NO upload/fetch — each portal has its own media
  * library and upload endpoint. Inject that via `onPick`: it fires on click and
  * on drop (with the dropped File, so the consumer can seed an immediate upload),
- * and the consumer resolves the selection back through `onChange`. With `onPick`
- * omitted the field falls back to a hidden native `<input type=file>` and emits
- * an object-URL — handy for demos and staged-then-submit forms (the field owns
- * that blob URL's lifetime and revokes it on replace / remove / unmount).
+ * and the consumer resolves the selection back through `onChange`. With `onFile`
+ * instead, the field owns the gesture — click opens the native dialog, a drop
+ * lands on the zone — and hands the consumer the chosen `File` to upload
+ * however it uploads everything else (harness PAT-10). With neither, the field
+ * falls back to emitting an object-URL — handy for demos and staged-then-submit
+ * forms (the field owns that blob URL's lifetime and revokes it on replace /
+ * remove / unmount).
+ *
+ * Every gesture goes through `useFileIntake`, so `accept` and `maxSizeBytes`
+ * are enforced on a drop exactly as the dialog enforces `accept` on a pick, and
+ * a rejected file is announced.
  *
  * This is deliberately the SINGLE-slot field. Thumbnail grids, reorderable
  * zones, and attachment lists change for different reasons (SRP) and belong to a
  * sibling gallery primitive, not here.
  */
-import { useEffect, useId, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import Button from './Button';
 import FormField from './FormField';
-import { isVideoUrl, mediaFileName, Spinner, UploadGlyph } from './mediaShared';
+import {
+  BusyOverlay, FilenameBadge, FOCUS_RING, dropzoneClass, isVideoUrl, mediaFileName, mediaPromptLine, Spinner, UploadGlyph,
+} from './mediaShared';
+import { FileIntakeAlert, useFileIntake } from './useFileIntake';
 
 export interface MediaUploadFieldProps {
   /** The current media URL. Empty string (or null/undefined) = the CTA state. */
@@ -38,6 +48,12 @@ export interface MediaUploadFieldProps {
    * object-URL (demos, staged-then-submit forms).
    */
   onPick?: (droppedFile?: File) => void;
+  /**
+   * Receive the chosen or dropped File — the field owns the gesture (native
+   * dialog on click, drop on the zone) and the consumer owns the upload. Ignored
+   * when `onPick` is set.
+   */
+  onFile?: (file: File) => void;
 
   // ── Field chrome (delegates to the shell FormField) ──
   /** Label rendered above the control. */
@@ -56,6 +72,8 @@ export interface MediaUploadFieldProps {
    * fallback file dialog, and the default empty-state copy. Default `image/*`.
    */
   accept?: string;
+  /** Rejected above this many bytes, with the reason announced. */
+  maxSizeBytes?: number;
   /** `object-fit` for the preview. Default `cover`; use `contain` for logos/SVG. */
   fit?: 'cover' | 'contain';
   /** Preview / dropzone height in px (applied via inline style). Default 112. */
@@ -98,12 +116,14 @@ export default function MediaUploadField({
   value,
   onChange,
   onPick,
+  onFile,
   label,
   hint,
   error,
   required,
   className,
   accept = 'image/*',
+  maxSizeBytes,
   fit = 'cover',
   height = 112,
   placeholder,
@@ -118,12 +138,6 @@ export default function MediaUploadField({
   busyLabel = 'Uploading…',
   disabled = false,
 }: MediaUploadFieldProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [dragOver, setDragOver] = useState(false);
-  // Own focus ring drawn inline: the kit's shipped stylesheet doesn't include
-  // the Tailwind `focus:ring` machinery, so `focus:ring-*` classes paint
-  // nothing. An inline box-shadow on focus is the reliable, theme-safe way to
-  // keep the dropzone's focus visible (WCAG 2.4.7).
   const [focused, setFocused] = useState(false);
   const fieldId = useId();
 
@@ -137,14 +151,11 @@ export default function MediaUploadField({
   }, []);
 
   const locked = disabled || busy;
-  const acceptsVideo = accept.includes('video');
-  const acceptsImage = accept.includes('image') || accept === '*' || accept === '';
   // Extension first; then the MIME captured for an extensionless blob; then the
   // accept-kind heuristic. The blob check is what makes video preview correct in
   // the native fallback where the URL carries no extension.
   const isVideo = !!value && (isVideoUrl(value, accept) || value === videoBlobUrl);
-  const kindWord = acceptsVideo && !acceptsImage ? 'video' : acceptsImage && !acceptsVideo ? 'image' : 'file';
-  const dimLine = placeholder ?? `Upload ${kindWord === 'image' ? 'an image' : `a ${kindWord}`}`;
+  const dimLine = placeholder ?? mediaPromptLine(accept);
 
   /** Mint an object URL for the fallback path, revoking the previous one. */
   const emitObjectUrl = (file: File) => {
@@ -164,51 +175,35 @@ export default function MediaUploadField({
     onChange('');
   };
 
-  /** Open the injected picker, or fall back to the native file dialog / dropped file. */
-  const pick = (file?: File | null) => {
+  /** A file that passed every check: the injected picker, the consumer's uploader, or the object-URL fallback. */
+  const deliver = (file: File) => {
+    if (onPick) onPick(file);
+    else if (onFile) onFile(file);
+    else emitObjectUrl(file);
+  };
+
+  // One intake for the dialog and the drop. The drop handlers are shared by the
+  // empty dropzone AND the filled preview so drag-to-replace works; a drop
+  // carrying no file (dragged text/URL) is a no-op and never opens the dialog.
+  const intake = useFileIntake({
+    accept, maxSizeBytes, acceptHint, multiple: false, disabled: locked,
+    onAccept: ([file]) => deliver(file),
+  });
+  const { dragOver } = intake;
+
+  /** Click: the injected picker, or the native dialog. */
+  const pick = () => {
     if (locked) return;
-    if (onPick) {
-      onPick(file ?? undefined);
-      return;
-    }
-    if (file) {
-      emitObjectUrl(file);
-      return;
-    }
-    inputRef.current?.click();
+    if (onPick) onPick();
+    else intake.open();
   };
-
-  const onNativeFile = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) emitObjectUrl(file);
-    if (inputRef.current) inputRef.current.value = '';
-  };
-
-  // Drag-drop handlers, shared by the empty dropzone AND the filled preview so
-  // drag-to-replace works. A drop with no file (dragged text/URL) is a no-op —
-  // it never falls through to opening the native dialog.
-  const dropHandlers = locked
-    ? {}
-    : {
-        onDragOver: (e: DragEvent) => {
-          e.preventDefault();
-          setDragOver(true);
-        },
-        onDragLeave: () => setDragOver(false),
-        onDrop: (e: DragEvent) => {
-          e.preventDefault();
-          setDragOver(false);
-          const file = e.dataTransfer.files?.[0];
-          if (file) pick(file);
-        },
-      };
 
   const previewName = value ? mediaFileName(value) : '';
 
   const filled = (
     <div>
       <div
-        {...dropHandlers}
+        {...intake.zoneProps}
         className={[
           'relative overflow-hidden rounded-md border bg-gray-100 transition-colors',
           dragOver ? 'border-blue-500' : 'border-gray-200',
@@ -228,24 +223,8 @@ export default function MediaUploadField({
         ) : (
           <img src={value ?? undefined} alt={previewName} className="h-full w-full" style={{ objectFit: fit }} />
         )}
-        {showFilename && value && (
-          <span
-            className="absolute inset-x-1 bottom-1 truncate rounded px-1.5 py-0.5 text-xs text-white"
-            style={{ background: 'rgba(0,0,0,0.6)' }}
-          >
-            {previewName}
-          </span>
-        )}
-        {busy && (
-          <div
-            role="status"
-            className="absolute inset-0 flex items-center justify-center gap-2"
-            style={{ background: 'rgba(255,255,255,0.6)' }}
-          >
-            <Spinner />
-            <span className="text-xs font-medium text-gray-600">{busyLabel}</span>
-          </div>
-        )}
+        {showFilename && value && <FilenameBadge>{previewName}</FilenameBadge>}
+        {busy && <BusyOverlay label={busyLabel} rounded="rounded-md" />}
       </div>
       {!disabled && (allowReplace || allowRemove) && (
         <div className="mt-2 flex gap-2">
@@ -277,16 +256,12 @@ export default function MediaUploadField({
       aria-describedby={error ? `${fieldId}-error` : hint ? `${fieldId}-hint` : undefined}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
-      {...dropHandlers}
-      className={[
-        'flex w-full flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed text-center transition-colors',
-        locked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
-        dragOver ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-gray-50 hover:bg-gray-100',
-      ].join(' ')}
+      {...intake.zoneProps}
+      className={dropzoneClass(dragOver, locked)}
       style={{
         minHeight: height,
         outline: 'none',
-        boxShadow: focused && !locked ? '0 0 0 2px rgba(59,130,246,0.45)' : undefined,
+        boxShadow: focused && !locked ? FOCUS_RING : undefined,
       }}
     >
       {busy ? (
@@ -310,9 +285,8 @@ export default function MediaUploadField({
   return (
     <FormField label={label} htmlFor={fieldId} hint={hint} error={error} required={required} className={className}>
       {value ? filled : empty}
-      {!onPick && (
-        <input ref={inputRef} type="file" accept={accept} className="hidden" onChange={onNativeFile} />
-      )}
+      {!onPick && <input {...intake.inputProps} />}
+      <FileIntakeAlert rejections={intake.rejections} />
     </FormField>
   );
 }

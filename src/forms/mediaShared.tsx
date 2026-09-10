@@ -1,10 +1,13 @@
 /**
- * Internal helpers shared by the media-upload primitives (`MediaUploadField`
- * single slot + `MediaUploadGrid` gallery) so the filename derivation, the
- * image-vs-video test, and the upload glyph / spinner live in one place (DRY /
+ * Internal helpers shared by the upload primitives (`FilePicker`,
+ * `MediaUploadField` single slot, `MediaUploadGrid` gallery) so the filename
+ * derivation, the image-vs-video test, the accept-kind wording, the dropzone
+ * look, the busy overlay and the filename badge live in one place (DRY /
  * SSoT). Not part of the public API except `mediaFileName`, which the field
- * re-exports.
+ * re-exports. File INTAKE — dialog, drop, paste, validation — is
+ * `useFileIntake`.
  */
+import type { ReactNode } from 'react';
 
 /** `data:image/svg+xml;base64,…` → captures the `image` type and `svg+xml` subtype. */
 const DATA_URL_RE = /^data:([a-z0-9!#$&^_.+-]+)\/([a-z0-9!#$&^_.+-]+)/i;
@@ -53,6 +56,71 @@ export function mediaFileName(url: string): string {
 }
 
 const VIDEO_EXT_RE = /\.(mp4|webm|ogg|ogv|mov|m4v)(\?|#|$)/i;
+
+/**
+ * What kind of thing an `accept` string asks for, as the word the empty-state
+ * copy uses: `image`, `video`, or the neutral `file`.
+ */
+export function mediaKindWord(accept: string): 'image' | 'video' | 'file' {
+  const acceptsVideo = accept.includes('video');
+  const acceptsImage = accept.includes('image') || accept === '*' || accept === '';
+  if (acceptsVideo && !acceptsImage) return 'video';
+  if (acceptsImage && !acceptsVideo) return 'image';
+  return 'file';
+}
+
+/** The default dim prompt line for an empty zone: "Upload an image" / "Upload a video" / "Upload a file". */
+export function mediaPromptLine(accept: string): string {
+  const kind = mediaKindWord(accept);
+  return `Upload ${kind === 'image' ? 'an image' : `a ${kind}`}`;
+}
+
+/**
+ * The one dashed dropzone every upload primitive draws. `dragOver` is the
+ * file-drag highlight; `locked` is disabled-or-busy. The classes are in the
+ * documented Tailwind vocabulary so the dark theme's remaps apply to them.
+ */
+export function dropzoneClass(dragOver: boolean, locked: boolean, extra = ''): string {
+  return [
+    'flex w-full flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed text-center transition-colors',
+    locked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
+    dragOver ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-gray-50 hover:bg-gray-100',
+    extra,
+  ].filter(Boolean).join(' ');
+}
+
+/**
+ * Focus ring drawn inline: the kit's shipped stylesheet doesn't include the
+ * Tailwind `focus:ring` machinery, so `focus:ring-*` classes paint nothing. An
+ * inline box-shadow on focus is the reliable, theme-safe way to keep a zone's
+ * focus visible (WCAG 2.4.7).
+ */
+export const FOCUS_RING = '0 0 0 2px rgba(59,130,246,0.45)';
+
+/** Translucent "Uploading…" cover over a zone or preview while the caller's transport runs. */
+export function BusyOverlay({ label, rounded = 'rounded-lg' }: { label: ReactNode; rounded?: string }) {
+  return (
+    <div
+      role="status"
+      className={`absolute inset-0 flex items-center justify-center gap-2 bg-white/60 ${rounded}`}
+    >
+      <Spinner />
+      <span className="text-xs font-medium text-gray-600">{label}</span>
+    </div>
+  );
+}
+
+/** Filename (or caption) strip along the bottom edge of a preview. */
+export function FilenameBadge({ children }: { children: ReactNode }) {
+  return (
+    <span
+      className="absolute inset-x-1 bottom-1 truncate rounded px-1.5 py-0.5 text-xs text-white"
+      style={{ background: 'rgba(0,0,0,0.6)' }}
+    >
+      {children}
+    </span>
+  );
+}
 
 /**
  * Best-effort image-vs-video guess for a preview: media type for a `data:`
