@@ -33,7 +33,9 @@ export function ShellPrefsProvider({
  *
  *  `defaults` are merged behind whatever's already stored, so they only
  *  apply for keys the user hasn't set yet. Useful for opting out of bundled
- *  features (e.g. `{ show_desktop_version: false }`). */
+ *  features (e.g. `{ restore_windows: false }`). Note this is the only way to
+ *  turn a default-ON feature off up front; a default-OFF one like
+ *  `show_desktop_version` is already off until someone ticks its box. */
 export function useLocalStoragePrefs(
   storageKey = 'react-os-shell:prefs',
   defaults?: Record<string, any>,

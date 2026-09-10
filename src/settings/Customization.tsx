@@ -607,7 +607,10 @@ export default function Customization({ omit, section }: CustomizationProps = {}
       <div>
         <h3 className="text-sm font-semibold text-gray-900 mb-3">Desktop</h3>
         <label className="flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" checked={prefs.show_desktop_version ?? true} onChange={e => savePref('show_desktop_version', e.target.checked)}
+          {/* `?? false` — the watermark renders on an explicit `true` only, and
+              a box ticked by default over a desktop with no version on it is
+              the state BG#00623 arrived in. */}
+          <input type="checkbox" checked={prefs.show_desktop_version ?? false} onChange={e => savePref('show_desktop_version', e.target.checked)}
             className="h-4 w-4 rounded border-gray-300 text-blue-600" />
           <span className="text-sm text-gray-700">Show version on desktop</span>
           <span className="text-xs text-gray-400 ml-1 font-mono">{getVersion()}</span>

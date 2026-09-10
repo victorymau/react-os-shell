@@ -20,7 +20,17 @@
  *   <name>.entry.tsx   the page — bundled for the browser and served at /
  *   <name>.check.mjs   `export default async (page, ctx) => {}`, plus a
  *                      `describe` string for the pass line. `ctx.pageErrors`
- *                      collects anything the page threw.
+ *                      collects anything the page threw, `ctx.baseUrl` is the
+ *                      origin it is served from, and `ctx.open(search)`
+ *                      re-navigates there — the query string reaches the entry
+ *                      as `location.search`, which is how one entry gets
+ *                      mounted under several configurations
+ *                      (`versionWatermark`, once per taskbar size).
+ *
+ *                      A check may also `export const viewport = { width,
+ *                      height }`. The default below is a size, not a
+ *                      measurement: a check that asserts geometry has to say
+ *                      which window it is describing.
  *
  * Adding a scenario is adding those two files; nothing here needs editing.
  */
@@ -67,7 +77,7 @@ let failed = false;
 
 try {
   for (const name of scenarios) {
-    const { default: check, describe } = await import(
+    const { default: check, describe, viewport } = await import(
       pathToFileURL(join(browserDir, `${name}.check.mjs`)).href
     );
 
@@ -117,14 +127,21 @@ try {
     const address = server.address();
     assert.ok(address && typeof address === 'object');
 
-    const page = await browser.newPage();
-    page.setDefaultTimeout(5000);
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+    const page = await browser.newPage({ viewport: viewport ?? { width: 1280, height: 720 } });
+    const open = (search = '') => page.goto(`${baseUrl}/${search}`, { waitUntil: 'networkidle' });
+    // 15s, not the 5s this was: these bundles are the whole shell, unminified,
+    // and the first page load in a freshly launched browser is slow enough that
+    // a cold `waitFor` on the first element loses the race. Nothing here waits
+    // on a real network, so a raised ceiling cannot turn a passing check red —
+    // it only stops a slow-but-correct one being cut off.
+    page.setDefaultTimeout(15000);
     const pageErrors = [];
     page.on('pageerror', error => pageErrors.push(error));
 
     try {
-      await page.goto(`http://127.0.0.1:${address.port}`, { waitUntil: 'networkidle' });
-      await check(page, { pageErrors, pdfWorkerPath: PDF_WORKER_PATH });
+      await open();
+      await check(page, { pageErrors, pdfWorkerPath: PDF_WORKER_PATH, baseUrl, open });
       console.log(`✔ ${describe ?? name}`);
     } catch (error) {
       failed = true;
