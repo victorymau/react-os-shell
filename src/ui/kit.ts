@@ -202,6 +202,28 @@ export { default as BudgetBar, budgetState } from '../shell/BudgetBar';
 export type { BudgetBarProps, BudgetState } from '../shell/BudgetBar';
 export { default as MilestoneTimeline } from '../shell/MilestoneTimeline';
 export type { Milestone, MilestoneKind, MilestoneTimelineProps } from '../shell/MilestoneTimeline';
+// The scrubbable production timeline: a hook that owns the slider, playback
+// and the interpolated per-part snapshot, plus the bar that draws it. The
+// stage maths (`STAGES`, `calcOverall`, `calcReportOverall`) ships with it so
+// a consumer's items table and the bar's "N% overall" agree by construction.
+export {
+  default as ProductionTimeline,
+  useProductionTimeline,
+  calcOverall,
+  calcReportOverall,
+  STAGES,
+  POST_PRODUCTION_STATUSES,
+} from '../shell/ProductionTimeline';
+export type {
+  ProgressItem,
+  TimelineReport,
+  TimelineMarker,
+  TimelineMarkerKind,
+  ProductionTimelineSnapshot,
+  ProductionTimelineProps,
+  UseProductionTimelineOpts,
+} from '../shell/ProductionTimeline';
+export { DAY_MS, toDayMs, fmtSliderDate } from '../shell/timelineDates';
 export { default as ContainerFillChart } from '../shell/ContainerFillChart';
 export type { ContainerFillChartProps, ContainerFillItem } from '../shell/ContainerFillChart';
 // The regex renderer. It carries `Lite` in its name now that there are two,
