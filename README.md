@@ -235,9 +235,59 @@ useWindowDirty(dirty);
 ```
 
 The page window uses the standard `Modal` discard confirmation while any
-mounted registration is dirty. Set the value to `false` after save or discard;
-unmounting also removes the registration. Calls outside a managed page window
-are ignored.
+mounted registration is dirty. The page itself is held too: while any
+registration is dirty, a reload, Back out of the app or closing the tab gets
+the browser's "Leave site?" prompt, because leaving the page discards every
+window at once and no `Modal` gets to ask. Set the value to `false` after save
+or discard; unmounting also removes the registration. Calls outside a managed
+page window are ignored.
+
+### Right-click menu
+
+`Layout` mounts `ShellContextMenu`, one `contextmenu` listener on the document,
+so a right-click anywhere in the shell opens a shell menu instead of the
+browser's. It is drawn with `PopupMenu`, so it matches every other menu in the
+app.
+
+What it offers follows what was clicked:
+
+| Under the pointer | Items |
+|---|---|
+| Selected text | Copy — with its formatting, so a copied table pastes into a spreadsheet as cells |
+| A link | Open link in new tab, Copy link address |
+| Anything else | — |
+
+Every menu also carries Back, Forward, Reload and Copy page address, so the
+menu is never empty and the page actions never move. A window holding unsaved
+changes (`useWindowDirty`) makes Reload and Back ask first.
+
+These keep the browser's own menu, on purpose:
+
+- **Text inputs, textareas and contenteditable.** Spellcheck suggestions and
+  "Add to dictionary" cannot be rebuilt by a web page, and a Paste item of our
+  own would need a clipboard permission prompt. Non-text inputs (a checkbox, a
+  range, a color swatch) have none of that to lose and get the shell menu.
+- **Images, canvases, video and audio.** Save image as, Copy image and the
+  playback controls are the browser's to offer.
+- **A long-press on a touch screen**, which is how text gets selected by touch.
+- **Shift+right-click** anywhere, so "Inspect" is still one gesture away for
+  developers.
+- **`data-native-context-menu`** on an element keeps the browser's menu for
+  that element and everything inside it — for a surface the shell has no
+  business re-skinning, such as an embedded viewer.
+
+`<Layout contextMenu={false}>` turns the shell menu off altogether.
+
+A surface with its own context menu needs no change and gets none: the listener
+stands down on an event whose `preventDefault()` has already been called, which
+every `onContextMenu` handler in the shell does. Write yours the same way.
+`PopupMenu` does it for right-clicks on itself, so a menu never opens on top of
+another one. `keepsNativeMenu(target)` and
+`describeContextTarget(target, selectionText)` are exported if you want the
+same decisions in your own handler.
+
+Note that a cross-origin iframe is outside the reach of any parent listener —
+the page inside it shows whatever menu it draws for itself.
 
 ## API reference
 
@@ -258,6 +308,7 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 | `StartMenu` / `Desktop` / `WindowManagerProvider` | Used internally by `Layout`; rarely instantiated directly. |
 | `Modal`, `ModalActions`, `CopyButton`, `CancelButton` | Window primitive supporting standard / compact / widget styles. |
 | `PopupMenu`, `PopupMenuItem`, `PopupMenuDivider`, `PopupMenuLabel` | Right-click / context-menu primitive. |
+| `ShellContextMenu` | The shell-wide right-click menu, already mounted by `Layout` (`<Layout contextMenu={false}>` turns it off). Mount it yourself only on a screen rendered outside the layout. See [Right-click menu](#right-click-menu). |
 | `DropdownMenu` | Trigger-owned action menu with shared dismissal and keyboard behaviour. Use `side="top"` for a trigger in a bottom action bar; the default `side="bottom"` suits toolbar and row actions. |
 | `ConfirmProvider`, `confirm` | Imperative `confirm({ title, body })` returning a Promise<boolean>. |
 | `GlobalSearch` | Cmd-K command palette. Pass `providers: SearchProvider[]` to add results. |

@@ -76,6 +76,9 @@ const WindowDirtyContext = createContext<WindowDirtyRegistration | null>(null);
  * it asks before discarding. Works in both kinds of window the shell owns the
  * Modal for: page windows and entity/detail windows.
  *
+ * While dirty it also holds the page itself: a reload, Back out of the app or
+ * closing the tab gets the browser's "Leave site?" prompt first.
+ *
  * Ignored — deliberately, and silently — in the one place the shell has no
  * Modal to guard: a registry entry with `rendersOwnModal`, where the consumer
  * renders its own Modal and should pass that Modal `dirty` directly. Also a
@@ -90,6 +93,20 @@ export function useWindowDirty(dirty: boolean): void {
   useLayoutEffect(() => {
     if (!register) return;
     return register(idRef.current!, dirty);
+  }, [register, dirty]);
+
+  // Leaving the PAGE discards every window at once, and no Modal gets to ask —
+  // so while this registration is dirty, the browser asks instead. Same scope
+  // as the close guard above: nothing outside a managed window.
+  useEffect(() => {
+    if (!register || !dirty) return;
+    const holdUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      // Older Chrome and Safari only prompt when this is set as well.
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', holdUnload);
+    return () => window.removeEventListener('beforeunload', holdUnload);
   }, [register, dirty]);
 }
 

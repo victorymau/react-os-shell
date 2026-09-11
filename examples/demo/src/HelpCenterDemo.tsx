@@ -30,6 +30,27 @@ npm package that portals compose with their own nav, entities and branding.
 This Help Center itself is a shell component — the demo feeds it these
 markdown articles the same way a real portal feeds its help-desk content.
 `),
+  doc('right-click', 'getting_started', 'Getting Started', 'Right-click anywhere', `
+## One menu, everywhere
+
+**Right-click** anything and you get a shell menu, not the browser's:
+
+- Right-click **selected text** for Copy — a copied table pastes into a
+  spreadsheet as cells
+- Right-click a **link** to open it in a new tab or copy its address
+- Every menu also carries Back, Forward, Reload and Copy page address. With
+  unsaved changes in a window, Reload and Back ask before leaving
+- Surfaces with a menu of their own — the desktop, the taskbar, a grid row, a
+  window title bar — still show theirs
+
+A few things are left to the browser on purpose:
+
+- **Text boxes** keep the browser's own menu, so spellcheck suggestions and
+  Add to dictionary stay available
+- **Pictures and videos** keep it too, for Save image and Copy image
+- **Shift+right-click** anywhere falls through to the browser's menu, which is
+  how you reach Inspect
+`),
   doc('windows', 'getting_started', 'Getting Started', 'Working with windows', `
 ## Windows 101
 

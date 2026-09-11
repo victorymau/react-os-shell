@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useRef, type ReactNode, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { glassStyle, GLASS_DIVIDER } from '../utils/glass';
+import { keepsNativeMenu } from './contextMenuTarget';
 
 /**
  * Unified popup menu component — used for all context menus, dropdowns, and flyouts.
@@ -91,9 +92,14 @@ export function PopupMenu({ children, style, className = '', onClose, minWidth =
 
   const density = getDensity();
 
+  // A right-click on an open menu is not a request for another menu. Claiming
+  // it stops the shell-wide `ShellContextMenu` (which stands down on a
+  // prevented event) and the browser's from opening on top of this one. A text
+  // field inside a menu still keeps the browser's, as it does everywhere else.
   const menu = (
     <div ref={ref}
       className={`fixed z-[400] rounded-2xl ${density === 'tight' ? 'py-1' : density === 'large' ? 'py-2' : 'py-1.5'} ${className}`}
+      onContextMenu={e => { if (!keepsNativeMenu(e.target)) e.preventDefault(); }}
       style={{ minWidth, animation: 'popup-in 0.12s ease-out', ...glassStyle(), ...style }}>
       {children}
       <style>{`@keyframes popup-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }`}</style>
