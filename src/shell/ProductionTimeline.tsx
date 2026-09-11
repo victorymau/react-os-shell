@@ -1,5 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { DAY_MS, toDayMs, fmtSliderDate } from './timelineDates';
+import TimelineTrack, {
+  type TimelineMarker, type TimelineMarkerKind, type TimelineTrackItem,
+} from './TimelineTrack';
+
+/**
+ * The marker types live with the track that draws them, so the milestone card
+ * and this one cannot end up with two shapes for one dot. Re-exported here
+ * because this is where consumers have always imported them from.
+ */
+export type { TimelineMarker, TimelineMarkerKind };
 
 // ─── Constants & helpers ────────────────────────────────────────────────────
 
@@ -98,29 +108,6 @@ export interface UseProductionTimelineOpts {
    *  snapshot, or playback. They render as dots in their own color so the
    *  user can correlate "PP report X happened the same week as shipment Y". */
   markers?: TimelineMarker[];
-}
-
-/** Visual classification for a `TimelineMarker`. Drives the dot color so
- *  the user can tell event types apart at a glance. Blue is reserved
- *  for production progress reports (rendered separately), so each
- *  marker kind gets a distinct hue:
- *    - shipment   → emerald (goods leaving / arriving)
- *    - inspection → amber (QC reports filed against the PO) */
-export type TimelineMarkerKind = 'shipment' | 'inspection';
-
-export interface TimelineMarker {
-  id: string;
-  /** ISO date or full ISO datetime — the date the event happened on. */
-  date: string;
-  kind: TimelineMarkerKind;
-  /** Short label shown in the hover tooltip (e.g. "GR#10001"). */
-  label: string;
-  /** Optional second line for the tooltip. */
-  detail?: string;
-  /** Optional click handler — when set, the dot becomes a button that calls
-   *  this with the marker. Lets the caller open the related entity (the
-   *  GRN, the inspection, etc.). */
-  onClick?: (m: TimelineMarker) => void;
 }
 
 export interface ProductionTimelineSnapshot {
@@ -436,14 +423,20 @@ export function useProductionTimeline(opts: UseProductionTimelineOpts): Producti
   };
 }
 
-// ─── Internal: the actual draggable bar ─────────────────────────────────────
+// ─── Internal: the scrubber, drawn on the shared track ──────────────────────
 
 /** Production timeline scrubber bar.
  *
- *  Track runs from startMs to endMs. Each progress report is a solid dot
- *  positioned by date. Drag the thumb left/right; click a dot to navigate.
- *  Dot hover surfaces the PP# label above the dot. Pure presentation — no
- *  state machine, just renders what the hook tells it to. */
+ *  A thin arrangement of `TimelineTrack`: the track owns the axis, the rail and
+ *  its fill, the date ruler, the dots, the thumb, the tooltips and the keyboard
+ *  contract, and this knows what the dots MEAN — a progress report, a shipment,
+ *  a QC inspection. The mould milestone card is the same track with lane labels
+ *  instead of a thumb, which is what keeps the two bars one picture rather than
+ *  two that drifted.
+ *
+ *  Reports are `kind: 'report'` marks (an accent ring); markers keep their own
+ *  kinds and shapes. Clicking a dot both moves the thumb and navigates, exactly
+ *  as it did when this drew its own bar. */
 function TimelineScrubber({
   startMs, endMs, reports, markers, valueMs, activeId, onChange, onPickReport,
 }: {
@@ -456,180 +449,49 @@ function TimelineScrubber({
   onChange: (ms: number) => void;
   onPickReport: (id: string) => void;
 }) {
-  const trackRef = useRef<HTMLDivElement>(null);
-  const draggingRef = useRef(false);
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
-  const [hoveredMarkerId, setHoveredMarkerId] = useState<string | null>(null);
-  const span = Math.max(endMs - startMs, DAY_MS);
-  const clampedValue = Math.min(Math.max(valueMs, startMs), endMs);
-  const valuePct = ((clampedValue - startMs) / span) * 100;
-  // eslint-disable-next-line react-hooks/purity -- render-time value used only for display layout: positions the vertical "today" marker line on the track
-  const todayMs = Date.now();
-
-  // Marker color palette — blue is reserved for production reports, so
-  // anything else (currently just "shipment") gets a distinct hue.
-  const markerColor = (kind: TimelineMarkerKind) => {
-    switch (kind) {
-      case 'shipment':   return { dot: 'bg-emerald-500 hover:bg-emerald-600', label: 'text-emerald-700' };
-      case 'inspection': return { dot: 'bg-amber-500 hover:bg-amber-600',     label: 'text-amber-700'   };
-      default:           return { dot: 'bg-gray-500 hover:bg-gray-600',       label: 'text-gray-700'    };
-    }
-  };
-
-  const updateFromClientX = (clientX: number) => {
-    const r = trackRef.current?.getBoundingClientRect();
-    if (!r) return;
-    const x = Math.max(0, Math.min(clientX - r.left, r.width));
-    const ratio = r.width === 0 ? 0 : x / r.width;
-    onChange(startMs + ratio * span);
-  };
+  const dated = reports
+    .map(r => ({ report: r, ms: new Date(r.date).getTime() }))
+    .filter(({ ms }) => Number.isFinite(ms));
+  const items: TimelineTrackItem[] = dated.map(({ report, ms }) => ({
+    key: report.id,
+    ms,
+    kind: 'report',
+    label: report.progress_number,
+  }));
+  const msById = new Map(dated.map(({ report, ms }) => [report.id, ms]));
 
   return (
-    <div className="select-none">
-      <div className="flex items-center gap-3 pt-7 pb-7 px-2">
-        <div className="text-[10px] leading-tight text-gray-500 whitespace-nowrap text-right shrink-0 pointer-events-none">
-          <div>{fmtSliderDate(startMs)}</div>
-          <div className="text-gray-400 italic">start</div>
-        </div>
-        <div className="relative flex-1">
-          {/* Per-dot hover/active label. Shares the track wrapper's
-           *  coordinate system so it lands exactly above its dot. */}
-          {reports.map(r => {
-            const t = new Date(r.date).getTime();
-            if (!Number.isFinite(t)) return null;
-            const p = ((t - startMs) / span) * 100;
-            if (p < -0.5 || p > 100.5) return null;
-            const isActive = r.id === activeId;
-            const isHovered = r.id === hoveredId;
-            if (!isActive && !isHovered) return null;
-            return (
-              <div
-                key={`label-${r.id}`}
-                className={`absolute bottom-full mb-2 -translate-x-1/2 text-center text-[11px] leading-tight whitespace-nowrap pointer-events-none font-mono ${isActive ? 'text-blue-700 font-semibold' : 'text-gray-700'}`}
-                style={{ left: `${Math.max(0, Math.min(100, p))}%` }}
-              >
-                {r.progress_number}
-              </div>
-            );
-          })}
-          {/* Marker hover labels — same coordinate system as report labels,
-           *  but tinted in the marker's color so the legend reads naturally. */}
-          {markers.map(m => {
-            const t = new Date(m.date).getTime();
-            if (!Number.isFinite(t)) return null;
-            const p = ((t - startMs) / span) * 100;
-            if (p < -0.5 || p > 100.5) return null;
-            if (m.id !== hoveredMarkerId) return null;
-            const c = markerColor(m.kind);
-            return (
-              <div
-                key={`mlabel-${m.id}`}
-                className={`absolute bottom-full mb-2 -translate-x-1/2 text-center text-[11px] leading-tight whitespace-nowrap pointer-events-none font-mono ${c.label}`}
-                style={{ left: `${Math.max(0, Math.min(100, p))}%` }}
-              >
-                {m.label}
-                {m.detail && <div className="text-[10px] opacity-80 font-sans not-italic">{m.detail}</div>}
-              </div>
-            );
-          })}
-          <div
-            ref={trackRef}
-            className="relative h-2 bg-gray-200 rounded-full cursor-pointer touch-none"
-            onPointerDown={(e) => {
-              draggingRef.current = true;
-              (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
-              updateFromClientX(e.clientX);
-            }}
-            onPointerMove={(e) => { if (draggingRef.current) updateFromClientX(e.clientX); }}
-            onPointerUp={(e) => {
-              draggingRef.current = false;
-              (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
-            }}
-            onPointerCancel={() => { draggingRef.current = false; }}
-          >
-            <div className="absolute top-0 left-0 h-full bg-blue-300 rounded-full pointer-events-none"
-              style={{ width: `${valuePct}%` }} />
-
-            {todayMs > startMs && todayMs < endMs && (
-              <div className="absolute -top-1 h-4 w-px bg-gray-400 pointer-events-none"
-                style={{ left: `${((todayMs - startMs) / span) * 100}%` }}
-                title={`Today — ${fmtSliderDate(todayMs)}`} />
-            )}
-
-            {reports.map(r => {
-              const t = new Date(r.date).getTime();
-              if (!Number.isFinite(t)) return null;
-              const p = ((t - startMs) / span) * 100;
-              if (p < -0.5 || p > 100.5) return null;
-              const isActive = r.id === activeId;
-              return (
-                <button
-                  key={r.id}
-                  type="button"
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onMouseEnter={() => setHoveredId(r.id)}
-                  onMouseLeave={() => setHoveredId(prev => prev === r.id ? null : prev)}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onChange(t);
-                    onPickReport(r.id);
-                  }}
-                  className={`absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow ${isActive ? 'h-3.5 w-3.5 bg-blue-700' : 'h-2.5 w-2.5 bg-blue-500 hover:bg-blue-600'}`}
-                  style={{ left: `${Math.max(0, Math.min(100, p))}%` }}
-                  aria-label={`${r.progress_number} on ${fmtSliderDate(t)}`}
-                  title={`${r.progress_number} • ${fmtSliderDate(t)}`}
-                />
-              );
-            })}
-
-            {/* Marker dots (shipments etc.). Diamond shape + different
-             *  color set so they're visually distinct from progress reports
-             *  even when they overlap on close dates. */}
-            {markers.map(m => {
-              const t = new Date(m.date).getTime();
-              if (!Number.isFinite(t)) return null;
-              const p = ((t - startMs) / span) * 100;
-              if (p < -0.5 || p > 100.5) return null;
-              const c = markerColor(m.kind);
-              return (
-                <button
-                  key={`marker-${m.id}`}
-                  type="button"
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onMouseEnter={() => setHoveredMarkerId(m.id)}
-                  onMouseLeave={() => setHoveredMarkerId(prev => prev === m.id ? null : prev)}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (m.onClick) m.onClick(m);
-                  }}
-                  className={`absolute top-1/2 -translate-x-1/2 -translate-y-1/2 h-2.5 w-2.5 rotate-45 border-2 border-white shadow ${c.dot}`}
-                  style={{ left: `${Math.max(0, Math.min(100, p))}%` }}
-                  aria-label={`${m.label} on ${fmtSliderDate(t)}`}
-                  title={`${m.label} • ${fmtSliderDate(t)}${m.detail ? ` — ${m.detail}` : ''}`}
-                />
-              );
-            })}
-
-            <div
-              className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 h-5 w-5 rounded-full bg-white border-2 border-blue-600 shadow flex items-center justify-center pointer-events-none"
-              style={{ left: `${valuePct}%` }}
-            >
-              <span className="block h-1.5 w-1.5 rounded-full bg-blue-600" />
-            </div>
-
-            <div
-              className="absolute top-full mt-2 -translate-x-1/2 px-1.5 py-0.5 text-[11px] font-medium text-gray-800 bg-blue-50 border border-blue-200 rounded shadow-sm whitespace-nowrap pointer-events-none"
-              style={{ left: `${valuePct}%` }}
-            >
-              {fmtSliderDate(clampedValue)}
-            </div>
-          </div>
-        </div>
-        <div className="text-[10px] leading-tight text-gray-500 whitespace-nowrap text-left shrink-0 pointer-events-none">
-          <div>{fmtSliderDate(endMs)}</div>
-          <div className="text-gray-400 italic">completed</div>
-        </div>
-      </div>
+    <div className="select-none px-2 py-3">
+      <TimelineTrack
+        axis="linear"
+        labels="active"
+        items={items}
+        markers={markers}
+        startMs={startMs}
+        endMs={endMs}
+        activeKey={activeId}
+        onActivate={(key) => {
+          const ms = msById.get(key);
+          if (ms != null) onChange(ms);
+          onPickReport(key);
+        }}
+        thumb={{ valueMs, onChange }}
+        edgeCaptions={{
+          start: (
+            <>
+              <div>{fmtSliderDate(startMs)}</div>
+              <div className="text-gray-500">start</div>
+            </>
+          ),
+          end: (
+            <>
+              <div>{fmtSliderDate(endMs)}</div>
+              <div className="text-gray-500">completed</div>
+            </>
+          ),
+        }}
+        ariaLabel="Production reports and events"
+      />
     </div>
   );
 }
