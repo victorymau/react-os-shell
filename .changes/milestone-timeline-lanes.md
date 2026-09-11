@@ -44,3 +44,31 @@ title: MilestoneTimeline packs labels into lanes and keeps undated milestones of
   `packLabelLanes(items, trackWidthPx, startMs, spanMs, gapPx?)` is exported
   from the module — pure, and specified on its own so the geometry is asserted
   by extents rather than by eye. Props are unchanged.
+
+- **The axis compresses idle stretches instead of letting one own the bar.**
+  Lane packing stopped the labels overprinting and left the other half of the
+  same bug standing: on mould 001F/1813 the seven dated milestones fall inside
+  eight weeks and the 282 days after the last one are empty, so on
+  `(ms - startMs) / span` every real date sat in the first 16% of the bar, four
+  lanes filled up anyway, and "DFM Confirmed" and "Mould Complete" collapsed to
+  hover-only. The empty tail was the problem, not the labels.
+
+  The axis is now piecewise linear. Each stretch between two dated milestones
+  gets at least 48 px, so two dates a week apart are still two dates, and at
+  most 30% of the track, so no idle stretch can own the bar; the clamped
+  stretches are then scaled to fill the track exactly. A stretch the ceiling cut
+  carries a break glyph with a `title` saying how many days it hides — a stretch
+  merely widened to the minimum is not marked, because it already reads as
+  short. On 001F the eight weeks that hold every milestone now own 70% of the
+  track and the idle tail is capped at 30%.
+
+  Every coordinate on the card comes off that one mapping — dots, lane labels,
+  the fill bar, the today tick, the phase brackets — so none of them can end up
+  on a different axis. `compressTimeAxis(anchorsMs, trackWidthPx, opts?)` is
+  exported from the module, pure, and specified on its own.
+
+- **Lanes go to the milestones that settle something.** `packLabelLanes` takes an
+  optional `priority` per label (lower claims a lane first, chronological within
+  a tier), and `MilestoneTimeline` gives DFM revisions the later tier. When there
+  are more labels than lanes something still has to collapse; it is no longer
+  whichever milestone happened to be latest.
