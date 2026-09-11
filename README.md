@@ -239,6 +239,48 @@ mounted registration is dirty. Set the value to `false` after save or discard;
 unmounting also removes the registration. Calls outside a managed page window
 are ignored.
 
+### Right-click menu
+
+`Layout` mounts `ShellContextMenu`, one `contextmenu` listener on the document,
+so a right-click anywhere in the shell opens a shell menu instead of the
+browser's. It is drawn with `PopupMenu`, so it matches every other menu in the
+app.
+
+What it offers follows what was clicked:
+
+| Under the pointer | Items |
+|---|---|
+| Selected text | Copy |
+| A link | Open link in new tab, Copy link address |
+| An image | Open image in new tab, Copy image address |
+| Anything else | — |
+
+Every menu also carries Back, Forward, Reload and Copy page address, so the
+menu is never empty and the page actions never move.
+
+Three ways out of it:
+
+- **Text inputs, textareas and contenteditable keep the browser's own menu.**
+  Deliberate: spellcheck suggestions and "Add to dictionary" cannot be rebuilt
+  by a web page, and a Paste item of our own would need a clipboard permission
+  prompt. Non-text inputs (a checkbox, a range, a colour swatch) have none of
+  that to lose and get the shell menu.
+- **Shift+right-click** anywhere falls through to the browser's real menu, so
+  "Inspect" is still one gesture away for developers.
+- **`data-native-context-menu`** on an element keeps the browser's menu for
+  that element and everything inside it — for a surface the shell has no
+  business re-skinning, such as an embedded viewer. `<ShellContextMenu disabled />`
+  turns the shell menu off altogether.
+
+A surface with its own context menu needs no change and gets none: the listener
+stands down on an event whose `preventDefault()` has already been called, which
+every `onContextMenu` handler in the shell does. Write yours the same way.
+`keepsNativeMenu(target)` and `describeContextTarget(target, selectionText)`
+are exported if you want the same decisions in your own handler.
+
+Note that a cross-origin iframe is outside the reach of any parent listener —
+the page inside it shows whatever menu it draws for itself.
+
 ## API reference
 
 All exports are named — `import { Modal, ... } from 'react-os-shell'`.
@@ -258,6 +300,7 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 | `StartMenu` / `Desktop` / `WindowManagerProvider` | Used internally by `Layout`; rarely instantiated directly. |
 | `Modal`, `ModalActions`, `CopyButton`, `CancelButton` | Window primitive supporting standard / compact / widget styles. |
 | `PopupMenu`, `PopupMenuItem`, `PopupMenuDivider`, `PopupMenuLabel` | Right-click / context-menu primitive. |
+| `ShellContextMenu` | The shell-wide right-click menu, already mounted by `Layout`. Mount it yourself only on a screen rendered outside the layout. See [Right-click menu](#right-click-menu). |
 | `DropdownMenu` | Trigger-owned action menu with shared dismissal and keyboard behaviour. Use `side="top"` for a trigger in a bottom action bar; the default `side="bottom"` suits toolbar and row actions. |
 | `ConfirmProvider`, `confirm` | Imperative `confirm({ title, body })` returning a Promise<boolean>. |
 | `GlobalSearch` | Cmd-K command palette. Pass `providers: SearchProvider[]` to add results. |

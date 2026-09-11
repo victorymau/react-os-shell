@@ -38,8 +38,13 @@ export default function WidgetSettingsModal({ open, onClose, title, appearance, 
   const inp = 'w-full h-1.5 rounded-full appearance-none bg-gray-200 cursor-pointer accent-blue-500';
   const lbl = 'flex items-center justify-between text-xs text-gray-500';
 
+  // stopPropagation keeps a right-click inside the settings dialog from
+  // reaching the widget underneath and opening the widget's own menu. It also
+  // stops the event before the shell's global contextmenu listener can see it,
+  // which leaves the browser's native menu showing here — the one place in the
+  // shell it still does. preventDefault closes that.
   return (
-    <div onPointerDown={e => e.stopPropagation()} onContextMenu={e => e.stopPropagation()}>
+    <div onPointerDown={e => e.stopPropagation()} onContextMenu={e => { e.preventDefault(); e.stopPropagation(); }}>
     <Modal open={open} onClose={onClose} title={title} size="sm">
       <div className="space-y-4">
         {children}

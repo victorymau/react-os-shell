@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import apiClient from '../api/client';
 import GlobalSearch, { type SearchConfig } from './GlobalSearch';
 import ShortcutHelp from './ShortcutHelp';
+import ShellContextMenu from './ShellContextMenu';
 import NotificationBell, { type NotificationsConfig } from './NotificationBell';
 import { getPomoSnapshot, subscribePomo } from './pomodoroStore';
 import { useShellPrefs } from './ShellPrefs';
@@ -1207,6 +1208,10 @@ export default function Layout({
         onSelect={result => openEntity(result.entity_type, result.entity_id, undefined, result.label)}
       />
       <ShortcutHelp />
+      {/* One right-click menu for the whole shell. Surfaces with their own
+          menu already preventDefault(), so this only fills the gaps where
+          the browser's native menu used to show through. */}
+      <ShellContextMenu />
     </div>
   );
 }
