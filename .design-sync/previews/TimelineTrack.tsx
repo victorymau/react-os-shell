@@ -7,11 +7,14 @@ import type { TimelineTrackItem } from 'react-os-shell';
 // directly when a domain needs a dated sequence on a bar and neither of those
 // two cards is the right wrapper.
 //
-// What it draws: a rail with a fill, a date ruler (month ticks always, week
+// What it draws: a 6px rail with a fill, a date ruler (month ticks always, week
 // ticks where they fit, a month label only where one clears its neighbour),
-// dots whose shape and colour say what kind of event they are, labels packed
-// into two lanes, `xN` pills for runs of the same kind, a today tick, and the
-// undated things listed beside the track rather than placed on it.
+// dots whose shape, colour and glyph say what kind of event they are, labels
+// packed into two lanes, `xN` pills for runs of the same kind, a today tick,
+// and the undated things listed beside the track rather than placed on it.
+// Hover a pill and the axis opens around its members until each can carry its
+// own label; hover a dot with a `preview` and the popover shows the document
+// behind it rather than a second line of text.
 
 const day = (y: number, m: number, d: number) => Date.UTC(y, m - 1, d);
 
@@ -32,8 +35,20 @@ const MOULD: TimelineTrackItem[] = [
   { key: 'dfm2', ms: day(2025, 10, 30), label: 'DFM v2', kind: 'dfm', priority: 1 },
   { key: 'dfm3', ms: day(2025, 11, 7), label: 'DFM v3', kind: 'dfm', priority: 1 },
   { key: 'dfm4', ms: day(2025, 11, 7), label: 'DFM v4', kind: 'dfm', priority: 1 },
-  { key: 'dfmok', ms: day(2025, 11, 7), label: 'DFM Confirmed', kind: 'testing', detail: 'Tooling drawings signed off' },
-  { key: 'done', ms: day(2025, 12, 3), label: 'Mould Complete', kind: 'testing' },
+  {
+    key: 'dfmok',
+    ms: day(2025, 11, 7),
+    label: 'DFM Confirmed',
+    glyph: 'doc',
+    detail: 'Tooling drawings signed off',
+    preview: (
+      <>
+        <span>Rev D · signed off 07/11/2025</span>
+        <span>3D model approved · blueprint approved</span>
+      </>
+    ),
+  },
+  { key: 'done', ms: day(2025, 12, 3), label: 'Mould Complete', kind: 'completion' },
 ];
 
 export function DenseProgramme() {

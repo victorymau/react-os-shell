@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { DAY_MS, toDayMs, fmtSliderDate } from './timelineDates';
+import TimelineCard from './TimelineCard';
+import { TimelineGlyph, TimelineProgressIcon } from './timelineGlyphs';
 import TimelineTrack, {
   type TimelineMarker, type TimelineMarkerKind, type TimelineTrackItem,
 } from './TimelineTrack';
@@ -165,7 +167,15 @@ export interface ProductionTimelineSnapshot {
  *  renders an items table that depends on `displayed.items` + `prevByPN`,
  *  AND it renders the timeline bar. Both views need access to the same live
  *  state. A hook gives the parent direct access; a render-prop would force
- *  awkward inversion. */
+ *  awkward inversion.
+ *
+ *  NOTE — `isInterpolated`, the lerped `displayed` snapshot it produces, and
+ *  the continuous `startPlay` sweep are no longer reachable from this package.
+ *  `ProductionTimeline` moves the slider only to dates a report was actually
+ *  filed on, so the anchors are always a report and never a pair straddling
+ *  one, and playback steps stop to stop. They stay exported and working for a
+ *  caller that drives the hook itself and wants an estimate for a day in
+ *  between; nothing the kit renders asks for one. */
 export function useProductionTimeline(opts: UseProductionTimelineOpts): ProductionTimelineSnapshot {
   const {
     reports,
@@ -438,7 +448,8 @@ export function useProductionTimeline(opts: UseProductionTimelineOpts): Producti
  *  kinds and shapes. Clicking a dot both moves the thumb and navigates, exactly
  *  as it did when this drew its own bar. */
 function TimelineScrubber({
-  startMs, endMs, reports, markers, valueMs, activeId, onChange, onPickReport,
+  startMs, endMs, reports, markers, valueMs, activeId,
+  onChange, onPickReport, onOpenReport, onOpenMarker, onDragStart,
 }: {
   startMs: number;
   endMs: number;
@@ -448,25 +459,40 @@ function TimelineScrubber({
   activeId: string;
   onChange: (ms: number) => void;
   onPickReport: (id: string) => void;
+  onOpenReport?: (id: string) => void;
+  onOpenMarker?: (marker: TimelineMarker) => void;
+  onDragStart?: () => void;
 }) {
   const dated = reports
     .map(r => ({ report: r, ms: new Date(r.date).getTime() }))
-    .filter(({ ms }) => Number.isFinite(ms));
+    .filter(({ ms }) => Number.isFinite(ms))
+    .sort((a, b) => a.ms - b.ms);
   const items: TimelineTrackItem[] = dated.map(({ report, ms }) => ({
     key: report.id,
     ms,
     kind: 'report',
     label: report.progress_number,
+    onOpen: onOpenReport ? () => onOpenReport(report.id) : undefined,
   }));
   const msById = new Map(dated.map(({ report, ms }) => [report.id, ms]));
+  // The only dates the thumb may rest on. A day between two reports holds no
+  // snapshot anybody filed, so a thumb that stopped there would be showing an
+  // estimate dressed as a fact.
+  const stops = dated.map(({ ms }) => ms);
+  /** The report a value stands for — every stop IS a report, so this is a
+   *  lookup rather than a search for the one before. */
+  const reportAt = (ms: number) => dated.find((entry) => entry.ms === ms)?.report;
+  const withOpen: TimelineMarker[] = onOpenMarker
+    ? markers.map((marker) => ({ ...marker, onOpen: onOpenMarker }))
+    : markers;
 
   return (
-    <div className="select-none px-2 py-3">
+    <div className="select-none">
       <TimelineTrack
         axis="linear"
         labels="active"
         items={items}
-        markers={markers}
+        markers={withOpen}
         startMs={startMs}
         endMs={endMs}
         activeKey={activeId}
@@ -475,22 +501,24 @@ function TimelineScrubber({
           if (ms != null) onChange(ms);
           onPickReport(key);
         }}
-        thumb={{ valueMs, onChange }}
-        edgeCaptions={{
-          start: (
-            <>
-              <div>{fmtSliderDate(startMs)}</div>
-              <div className="text-gray-500">start</div>
-            </>
-          ),
-          end: (
-            <>
-              <div>{fmtSliderDate(endMs)}</div>
-              <div className="text-gray-500">completed</div>
-            </>
-          ),
+        thumb={{
+          valueMs,
+          onChange,
+          onDragStart,
+          stops,
+          ariaLabel: 'Scrub the production timeline',
+          valueText: (ms) => {
+            const report = reportAt(ms);
+            return report ? `${report.progress_number} · ${fmtSliderDate(ms)}` : fmtSliderDate(ms);
+          },
         }}
-        ariaLabel="Production reports and events"
+        // The window's ends used to be captions flanking the bar. The date
+        // ruler under the rail says the same thing in the same place as every
+        // other date on the card, so the captions survive only for a reader who
+        // cannot see the ruler.
+        ariaLabel={
+          `Production reports and events, ${fmtSliderDate(startMs)} to ${fmtSliderDate(endMs)}`
+        }
       />
     </div>
   );
@@ -507,6 +535,59 @@ export interface ProductionTimelineProps {
    *  "navigate" means in their context (open a new window, swap an in-place
    *  detail, etc.). */
   onPickReport: (reportId: string) => void;
+  /**
+   * Opens the report DOCUMENT, as opposed to selecting it on the bar. When
+   * given, the label above the thumb becomes a real button — picking a dot
+   * shows you the snapshot, and this is how you get to the report itself.
+   */
+  onOpenReport?: (reportId: string) => void;
+  /** The same for a marker: a goods issue, a QC report. */
+  onOpenMarker?: (marker: TimelineMarker) => void;
+  /** The card's heading, in sentence case. Defaults to "Production progress";
+   *  the PO number is the card's subject, not part of its title. */
+  heading?: string;
+}
+
+/** How long the thumb rests on a report while playing. Long enough to read the
+ *  stage row it just changed, short enough that six reports is four seconds. */
+const PLAY_DWELL_MS = 600;
+
+/**
+ * Playback, report by report.
+ *
+ * The hook's own `startPlay` sweeps the window continuously, which was right
+ * while the bar interpolated between reports and is wrong now that the thumb
+ * only rests on one: a sweep would spend most of its time on dates that hold no
+ * snapshot. So the card steps its own stops instead, and the hook's sweep is
+ * left in place for a caller that still wants it.
+ */
+function useReportPlayback(stops: number[], goTo: (ms: number) => void) {
+  const [playing, setPlaying] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const stop = () => {
+    if (timerRef.current != null) clearTimeout(timerRef.current);
+    timerRef.current = null;
+    setPlaying(false);
+  };
+  useEffect(() => () => { if (timerRef.current != null) clearTimeout(timerRef.current); }, []);
+
+  const toggle = () => {
+    if (playing) { stop(); return; }
+    if (stops.length === 0) return;
+    setPlaying(true);
+    goTo(stops[0]);
+    let at = 0;
+    const next = () => {
+      at += 1;
+      if (at >= stops.length) { timerRef.current = null; setPlaying(false); return; }
+      goTo(stops[at]);
+      timerRef.current = setTimeout(next, PLAY_DWELL_MS);
+    };
+    timerRef.current = setTimeout(next, PLAY_DWELL_MS);
+  };
+
+  return { playing, toggle, stop };
 }
 
 /** Title row + scrubber bar + Showing/Estimated summary line.
@@ -519,15 +600,24 @@ export interface ProductionTimelineProps {
  *  displayed snapshot. The same block serves the admin PP window and the
  *  customer portal's order window, which feeds it order-level snapshots the
  *  backend has already pro-rated to that customer. */
-export default function ProductionTimeline({ snapshot, onPickReport }: ProductionTimelineProps) {
+export default function ProductionTimeline({
+  snapshot, onPickReport, onOpenReport, onOpenMarker, heading = 'Production progress',
+}: ProductionTimelineProps) {
   const {
     reports, markers, poNumber,
     startMs, endMs, totalLeadDays,
     scrubMs, setScrubMs,
-    displayed, beforeAnchor, nextAfter, isInterpolated,
-    playing, startPlay,
+    displayed,
     scrubbedAway, resetToCurrent, currentReportProgressNumber,
   } = snapshot;
+
+  // Ascending, because playback walks forward through the build; the hook takes
+  // them newest-first because that is the order the API returns.
+  const stops = reports
+    .map((report) => toDayMs(report.date))
+    .filter((ms): ms is number => ms != null)
+    .sort((a, b) => a - b);
+  const play = useReportPlayback(stops, setScrubMs);
 
   // Render the timeline whenever there's at least one event of any kind to
   // show — production reports OR markers (e.g. a PO that has shipments
@@ -543,45 +633,85 @@ export default function ProductionTimeline({ snapshot, onPickReport }: Productio
 
   return (
     <div className="shrink-0">
-      <div className="flex items-end justify-between mb-1 gap-2">
-        <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
-          <button
-            type="button"
-            onClick={startPlay}
-            aria-label={playing ? 'Pause timeline' : 'Play timeline from the start'}
-            title={playing ? 'Pause' : 'Play timeline from the start (1 day / 0.5 s)'}
-            className={`inline-flex items-center justify-center h-5 w-5 rounded-full border ${playing ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50 hover:text-gray-900'} transition-colors`}
-          >
-            {playing ? (
-              <svg className="h-2.5 w-2.5" viewBox="0 0 8 10" fill="currentColor"><rect x="0" y="0" width="3" height="10" rx="0.5" /><rect x="5" y="0" width="3" height="10" rx="0.5" /></svg>
-            ) : (
-              <svg className="h-2.5 w-2.5 ml-[1px]" viewBox="0 0 8 10" fill="currentColor"><path d="M0 0 L8 5 L0 10 Z" /></svg>
+      <TimelineCard
+        icon={<TimelineProgressIcon />}
+        heading={heading}
+        subject={poNumber}
+        // The window and how long it is, as the prototype states them. The
+        // counts that used to be here — "6 reports · 1 shipment" — are gone:
+        // the dots are on the bar and the legend says what each of them is, and
+        // the line has to leave room for the control beside it.
+        meta={[
+          `${fmtSliderDate(startMs)} → ${fmtSliderDate(endMs)}`,
+          `${totalLeadDays.toLocaleString()} day${totalLeadDays === 1 ? '' : 's'} lead time`,
+        ]}
+        actions={
+          <>
+            {scrubbedAway && currentReportProgressNumber && (
+              <button type="button" onClick={() => { play.stop(); resetToCurrent(); }}
+                className="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                Back to {currentReportProgressNumber}
+              </button>
             )}
-          </button>
-          <span>
-            Production Timeline for {poNumber}
-            <span className="ml-2 text-gray-400 normal-case">
-              {reports.length} {reports.length === 1 ? 'report' : 'reports'}
-              {shipmentMarkers.length > 0 && (
+            {/* The glyph follows the state: a triangle while paused, two bars
+                while playing. A label that changes over an icon that does not
+                is how a play control ends up saying "Pause ▶". */}
+            <button type="button" onClick={play.toggle} aria-pressed={play.playing}
+              title={play.playing ? 'Pause' : 'Play the timeline, report by report'}
+              className="rosh-tl-play text-gray-700 border-gray-300 hover:text-blue-600 hover:border-blue-500">
+              {play.playing
+                ? <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 1.5h2.3v7H2zM5.7 1.5H8v7H5.7z" /></svg>
+                : <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 1.2 8.4 5 2 8.8z" /></svg>}
+              <span>{play.playing ? 'Pause' : 'Play'}</span>
+            </button>
+          </>
+        }
+        footer={
+          <>
+            <p className="rosh-tl-status text-gray-800">
+              {displayed ? (
                 <>
-                  <span className="mx-1">·</span>
-                  {shipmentMarkers.length} shipment{shipmentMarkers.length === 1 ? '' : 's'}
+                  Showing <b className="font-medium">{displayed.progress_number}</b>
+                  <span className="text-gray-500">
+                    {' · '}{fmtSliderDate(new Date(displayed.date).getTime())}
+                    {' · '}{Math.round(overall)}% overall
+                    {' · '}{totalStock.toLocaleString()} pc in stock
+                  </span>
                 </>
+              ) : (
+                <span className="text-gray-500">No production report filed yet</span>
               )}
-              <span className="mx-1">·</span>
-              {totalLeadDays.toLocaleString()} day{totalLeadDays === 1 ? '' : 's'} lead time
-            </span>
-          </span>
-        </h4>
-        {scrubbedAway && currentReportProgressNumber && (
-          <button type="button"
-            onClick={resetToCurrent}
-            className="text-xs text-blue-600 hover:text-blue-800 font-medium">
-            Back to {currentReportProgressNumber}
-          </button>
-        )}
-      </div>
-      <div className="border border-gray-200 rounded-lg bg-gray-50">
+            </p>
+            {/* Chips, drawn with the track's own glyphs: a legend that keeps its
+                own copy of a shape is a legend that can describe a dot the rail
+                stopped drawing. */}
+            <div className="rosh-tl-legend">
+              {reports.length > 0 && (
+                <span className="border-gray-200 text-gray-500">
+                  <i aria-hidden="true" className="rosh-tl-glyph is-ring border-blue-500" />
+                  Production report
+                </span>
+              )}
+              {shipmentMarkers.length > 0 && (
+                <span className="border-gray-200 text-gray-500">
+                  <i aria-hidden="true" className="rosh-tl-glyph is-diamond"
+                    style={{ background: 'var(--tl-shipment)' }} />
+                  Shipment
+                </span>
+              )}
+              {inspectionMarkers.length > 0 && (
+                <span className="border-gray-200 text-gray-500">
+                  <i aria-hidden="true" className="rosh-tl-glyph is-disc"
+                    style={{ background: 'var(--tl-inspection)', color: 'var(--tl-on-kind)' }}>
+                    <TimelineGlyph name="flask" />
+                  </i>
+                  Inspection
+                </span>
+              )}
+            </div>
+          </>
+        }
+      >
         <TimelineScrubber
           startMs={startMs}
           endMs={endMs}
@@ -591,45 +721,11 @@ export default function ProductionTimeline({ snapshot, onPickReport }: Productio
           activeId={displayed?.id ?? ''}
           onChange={setScrubMs}
           onPickReport={onPickReport}
+          onOpenReport={onOpenReport}
+          onOpenMarker={onOpenMarker}
+          onDragStart={play.stop}
         />
-      </div>
-      {(shipmentMarkers.length > 0 || inspectionMarkers.length > 0) && (
-        <div className="flex items-center gap-3 text-[10px] text-gray-500 mt-1 px-1">
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-2 w-2 rounded-full bg-blue-500" /> Production report
-          </span>
-          {shipmentMarkers.length > 0 && (
-            <span className="flex items-center gap-1">
-              <span className="inline-block h-2 w-2 rotate-45 bg-emerald-500" /> Shipment
-            </span>
-          )}
-          {inspectionMarkers.length > 0 && (
-            <span className="flex items-center gap-1">
-              <span className="inline-block h-2 w-2 rotate-45 bg-amber-500" /> Inspection
-            </span>
-          )}
-        </div>
-      )}
-      <div className="text-[11px] text-gray-500 mt-1.5 px-1">
-        {isInterpolated ? (
-          <>
-            <span className="font-medium text-amber-700">Estimated</span>
-            <span className="text-gray-400"> for {fmtSliderDate(new Date(displayed?.date ?? NaN).getTime())}</span>
-            <span className="text-gray-400"> · between {beforeAnchor?.progress_number} and {nextAfter?.progress_number}</span>
-          </>
-        ) : displayed && (
-          <>
-            Showing <span className="font-medium text-gray-700">{displayed.progress_number}</span>
-            <span className="text-gray-400"> · {fmtSliderDate(new Date(displayed.date).getTime())}</span>
-          </>
-        )}
-        {displayed && (
-          <>
-            <span className="text-gray-400"> · {Math.round(overall)}% overall</span>
-            <span className="text-gray-400"> · {totalStock.toLocaleString()} pc in stock</span>
-          </>
-        )}
-      </div>
+      </TimelineCard>
     </div>
   );
 }

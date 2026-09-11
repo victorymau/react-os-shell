@@ -32,8 +32,23 @@ const MOULD: Milestone[] = [
   { key: 'dfm2', label: 'DFM v2', date: '2025-10-30', kind: 'dfm' },
   { key: 'dfm3', label: 'DFM v3', date: '2025-11-07', kind: 'dfm' },
   { key: 'dfm4', label: 'DFM v4', date: '2025-11-07', kind: 'dfm' },
-  { key: 'dfmok', label: 'DFM Confirmed', date: '2025-11-07', kind: 'testing', phase: 'qa', detail: 'Tooling drawings signed off' },
-  { key: 'complete', label: 'Mould Complete', date: '2025-12-03', kind: 'testing', phase: 'qa' },
+  // `default` per the milestone spec and a signed drawing to the reader: the
+  // glyph is what makes it an amber document rather than an accent disc.
+  {
+    key: 'dfmok',
+    label: 'DFM Confirmed',
+    date: '2025-11-07',
+    glyph: 'doc',
+    phase: 'qa',
+    detail: 'Tooling drawings signed off',
+    preview: (
+      <>
+        <span>Rev D · signed off 07/11/2025</span>
+        <span>3D model approved · blueprint approved</span>
+      </>
+    ),
+  },
+  { key: 'complete', label: 'Mould Complete', date: '2025-12-03', kind: 'completion', phase: 'qa' },
   { key: 'sample', label: 'Sample Shipped', date: null, kind: 'shipment' },
   { key: 'ready', label: 'Production Ready', date: undefined, kind: 'completion' },
 ];
@@ -65,10 +80,16 @@ function Production() {
     poProductionStartDate: '2026-04-23',
     poEstCompletionDate: '2026-07-05',
     poStatus: 'completed',
-    poNumber: 'PO#35489',
+    poNumber: 'SO#35489',
     markers: MARKERS,
   });
-  return <ProductionTimeline snapshot={snapshot} onPickReport={() => {}} />;
+  return (
+    <ProductionTimeline
+      snapshot={snapshot}
+      onPickReport={() => {}}
+      onOpenReport={(id) => { document.title = `open:${id}`; }}
+    />
+  );
 }
 
 createRoot(document.getElementById('root')!).render(
@@ -76,6 +97,7 @@ createRoot(document.getElementById('root')!).render(
     <div data-testid="mould">
       <MilestoneTimeline
         title="Mould development"
+        subject="001F/1813"
         milestones={MOULD}
         endDate="2026-09-11"
         phaseLabels={{ qa: 'QA & Sample' }}

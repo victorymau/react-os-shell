@@ -1,5 +1,7 @@
-import { useState } from 'react';
-import { DAY_MS, toDayMs } from './timelineDates';
+import { useState, type ReactNode } from 'react';
+import { DAY_MS, fmtSliderDate, toDayMs } from './timelineDates';
+import TimelineCard from './TimelineCard';
+import { TimelineMilestoneIcon, type TimelineGlyphName } from './timelineGlyphs';
 import TimelineTrack, {
   type TimelineTrackItem, type TimelineTrackKind, type TimelineTrackPending, type TimelineTrackPhase,
 } from './TimelineTrack';
@@ -35,6 +37,23 @@ export interface Milestone {
   onClick?: () => void;
   /** Optional visual category — defaults to `'default'`. */
   kind?: MilestoneKind;
+  /**
+   * Which glyph sits inside the dot. Defaults by kind (dfm → a document,
+   * testing → a flask, completion → a check, shipment → a diamond with no
+   * glyph), and the FIRST dated milestone gets a flag when it asks for nothing
+   * else. `'none'` draws a bare dot.
+   *
+   * It exists because the milestone spec's kinds and the reader's eye do not
+   * line up everywhere: "DFM Confirmed" is a `default` milestone in the spec
+   * and a signed drawing to the reader, so the portal sets `glyph: 'doc'` and
+   * gets the amber document the prototype drew.
+   */
+  glyph?: TimelineGlyphName | 'none';
+  /**
+   * Rich content for the hover/focus popover — a drawing's version and feedback
+   * date, a shipment's goods-issue number. Falls back to label · date · detail.
+   */
+  preview?: ReactNode;
   /** Optional phase grouping — milestones sharing the same `phase` value
    *  render with a bracket below the bar showing they happened in parallel
    *  (e.g. two concurrent QA steps). Lookup the human-readable name from
@@ -44,14 +63,23 @@ export interface Milestone {
 }
 
 export interface MilestoneTimelineProps {
-  /** Title rendered above the bar — e.g. "Mould Development Timeline". */
+  /** Title rendered above the bar — e.g. "Mould Development Timeline". Used as
+   *  the heading when `heading` is not given, and as the accessible name of the
+   *  track either way. */
   title: string;
+  /** The card's heading, in sentence case — "Mould development". Splitting it
+   *  from `subject` is what lets the reference number carry the weight in the
+   *  meta line instead of being buried in a sentence. */
+  heading?: string;
+  /** The record the card is about — `001F/1813`, `SO#35489`. First in the meta
+   *  line, a shade heavier than the facts after it. */
+  subject?: ReactNode;
   /** Ordered milestones from earliest expected to latest expected. The order
    *  is the order the pending (undated) ones are listed in; the dated ones are
    *  placed by their date. */
   milestones: Milestone[];
-  /** Optional sub-title to the right of the title (e.g. lead-time summary).
-   *  When omitted, an auto lead-time summary is computed from the dates. */
+  /** Overrides the duration fact in the meta line (e.g. "On track — delivery
+   *  expected late June"). When omitted, the window's length in days is used. */
   summary?: string;
   /** Optional explicit right edge — when provided, the bar always ends here
    *  rather than padding to today. Used when the axis should stop at a known
@@ -105,7 +133,9 @@ const milestonePriority = (kind: MilestoneKind | undefined) => (kind === 'dfm' ?
  * Product-agnostic: it takes generic `Milestone` data as props. Map your
  * domain records to the `Milestone` shape in a thin wrapper at the call site.
  */
-export default function MilestoneTimeline({ title, milestones, summary, endDate, phaseLabels }: MilestoneTimelineProps) {
+export default function MilestoneTimeline({
+  title, heading, subject, milestones, summary, endDate, phaseLabels,
+}: MilestoneTimelineProps) {
   // Captured once at mount so render stays idempotent — day-resolution markers
   // don't care that "today" doesn't tick while the view is open.
   const [today] = useState(() => Date.now());
@@ -140,14 +170,20 @@ export default function MilestoneTimeline({ title, milestones, summary, endDate,
     if (endMs - startMs < DAY_MS) endMs = startMs + DAY_MS;
   }
 
-  // Auto-summarise the bar's lead time so callers don't each have to compute
-  // and pass it. Caller-provided `summary` always wins so a more meaningful
-  // sub-title can override the default.
+  // The card's facts, in the order a reader scans them: when it started, how
+  // long it has run, and how far through the programme it is. Caller-provided
+  // `summary` replaces the duration so a more meaningful sentence can take its
+  // place; the other two are derived and never wrong.
   const totalLeadDays = dated.length > 0 ? Math.max(0, Math.round((endMs - startMs) / DAY_MS)) : 0;
-  const autoSummary = totalLeadDays > 0
-    ? `${totalLeadDays.toLocaleString()} day${totalLeadDays === 1 ? '' : 's'} lead time`
-    : undefined;
-  const renderSummary = summary ?? autoSummary;
+  const duration = summary
+    ?? (totalLeadDays > 0 ? `${totalLeadDays.toLocaleString()} day${totalLeadDays === 1 ? '' : 's'}` : undefined);
+  const meta = [
+    dated.length > 0 ? `started ${fmtSliderDate(dated[0].ms)}` : undefined,
+    duration,
+    // Only where something HAS not happened: "7 of 7 milestones" is a count of
+    // nothing, and the reader can see the dots.
+    pending.length > 0 ? `${dated.length} of ${milestones.length} milestones` : undefined,
+  ];
 
   const items: TimelineTrackItem[] = dated.map((m) => ({
     key: m.key,
@@ -155,6 +191,8 @@ export default function MilestoneTimeline({ title, milestones, summary, endDate,
     kind: m.kind,
     label: m.label,
     detail: m.detail,
+    preview: m.preview,
+    glyph: m.glyph,
     onClick: m.onClick,
     priority: milestonePriority(m.kind),
   }));
@@ -178,13 +216,12 @@ export default function MilestoneTimeline({ title, milestones, summary, endDate,
 
   return (
     <div className="shrink-0">
-      <div className="border border-gray-200 rounded-lg bg-gray-50 px-4 pt-3 pb-4">
-        <div className="flex items-baseline gap-2 flex-wrap mb-3.5">
-          <h4 className="text-[13px] font-semibold text-gray-800">{title}</h4>
-          {renderSummary && (
-            <p className="text-xs text-gray-500 tabular-nums">{renderSummary}</p>
-          )}
-        </div>
+      <TimelineCard
+        icon={<TimelineMilestoneIcon />}
+        heading={heading ?? title}
+        subject={subject}
+        meta={meta}
+      >
         <div className="select-none">
           <TimelineTrack
             axis="compressed"
@@ -198,7 +235,7 @@ export default function MilestoneTimeline({ title, milestones, summary, endDate,
             ariaLabel={`${title} milestones`}
           />
         </div>
-      </div>
+      </TimelineCard>
     </div>
   );
 }

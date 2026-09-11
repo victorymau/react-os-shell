@@ -145,7 +145,7 @@ test('a current report pins the slider, scrubbing away is detectable, and reset 
   unmount();
 });
 
-test('the bar names the PO, counts reports and lead time, and legends the marker kinds it has', () => {
+test('the bar names the PO, states its window and lead time, and legends the kinds it has', () => {
   const markers: TimelineMarker[] = [
     { id: 'gi', date: '2026-05-12', kind: 'shipment', label: 'GI-1' },
     { id: 'qc', date: '2026-05-13', kind: 'inspection', label: 'QC-1' },
@@ -156,10 +156,18 @@ test('the bar names the PO, counts reports and lead time, and legends the marker
   }
   const { container, unmount } = render(<Bar />);
   const text = container.textContent ?? '';
-  assert.match(text, /Production Timeline for PO-1/);
-  assert.match(text, /2 reports/);
-  assert.match(text, /1 shipment/);
+  // Sentence-case heading, the PO as the card's SUBJECT rather than as part of
+  // a sentence: the `heading` prop defaults to "Production progress", where the
+  // row this replaced read "PRODUCTION TIMELINE FOR PO-1" in tracked capitals.
+  assert.match(text, /Production progress/);
+  assert.match(text, /PO-1/);
+  // The window's ends, which the scrubber's edge captions used to carry.
+  assert.match(text, /01\/05\/2026 → 01\/07\/2026/);
   assert.match(text, /61 days lead time/);
+  // The counts that used to sit here ("2 reports · 1 shipment") are gone: the
+  // dots are on the bar, the legend below says what each kind is, and the meta
+  // line has to leave room for the Play control beside it.
+  assert.doesNotMatch(text, /2 reports/);
   assert.match(text, /Showing PP-2/);
   assert.match(text, /Shipment/);
   assert.match(text, /Inspection/);

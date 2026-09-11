@@ -595,15 +595,28 @@ test('an axis with nothing to compress still answers', () => {
   assert.equal(compressTimeAxis(O1F_ANCHORS, 0).xByMs(day('2025-11-07')), 0);
 });
 
-test('one stretch may exceed the cap when there is nowhere else for the track to go', () => {
-  // Two stretches cannot cover a track at 30% each, and an axis that stops
-  // three fifths of the way along is not an axis. The cap gives, and the
-  // stretch stops claiming it was compressed once it is no longer short.
+test('a stretch over the share is CUT to a notch, and the rest gets the track', () => {
+  // Not squeezed — cut. A stretch holding more than 30% of the window's time
+  // loses its proportion entirely and becomes a fixed 48 px notch; everything
+  // left shares the remaining 552 px at one honest density. The alternative,
+  // capping it at 30% of the TRACK, still spent 180 px saying "nothing
+  // happened" and still squashed what did.
   const axis = compressTimeAxis([0, DAY_MS, 337 * DAY_MS], TRACK);
   assert.equal(axis.xs[axis.xs.length - 1], TRACK);
-  assert.ok(axis.gaps[1].px > 0.3 * TRACK, 'the cap had to give');
-  assert.ok(axis.gaps[1].compressed, 'and 336 days in 300 px is still a compression');
-  assert.ok(!axis.gaps[0].compressed, 'while one day in 300 px is not');
+  assert.ok(Math.abs(axis.gaps[1].px - 48) < 0.5, `the tail is a notch, got ${axis.gaps[1].px}px`);
+  assert.ok(axis.gaps[1].compressed, 'and it says so, because that piece of bar keeps no time');
+  assert.ok(!axis.gaps[0].compressed, 'while the day that holds both dates does');
+  assert.ok(axis.gaps[0].px > 0.9 * TRACK, 'and it gets everything the notch left');
+});
+
+test('a stretch under the share is never touched, however lopsided the bar', () => {
+  // The threshold is a share of TIME, not of track: 25, 25, 30 and 20 days of a
+  // 100-day window are all at or under it, so the axis stays proportional and
+  // the 30-day stretch keeps being half again as long as the 20-day one. A rule
+  // that reached for the widest stretch on every bar would flatten that out.
+  const axis = compressTimeAxis([0, 25 * DAY_MS, 50 * DAY_MS, 80 * DAY_MS, 100 * DAY_MS], TRACK);
+  assert.ok(axis.gaps.every((gap) => !gap.compressed), 'nothing crossed the threshold');
+  assert.deepEqual(axis.gaps.map((gap) => Math.round(gap.px)), [150, 150, 180, 120]);
 });
 
 // ── The production shape, rendered ──────────────────────────────────────────

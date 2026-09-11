@@ -118,7 +118,111 @@ export default async function check(page, { pageErrors, open }) {
     /282 days/,
   );
 
+  // ── The chrome both cards wear ────────────────────────────────────────────
+  // One header shape, sentence case, the reference as the subject. The row this
+  // replaced was 12px tracked capitals on one card and 13px sentence case on
+  // the other, which a reader with both open reads as two features.
+  for (const [card, heading, subject] of [
+    ['mould', 'Mould development', '001F/1813'],
+    ['production', 'Production progress', 'SO#35489'],
+  ]) {
+    const title = page.locator(`[data-testid="${card}"] .rosh-tl-title`);
+    assert.equal(await title.innerText(), heading);
+    assert.equal(
+      await title.evaluate((el) => getComputedStyle(el).textTransform), 'none',
+      `${card}: the heading is still being shouted`,
+    );
+    assert.match(await page.locator(`[data-testid="${card}"] .rosh-tl-meta`).innerText(), new RegExp(subject));
+  }
+  // The rail is the prototype's 6px, and it is the only number the bands are
+  // derived from — a stale 8 shows up as every offset being 1px out.
+  const rail = await page.locator('[data-testid="mould"] .rosh-tl-rail').boundingBox();
+  assert.ok(Math.abs(rail.height - 6) < 0.5, `rail height ${rail.height}`);
+
+  // The play control is a pill on the RIGHT of the header, not an icon to the
+  // left of the title, and its glyph follows its state.
+  const play = page.locator('[data-testid="production"] .rosh-tl-play');
+  assert.equal(await play.innerText(), 'Play');
+  const head = await page.locator('[data-testid="production"] .rosh-tl-head').boundingBox();
+  const playBox = await play.boundingBox();
+  assert.ok(
+    playBox.x > head.x + head.width / 2,
+    `the play control is not in the header's right slot: ${JSON.stringify(playBox)}`,
+  );
+  await play.click();
+  assert.equal(await play.innerText(), 'Pause');
+  assert.equal(await play.getAttribute('aria-pressed'), 'true');
+  await play.click();
+
+  // The footer: a status line, and legend chips drawn with the track's glyphs.
+  const foot = page.locator('[data-testid="production"] .rosh-tl-foot');
+  assert.match(await foot.innerText(), /Showing PP#\d+ · /);
+  assert.doesNotMatch(await foot.innerText(), /Estimated/, 'the thumb only rests on reports');
+  assert.equal(await page.locator('[data-testid="production"] .rosh-tl-legend > span').count(), 3);
+  // And the edge captions are gone: the ruler carries the dates now.
+  assert.equal(await page.locator('[data-testid="production"] .rosh-tl-edge').count(), 0);
+
+  // Today is at the right edge of the mould card, because `endDate` IS today —
+  // which is exactly the case a strict "inside the window" test dropped.
+  assert.equal(await page.locator('[data-testid="mould"] [data-timeline-part="today"]').count(), 1);
+
+  // ── The thumb only ever rests on a report ─────────────────────────────────
+  const thumb = page.locator('[data-timeline-part="thumb"]');
+  const thumbBox = await thumb.boundingBox();
+  const track = await page.locator('[data-testid="production"] .rosh-tl-layer').boundingBox();
+  // Drag to a point deliberately BETWEEN two reports and let go.
+  await page.mouse.move(thumbBox.x + thumbBox.width / 2, thumbBox.y + thumbBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(track.x + track.width * 0.42, thumbBox.y + thumbBox.height / 2, { steps: 12 });
+  await page.mouse.up();
+  // Past the 460ms snap-highlight, so a dot the drag crossed is back at its own
+  // size and its box still reports its own centre.
+  await page.waitForTimeout(600);
+  const resting = await thumb.boundingBox();
+  const centres = await page.locator('[data-testid="production"] [data-timeline-node="item"]')
+    .evaluateAll((nodes) => nodes.map((el) => {
+      const box = el.getBoundingClientRect();
+      return box.x + box.width / 2;
+    }));
+  const nearest = centres
+    .map((x) => Math.abs(x - (resting.x + resting.width / 2)))
+    .sort((a, b) => a - b)[0];
+  assert.ok(nearest < 6, `the thumb settled ${nearest}px from any report dot`);
+  assert.match(await thumb.getAttribute('aria-valuetext'), /PP#\d+ · /);
+
+  // ── Zoom: the pill opens its own stretch ──────────────────────────────────
+  const memberX = () => page.locator('[data-testid="mould"] [data-timeline-node="item"]')
+    .evaluateAll((nodes) => nodes
+      .filter((el) => (el.getAttribute('aria-label') ?? '').startsWith('DFM v'))
+      .map((el) => el.getBoundingClientRect().x));
+  const tight = await memberX();
+  await page.locator('[data-testid="mould"] [data-timeline-part="cluster"]').hover();
+  await page.waitForTimeout(320);
+  const spread = await memberX();
+  assert.ok(
+    Math.max(...spread) - Math.min(...spread) > Math.max(...tight) - Math.min(...tight) + 10,
+    `the cluster did not magnify: ${JSON.stringify(tight)} → ${JSON.stringify(spread)}`,
+  );
+  await page.mouse.move(4, 4);
+  await page.waitForTimeout(320);
+
+  // ── Preview: the popover survives the trip from the dot into it ───────────
+  const dfmok = page.locator('[data-testid="mould"] [aria-label^="DFM Confirmed"]');
+  await dfmok.hover();
+  const bubble = page.locator('[data-timeline-part="tooltip"]');
+  await bubble.waitFor();
+  assert.match(await bubble.innerText(), /3D model approved/);
+  const bubbleBox = await bubble.boundingBox();
+  await page.mouse.move(bubbleBox.x + bubbleBox.width / 2, bubbleBox.y + bubbleBox.height / 2, { steps: 8 });
+  await page.waitForTimeout(220);
+  assert.equal(await bubble.count(), 1, 'the popover closed on the way into it (WCAG 1.4.13)');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(220);
+  assert.equal(await page.locator('[data-timeline-part="tooltip"]').count(), 0, 'Escape dismisses it');
+
   // ── Motion: everything has landed by 700ms ────────────────────────────────
+  await open('?width=720');
+  await page.locator('[data-testid="mould"] [data-timeline-part="fill"]').waitFor();
   await page.waitForTimeout(700);
   const marks = await settled(page);
   assert.ok(marks.length > 10, `expected the entrance to touch many marks, got ${marks.length}`);
@@ -178,6 +282,13 @@ export default async function check(page, { pageErrors, open }) {
       for (const card of ['mould', 'production']) {
         await page.locator(`[data-testid="${card}"]`).screenshot({ path: join(dir, `${card}-${theme}.png`) });
       }
+    }
+    // And the variant nobody looks at until it is wrong.
+    await open('?width=300');
+    await page.locator('[data-testid="mould"] [data-timeline-part="vertical"]').waitFor();
+    await page.waitForTimeout(800);
+    for (const card of ['mould', 'production']) {
+      await page.locator(`[data-testid="${card}"]`).screenshot({ path: join(dir, `${card}-narrow.png`) });
     }
     console.log(`  shots → ${dir}`);
   }

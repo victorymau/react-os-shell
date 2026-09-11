@@ -21,7 +21,9 @@ import { join, resolve } from 'node:path';
 // localStorage, which does not exist in a bare node process.
 import { act, pressKey, render } from './dom';
 import { renderToStaticMarkup } from 'react-dom/server';
-import TimelineTrack, { type TimelineTrackItem } from '../src/shell/TimelineTrack';
+import TimelineTrack, {
+  type TimelineTrackItem, type TimelineTrackThumb,
+} from '../src/shell/TimelineTrack';
 import {
   clusterLabel, clusterMarks, compressTimeAxis, packLabelLanes, TRACK_LABEL_LANE_COUNT,
 } from '../src/shell/timelineGeometry';
@@ -352,4 +354,244 @@ test('activating a dot tells the caller which one, by key', () => {
   act(() => { dot.click(); });
   assert.deepEqual(picked, ['d2']);
   view.unmount();
+});
+
+// ── The scrubber's stops ────────────────────────────────────────────────────
+
+/** Four reports, a week apart, on a window that runs a fortnight past them. */
+const REPORT_ITEMS: TimelineTrackItem[] = [
+  { key: 'r1', ms: day('2026-05-01'), label: 'PP#10140', kind: 'report' },
+  { key: 'r2', ms: day('2026-05-08'), label: 'PP#10141', kind: 'report' },
+  { key: 'r3', ms: day('2026-05-15'), label: 'PP#10142', kind: 'report' },
+  { key: 'r4', ms: day('2026-05-22'), label: 'PP#10143', kind: 'report' },
+];
+const REPORT_STOPS = REPORT_ITEMS.map((item) => item.ms);
+
+/** A controlled scrubber over those reports, reporting every value it is asked
+ *  for — the point of most of these specs is which value that is. */
+function scrubber(overrides: Partial<TimelineTrackThumb> = {}, props: Partial<React.ComponentProps<typeof TimelineTrack>> = {}) {
+  const seen: number[] = [];
+  let value = day('2026-05-08');
+  const view = render(
+    <TimelineTrack
+      startMs={day('2026-05-01')} endMs={day('2026-06-05')}
+      items={REPORT_ITEMS} labels="active" ariaLabel="Production reports"
+      thumb={{
+        valueMs: value,
+        stops: REPORT_STOPS,
+        valueText: (ms) => `${REPORT_ITEMS.find((i) => i.ms === ms)?.label ?? '?'} · ${ms}`,
+        onChange: (ms) => { seen.push(ms); },
+        ...overrides,
+      }}
+      {...props}
+    />,
+  );
+  const thumb = () => view.container.querySelector<HTMLElement>('[data-timeline-part="thumb"]')!;
+  const move = (to: number) => {
+    value = to;
+    view.rerender(
+      <TimelineTrack
+        startMs={day('2026-05-01')} endMs={day('2026-06-05')}
+        items={REPORT_ITEMS} labels="active" ariaLabel="Production reports"
+        thumb={{
+          valueMs: value,
+          stops: REPORT_STOPS,
+          valueText: (ms) => `${REPORT_ITEMS.find((i) => i.ms === ms)?.label ?? '?'} · ${ms}`,
+          onChange: (ms) => { seen.push(ms); },
+          ...overrides,
+        }}
+        {...props}
+      />,
+    );
+  };
+  return { ...view, seen, thumb, move };
+}
+
+test('the arrows walk the thumb from report to report, and say which one it is on', () => {
+  // A day step is the wrong unit for a bar whose facts arrive weekly: six
+  // presses to reach the next report, five of them on dates nobody filed.
+  const { thumb, seen, move, unmount } = scrubber();
+  assert.equal(thumb().getAttribute('aria-valuetext'), `PP#10141 · ${day('2026-05-08')}`);
+  assert.equal(thumb().getAttribute('aria-valuenow'), '1', 'the INDEX of the stop, not a day count');
+  assert.equal(thumb().getAttribute('aria-valuemax'), '3');
+
+  const press = (key: string) => act(() => {
+    thumb().dispatchEvent(new window.KeyboardEvent('keydown', { key, bubbles: true }));
+  });
+  press('ArrowRight');
+  assert.deepEqual(seen, [day('2026-05-15')], 'one report forward, not one day');
+  move(seen[seen.length - 1]);
+  assert.equal(thumb().getAttribute('aria-valuetext'), `PP#10142 · ${day('2026-05-15')}`);
+
+  press('End');
+  assert.equal(seen[seen.length - 1], day('2026-05-22'), 'End is the last report, not the right edge');
+  move(seen[seen.length - 1]);
+  press('ArrowRight');
+  assert.equal(seen.length, 2, 'and there is nowhere past the last one to go');
+  unmount();
+});
+
+test('a drag settles on the nearest report, never between two', () => {
+  const { container, seen, thumb, unmount } = scrubber();
+  const hit = container.querySelector<HTMLElement>('[data-timeline-part="hit"]')!;
+  // The track is the 600px fallback under jsdom, which measures nothing, and
+  // the window is 35 days: a pointer two thirds of the way along is 2026-05-24,
+  // closest to the last report.
+  // A MouseEvent under a pointer event's NAME: React listens for the native
+  // `pointerdown`, and jsdom has no PointerEvent constructor to build one with.
+  const at = (clientX: number, type: string) => act(() => {
+    hit.dispatchEvent(new window.MouseEvent(type, { clientX, bubbles: true }));
+  });
+  at(400, 'pointerdown');
+  at(410, 'pointermove');
+  at(410, 'pointerup');
+  assert.ok(seen.length > 0, 'the drag reported something');
+  for (const ms of seen) {
+    assert.ok(REPORT_STOPS.includes(ms), `${ms} is not a report date`);
+  }
+  assert.equal(seen[seen.length - 1], day('2026-05-22'), 'released between two, settled on the nearer');
+  // And the disc is drawn where the caller's value maps to — a controlled
+  // thumb that moved on its own would be a second source of truth.
+  const r2 = container.querySelector<HTMLElement>('[data-timeline-key="r2"]')!;
+  assert.equal(thumb().style.left, r2.style.left, 'the thumb sits on the report it is showing');
+  unmount();
+});
+
+test('the label above the thumb opens the document; the dot only selects it', () => {
+  const opened: string[] = [];
+  const picked: string[] = [];
+  const items = REPORT_ITEMS.map((item) => ({ ...item, onOpen: () => opened.push(item.key) }));
+  const view = render(
+    <TimelineTrack
+      startMs={day('2026-05-01')} endMs={day('2026-06-05')}
+      items={items} labels="active" activeKey="r2" ariaLabel="Production reports"
+      onActivate={(key) => picked.push(key)}
+      thumb={{ valueMs: day('2026-05-08'), stops: REPORT_STOPS, onChange: () => {} }}
+    />,
+  );
+  const open = view.container.querySelector<HTMLElement>('[data-timeline-part="open"]')!;
+  assert.equal(open.tagName, 'BUTTON');
+  assert.equal(open.getAttribute('aria-label'), 'Open PP#10141');
+  act(() => { open.click(); });
+  assert.deepEqual(opened, ['r2']);
+  assert.deepEqual(picked, [], 'opening the document is not picking the dot');
+
+  const dot = view.container.querySelector<HTMLElement>('[data-timeline-key="r3"]')!;
+  act(() => { dot.click(); });
+  assert.deepEqual(picked, ['r3']);
+  view.unmount();
+});
+
+test('without a handler the label is text, because a dead link is worse than none', () => {
+  const html = staticHtml(track({
+    labels: 'active', activeKey: 'd1',
+    thumb: { valueMs: day('2026-01-20'), onChange: () => {} },
+  }));
+  assert.doesNotMatch(html, /data-timeline-part="open"/);
+  assert.match(html, /data-timeline-part="label"/);
+});
+
+// ── Preview, zoom, and the entrance ─────────────────────────────────────────
+
+test('a preview is rendered inside the popover, with a way out of it', () => {
+  const opened: string[] = [];
+  const items: TimelineTrackItem[] = ITEMS.map((item) => (item.key === 'd1'
+    ? {
+      ...item,
+      preview: <span data-testid="preview-body">v1 · feedback 12/01 · 3D model pending</span>,
+      onOpen: () => opened.push(item.key),
+    }
+    : item));
+  const view = render(track({ items }));
+  const dot = dots(view.container).find((d) => d.dataset.timelineKey === 'd1')!;
+  act(() => { dot.focus(); });
+
+  const tip = view.container.querySelector('[role="tooltip"]')!;
+  assert.ok(tip.querySelector('[data-timeline-part="preview"]'), 'the consumer\'s card, not a second line of text');
+  assert.match(tip.textContent ?? '', /3D model pending/);
+  assert.match(tip.textContent ?? '', /DFM v1/, 'under the mark\'s own label');
+
+  const openButton = tip.querySelector<HTMLElement>('[data-timeline-part="bubble-open"]')!;
+  act(() => { openButton.click(); });
+  assert.deepEqual(opened, ['d1']);
+
+  pressKey('Escape');
+  assert.equal(view.container.querySelector('[role="tooltip"]'), null, 'Escape dismisses it');
+  view.unmount();
+});
+
+test('hovering a cluster pill magnifies its stretch and gives the members their labels', () => {
+  // The pill answers "four of what, and when" without a click: the axis opens
+  // around the run, the members spread far enough apart to carry a label each,
+  // and the rest of the bar pays for it.
+  const dense: TimelineTrackItem[] = [
+    { key: 'a', ms: day('2026-01-05'), label: 'Project Initiated' },
+    { key: 'd1', ms: day('2026-01-20'), label: 'DFM v1', kind: 'dfm', priority: 1 },
+    { key: 'd2', ms: day('2026-01-21'), label: 'DFM v2', kind: 'dfm', priority: 1 },
+    { key: 'd3', ms: day('2026-01-22'), label: 'DFM v3', kind: 'dfm', priority: 1 },
+    { key: 'z', ms: day('2026-03-01'), label: 'Mould Complete', kind: 'completion' },
+  ];
+  const view = render(track({ items: dense, axis: 'compressed' }));
+  const at = (key: string) => Number(
+    view.container.querySelector<HTMLElement>(`[data-timeline-key="${key}"]`)!.style.left.replace('px', ''),
+  );
+  const before = [at('d1'), at('d2'), at('d3')];
+  assert.ok(
+    before[1] - before[0] < 56,
+    `the run starts at the axis floor, too tight for a label each: ${JSON.stringify(before)}`,
+  );
+
+  const pill = view.container.querySelector<HTMLElement>('[data-timeline-part="cluster"]')!;
+  const pillLeft = pill.style.left;
+  act(() => { pill.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true })); });
+
+  const after = [at('d1'), at('d2'), at('d3')];
+  assert.ok(after[1] - after[0] > before[1] - before[0] + 8, `members did not spread: ${JSON.stringify(after)}`);
+  assert.ok(after[1] - after[0] >= 28, `below the floor a label cannot be drawn: ${JSON.stringify(after)}`);
+  assert.ok(after[2] - after[1] >= 28, `below the floor a label cannot be drawn: ${JSON.stringify(after)}`);
+  assert.equal(pill.style.left, pillLeft, 'the pill itself stays put under the pointer that opened it');
+  const labels = Array.from(view.container.querySelectorAll('[data-timeline-part="label"]'))
+    .map((el) => el.textContent ?? '');
+  assert.ok(labels.some((text) => text.startsWith('DFM v')), `no member label while zoomed: ${JSON.stringify(labels)}`);
+
+  act(() => { pill.dispatchEvent(new window.MouseEvent('mouseout', { bubbles: true })); });
+  assert.deepEqual([at('d1'), at('d2'), at('d3')], before, 'and it closes again on the way out');
+  view.unmount();
+});
+
+test('zoomRange magnifies the same stretch without a pointer', () => {
+  const dense: TimelineTrackItem[] = [
+    { key: 'a', ms: day('2026-01-05'), label: 'Project Initiated' },
+    { key: 'd1', ms: day('2026-01-20'), label: 'DFM v1', kind: 'dfm', priority: 1 },
+    { key: 'd2', ms: day('2026-01-21'), label: 'DFM v2', kind: 'dfm', priority: 1 },
+    { key: 'd3', ms: day('2026-01-22'), label: 'DFM v3', kind: 'dfm', priority: 1 },
+    { key: 'z', ms: day('2026-03-01'), label: 'Mould Complete', kind: 'completion' },
+  ];
+  const plain = staticHtml(track({ items: dense, axis: 'compressed' }));
+  const zoomed = staticHtml(track({
+    items: dense, axis: 'compressed', zoomRange: [day('2026-01-20'), day('2026-01-22')],
+  }));
+  const at = (html: string, key: string) => Number(
+    html.match(new RegExp(`data-timeline-key="${key}"[^>]*style="[^"]*left:([0-9.]+)px`))![1],
+  );
+  assert.ok(
+    at(zoomed, 'd3') - at(zoomed, 'd1') > at(plain, 'd3') - at(plain, 'd1') + 20,
+    'a consumer can offer the zoom as an action rather than as a hover',
+  );
+});
+
+test('the entrance plays again on a fresh mount — every window open, not once a session', () => {
+  // The gate is the identity of the mark set against RE-renders. A gate that
+  // remembered across mounts would mean a card animates the first time a user
+  // opens the window and never again, which is the complaint that started this.
+  const first = render(track());
+  assert.ok(dots(first.container).every((d) => d.className.includes('rosh-tl-pop')));
+  first.unmount();
+
+  const second = render(track());
+  assert.ok(
+    dots(second.container).every((d) => d.className.includes('rosh-tl-pop')),
+    'the second mount drew a card with no entrance',
+  );
+  second.unmount();
 });

@@ -15,18 +15,20 @@
  *  line, which is the width the lanes are trying to place. */
 const DEFAULT_MIN_GAP_PX = 48;
 
-/** No single stretch of axis may own more than this share of the track. A
- *  mould whose last milestone was ten months ago is the case: on a linear axis
- *  that one idle stretch takes 84% of the bar and squeezes every real date into
- *  the first sixth of it. */
-const DEFAULT_MAX_GAP_SHARE = 0.3;
+/** A stretch holding more than this share of the window's TIME is cut out of
+ *  the axis. A mould whose last milestone was ten months ago is the case: that
+ *  one idle stretch holds 84% of the programme's time, and on a linear axis it
+ *  takes 84% of the bar and squeezes every real date into the first sixth. */
+const DEFAULT_MAX_TIME_SHARE = 0.3;
+
+/** What a cut stretch is worth on the track: a fixed notch, the same width
+ *  whether it swallowed 282 days or 2,820. A cut is not a short stretch — it is
+ *  a piece of axis that has stopped keeping time — so scaling it by what it
+ *  hides would be reading a duration off a mark that is not a duration. */
+const DEFAULT_BREAK_PX = 48;
 
 /** Slack below this is float noise, not space left to hand out. */
 const FILL_EPSILON = 1e-6;
-
-/** A gap has to be narrower than its time deserves by more than half a pixel
- *  before we tell the user it was compressed. */
-const COMPRESSED_EPSILON = 0.5;
 
 // ─── Compressed time axis ────────────────────────────────────────────────────
 
@@ -45,13 +47,14 @@ export interface AxisGap {
   toPx: number;
   /** The width a linear axis would have given it. */
   wantPx: number;
-  /** Its width after the min/max clamp, before the track is filled. */
+  /** Its width once cut or floored, before the flow was fitted to the track. */
   clampedPx: number;
   /** Its width in the end. */
   px: number;
-  /** True when the ceiling took width off this stretch AND it is still narrower
-   *  than its time deserves — i.e. this piece of axis lies about how long it
-   *  lasted, and the user has to be told so. */
+  /** True when this stretch was CUT: it holds more of the window's time than
+   *  the axis is willing to spend track on, so it was replaced by a fixed
+   *  notch. This piece of bar does not keep time, and the user has to be told
+   *  so — it is what puts a break glyph on the rail and on the ruler. */
   compressed: boolean;
 }
 
@@ -72,75 +75,59 @@ export interface CompressedAxis {
    *  that stretch actually holds, rather than a linear reading of a non-linear
    *  bar. */
   msByPx: (px: number) => number;
-  /** True while `ms` falls strictly inside a stretch the ceiling cut. Nothing
-   *  is drawn there — a cut is where time is NOT shown, so a ruler tick or a
-   *  month label inside one would be labelling a coordinate that has no date. */
+  /** True while `ms` falls strictly inside a stretch the axis cut. Nothing is
+   *  drawn there — a cut is where time is NOT shown, so a ruler tick or a month
+   *  label inside one would be labelling a coordinate that has no date. */
   inCut: (ms: number) => boolean;
 }
 
 export interface CompressTimeAxisOptions {
-  /** Narrowest a stretch may be before the track is filled. Default 48 px. */
+  /** Narrowest a stretch that still keeps time may be. Default 48 px. */
   minGapPx?: number;
-  /** Widest a stretch may be. Default 30% of the track. */
-  maxGapPx?: number;
+  /** The share of the window's TIME above which a stretch is cut rather than
+   *  drawn. Default 0.3. `Infinity` never cuts, which is a linear axis. */
+  maxTimeShare?: number;
+  /** The fixed width a cut stretch is given. Default 48 px. */
+  breakPx?: number;
 }
 
 /**
- * Scale the clamped stretches so they fill the track exactly.
+ * Raise the stretches under the floor, and take it back from the ones that can
+ * afford it.
  *
- * Shrinking is uniform: every stretch takes the same factor, so one already at
- * the ceiling only gets smaller and the ceiling still holds.
+ * Two dates a week apart on a 337-day window are 1.8 px apart in proportion,
+ * which draws them as one date; the floor is what the label lanes are packing
+ * against. It is paid for out of the stretches that are ALREADY above it, in
+ * proportion to how far above — a stretch at exactly the floor never funds
+ * another one, so a pass can never create a new short stretch and one pass is
+ * the whole redistribution.
  *
- * Growing cannot be uniform. Scaling a stretch that was just capped at 30% of
- * the track back up past 30% would undo the compression this axis exists for,
- * which is exactly what a uniform `trackWidthPx / sum` does when the clamped
- * widths come to less than the track. So the slack goes only to the stretches
- * still below the ceiling, split in proportion to the time each one holds, and
- * whatever a pass could not place (a stretch hit the ceiling part way through)
- * is offered round again.
- *
- * When every stretch is at the ceiling and slack is STILL left — an axis of one
- * or two stretches, where 30% each cannot cover the track — the ceiling has to
- * give, because an axis that stops two thirds of the way along is not an axis.
- * The uniform scale-up is the last resort, and a stretch that grows past its
- * own wanted width that way stops reporting itself as compressed.
+ * When the floor costs more than the whole track can pay, the layout wins: the
+ * final fit scales everything back down, and stretches fall below the floor
+ * because there is no arrangement in which they do not.
  */
-function fillTrack(clampedPx: number[], weights: number[], track: number, ceiling: number): number[] {
-  const px = clampedPx.slice();
-  const sum = px.reduce((a, b) => a + b, 0);
-  if (sum <= 0) return px;
-  if (sum > track) return px.map((width) => (width * track) / sum);
-
-  let slack = track - sum;
-  // Bounded: a pass either exhausts the slack or pins one more stretch to the
-  // ceiling, and there are only so many stretches.
-  for (let pass = 0; pass <= px.length && slack > FILL_EPSILON; pass++) {
-    const open: number[] = [];
-    let weightTotal = 0;
-    for (let i = 0; i < px.length; i++) {
-      if (px[i] >= ceiling - FILL_EPSILON) continue;
-      open.push(i);
-      weightTotal += Math.max(weights[i], 0);
-    }
-    if (open.length === 0) break;
-    let used = 0;
-    for (const i of open) {
-      const share = weightTotal > 0
-        ? (slack * Math.max(weights[i], 0)) / weightTotal
-        : slack / open.length;
-      const next = Math.min(ceiling, px[i] + share);
-      used += next - px[i];
-      px[i] = next;
-    }
-    if (used <= FILL_EPSILON) break;
-    slack -= used;
+function applyFloor(px: number[], fixed: boolean[], floor: number): number[] {
+  const out = px.slice();
+  let need = 0;
+  for (let i = 0; i < out.length; i++) {
+    if (fixed[i] || out[i] >= floor - FILL_EPSILON) continue;
+    need += floor - out[i];
+    out[i] = floor;
   }
+  if (need <= FILL_EPSILON) return out;
 
-  if (slack > FILL_EPSILON) {
-    const pinned = px.reduce((a, b) => a + b, 0);
-    if (pinned > 0) return px.map((width) => (width * track) / pinned);
+  let slack = 0;
+  for (let i = 0; i < out.length; i++) {
+    if (!fixed[i] && out[i] > floor + FILL_EPSILON) slack += out[i] - floor;
   }
-  return px;
+  if (slack <= FILL_EPSILON) return out;
+
+  const take = Math.min(need, slack);
+  for (let i = 0; i < out.length; i++) {
+    if (fixed[i] || out[i] <= floor + FILL_EPSILON) continue;
+    out[i] -= (take * (out[i] - floor)) / slack;
+  }
+  return out;
 }
 
 /**
@@ -153,20 +140,25 @@ function fillTrack(clampedPx: number[], weights: number[], track: number, ceilin
  * milestones a reader came for collapse to hover-only. The empty tail was the
  * problem, not the labels.
  *
- * So each stretch between two consecutive anchors is sized by how much time it
- * holds, then clamped: at least `minGapPx` wide, so two dates a week apart are
- * still two dates; at most `maxGapPx`, so one idle stretch cannot own the bar.
- * The clamped widths are then scaled to fill the track exactly — see
- * `fillTrack` for why that is not one multiplication.
+ * So the tail is not squeezed — it is CUT. Any stretch between two consecutive
+ * anchors that holds more than `maxTimeShare` of the window's time loses its
+ * proportion entirely and becomes a fixed `breakPx` notch carrying a break
+ * glyph and the number of days it hides; everything left shares the rest of the
+ * track in proportion, at one honest density. A stretch under the threshold is
+ * never touched, which is what keeps a fortnight looking like twice a week.
+ *
+ * The floor is applied after that, for the same reason a ruler has millimetres:
+ * two dates a week apart on a year-long window are 1.8 px apart in proportion,
+ * and two dates drawn as one date are a lie the compression was supposed to
+ * stop telling.
  *
  * Anchors are de-duplicated, which is what makes three milestones on one day
  * one coordinate rather than three that happen to coincide.
  *
- * Pass `maxGapPx: Infinity` for a plain linear axis: no stretch is ever capped,
- * the floor still holds, and everything else on the card keeps reading its
- * coordinate off the same mapping. That is what the production scrubber asks
- * for, because a supplier's reports arrive weekly and a week is not an idle
- * stretch to hide.
+ * Pass `maxTimeShare: Infinity` for a plain linear axis: nothing is ever cut,
+ * and everything else on the card keeps reading its coordinate off the same
+ * mapping. That is what the production scrubber asks for, because a supplier's
+ * reports arrive weekly and a week is not an idle stretch to hide.
  */
 export function compressTimeAxis(
   anchorsMs: number[],
@@ -191,21 +183,46 @@ export function compressTimeAxis(
   }
 
   const totalMs = anchors[anchors.length - 1] - anchors[0];
-  const ceiling = opts.maxGapPx ?? DEFAULT_MAX_GAP_SHARE * track;
-  // A floor above the ceiling is not a range, and the ceiling is the claim that
-  // matters: it keeps an idle stretch from owning the bar, where the floor only
-  // asks for room for a label.
-  const floor = Math.min(opts.minGapPx ?? DEFAULT_MIN_GAP_PX, ceiling);
+  const maxShare = opts.maxTimeShare ?? DEFAULT_MAX_TIME_SHARE;
+  const breakPx = Math.min(opts.breakPx ?? DEFAULT_BREAK_PX, track);
+  const floor = opts.minGapPx ?? DEFAULT_MIN_GAP_PX;
 
+  const gapMs: number[] = [];
   const wantPx: number[] = [];
-  const clampedPx: number[] = [];
+  const cut: boolean[] = [];
   for (let i = 0; i + 1 < anchors.length; i++) {
-    const want = ((anchors[i + 1] - anchors[i]) / totalMs) * track;
-    wantPx.push(want);
-    clampedPx.push(Math.min(Math.max(want, floor), ceiling));
+    const held = anchors[i + 1] - anchors[i];
+    gapMs.push(held);
+    wantPx.push(totalMs > 0 ? (held / totalMs) * track : 0);
+    cut.push(totalMs > 0 && held / totalMs > maxShare);
   }
 
-  const px = fillTrack(clampedPx, wantPx, track, ceiling);
+  // The cuts are paid first, out of the track; what is left is shared by the
+  // stretches that still keep time, in proportion to how much they hold.
+  const cutCount = cut.filter(Boolean).length;
+  const flowPx = Math.max(0, track - cutCount * breakPx);
+  let flowMs = 0;
+  let flowCount = 0;
+  for (let i = 0; i < gapMs.length; i++) {
+    if (cut[i]) continue;
+    flowMs += gapMs[i];
+    flowCount += 1;
+  }
+  const clampedPx = gapMs.map((held, i) => {
+    if (cut[i]) return breakPx;
+    if (flowCount === 0) return 0;
+    return flowMs > 0 ? (flowPx * held) / flowMs : flowPx / flowCount;
+  });
+
+  const floored = applyFloor(clampedPx, cut, floor);
+  // Fit the stretches that keep time back into what the cuts left them. A
+  // no-op unless the floor cost more than the track had — see `applyFloor`.
+  const flowTotal = floored.reduce((sum, width, i) => (cut[i] ? sum : sum + width), 0);
+  const px = floored.map((width, i) => {
+    if (cut[i]) return width;
+    return flowTotal > 0 ? (width * flowPx) / flowTotal : width;
+  });
+
   const xs = [0];
   for (let i = 0; i < px.length; i++) xs.push(xs[i] + px[i]);
   // A dozen additions of floats leave the last anchor a hair short of the
@@ -213,22 +230,17 @@ export function compressTimeAxis(
   // fill bar's full width, the right edge of a phase bracket.
   xs[xs.length - 1] = track;
 
-  const gaps: AxisGap[] = xs.slice(0, -1).map((fromPx, i) => {
-    const width = xs[i + 1] - fromPx;
-    return {
-      fromMs: anchors[i],
-      toMs: anchors[i + 1],
-      gapMs: anchors[i + 1] - anchors[i],
-      fromPx,
-      toPx: xs[i + 1],
-      wantPx: wantPx[i],
-      clampedPx: clampedPx[i],
-      px: width,
-      compressed:
-        clampedPx[i] < wantPx[i] - COMPRESSED_EPSILON
-        && width < wantPx[i] - COMPRESSED_EPSILON,
-    };
-  });
+  const gaps: AxisGap[] = xs.slice(0, -1).map((fromPx, i) => ({
+    fromMs: anchors[i],
+    toMs: anchors[i + 1],
+    gapMs: gapMs[i],
+    fromPx,
+    toPx: xs[i + 1],
+    wantPx: wantPx[i],
+    clampedPx: clampedPx[i],
+    px: xs[i + 1] - fromPx,
+    compressed: cut[i],
+  }));
 
   const xByMs = (ms: number): number => {
     if (!Number.isFinite(ms) || ms <= anchors[0]) return 0;

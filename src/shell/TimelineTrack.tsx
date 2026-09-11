@@ -4,6 +4,7 @@ import {
 } from 'react';
 import { DAY_MS, fmtSliderDate } from './timelineDates';
 import { registerModalEscapeInterceptor } from './escapeInterceptors';
+import { TimelineGlyph, type TimelineGlyphName } from './timelineGlyphs';
 import { stagger } from '../charts/effects';
 import {
   clampLabelLeft, clusterLabel, clusterMarks, compressTimeAxis, estimateLabelWidth,
@@ -22,12 +23,12 @@ import {
  * here cannot be missing a style below.
  */
 export type TimelineTrackKind =
-  | 'default'    // accent disc with a flag — the opening milestone / a phase start
+  | 'default'    // accent disc, a flag on the one that opened the programme
   | 'dfm'        // amber disc with a document — an engineering iteration
-  | 'shipment'   // emerald diamond — goods moving
-  | 'testing'    // violet disc with a flask — a test, a sign-off, a mould check
+  | 'shipment'   // violet diamond — goods moving
+  | 'testing'    // teal disc with a flask — a test, a sign-off, a mould check
   | 'completion' // green disc with a check — the thing finished
-  | 'inspection' // amber diamond — a QC report filed against the order
+  | 'inspection' // orange disc with a flask — a QC report filed against the order
   | 'report'     // accent ring — a supplier's production-progress report
 ;
 
@@ -55,9 +56,29 @@ export interface TimelineTrackItem {
    * about which milestones the reader opened the card for.
    */
   priority?: number;
+  /**
+   * Which glyph sits inside the dot. Defaults by kind; `'none'` draws a bare
+   * one. The FIRST dated mark of the default kind gets a flag when it asks for
+   * nothing else, because that is the milestone that opened the programme.
+   */
+  glyph?: TimelineGlyphName | 'none';
+  /**
+   * Rich content for the hover/focus popover — a drawing's version and feedback
+   * snippet, a report's stage row, a shipment's goods-issue number. Rendered
+   * under the mark's own label and date; without it the popover falls back to
+   * label · date · `detail`.
+   */
+  preview?: ReactNode;
   /** Optional click handler — the dot is a button either way, so its tooltip is
    *  focusable, but only a handler makes activating it do something. */
   onClick?: () => void;
+  /**
+   * Opens the DOCUMENT behind the mark, as opposed to selecting it. When set,
+   * the mark's drawn label becomes a real button and the popover grows an
+   * "Open" footer; without it the label is text, because a label that looks
+   * like a link and does nothing is worse than one that does not.
+   */
+  onOpen?: () => void;
 }
 
 /** Visual classification for a `TimelineMarker`. */
@@ -77,8 +98,12 @@ export interface TimelineMarker {
   label: string;
   /** Optional second line for the tooltip. */
   detail?: string;
+  /** Rich content for the hover/focus popover — see `TimelineTrackItem`. */
+  preview?: ReactNode;
   /** Optional click handler — when set, the dot calls this with the marker. */
   onClick?: (m: TimelineMarker) => void;
+  /** Opens the document behind the marker — a goods issue, a QC report. */
+  onOpen?: (m: TimelineMarker) => void;
 }
 
 /** An undated thing: listed beside the track, never placed on it. */
@@ -104,6 +129,24 @@ export interface TimelineTrackThumb {
   onDragEnd?: () => void;
   /** The chip above the thumb. Defaults to the date in the user's format. */
   chip?: (ms: number) => ReactNode;
+  /**
+   * The only values the thumb may rest on, epoch ms, in any order.
+   *
+   * With stops the slider is DISCRETE: a drag follows the pointer but the thumb
+   * snaps to the nearest stop as it goes, a release settles on one, and the
+   * arrow keys step between them. That is the difference between a bar you can
+   * read and a bar you can interpolate — a production scrubber has facts on
+   * certain days and nothing at all between them, so a thumb resting on the
+   * 11th of the month would be claiming a snapshot nobody filed.
+   *
+   * Without it the thumb is continuous and the arrows move by the day.
+   */
+  stops?: number[];
+  /** What a screen reader should read for a value — "PP#10143 · 13/05/2026".
+   *  Defaults to the date alone. */
+  valueText?: (ms: number) => string;
+  /** Names the slider. Defaults to "Scrub the timeline". */
+  ariaLabel?: string;
 }
 
 export interface TimelineTrackProps {
@@ -112,8 +155,10 @@ export interface TimelineTrackProps {
   /** Right edge of the window, epoch ms. */
   endMs: number;
   /**
-   * `'compressed'` caps any idle stretch at 30% of the track and marks it with a
-   * break glyph; `'linear'` (the default) keeps time proportional. A bar whose
+   * `'compressed'` CUTS any stretch holding more than 30% of the window's time
+   * down to a fixed notch with a break glyph saying how many days it hides, and
+   * shares the rest of the track proportionally among what is left;
+   * `'linear'` (the default) keeps time proportional throughout. A bar whose
    * events arrive weekly wants linear — a week is not an idle stretch to hide.
    */
   axis?: 'linear' | 'compressed';
@@ -148,6 +193,16 @@ export interface TimelineTrackProps {
   /** The one mark that is "where we are": `aria-current="step"`, the larger
    *  accent disc, and the pulse. Defaults to the last dated item. */
   currentKey?: string;
+  /**
+   * Magnify one stretch of the axis, the way hovering a `×N` pill does.
+   *
+   * The marks inside the range spread until each pair is at least 28 px apart —
+   * far enough for them to carry their own labels — and the rest of the axis
+   * gives up the room in proportion. `null` (the default) is the whole bar at
+   * one density. It exists so a consumer can offer "zoom to the DFM phase" as
+   * an action rather than as something only a pointer can reach.
+   */
+  zoomRange?: [number, number] | null;
   /** Play the mount reveal. Default true; reduced motion is handled in CSS. */
   motion?: boolean;
   /** Names the ordered list of dated marks. Required — a list of dots with no
@@ -157,9 +212,11 @@ export interface TimelineTrackProps {
 
 // ─── Geometry ────────────────────────────────────────────────────────────────
 
-/** The rail's own height — `h-2`, unchanged from the bar this replaced, so a
- *  card's vertical rhythm does not move. */
-const RAIL_PX = 8;
+/** The rail's own height. 6 px, as the approved prototype draws it: at 8 the
+ *  rail competes with the 10 px dots standing on it, and the bar reads as the
+ *  subject of the card rather than as the line the events are placed on. Every
+ *  other offset is derived from it, so this is the only number to change. */
+const RAIL_PX = 6;
 
 /** Every vertical offset inside the stage, per label strategy. One object rather
  *  than a stack of flex rows: a label in a lane, its leader hairline, the ruler
@@ -243,8 +300,8 @@ type NodeRole = 'dot' | 'key' | 'current';
 interface KindStyle {
   /** `true` when the mark is drawn as a rotated square. */
   diamond?: boolean;
-  /** Which glyph sits inside a filled node. */
-  glyph?: 'check' | 'doc' | 'flask' | 'flag';
+  /** Which glyph sits inside a filled node, unless the item names another. */
+  glyph?: TimelineGlyphName;
   /**
    * The kind's colour, as a token reference — declared light AND dark in
    * `ui.css`. `undefined` means "the accent", which cannot be a token: the kit's
@@ -256,40 +313,51 @@ interface KindStyle {
 }
 
 const KIND_STYLES: Record<TimelineTrackKind, KindStyle> = {
-  default: { glyph: 'flag' },
+  // No glyph by default: a flag belongs on the milestone that OPENED the
+  // programme, not on every milestone whose kind nobody set.
+  default: {},
   dfm: { glyph: 'doc', token: 'var(--tl-dfm)' },
   shipment: { diamond: true, token: 'var(--tl-shipment)' },
   testing: { glyph: 'flask', token: 'var(--tl-testing)' },
   completion: { glyph: 'check', token: 'var(--tl-completion)' },
-  inspection: { diamond: true, token: 'var(--tl-inspection)' },
+  // A disc with a flask, not a diamond: a diamond is goods moving, and a bar
+  // that draws an inspection as one has two meanings for a shape.
+  inspection: { glyph: 'flask', token: 'var(--tl-inspection)' },
   report: {},
 };
 
-const GLYPH_PATHS: Record<NonNullable<KindStyle['glyph']>, ReactNode> = {
-  check: (
-    <path d="M2.6 6.3 4.9 8.6 9.4 3.6" fill="none" stroke="currentColor" strokeWidth="1.9"
-      strokeLinecap="round" strokeLinejoin="round" />
-  ),
-  doc: (
-    <>
-      <path d="M3.5 1.9h3.4l2 2v6.2H3.5z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
-      <path d="M5.1 6.5h2.8M5.1 8.2h2" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
-    </>
-  ),
-  flask: (
-    <path d="M4.6 1.8h2.8M5.4 1.8v3.1L3.3 9.3a.9.9 0 0 0 .8 1.3h3.8a.9.9 0 0 0 .8-1.3L6.6 4.9V1.8"
-      fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
-  ),
-  flag: (
-    <>
-      <path d="M3.8 1.7v8.6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-      <path d="M3.8 2.5h4.8L7.5 4.4l1.1 1.9H3.8z" fill="currentColor" />
-    </>
-  ),
+/**
+ * The kind a glyph implies, for a mark whose kind says nothing.
+ *
+ * The milestone spec and the reader's eye do not line up everywhere: "DFM
+ * Confirmed" is a `default` milestone in the spec and a signed drawing on the
+ * card, so a caller naming `glyph: 'doc'` gets the amber that goes with it
+ * rather than an accent disc with a document inside it. Only `default` borrows
+ * — a kind that was stated is never overridden.
+ */
+const GLYPH_KIND: Partial<Record<TimelineGlyphName, TimelineTrackKind>> = {
+  doc: 'dfm',
+  flask: 'testing',
+  check: 'completion',
 };
 
-function Glyph({ name }: { name: NonNullable<KindStyle['glyph']> }) {
-  return <svg viewBox="0 0 12 12" aria-hidden="true">{GLYPH_PATHS[name]}</svg>;
+/** The kind a mark is drawn in, after a named glyph has had its say. */
+function resolveKind(item: TimelineTrackItem): TimelineTrackKind {
+  const kind = item.kind ?? 'default';
+  if (kind !== 'default' || !item.glyph || item.glyph === 'none') return kind;
+  return GLYPH_KIND[item.glyph] ?? kind;
+}
+
+/** The glyph a mark wears: its own, else its kind's, else a flag if it is the
+ *  first thing that happened. */
+function resolveGlyph(
+  item: TimelineTrackItem,
+  kind: TimelineTrackKind,
+  opensProgramme: boolean,
+): TimelineGlyphName | undefined {
+  if (item.glyph === 'none') return undefined;
+  if (item.glyph) return item.glyph;
+  return KIND_STYLES[kind].glyph ?? (opensProgramme ? 'flag' : undefined);
 }
 
 /** The classes and inline colour one node wears. Kept together because the
@@ -321,11 +389,20 @@ function nodeDressing(kind: TimelineTrackKind, role: NodeRole): { className: str
 interface Mark {
   key: string;
   ms: number;
+  /** Where it is drawn — magnified when a stretch is zoomed. */
   x: number;
+  /** Where it would be with nothing magnified. The pill and the clustering read
+   *  this one: a pill that moved when the axis opened around it would slide out
+   *  from under the pointer that opened it, close, and open again. */
+  baseX: number;
   kind: TimelineTrackKind;
   label: string;
   dateText: string;
   detail?: ReactNode;
+  /** Rich popover content, when the caller supplied any. */
+  preview?: ReactNode;
+  /** Which glyph sits inside the node, once kind and item have both had a say. */
+  glyph?: TimelineGlyphName;
   role: NodeRole;
   /** The width of the label it would draw, measured or estimated. */
   widthPx: number;
@@ -333,6 +410,8 @@ interface Mark {
    *  do, and neither does a context marker. */
   collapsible: boolean;
   onClick?: () => void;
+  /** Opens the document behind the mark, when the caller wired one up. */
+  onOpen?: () => void;
   /** False for a context marker — on the rail, but not part of the programme. */
   isItem: boolean;
 }
@@ -403,11 +482,119 @@ function useObservedWidth(ref: RefObject<HTMLElement>, enabled: boolean): number
   return width;
 }
 
-/** True when the user asked for less motion. Read at the moment of the gesture,
- *  because a click-to-jump easing is JavaScript and cannot be a CSS rule. */
-function prefersReducedMotion(): boolean {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+/** The floor on how far apart a magnified stretch holds its marks. The real
+ *  target is the room two labels need side by side; this is what a pair with no
+ *  labels to speak of still gets. */
+const ZOOM_MIN_PITCH_PX = 28;
+
+/** Clear space between two magnified labels, once each has its own width. */
+const ZOOM_LABEL_PAD_PX = 8;
+
+/** A magnified stretch may not take more of the track than this. Past it the
+ *  rest of the programme has stopped being context and become a margin. */
+const ZOOM_MAX_SHARE = 0.8;
+
+/** How long the axis takes to open and close around a magnified stretch. */
+const ZOOM_TWEEN_MS = 240;
+
+/**
+ * Magnify one stretch of a built axis, compressing the rest to pay for it.
+ *
+ * A fisheye rather than a filter: every mark stays on the bar and keeps its
+ * order, so the reader can see what the cluster is a part of while reading what
+ * is inside it. Each pair of the magnified marks is opened to at least
+ * `ZOOM_MIN_PITCH_PX` — which is the width a label needs, and the reason four
+ * revisions on one fortnight can show four labels while zoomed and one pill
+ * while not.
+ *
+ * It wraps the axis rather than rebuilding it, so the cut glyphs, the anchors
+ * and `inCut` are the SAME answers as the unzoomed bar: zooming changes where a
+ * date is drawn, never which stretches the axis decided not to keep time in.
+ */
+function magnifyAxis(
+  base: CompressedAxis,
+  focus: { x: number; widthPx: number }[],
+  track: number,
+): CompressedAxis {
+  // Two marks on ONE day are one coordinate, here as everywhere else: an axis
+  // that pulled them apart would be inventing a date to put between them. They
+  // are still both in the pill's popover, which is where a reader finds out
+  // that two of the four revisions landed together.
+  const byX = new Map<number, number>();
+  for (const mark of focus) {
+    if (!Number.isFinite(mark.x)) continue;
+    byX.set(mark.x, Math.max(byX.get(mark.x) ?? 0, mark.widthPx));
+  }
+  const xs = [...byX.keys()].sort((a, b) => a - b);
+  if (track <= 0 || xs.length < 2) return base;
+
+  const from = Math.max(0, xs[0]);
+  const to = Math.min(track, xs[xs.length - 1]);
+  const span = to - from;
+  const wants: number[] = [];
+  for (let i = 0; i + 1 < xs.length; i++) {
+    // Enough for both labels, never less than the floor, and never less than
+    // the room the pair already had: a zoom only ever opens.
+    const labels = (byX.get(xs[i]) ?? 0) / 2 + (byX.get(xs[i + 1]) ?? 0) / 2 + ZOOM_LABEL_PAD_PX;
+    wants.push(Math.max(ZOOM_MIN_PITCH_PX, labels, xs[i + 1] - xs[i]));
+  }
+  const wanted = wants.reduce((sum, width) => sum + width, 0);
+  const width = Math.min(Math.max(wanted, span), track * ZOOM_MAX_SHARE);
+  // Already roomy enough to read: magnifying it would move every other mark for
+  // no gain, which is the thing that makes a fisheye feel like a glitch.
+  if (width <= span + 0.5) return base;
+
+  const leftOld = from;
+  const rightOld = track - to;
+  const outside = leftOld + rightOld;
+  const rest = Math.max(0, track - width);
+  const leftNew = outside > 0 ? (rest * leftOld) / outside : 0;
+  const fromNew = leftNew;
+  const toNew = leftNew + width;
+  const inner = wants.map((want) => (wanted > 0 ? (want * width) / wanted : 0));
+
+  const map = (x: number): number => {
+    if (x <= from) return leftOld > 0 ? (x * leftNew) / leftOld : fromNew;
+    if (x >= to) return rightOld > 0 ? toNew + ((x - to) * (track - toNew)) / rightOld : toNew;
+    let at = fromNew;
+    for (let i = 0; i + 1 < xs.length; i++) {
+      if (x > xs[i + 1]) { at += inner[i]; continue; }
+      const sub = xs[i + 1] - xs[i];
+      return at + (sub > 0 ? ((x - xs[i]) / sub) * inner[i] : 0);
+    }
+    return toNew;
+  };
+  const unmap = (x: number): number => {
+    if (x <= fromNew) return leftNew > 0 ? (x * leftOld) / leftNew : from;
+    if (x >= toNew) return track - toNew > 0 ? to + ((x - toNew) * rightOld) / (track - toNew) : to;
+    let at = fromNew;
+    for (let i = 0; i + 1 < xs.length; i++) {
+      if (x > at + inner[i]) { at += inner[i]; continue; }
+      return xs[i] + (inner[i] > 0 ? ((x - at) / inner[i]) * (xs[i + 1] - xs[i]) : 0);
+    }
+    return to;
+  };
+
+  return {
+    anchorsMs: base.anchorsMs,
+    xs: base.xs.map(map),
+    gaps: base.gaps.map((gap) => ({
+      ...gap,
+      fromPx: map(gap.fromPx),
+      toPx: map(gap.toPx),
+      px: map(gap.toPx) - map(gap.fromPx),
+    })),
+    xByMs: (ms) => map(base.xByMs(ms)),
+    msByPx: (px) => base.msByPx(unmap(px)),
+    inCut: base.inCut,
+  };
+}
+
+/** The thumb's allowed values, ascending — or null where it is continuous. */
+function sortedStops(stops: number[] | undefined): number[] | null {
+  if (!stops || stops.length === 0) return null;
+  const clean = stops.filter((ms) => Number.isFinite(ms)).sort((a, b) => a - b);
+  return clean.length > 0 ? clean : null;
 }
 
 // ─── Parts ───────────────────────────────────────────────────────────────────
@@ -589,7 +776,7 @@ function VerticalTrack({ marks, pending, currentKey, todayMs, reveal, ariaLabel,
         {marks.map((mark, index) => {
           const dressing = nodeDressing(mark.kind, mark.role);
           const reached = currentIndex >= 0 && index < currentIndex;
-          const glyph = KIND_STYLES[mark.kind].glyph;
+          const { glyph } = mark;
           return (
             <li key={mark.key} className={reveal ? 'rosh-tl-fade' : undefined}
               style={reveal ? stagger(index, step) : undefined}
@@ -599,7 +786,7 @@ function VerticalTrack({ marks, pending, currentKey, todayMs, reveal, ariaLabel,
               <button {...nodeProps(mark)}
                 className={`${dressing.className}${reveal ? ' rosh-tl-pop' : ''}`}
                 style={{ ...dressing.style, ...(reveal ? stagger(index, step) : {}) }}>
-                {glyph && <Glyph name={glyph} />}
+                {glyph && <TimelineGlyph name={glyph} />}
                 {mark.role === 'current' && (
                   <span aria-hidden="true" className={`rosh-tl-pulse bg-blue-500${reveal ? ' is-on' : ''}`} />
                 )}
@@ -624,19 +811,22 @@ function VerticalTrack({ marks, pending, currentKey, todayMs, reveal, ariaLabel,
 }
 
 /** The rail, its fill, and the notches where the axis stops keeping time. */
-function TrackRail({ axis, geo, fillTo, reveal, trackPx }: {
+function TrackRail({ axis, geo, fillTo, reveal, trackPx, tweened = false }: {
   axis: CompressedAxis;
   geo: TrackGeometry;
   fillTo: number | null;
   reveal: boolean;
   trackPx: number;
+  /** True where a thumb drives the fill, which is the only case in which its
+   *  width should ease: a resize moving it is a relayout, not a move. */
+  tweened?: boolean;
 }) {
   return (
     <div aria-hidden="true">
       <div className="rosh-tl-rail bg-gray-200" style={{ top: `${geo.rail}px`, height: `${RAIL_PX}px` }} />
       {fillTo !== null && (
         <div data-timeline-part="fill"
-          className={`rosh-tl-fill bg-blue-500${reveal ? ' rosh-tl-draw' : ''}`}
+          className={`rosh-tl-fill bg-blue-500${tweened ? ' is-tweened' : ''}${reveal ? ' rosh-tl-draw' : ''}`}
           style={{
             top: `${geo.rail}px`,
             height: `${RAIL_PX}px`,
@@ -705,7 +895,15 @@ function PhaseBracket({ phase, geo, xOf }: {
   );
 }
 
-/** The one label a scrubber draws: the hovered mark, else the active one. */
+/**
+ * The one label a scrubber draws: the hovered mark, else the active one.
+ *
+ * When the mark has an `onOpen` the NAME is a real button — the document behind
+ * the dot is the thing a reader wants next, and a dot that only selects leaves
+ * them hunting for a row in a table to click. It is the one part of the label
+ * that is not `aria-hidden`: the rest restates the dot's own accessible name,
+ * but a control has to be reachable.
+ */
 function ActiveLabel({ marks, trackPx, geo, activeKey, hoveredKey, currentKey }: {
   marks: Mark[];
   trackPx: number;
@@ -716,8 +914,9 @@ function ActiveLabel({ marks, trackPx, geo, activeKey, hoveredKey, currentKey }:
 }) {
   const mark = marks.find((m) => m.key === hoveredKey) ?? marks.find((m) => m.key === activeKey) ?? null;
   if (!mark) return null;
+  const { onOpen } = mark;
   return (
-    <div aria-hidden="true" data-timeline-part="label"
+    <div data-timeline-part="label"
       className={`rosh-tl-label${mark.key === hoveredKey ? ' is-hot' : ''}${mark.key === currentKey ? ' is-current' : ''}`}
       style={{
         left: `${clampLabelLeft(mark.x, mark.widthPx, trackPx)}px`,
@@ -725,8 +924,15 @@ function ActiveLabel({ marks, trackPx, geo, activeKey, hoveredKey, currentKey }:
         width: `${mark.widthPx}px`,
         height: `${geo.laneH}px`,
       }}>
-      <span className="rosh-tl-name">{mark.label}</span>
-      <span className="rosh-tl-date">{mark.dateText}</span>
+      {onOpen ? (
+        <button type="button" className="rosh-tl-name rosh-tl-open" data-timeline-part="open"
+          aria-label={`Open ${mark.label}`} onClick={onOpen}>
+          {mark.label}
+        </button>
+      ) : (
+        <span className="rosh-tl-name" aria-hidden="true">{mark.label}</span>
+      )}
+      <span className="rosh-tl-date" aria-hidden="true">{mark.dateText}</span>
     </div>
   );
 }
@@ -753,10 +959,10 @@ interface LaneBox {
  * dot's accessible name, because nothing here may be hover-only.
  */
 function LaneLabels({
-  marks, trackPx, geo, startMs, endMs, currentKey, hoveredKey, reveal, step,
-  popId, aimBubble, openCluster, setOpenCluster, previewCluster, setPreviewCluster,
+  groups, trackPx, geo, startMs, endMs, currentKey, hoveredKey, reveal, step, zoomedKey,
+  popId, aimBubble, openCluster, setOpenCluster, previewCluster, setPreviewCluster, setZoomKey,
 }: {
-  marks: Mark[];
+  groups: ClusterGroup<Mark>[];
   trackPx: number;
   geo: TrackGeometry;
   startMs: number;
@@ -765,30 +971,55 @@ function LaneLabels({
   hoveredKey: string | null;
   reveal: boolean;
   step: number;
+  /** The cluster whose stretch is currently magnified, if any: its members show
+   *  their own labels, because that is what the magnification was for. */
+  zoomedKey: string | null;
   popId: string;
   aimBubble: (el: HTMLDivElement | null, x: number) => void;
   openCluster: string | null;
   setOpenCluster: (key: string | null) => void;
   previewCluster: string | null;
   setPreviewCluster: (key: string | null) => void;
+  setZoomKey: (key: string | null) => void;
 }) {
-  const boxes: LaneBox[] = clusterMarks(marks).map((group, index) => {
+  const boxes: LaneBox[] = [];
+  groups.forEach((group, index) => {
     if (group.type === 'cluster') {
+      const key = `cluster-${group.members[0].key}`;
       const text = clusterLabel(group.members);
-      return {
-        key: `cluster-${group.members[0].key}`,
+      boxes.push({
+        key,
         group,
         text,
-        x: group.members.reduce((sum, m) => sum + m.x, 0) / group.members.length,
+        // The PILL does not move when the axis opens under it: it is the control
+        // the pointer is resting on, and a control that slides away from the
+        // pointer that opened it closes itself.
+        x: group.members.reduce((sum, m) => sum + m.baseX, 0) / group.members.length,
         index,
         lane: -1,
         left: 0,
         // A pill is a chip, not a two-line label: its text, its kind dot and the
         // padding around them.
         widthPx: Math.ceil(monoWidth(text)) + 28,
-      };
+      });
+      // Magnified: the members are far enough apart to say who they are.
+      if (key === zoomedKey) {
+        for (const member of group.members) {
+          boxes.push({
+            key: member.key,
+            group: { type: 'item', mark: member },
+            text: member.label,
+            x: member.x,
+            index,
+            lane: -1,
+            left: 0,
+            widthPx: member.widthPx,
+          });
+        }
+      }
+      return;
     }
-    return {
+    boxes.push({
       key: group.mark.key,
       group,
       text: group.mark.label,
@@ -797,8 +1028,9 @@ function LaneLabels({
       lane: -1,
       left: 0,
       widthPx: group.mark.widthPx,
-    };
-  }).sort((a, b) => a.x - b.x);
+    });
+  });
+  boxes.sort((a, b) => a.x - b.x);
 
   const lanes = packLabelLanes(
     boxes.map((box) => ({
@@ -806,10 +1038,12 @@ function LaneLabels({
       ms: box.group.type === 'cluster' ? box.group.members[0].ms : box.group.mark.ms,
       xPx: box.x,
       widthPx: box.widthPx,
-      // A pill already stands for several marks and survives collapsing better
-      // than a lone milestone does: it keeps its members' dots and their span
-      // line either way, where a collapsed label leaves nothing but a dot.
-      priority: box.group.type === 'cluster' ? 1 : 0,
+      // A pill claims its lane FIRST, which puts it in the row above the rail
+      // the way the prototype draws it: it speaks for several marks, so the
+      // labels that have to give way around it are single ones — and a single
+      // label that finds no lane still reveals on hover, where a pill pushed
+      // into the lower lane leaves the row above it empty.
+      priority: box.group.type === 'cluster' ? -1 : 0,
     })),
     trackPx, startMs, Math.max(endMs - startMs, DAY_MS),
     { laneCount: TRACK_LABEL_LANE_COUNT },
@@ -822,7 +1056,7 @@ function LaneLabels({
 
   const openBox = boxes.find((box) => box.key === (openCluster ?? previewCluster));
   const laneTop = (lane: number) => (lane === 0 ? geo.laneA : geo.laneB);
-  const leaderTop = (lane: number) => (lane === 0 ? geo.rail - 4 : geo.rail + RAIL_PX + 1);
+  const leaderTop = (lane: number) => (lane === 0 ? geo.rail - 4 : geo.rail + RAIL_PX + 3);
 
   return (
     <>
@@ -832,6 +1066,10 @@ function LaneLabels({
         if (box.group.type === 'cluster') {
           const pinned = openCluster === box.key;
           const xs = box.group.members.map((m) => m.x);
+          const close = () => {
+            setPreviewCluster(null);
+            if (!pinned) setZoomKey(null);
+          };
           return (
             <div key={box.key}>
               <button type="button" data-timeline-part="cluster"
@@ -843,11 +1081,14 @@ function LaneLabels({
                   color: KIND_STYLES[box.group.kind as TimelineTrackKind]?.token,
                   ...(reveal ? { animationDelay: `${delay}ms` } : {}),
                 }}
-                onMouseEnter={() => setPreviewCluster(box.key)}
-                onMouseLeave={() => setPreviewCluster(null)}
-                onFocus={() => setPreviewCluster(box.key)}
-                onBlur={() => setPreviewCluster(null)}
-                onClick={() => setOpenCluster(pinned ? null : box.key)}>
+                onMouseEnter={() => { setPreviewCluster(box.key); setZoomKey(box.key); }}
+                onMouseLeave={close}
+                onFocus={() => { setPreviewCluster(box.key); setZoomKey(box.key); }}
+                onBlur={close}
+                onClick={() => {
+                  setOpenCluster(pinned ? null : box.key);
+                  setZoomKey(pinned ? null : box.key);
+                }}>
                 <i aria-hidden="true" />
                 {box.text}
               </button>
@@ -926,13 +1167,21 @@ function LaneLabels({
 /**
  * The scrubber: an 18 px disc, the date chip above it, and a hit strip.
  *
- * Drag moves it directly. A click on the strip EASES over 200 ms instead, so the
- * eye can follow a jump it did not drag — and steps straight there under reduced
- * motion. A drag that begins on the strip cancels the easing on its first move,
- * which is what keeps "press and sweep" working the way it always has.
+ * With `stops` the thumb is magnetic: a drag follows the pointer but the disc
+ * is drawn on the nearest stop the whole way across, and the caller is told
+ * about a stop change the moment it happens rather than on release. The travel
+ * between stops is a 120 ms CSS transition, not a rAF tween, so a drag across
+ * six reports reads as six settlings instead of a slide — and reduced motion
+ * takes the transition away in the stylesheet, where the rest of the card's
+ * motion rule already lives.
  */
-function ThumbLayer({ thumb, axis, geo, startMs, endMs, trackPx, layerRef }: {
+function ThumbLayer({ thumb, value, snap, axis, geo, startMs, endMs, trackPx, layerRef }: {
   thumb: TimelineTrackThumb;
+  /** `thumb.valueMs`, clamped and snapped — what is actually drawn. */
+  value: number;
+  /** Clamp + snap any time onto an allowed value. */
+  snap: (ms: number) => number;
+  /** The allowed stops, ascending, or null for a continuous slider. */
   axis: CompressedAxis;
   geo: TrackGeometry;
   startMs: number;
@@ -941,33 +1190,22 @@ function ThumbLayer({ thumb, axis, geo, startMs, endMs, trackPx, layerRef }: {
   layerRef: RefObject<HTMLDivElement>;
 }) {
   const draggingRef = useRef(false);
-  const rafRef = useRef<number | null>(null);
-  const value = Math.min(Math.max(thumb.valueMs, startMs), endMs);
   const x = axis.xByMs(value);
   const chipWidth = 88;
-
-  const stopEasing = useCallback(() => {
-    if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
-    rafRef.current = null;
-  }, []);
-  useEffect(() => stopEasing, [stopEasing]);
+  const stops = sortedStops(thumb.stops);
+  const index = stops ? stops.indexOf(value) : -1;
 
   const msFromEvent = (clientX: number): number => {
     const box = layerRef.current?.getBoundingClientRect();
     if (!box) return value;
     return axis.msByPx(clientX - box.left);
   };
-
-  const easeTo = (to: number) => {
-    const from = value;
-    if (prefersReducedMotion()) { thumb.onChange(to); return; }
-    const started = performance.now();
-    const tick = (frame: number) => {
-      const k = Math.min(1, (frame - started) / 200);
-      thumb.onChange(from + (to - from) * (1 - (1 - k) ** 3));
-      rafRef.current = k < 1 ? requestAnimationFrame(tick) : null;
-    };
-    rafRef.current = requestAnimationFrame(tick);
+  /** Only tell the caller about a move that changes the value: a drag fires
+   *  dozens of pointermoves between two stops, and each one is a re-render of
+   *  the table the scrubber feeds. */
+  const moveTo = (ms: number) => {
+    const next = snap(ms);
+    if (next !== value) thumb.onChange(next);
   };
 
   const beginDrag = (event: React.PointerEvent) => {
@@ -979,19 +1217,43 @@ function ThumbLayer({ thumb, axis, geo, startMs, endMs, trackPx, layerRef }: {
     if (!draggingRef.current) return;
     draggingRef.current = false;
     (event.currentTarget as Element).releasePointerCapture?.(event.pointerId);
+    // The value is already on a stop — every move snapped — so the release has
+    // nothing left to settle.
     thumb.onDragEnd?.();
   };
   const drag = (event: React.PointerEvent) => {
     if (!draggingRef.current) return;
-    stopEasing();
-    thumb.onChange(msFromEvent(event.clientX));
+    moveTo(msFromEvent(event.clientX));
   };
+
+  /** Where a key takes the thumb: the neighbouring STOP where there are stops,
+   *  a day (or a week with Shift) where there are not. */
+  const keyTarget = (event: React.KeyboardEvent): number | null => {
+    const { key } = event;
+    if (stops && stops.length > 0) {
+      const at = index < 0 ? 0 : index;
+      if (key === 'ArrowRight' || key === 'ArrowUp') return stops[Math.min(at + 1, stops.length - 1)];
+      if (key === 'ArrowLeft' || key === 'ArrowDown') return stops[Math.max(at - 1, 0)];
+      if (key === 'Home') return stops[0];
+      if (key === 'End') return stops[stops.length - 1];
+      return null;
+    }
+    const step = (event.shiftKey ? 7 : 1) * DAY_MS;
+    if (key === 'ArrowRight' || key === 'ArrowUp') return value + step;
+    if (key === 'ArrowLeft' || key === 'ArrowDown') return value - step;
+    if (key === 'Home') return startMs;
+    if (key === 'End') return endMs;
+    return null;
+  };
+
+  const valueText = thumb.valueText ? thumb.valueText(value) : fmtSliderDate(value);
+  const days = Math.max(1, Math.round((endMs - startMs) / DAY_MS));
 
   return (
     <>
       <div className="rosh-tl-hit" aria-hidden="true" data-timeline-part="hit"
         style={{ top: `${geo.rail - 9}px`, height: `${RAIL_PX + 18}px` }}
-        onPointerDown={(event) => { stopEasing(); beginDrag(event); easeTo(msFromEvent(event.clientX)); }}
+        onPointerDown={(event) => { beginDrag(event); moveTo(msFromEvent(event.clientX)); }}
         onPointerMove={drag}
         onPointerUp={endDrag}
         onPointerCancel={endDrag} />
@@ -1000,27 +1262,23 @@ function ThumbLayer({ thumb, axis, geo, startMs, endMs, trackPx, layerRef }: {
         {thumb.chip ? thumb.chip(value) : fmtSliderDate(value)}
       </div>
       <div role="slider" tabIndex={0} className="rosh-tl-thumb text-blue-600" data-timeline-part="thumb"
-        aria-label="Scrub the timeline"
+        aria-label={thumb.ariaLabel ?? 'Scrub the timeline'}
         aria-valuemin={0}
-        aria-valuemax={Math.max(1, Math.round((endMs - startMs) / DAY_MS))}
-        aria-valuenow={Math.round((value - startMs) / DAY_MS)}
-        aria-valuetext={fmtSliderDate(value)}
+        aria-valuemax={stops && stops.length > 0 ? stops.length - 1 : days}
+        aria-valuenow={stops && stops.length > 0
+          ? Math.max(0, index)
+          : Math.round((value - startMs) / DAY_MS)}
+        aria-valuetext={valueText}
         style={{ left: `${x}px`, top: `${geo.rail + RAIL_PX / 2}px` }}
-        onPointerDown={(event) => { stopEasing(); beginDrag(event); }}
+        onPointerDown={beginDrag}
         onPointerMove={drag}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
         onKeyDown={(event) => {
-          const days = event.shiftKey ? 7 : 1;
-          const next = event.key === 'ArrowRight' ? value + days * DAY_MS
-            : event.key === 'ArrowLeft' ? value - days * DAY_MS
-              : event.key === 'Home' ? startMs
-                : event.key === 'End' ? endMs
-                  : null;
+          const next = keyTarget(event);
           if (next === null) return;
           event.preventDefault();
-          stopEasing();
-          thumb.onChange(Math.min(Math.max(next, startMs), endMs));
+          moveTo(next);
         }} />
     </>
   );
@@ -1046,11 +1304,12 @@ function stageHeight(geo: TrackGeometry, usesFarLane: boolean, hasPhases: boolea
  *
  * What it owns: the axis (linear or compressed), the rail and its fill, the date
  * ruler, the dots and their glyphs, label placement (two packed lanes with `×N`
- * clustering, or one active label), the optional scrubber thumb, the edge
- * captions, the pending list, the motion, and the keyboard and screen-reader
- * contract. What it does not own: the card around it, the title row, the legend,
- * or any domain summary — those belong to the consumer, which knows what the bar
- * is about.
+ * clustering, or one active label), the local magnification of a dense stretch,
+ * the optional scrubber thumb and its stops, the hover previews, the pending
+ * list, the motion, and the keyboard and screen-reader contract. What it does
+ * not own: the card around it, its heading, its legend, or any domain summary —
+ * those belong to the consumer, which knows what the bar is about. `TimelineCard`
+ * is where both of the kit's own timelines put theirs.
  *
  * Accessibility: the marks are an `<ol>` in axis order with exactly one
  * `aria-current="step"`; the rail, fill, ruler, today tick, break glyphs, leader
@@ -1063,7 +1322,7 @@ function stageHeight(geo: TrackGeometry, usesFarLane: boolean, hasPhases: boolea
 export default function TimelineTrack({
   startMs, endMs, axis: axisMode = 'linear', items, markers = [], pending = [],
   fillToMs, todayMs, labels = 'lanes', activeKey = null, onActivate, thumb,
-  edgeCaptions, phases = [], currentKey, motion = true, ariaLabel,
+  edgeCaptions, phases = [], currentKey, zoomRange = null, motion = true, ariaLabel,
 }: TimelineTrackProps) {
   // Captured once at mount so render stays idempotent — day-resolution marks do
   // not care that "today" does not tick while the view is open.
@@ -1080,6 +1339,7 @@ export default function TimelineTrack({
   const [bubbleKey, setBubbleKey] = useState<string | null>(null);
   const [openCluster, setOpenCluster] = useState<string | null>(null);
   const [previewCluster, setPreviewCluster] = useState<string | null>(null);
+  const [zoomKey, setZoomKey] = useState<string | null>(null);
   const [focusKey, setFocusKey] = useState<string | null>(null);
   const tipId = useId();
   const popId = useId();
@@ -1107,27 +1367,32 @@ export default function TimelineTrack({
   const axis = compressTimeAxis(
     [startMs, ...dated.filter((m) => m.ms > startMs && m.ms < endMs).map((m) => m.ms), endMs],
     trackPx,
-    axisMode === 'compressed' ? {} : { maxGapPx: Infinity, minGapPx: 0 },
+    axisMode === 'compressed' ? {} : { maxTimeShare: Infinity, minGapPx: 0 },
   );
   const xOf = axis.xByMs;
 
   const resolvedCurrent = currentKey ?? (dated.length > 0 ? dated[dated.length - 1].key : null);
 
-  const itemMarks: Mark[] = dated.map((item) => {
+  const itemMarks: Mark[] = dated.map((item, index) => {
     const dateText = item.date ?? fmtSliderDate(item.ms);
     const ordinary = (item.priority ?? 0) > 0 || item.kind === 'report';
+    const kind = resolveKind(item);
     return {
       key: item.key,
       ms: item.ms,
       x: xOf(item.ms),
-      kind: item.kind ?? 'default',
+      baseX: xOf(item.ms),
+      kind,
       label: item.label,
       dateText,
       detail: item.detail,
+      preview: item.preview,
+      glyph: resolveGlyph(item, kind, index === 0 && kind === 'default'),
       role: item.key === resolvedCurrent ? 'current' : ordinary ? 'dot' : 'key',
       widthPx: measured[item.key] || estimateLabelWidth(item.label, dateText),
       collapsible: ordinary,
       onClick: item.onClick,
+      onOpen: item.onOpen,
       isItem: true,
     };
   });
@@ -1141,20 +1406,63 @@ export default function TimelineTrack({
         key,
         ms,
         x: xOf(ms),
+        baseX: xOf(ms),
         kind: marker.kind,
         label: marker.label,
         dateText,
         detail: marker.detail,
+        preview: marker.preview,
+        glyph: KIND_STYLES[marker.kind].glyph,
         role: 'key' as NodeRole,
         widthPx: measured[key] || estimateLabelWidth(marker.label, dateText),
         // A marker is context, not part of the programme: it never folds into
         // someone else's `×N`.
         collapsible: false,
         onClick: marker.onClick ? () => marker.onClick?.(marker) : undefined,
+        onOpen: marker.onOpen ? () => marker.onOpen?.(marker) : undefined,
         isItem: false,
       };
     });
   const marks = [...itemMarks, ...markerMarks].sort((a, b) => a.x - b.x || a.ms - b.ms);
+
+  // Clustering is decided on the UNZOOMED axis, before any magnification, and
+  // the answer is handed to the labels. Deciding it after the zoom would let a
+  // cluster dissolve because it had been opened — and the pill the pointer is
+  // resting on would be the first thing to go.
+  const groups: ClusterGroup<Mark>[] = labels === 'lanes' ? clusterMarks(marks) : [];
+  const groupKey = (group: ClusterGroup<Mark>) =>
+    (group.type === 'cluster' ? `cluster-${group.members[0].key}` : group.mark.key);
+
+  // What is magnified: the pill under the pointer or pinned open, else whatever
+  // the caller asked for.
+  const zoomedGroup = groups.find((group) => group.type === 'cluster'
+    && groupKey(group) === (openCluster ?? previewCluster ?? zoomKey));
+  const focusOf = (mark: Mark) => ({ x: mark.baseX, widthPx: mark.widthPx });
+  const zoomFocus = zoomedGroup && zoomedGroup.type === 'cluster'
+    ? zoomedGroup.members.map(focusOf)
+    : zoomRange
+      ? marks.filter((mark) => mark.ms >= zoomRange[0] && mark.ms <= zoomRange[1]).map(focusOf)
+      : [];
+  const view = zoomFocus.length > 1 ? magnifyAxis(axis, zoomFocus, trackPx) : axis;
+  const zoomed = view !== axis;
+  if (zoomed) {
+    // The marks are rebuilt on every render, so moving them is local: the
+    // alternative is a second pass that builds every mark twice to change one
+    // number on each of them.
+    for (const mark of marks) mark.x = view.xByMs(mark.ms);
+  }
+  const zoomedKey = zoomed && zoomedGroup ? groupKey(zoomedGroup) : null;
+
+  // A zoom opens and closes over 240ms, and the transition that carries it is
+  // only armed around the change — a positional transition left on permanently
+  // would ease every dot sideways while a window edge is being dragged.
+  const [zoomTweening, setZoomTweening] = useState(false);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- arming a transition for the length of one zoom change is a DOM concern with no render-time expression; deriving it would make it permanent
+    setZoomTweening(true);
+    const timer = setTimeout(() => setZoomTweening(false), ZOOM_TWEEN_MS);
+    return () => clearTimeout(timer);
+  }, [zoomedKey]);
 
   // Re-measure when the set of labels or their text changes. Joined into a
   // string because the mark ARRAY is rebuilt on every render.
@@ -1187,8 +1495,25 @@ export default function TimelineTrack({
   }, [revealing, revealSignature]);
 
   const step = Math.min(28, 340 / Math.max(1, marks.length - 1));
+
+  // The thumb's value, clamped to the window and snapped to an allowed stop.
+  // Resolved HERE rather than inside the thumb because the fill follows it: a
+  // fill drawn from the raw value and a disc drawn from the snapped one would
+  // disagree by however far the pointer had wandered.
+  const thumbStops = sortedStops(thumb?.stops);
+  const snapThumb = (ms: number): number => {
+    const inRange = Math.min(Math.max(ms, startMs), endMs);
+    if (!thumbStops) return inRange;
+    let best = thumbStops[0];
+    for (const stop of thumbStops) {
+      if (Math.abs(stop - inRange) < Math.abs(best - inRange)) best = stop;
+    }
+    return best;
+  };
+  const thumbAt = thumb ? snapThumb(thumb.valueMs) : null;
+
   const fillTo = thumb
-    ? thumb.valueMs
+    ? thumbAt
     : fillToMs !== undefined
       ? fillToMs
       : itemMarks.length > 0 ? Math.min(itemMarks[itemMarks.length - 1].ms, now) : null;
@@ -1199,6 +1524,7 @@ export default function TimelineTrack({
     setBubbleKey(null);
     setOpenCluster(null);
     setPreviewCluster(null);
+    setZoomKey(null);
   }, []);
   useEffect(() => () => clearTimeout(graceRef.current), []);
 
@@ -1207,7 +1533,8 @@ export default function TimelineTrack({
   // listener of our own — a bubble opened by HOVER holds no focus, so a keydown
   // never reaches the trigger, and `Modal` claims Escape on `window` in the
   // capture phase, which beats a plain document listener.
-  const overlayOpen = bubbleKey !== null || openCluster !== null || previewCluster !== null;
+  const overlayOpen = bubbleKey !== null || openCluster !== null || previewCluster !== null
+    || zoomKey !== null;
   useEffect(() => {
     if (!overlayOpen) return;
     return registerModalEscapeInterceptor((event) => {
@@ -1237,11 +1564,11 @@ export default function TimelineTrack({
   // bar getting longer. Written to the DOM rather than held in state — a drag
   // moves the thumb every frame, and a re-render per frame to add a class that
   // removes itself is a lot of React for a flash.
-  const thumbValue = thumb?.valueMs;
+  const thumbValue = thumbAt ?? undefined;
   const lastThumbX = useRef<number | null>(null);
   useEffect(() => {
     if (thumbValue === undefined) return;
-    const x = axis.xByMs(thumbValue);
+    const x = view.xByMs(thumbValue);
     const previous = lastThumbX.current;
     lastThumbX.current = x;
     if (previous === null || x <= previous) return;
@@ -1336,22 +1663,33 @@ export default function TimelineTrack({
       <div className="flex items-stretch gap-3">
         {edgeCaptions?.start && <div className="rosh-tl-edge text-right">{edgeCaptions.start}</div>}
         <div className="rosh-tl-stage" style={{ height: `${stageHeight(geo, usesFarLane, phases.length > 0)}px` }}>
-          <div ref={layerRef} className="rosh-tl-layer">
+          <div ref={layerRef} className={`rosh-tl-layer${zoomTweening ? ' is-zooming' : ''}`}>
             <MeasuringRow marks={marks} innerRef={measureRef} />
-            <TrackRail axis={axis} geo={geo} fillTo={fillTo} reveal={reveal} trackPx={trackPx} />
-            <Ruler startMs={startMs} endMs={endMs} axis={axis} geo={geo} reveal={reveal} />
+            <TrackRail axis={view} geo={geo} fillTo={fillTo} reveal={reveal} trackPx={trackPx}
+              tweened={!!thumb} />
+            <Ruler startMs={startMs} endMs={endMs} axis={view} geo={geo} reveal={reveal} />
             {/* Today is drawn even where the axis was cut, unlike a ruler tick:
                 a tick inside a cut labels a coordinate with no date, but "you
                 are here" is the one landmark a reader needs most in exactly the
-                stretch that got compressed. */}
-            {now > startMs && now < endMs && (
-              <TodayMark x={xOf(now)} geo={geo} trackPx={trackPx} label={fmtSliderDate(now)} reveal={reveal} />
+                stretch that got compressed.
+
+                It is also drawn when today IS the right edge, which is the
+                commonest case of all: a portal with no production-ready date
+                passes today as the end of the window, and a strict `now < endMs`
+                dropped the tag from every card that had not finished yet. Past
+                the edge by more than a day it goes away again — a bar that
+                ended in July does not have a "today" on it. */}
+            {now > startMs && now <= endMs + DAY_MS && (
+              <TodayMark x={view.xByMs(Math.min(now, endMs))} geo={geo} trackPx={trackPx}
+                label={fmtSliderDate(now)} reveal={reveal} />
             )}
-            {phases.map((phase) => <PhaseBracket key={phase.key} phase={phase} geo={geo} xOf={xOf} />)}
+            {phases.map((phase) => (
+              <PhaseBracket key={phase.key} phase={phase} geo={geo} xOf={view.xByMs} />
+            ))}
             <ol className="rosh-tl-nodes" aria-label={ariaLabel} onKeyDown={onListKeyDown}>
               {marks.map((mark, index) => {
                 const dressing = nodeDressing(mark.kind, mark.role);
-                const glyph = KIND_STYLES[mark.kind].glyph;
+                const { glyph } = mark;
                 return (
                   <li key={mark.key} {...(mark.key === resolvedCurrent ? { 'aria-current': 'step' as const } : {})}>
                     <button {...nodeProps(mark)}
@@ -1362,7 +1700,7 @@ export default function TimelineTrack({
                         top: `${geo.rail + RAIL_PX / 2}px`,
                         ...(reveal ? stagger(index, step) : {}),
                       }}>
-                      {glyph && <Glyph name={glyph} />}
+                      {glyph && <TimelineGlyph name={glyph} />}
                       {mark.role === 'current' && (
                         <span aria-hidden="true" className={`rosh-tl-pulse bg-blue-500${reveal ? ' is-on' : ''}`} />
                       )}
@@ -1373,11 +1711,12 @@ export default function TimelineTrack({
             </ol>
             {labels === 'lanes' ? (
               <LaneLabels
-                marks={marks} trackPx={trackPx} geo={geo} startMs={startMs} endMs={endMs}
+                groups={groups} trackPx={trackPx} geo={geo} startMs={startMs} endMs={endMs}
                 currentKey={resolvedCurrent} hoveredKey={hoveredKey} reveal={reveal} step={step}
-                popId={popId} aimBubble={aimBubble}
+                zoomedKey={zoomedKey} popId={popId} aimBubble={aimBubble}
                 openCluster={openCluster} setOpenCluster={setOpenCluster}
                 previewCluster={previewCluster} setPreviewCluster={setPreviewCluster}
+                setZoomKey={setZoomKey}
               />
             ) : (
               <ActiveLabel
@@ -1385,20 +1724,40 @@ export default function TimelineTrack({
                 activeKey={activeKey} hoveredKey={hoveredKey} currentKey={resolvedCurrent}
               />
             )}
+            {/* One bubble, two depths. Without a `preview` it is the label, the
+                date and whatever `detail` said — enough to know which dot this
+                is. With one it is the document in miniature, supplied by the
+                consumer because only the consumer knows what a DFM log or a
+                goods issue is worth showing, and it ends in an Open that goes
+                to the real thing. It is hoverable, focusable and dismissed by
+                Escape either way (WCAG 1.4.13): moving the pointer off the dot
+                and into the card must not take it away. */}
             {bubbleMark && (
-              <div ref={tipRef} id={tipId} role="tooltip" className="rosh-tl-bubble"
+              <div ref={tipRef} id={tipId} role="tooltip"
+                className={`rosh-tl-bubble${bubbleMark.preview ? ' is-preview' : ''}`}
                 data-timeline-part="tooltip"
                 style={{ top: `${geo.rail + RAIL_PX + 6}px` }}
                 onMouseEnter={() => showBubble(bubbleMark.key)}
-                onMouseLeave={() => hideBubble(bubbleMark.key)}>
+                onMouseLeave={() => hideBubble(bubbleMark.key)}
+                onFocus={() => showBubble(bubbleMark.key)}
+                onBlur={() => hideBubble(bubbleMark.key)}>
                 <span className="rosh-tl-name">{bubbleMark.label}</span>
                 <span className="rosh-tl-date">{bubbleMark.dateText}</span>
-                {bubbleMark.detail && <span className="rosh-tl-detail">{bubbleMark.detail}</span>}
+                {bubbleMark.preview
+                  ? <div className="rosh-tl-preview" data-timeline-part="preview">{bubbleMark.preview}</div>
+                  : bubbleMark.detail && <span className="rosh-tl-detail">{bubbleMark.detail}</span>}
+                {(bubbleMark.onOpen ?? bubbleMark.onClick) && (
+                  <button type="button" className="rosh-tl-bubble-open text-blue-600"
+                    data-timeline-part="bubble-open"
+                    onClick={() => (bubbleMark.onOpen ?? bubbleMark.onClick)?.()}>
+                    Open
+                  </button>
+                )}
               </div>
             )}
-            {thumb && (
-              <ThumbLayer thumb={thumb} axis={axis} geo={geo} startMs={startMs} endMs={endMs}
-                trackPx={trackPx} layerRef={layerRef} />
+            {thumb && thumbAt !== null && (
+              <ThumbLayer thumb={thumb} value={thumbAt} snap={snapThumb} axis={view} geo={geo}
+                startMs={startMs} endMs={endMs} trackPx={trackPx} layerRef={layerRef} />
             )}
           </div>
         </div>

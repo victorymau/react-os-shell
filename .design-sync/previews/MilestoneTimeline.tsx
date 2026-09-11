@@ -23,7 +23,9 @@ export function OrderTimeline() {
   return (
     <div className="p-5">
       <MilestoneTimeline
-        title="Sales Order SO#27201"
+        title="Sales order SO#27201"
+        heading="Order progress"
+        subject="SO#27201"
         milestones={MILESTONES}
         summary="On track — delivery expected late June."
       />
