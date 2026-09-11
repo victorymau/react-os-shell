@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { DAY_MS, toDayMs, fmtSliderDate } from './timelineDates';
 import TimelineCard from './TimelineCard';
 import { TimelineGlyph, TimelineProgressIcon } from './timelineGlyphs';
@@ -71,6 +71,18 @@ export interface TimelineReport {
   items?: ProgressItem[];
   created_by_name?: string;
   notes?: string;
+  /**
+   * Rich content for this report's hover/focus popover — the stage row it
+   * filed, who filed it, the note attached to it. The card forwards it to the
+   * dot exactly as a milestone or a marker forwards its own, so a report is not
+   * the one mark on the rail that cannot show its document.
+   *
+   * Kit-only: nothing in the hook reads it, and the synthetic anchors it builds
+   * carry none. The popover has ALREADY drawn the report's `progress_number`
+   * and its date line above whatever this renders, so a preview that repeats
+   * them says them twice. It wins over `renderReportPreview` when both exist.
+   */
+  preview?: ReactNode;
 }
 
 export function calcReportOverall(report: Pick<TimelineReport, 'items'> | null | undefined): number {
@@ -449,11 +461,11 @@ export function useProductionTimeline(opts: UseProductionTimelineOpts): Producti
  *  as it did when this drew its own bar. */
 function TimelineScrubber({
   startMs, endMs, reports, markers, valueMs, activeId,
-  onChange, onPickReport, onOpenReport, onOpenMarker, onDragStart,
+  onChange, onPickReport, onOpenReport, onOpenMarker, onDragStart, renderReportPreview,
 }: {
   startMs: number;
   endMs: number;
-  reports: { id: string; date: string; progress_number: string }[];
+  reports: TimelineReport[];
   markers: TimelineMarker[];
   valueMs: number;
   activeId: string;
@@ -462,6 +474,7 @@ function TimelineScrubber({
   onOpenReport?: (id: string) => void;
   onOpenMarker?: (marker: TimelineMarker) => void;
   onDragStart?: () => void;
+  renderReportPreview?: (report: TimelineReport) => ReactNode;
 }) {
   const dated = reports
     .map(r => ({ report: r, ms: new Date(r.date).getTime() }))
@@ -472,6 +485,10 @@ function TimelineScrubber({
     ms,
     kind: 'report',
     label: report.progress_number,
+    // The report's own preview wins. `renderReportPreview` is the convenience
+    // for a caller whose reports come straight off an API and cannot each carry
+    // one, not an override of a preview somebody attached deliberately.
+    preview: report.preview ?? renderReportPreview?.(report),
     onOpen: onOpenReport ? () => onOpenReport(report.id) : undefined,
   }));
   const msById = new Map(dated.map(({ report, ms }) => [report.id, ms]));
@@ -543,6 +560,16 @@ export interface ProductionTimelineProps {
   onOpenReport?: (reportId: string) => void;
   /** The same for a marker: a goods issue, a QC report. */
   onOpenMarker?: (marker: TimelineMarker) => void;
+  /**
+   * Builds the popover preview for a report that carries none of its own — the
+   * convenience for a caller whose reports arrive straight off an API, where
+   * attaching a `TimelineReport.preview` to each of them means copying the list
+   * to add one field. A report's own `preview` wins where both are present.
+   *
+   * As with `preview`, the popover has already drawn the report's number and
+   * its date above whatever this returns; repeating either says it twice.
+   */
+  renderReportPreview?: (report: TimelineReport) => ReactNode;
   /** The card's heading, in sentence case. Defaults to "Production progress";
    *  the PO number is the card's subject, not part of its title. */
   heading?: string;
@@ -601,7 +628,8 @@ function useReportPlayback(stops: number[], goTo: (ms: number) => void) {
  *  customer portal's order window, which feeds it order-level snapshots the
  *  backend has already pro-rated to that customer. */
 export default function ProductionTimeline({
-  snapshot, onPickReport, onOpenReport, onOpenMarker, heading = 'Production progress',
+  snapshot, onPickReport, onOpenReport, onOpenMarker, renderReportPreview,
+  heading = 'Production progress',
 }: ProductionTimelineProps) {
   const {
     reports, markers, poNumber,
@@ -723,6 +751,7 @@ export default function ProductionTimeline({
           onPickReport={onPickReport}
           onOpenReport={onOpenReport}
           onOpenMarker={onOpenMarker}
+          renderReportPreview={renderReportPreview}
           onDragStart={play.stop}
         />
       </TimelineCard>

@@ -428,6 +428,63 @@ test('the dot still announces and titles itself whether or not its label is draw
   view.unmount();
 });
 
+test('a milestone opens its document from the popover, and onClick is only the fallback', () => {
+  // Two different acts: `onClick` selects the dot on the bar, `onOpen` opens
+  // the drawing behind it. `Milestone` declared only the first, so a portal
+  // that wanted the popover's Open button had to hand it the selection handler
+  // and let the two be one thing.
+  const opened: string[] = [];
+  const clicked: string[] = [];
+  const milestones: Milestone[] = [
+    { key: 'start', label: 'Kickoff', date: '2025-01-01' },
+    {
+      key: 'dfm',
+      label: 'DFM Confirmed',
+      date: '2025-03-04',
+      kind: 'dfm',
+      preview: <span data-testid="dfm-preview">v4 · signed 04/03 · tooling released</span>,
+      onClick: () => clicked.push('dfm'),
+      onOpen: () => opened.push('dfm'),
+    },
+  ];
+  const view = render(<MilestoneTimeline title="Mould Development" milestones={milestones} />);
+
+  act(() => { dot(view.container, 'DFM Confirmed').focus(); });
+  const tip = view.container.querySelector('[role="tooltip"]')!;
+  assert.ok(tip.querySelector('[data-timeline-part="preview"]'), "the consumer's preview, forwarded by the card");
+  // Printed by the popover itself, above whatever the preview says.
+  assert.match(tip.textContent ?? '', /DFM Confirmed/);
+  assert.match(tip.textContent ?? '', /04\/03\/2025/);
+
+  const open = tip.querySelector<HTMLElement>('[data-timeline-part="bubble-open"]')!;
+  act(() => { open.click(); });
+  assert.deepEqual(opened, ['dfm']);
+  assert.deepEqual(clicked, [], 'Open opens the document; it does not re-select the dot');
+
+  pressKey('Escape');
+  view.unmount();
+});
+
+test('a milestone with only onClick still gets an Open button, wired to it', () => {
+  // The fallback is what keeps every card written before `onOpen` existed
+  // working: without it, adding the prop would have silently taken the Open
+  // footer away from all of them.
+  const clicked: string[] = [];
+  const milestones: Milestone[] = [
+    { key: 'start', label: 'Kickoff', date: '2025-01-01' },
+    { key: 'ship', label: 'Sample Shipped', date: '2025-03-04', kind: 'shipment', onClick: () => clicked.push('ship') },
+  ];
+  const view = render(<MilestoneTimeline title="Mould Development" milestones={milestones} />);
+
+  act(() => { dot(view.container, 'Sample Shipped').focus(); });
+  const open = view.container.querySelector<HTMLElement>('[data-timeline-part="bubble-open"]')!;
+  act(() => { open.click(); });
+  assert.deepEqual(clicked, ['ship']);
+
+  pressKey('Escape');
+  view.unmount();
+});
+
 
 // ── Lane priority ───────────────────────────────────────────────────────────
 

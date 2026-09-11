@@ -67,6 +67,10 @@ export interface TimelineTrackItem {
    * snippet, a report's stage row, a shipment's goods-issue number. Rendered
    * under the mark's own label and date; without it the popover falls back to
    * label · date · `detail`.
+   *
+   * The popover has ALREADY drawn the label and the date line above this, so a
+   * preview that opens with either of them says it twice. Give it what the two
+   * lines do not already say.
    */
   preview?: ReactNode;
   /** Optional click handler — the dot is a button either way, so its tooltip is
@@ -98,7 +102,8 @@ export interface TimelineMarker {
   label: string;
   /** Optional second line for the tooltip. */
   detail?: string;
-  /** Rich content for the hover/focus popover — see `TimelineTrackItem`. */
+  /** Rich content for the hover/focus popover — see `TimelineTrackItem`. The
+   *  label and the date line are already drawn above it; do not repeat them. */
   preview?: ReactNode;
   /** Optional click handler — when set, the dot calls this with the marker. */
   onClick?: (m: TimelineMarker) => void;

@@ -35,6 +35,13 @@ export interface Milestone {
   detail?: string;
   /** Optional click handler so the caller can open a related entity. */
   onClick?: () => void;
+  /**
+   * Opens the DOCUMENT behind the milestone — the drawing, the mould record,
+   * the goods issue — as opposed to selecting it on the bar. When set, the
+   * popover's "Open" button fires this; a card that only ever had `onClick`
+   * keeps working, because the button falls back to it.
+   */
+  onOpen?: () => void;
   /** Optional visual category — defaults to `'default'`. */
   kind?: MilestoneKind;
   /**
@@ -52,6 +59,9 @@ export interface Milestone {
   /**
    * Rich content for the hover/focus popover — a drawing's version and feedback
    * date, a shipment's goods-issue number. Falls back to label · date · detail.
+   *
+   * The popover has ALREADY drawn the milestone's label and its date line above
+   * this, so a preview that opens with either of them says it twice.
    */
   preview?: ReactNode;
   /** Optional phase grouping — milestones sharing the same `phase` value
@@ -194,6 +204,7 @@ export default function MilestoneTimeline({
     preview: m.preview,
     glyph: m.glyph,
     onClick: m.onClick,
+    onOpen: m.onOpen,
     priority: milestonePriority(m.kind),
   }));
 

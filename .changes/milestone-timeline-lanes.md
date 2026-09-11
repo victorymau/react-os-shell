@@ -139,9 +139,13 @@ title: Timelines share one track: clustered labels, compressed idle gaps, motion
   drives the hook itself; nothing the kit renders asks for one.
 
 - **A dot can be opened, not only selected.** `onOpenReport` / `onOpenMarker` on
-  `ProductionTimeline` (and `onOpen` on a track item or marker) make the label
-  above the thumb a real button and give the popover an "Open" footer. Without a
-  handler the label stays text, because a dead link is worse than none.
+  `ProductionTimeline` (and `onOpen` on a track item, a marker or a `Milestone`)
+  make the label above the thumb a real button and give the popover an "Open"
+  footer. Without a handler the label stays text, because a dead link is worse
+  than none. On a milestone the two acts are different ones — `onClick` selects
+  the dot on the bar, `onOpen` opens the drawing behind it — and a card that
+  declares only the first keeps its Open button, because the footer falls back
+  to it.
 
 - **Hovering a `×N` pill magnifies its stretch.** The axis opens around the run
   until every pair of members is at least 28 px apart — far enough for each to
@@ -152,11 +156,16 @@ title: Timelines share one track: clustered labels, compressed idle gaps, motion
   a consumer as an action rather than as a hover, and the clustering is decided
   on the unzoomed axis so a cluster can never dissolve because it was opened.
 
-- **The hover popover shows the document, not a second line of text.** An item
-  or a marker may carry a `preview` — a drawing's revision and feedback, a
-  report's stage row, a goods issue's pieces — and the kit renders it under the
-  mark's own label and date, at most 280 px wide, hoverable, focusable and
-  Escape-dismissible. A hovered or focused dot now also grows by half rather
+- **The hover popover shows the document, not a second line of text.** An item,
+  a marker, a milestone or a production report may carry a `preview` — a
+  drawing's revision and feedback, a report's stage row, a goods issue's pieces
+  — and the kit renders it under the mark's own label and date, at most 280 px
+  wide, hoverable, focusable and Escape-dismissible. The label and the date line
+  are the popover's own, printed above whatever the consumer supplies, which the
+  d.ts now says in as many words so a portal does not send them twice.
+  `ProductionTimeline.renderReportPreview` builds one for the reports that carry
+  none, for a caller whose list arrives straight off an API and would otherwise
+  have to copy it to attach one field; a report's own `preview` wins. A hovered or focused dot now also grows by half rather
   than by a third, with its label going accent and semibold, because at 10 px a
   1.35 dot is a dot that moved rather than one that answered.
 
