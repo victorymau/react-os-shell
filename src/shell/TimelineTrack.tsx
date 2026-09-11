@@ -544,7 +544,10 @@ function PendingColumn({ pending, reveal }: { pending: TimelineTrackPending[]; r
         {shown.map((entry, index) => (
           <li key={entry.key} className={reveal ? 'rosh-tl-fade' : undefined}
             style={reveal ? { animationDelay: `${440 + index * 60}ms` } : undefined}>
-            <span aria-hidden="true" className="rosh-tl-node is-ghost" />
+            {/* Hollow, and in the shape its kind would wear on the rail: a
+                shipment that has not happened is still shipment-shaped. */}
+            <span aria-hidden="true"
+              className={`rosh-tl-node is-ghost${entry.kind && KIND_STYLES[entry.kind].diamond ? ' is-diamond' : ''}`} />
             <span>
               {index === 0 && <b>Next · </b>}
               {entry.label}
