@@ -105,6 +105,13 @@ export default async function check(page, { pageErrors, open }) {
     'the pill stands for the revisions without removing them',
   );
 
+  // A phase bracket is a box with a border and no text, so "it rendered" is a
+  // claim about geometry — and it shipped once as a `div` with no rule at all,
+  // which has the right markup and no size.
+  const bracket = await page.locator('[data-testid="mould"] .rosh-tl-phase').boundingBox();
+  assert.ok(bracket && bracket.width > 8 && bracket.height > 4, `phase bracket: ${JSON.stringify(bracket)}`);
+  assert.match(await page.locator('[data-timeline-part="phase"]').innerText(), /QA & Sample · parallel/);
+
   // The compressed tail says how much time it is not showing.
   assert.match(
     await page.locator('[data-testid="mould"] [data-timeline-part="break"]').innerText(),

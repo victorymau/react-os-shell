@@ -14,6 +14,8 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 // First — installs the DOM globals before react-dom evaluates. Needed even for
 // the static renders: `fmtSliderDate` reads the user's date format out of
 // localStorage, which does not exist in a bare node process.
@@ -47,6 +49,29 @@ const END = day('2026-03-01');
 const track = (props: Partial<React.ComponentProps<typeof TimelineTrack>> = {}) => (
   <TimelineTrack startMs={START} endMs={END} items={ITEMS} ariaLabel="WM-2208 milestones" {...props} />
 );
+
+// ── The stylesheet the component leans on ───────────────────────────────────
+
+test('every class the track names has a rule in ui.css', () => {
+  // The component draws from named parts rather than utility strings, which
+  // makes a dozen absolutely-positioned bands readable — and makes a typo or a
+  // forgotten rule invisible: an unstyled part is a `div` with no position and
+  // no size, so it does not render wrong, it renders as nothing. The phase
+  // bracket shipped exactly that way, and no assertion about markup could see
+  // it, because the markup was right.
+  const root = process.env.REPO_ROOT ?? resolve(import.meta.dirname, '..');
+  const source = readFileSync(join(root, 'src/shell/TimelineTrack.tsx'), 'utf-8');
+  const sheet = readFileSync(join(root, 'src/ui.css'), 'utf-8');
+  const declared = new Set([
+    ...[...sheet.matchAll(/\.(rosh-tl-[a-z-]+)/g)].map((m) => m[1]),
+    ...[...sheet.matchAll(/@keyframes (rosh-tl-[a-z-]+)/g)].map((m) => m[1]),
+    // A custom property the component writes and the sheet reads.
+    ...[...sheet.matchAll(/var\((--rosh-tl-[a-z-]+)/g)].map((m) => m[1].slice(2)),
+  ]);
+  const used = new Set([...source.matchAll(/rosh-tl-[a-z-]+/g)].map((m) => m[0]));
+  const missing = [...used].filter((name) => !declared.has(name)).sort();
+  assert.deepEqual(missing, [], `classes with no rule in ui.css: ${missing.join(', ')}`);
+});
 
 // ── The accessible shape ────────────────────────────────────────────────────
 

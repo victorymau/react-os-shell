@@ -636,6 +636,20 @@ html.rosh-reduce-transparency *::after {
 }
 .rosh-tl-detail { font-family: inherit; color: var(--ink-muted); margin-top: 2px; }
 .rosh-tl-label.is-current .rosh-tl-name { font-weight: 600; }
+/* A phase bracket: the three-sided box under the rail that says "these ran in
+   parallel". Border WIDTH and STYLE only — the colour comes from the utility
+   class on the element, which carries the dark remap, and a `border:` shorthand
+   here would reset it to currentColor and win on being later in the cascade. */
+.rosh-tl-phase {
+  position: absolute; height: 8px; pointer-events: none;
+  border-style: solid; border-width: 0 1px 1px 1px;
+  border-bottom-left-radius: 6px; border-bottom-right-radius: 6px;
+}
+.rosh-tl-phase-label {
+  position: absolute; transform: translateX(-50%); white-space: nowrap;
+  font-size: 9px; line-height: 1.2; pointer-events: none;
+}
+
 .rosh-tl-lead, .rosh-tl-cspan {
   position: absolute; height: 1px; background: var(--line-strong); opacity: 0.8;
 }

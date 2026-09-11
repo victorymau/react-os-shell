@@ -32,8 +32,8 @@ const MOULD: Milestone[] = [
   { key: 'dfm2', label: 'DFM v2', date: '2025-10-30', kind: 'dfm' },
   { key: 'dfm3', label: 'DFM v3', date: '2025-11-07', kind: 'dfm' },
   { key: 'dfm4', label: 'DFM v4', date: '2025-11-07', kind: 'dfm' },
-  { key: 'dfmok', label: 'DFM Confirmed', date: '2025-11-07', kind: 'testing', detail: 'Tooling drawings signed off' },
-  { key: 'complete', label: 'Mould Complete', date: '2025-12-03', kind: 'testing' },
+  { key: 'dfmok', label: 'DFM Confirmed', date: '2025-11-07', kind: 'testing', phase: 'qa', detail: 'Tooling drawings signed off' },
+  { key: 'complete', label: 'Mould Complete', date: '2025-12-03', kind: 'testing', phase: 'qa' },
   { key: 'sample', label: 'Sample Shipped', date: null, kind: 'shipment' },
   { key: 'ready', label: 'Production Ready', date: undefined, kind: 'completion' },
 ];
@@ -74,7 +74,12 @@ function Production() {
 createRoot(document.getElementById('root')!).render(
   <div style={{ display: 'flex', flexDirection: 'column', gap: 32, width }}>
     <div data-testid="mould">
-      <MilestoneTimeline title="Mould development" milestones={MOULD} endDate="2026-09-11" />
+      <MilestoneTimeline
+        title="Mould development"
+        milestones={MOULD}
+        endDate="2026-09-11"
+        phaseLabels={{ qa: 'QA & Sample' }}
+      />
     </div>
     <div data-testid="production">
       <Production />
