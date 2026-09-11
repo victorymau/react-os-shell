@@ -7,12 +7,17 @@
  */
 
 /** Input types that put a text caret on screen. Everything else — a checkbox,
- *  a range, a colour swatch, a file button — has no spellcheck and no Paste,
+ *  a range, a color swatch, a file button — has no spellcheck and no Paste,
  *  so there is nothing in the browser's menu worth keeping for it. */
 const TEXT_INPUT_TYPES = new Set([
   'text', 'search', 'url', 'tel', 'email', 'password', 'number',
   'date', 'datetime-local', 'month', 'week', 'time',
 ]);
+
+/** Elements whose browser menu does what a page cannot: Save image as and Copy
+ *  image — the picture itself, not its address — on an image or a canvas, and
+ *  the playback controls on video and audio. */
+const NATIVE_MEDIA = 'img, picture, canvas, video, audio';
 
 /** Opt-out attribute: anything inside `[data-native-context-menu]` keeps the
  *  browser's menu. For surfaces the shell has no business re-skinning — an
@@ -30,7 +35,9 @@ function closest(el: Element | null, selector: string): Element | null {
  * Text inputs, textareas and contenteditable do, deliberately: the browser's
  * spellcheck suggestions and "Add to dictionary" cannot be rebuilt by a web
  * page, and a Paste item of our own would need a clipboard permission prompt.
- * That trade is made on purpose — the shell menu is for everywhere else.
+ * Images, canvases and media do for the same reason — Save / Copy image and
+ * the playback controls are the browser's. The shell menu is for everywhere
+ * else.
  */
 export function keepsNativeMenu(target: EventTarget | null): boolean {
   const el = target as Element | null;
@@ -38,10 +45,14 @@ export function keepsNativeMenu(target: EventTarget | null): boolean {
 
   if (closest(el, `[${NATIVE_MENU_ATTR}]`)) return true;
   if (closest(el, 'textarea')) return true;
+  if (closest(el, NATIVE_MEDIA)) return true;
 
   const input = closest(el, 'input') as HTMLInputElement | null;
   if (input) {
-    const type = (input.getAttribute('type') || 'text').toLowerCase();
+    // The property, not the attribute: the browser normalizes it, so a type it
+    // does not recognise (`type="currency"`, a typo) reads as the text box it
+    // actually renders.
+    const type = (input.type || 'text').toLowerCase();
     if (TEXT_INPUT_TYPES.has(type)) return true;
   }
 
@@ -58,7 +69,7 @@ export function keepsNativeMenu(target: EventTarget | null): boolean {
   return false;
 }
 
-export type ShellContextKind = 'selection' | 'link' | 'image' | 'default';
+export type ShellContextKind = 'selection' | 'link' | 'default';
 
 export interface ShellContextTarget {
   /** The most specific thing under the pointer — what the menu leads with. */
@@ -67,24 +78,29 @@ export interface ShellContextTarget {
   selectionText?: string;
   /** Absolute href of the nearest enclosing link. */
   linkUrl?: string;
-  /** Absolute source of the image under the pointer. */
-  imageUrl?: string;
 }
 
-function absolute(url: string | null | undefined, base?: string): string | undefined {
-  if (!url) return undefined;
+/** Schemes worth an Open / Copy link address. A `javascript:` URL is a button
+ *  wearing a link's clothes, and `href="#"` is the same trick. */
+const LINK_SCHEMES = new Set(['http:', 'https:', 'mailto:', 'tel:', 'blob:']);
+
+function linkAddress(href: string | null | undefined, base?: string): string | undefined {
+  if (!href || href === '#') return undefined;
   try {
-    return new URL(url, base ?? (typeof location !== 'undefined' ? location.href : undefined)).href;
+    // `document.baseURI`, not `location.href`: a page with a `<base>` resolves
+    // this the way its own links do.
+    const url = new URL(href, base ?? (typeof document !== 'undefined' ? document.baseURI : undefined));
+    return LINK_SCHEMES.has(url.protocol) ? url.href : undefined;
   } catch {
-    return url;
+    return undefined;
   }
 }
 
 /**
  * Describe a right-click: what was under the pointer, and what is selected.
  *
- * A linked image reports both, so the menu can offer both sections the way a
- * browser's does; `kind` names whichever the menu should lead with.
+ * A selection inside a link reports both, so the menu can offer both sections
+ * the way a browser's does; `kind` names whichever the menu should lead with.
  */
 export function describeContextTarget(
   target: EventTarget | null,
@@ -92,20 +108,16 @@ export function describeContextTarget(
   baseUrl?: string,
 ): ShellContextTarget {
   const el = target as Element | null;
-  const link = closest(el, 'a[href]') as HTMLAnchorElement | null;
-  const image = closest(el, 'img[src]') as HTMLImageElement | null;
+  const link = closest(el, 'a[href]');
 
   const text = (selectionText || '').trim();
-  const linkUrl = absolute(link?.getAttribute('href'), baseUrl);
-  const imageUrl = absolute(image?.getAttribute('src'), baseUrl);
+  const linkUrl = linkAddress(link?.getAttribute('href'), baseUrl);
 
-  const kind: ShellContextKind =
-    text ? 'selection' : linkUrl ? 'link' : imageUrl ? 'image' : 'default';
+  const kind: ShellContextKind = text ? 'selection' : linkUrl ? 'link' : 'default';
 
   return {
     kind,
     ...(text ? { selectionText: text } : {}),
     ...(linkUrl ? { linkUrl } : {}),
-    ...(imageUrl ? { imageUrl } : {}),
   };
 }

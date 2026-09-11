@@ -1,4 +1,5 @@
 import Modal from './Modal';
+import { keepsNativeMenu } from './contextMenuTarget';
 
 export interface WidgetAppearance {
   activeOpacity: number;
@@ -41,10 +42,17 @@ export default function WidgetSettingsModal({ open, onClose, title, appearance, 
   // stopPropagation keeps a right-click inside the settings dialog from
   // reaching the widget underneath and opening the widget's own menu. It also
   // stops the event before the shell's global contextmenu listener can see it,
-  // which leaves the browser's native menu showing here — the one place in the
-  // shell it still does. preventDefault closes that.
+  // so without preventDefault the browser's native menu would show here. A
+  // text field in `children` still keeps that menu, as it does everywhere else
+  // in the shell — spellcheck and Paste are the browser's.
   return (
-    <div onPointerDown={e => e.stopPropagation()} onContextMenu={e => { e.preventDefault(); e.stopPropagation(); }}>
+    <div
+      onPointerDown={e => e.stopPropagation()}
+      onContextMenu={e => {
+        e.stopPropagation();
+        if (!keepsNativeMenu(e.target)) e.preventDefault();
+      }}
+    >
     <Modal open={open} onClose={onClose} title={title} size="sm">
       <div className="space-y-4">
         {children}
