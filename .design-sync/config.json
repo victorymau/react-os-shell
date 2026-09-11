@@ -107,6 +107,9 @@
       "cardMode": "column",
       "primaryStory": "Catalogue"
     },
+    "TimelineTrack": {
+      "cardMode": "column"
+    },
     "MilestoneTimeline": {
       "cardMode": "column"
     },

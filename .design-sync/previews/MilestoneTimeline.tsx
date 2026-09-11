@@ -1,12 +1,15 @@
 import { MilestoneTimeline } from 'react-os-shell';
 import type { Milestone } from 'react-os-shell';
 
-// MilestoneTimeline — a date-laid timeline of order/production milestones.
-// Consumers map their domain data to the generic Milestone shape. A dated
-// milestone gets a dot and a label packed into one of four lanes by its
-// measured width; an undated one gets no position at all and is listed as
-// pending beside the bar. The axis is piecewise linear: an idle stretch longer
-// than 30% of the track is compressed and marked with a break glyph.
+// MilestoneTimeline — a date-laid timeline of order/production milestones,
+// drawn on the kit's shared TimelineTrack (the production scrubber is the same
+// track with a thumb). Consumers map their domain data to the generic Milestone
+// shape. A dated milestone gets a dot and a label packed into one of two lanes
+// by its measured width, and a run of same-kind revisions folds into one `xN`
+// pill whose members keep their dots; an undated one gets no position at all
+// and is listed beside the bar under "Not yet reached". The axis is piecewise
+// linear: an idle stretch longer than 30% of the track is compressed and marked
+// with a break glyph saying how many days it hides.
 
 const MILESTONES: Milestone[] = [
   { key: 'po', label: 'PO Placed', date: '2026-05-02', kind: 'default' },
@@ -36,9 +39,12 @@ export function OrderTimeline() {
 //
 // On a linear axis those seven shared the first sixth of the bar and the two
 // milestones that settle anything collapsed to hover-only. Here the eight weeks
-// own 70% of the track and the idle tail is capped at 30%, with a break glyph
-// on it saying how many days it hides. The two undated milestones are listed on
-// the right rather than interpolated onto the axis at dates nobody recorded.
+// own 70% of the track, the idle tail is capped at 30% with a break glyph on it,
+// and the four revisions fold into one pill — so the card reads as
+// `Project Initiated - DFM x4 - DFM Confirmed - Mould Complete` rather than as
+// six labels fighting for one sixth of a bar. The two undated milestones are
+// listed beside the track rather than interpolated onto the axis at dates
+// nobody recorded.
 const MOULD_MILESTONES: Milestone[] = [
   { key: 'kickoff', label: 'Project Initiated', date: '2026-01-05', kind: 'default' },
   { key: 'dfm1', label: 'DFM v1', date: '2026-01-20', kind: 'dfm' },
