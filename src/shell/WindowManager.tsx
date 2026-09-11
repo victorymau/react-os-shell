@@ -193,7 +193,7 @@ function PageWindow({ item, onClose, accentRgb }: { item: MinimizedItem; onClose
   const entry = raw as PageRegistryEntry;
   const Component = entry.component;
   return (
-    <Modal open={true} onClose={onClose} icon={navIcons[item.route!]} title={entry.label} size={entry.size || '2xl'} dirty={dirty} allowPinOnTop={entry.allowPinOnTop} initialPosition={entry.initialPosition} widget={entry.widget} compact={entry.compact} appStyle={entry.appStyle} flushBody={entry.flushBody} autoHeight={entry.autoHeight} autoMinHeight={entry.autoMinHeight} dimensions={entry.dimensions} windowKey={item.id} openedFromKey={item.openedFrom} accentRgb={accentRgb}>
+    <Modal open={true} onClose={onClose} icon={navIcons[item.route!]} title={entry.label} size={entry.size || '2xl'} dirty={dirty} allowPinOnTop={entry.allowPinOnTop} initialPosition={entry.initialPosition} widget={entry.widget} compact={entry.compact} appStyle={entry.appStyle} flushBody={entry.flushBody} autoHeight={entry.autoHeight} autoMinHeight={entry.autoMinHeight} autoWidth={entry.autoWidth} dimensions={entry.dimensions} windowKey={item.id} openedFromKey={item.openedFrom} accentRgb={accentRgb}>
       <WindowDirtyContext.Provider value={registerDirty}>
         <Suspense fallback={<div className="flex items-center justify-center py-12"><LoadingSpinner /></div>}>
           <Component />
@@ -367,6 +367,7 @@ function RestoredRegistryModal({ item, onClose, onMinimize, accentRgb }: { item:
       dimensions={entry.dimensions}
       autoHeight={entry.autoHeight}
       autoMinHeight={entry.autoMinHeight}
+      autoWidth={entry.autoWidth}
       appStyle={entry.appStyle}
       flushBody={entry.flushBody}
       accentRgb={accentRgb}

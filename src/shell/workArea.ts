@@ -49,6 +49,49 @@ export function boxFillsWorkArea(box: Box, workArea: Box, sidebarReserved: boole
   return Math.abs(box.h - workArea.h) <= TOL && fillsWidth;
 }
 
+/**
+ * One horizontal scroller inside a window body, read twice: `over` is how far
+ * its content overflows at the window's current width, `residual` how far it
+ * still overflows with the window probed `probeGain` px wider.
+ */
+export interface ScrollerOverflow { over: number; residual: number }
+
+/**
+ * Does widening the window actually help this scroller? Only if it handed back
+ * (nearly) all the width the probe gave it, or stopped overflowing. A
+ * fixed-width strip keeps overflowing however wide the window gets, and so
+ * does content sized from its container (always a little wider than it). A
+ * scroller that gains only part of the probe (boxed in by a `max-width`) does
+ * not count either: the window would open wider and still scroll.
+ */
+export function scrollerIsFluid({ over, residual }: ScrollerOverflow, probeGain: number): boolean {
+  return residual <= 1 || over - residual >= probeGain - 2;
+}
+
+/** The width that stops every fluid scroller scrolling — `curW` when none is fluid. */
+export function widthToFit(curW: number, probeGain: number, scrollers: ScrollerOverflow[]): number {
+  let need = curW;
+  for (const s of scrollers) {
+    if (scrollerIsFluid(s, probeGain)) need = Math.max(need, curW + s.over);
+  }
+  return Math.ceil(need);
+}
+
+/**
+ * `box` widened to `w`, capped at the work area less `margin` a side. It grows
+ * evenly about its centre, then is nudged back inside the work area, so a
+ * window near an edge moves in rather than hanging off it. Never narrows:
+ * returns `box` itself when there is nothing to gain.
+ */
+export function growBoxToWidth(box: Box, w: number, area: Box, margin: number): Box {
+  const nextW = Math.min(w, area.w - margin * 2);
+  if (nextW <= box.w + 1) return box;
+  const minX = area.x + margin;
+  const maxX = area.x + area.w - margin - nextW;
+  const x = Math.min(Math.max(box.x - (nextW - box.w) / 2, minX), maxX);
+  return { ...box, x: Math.round(x), w: Math.round(nextW) };
+}
+
 /** Whether sidebar layout mode currently reserves its left strip. */
 export function isSidebarStripReserved(): boolean {
   return (parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width')) || 0) > 0;
