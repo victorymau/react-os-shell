@@ -1456,8 +1456,15 @@ export default function TimelineTrack({
   // A zoom opens and closes over 240ms, and the transition that carries it is
   // only armed around the change — a positional transition left on permanently
   // would ease every dot sideways while a window edge is being dragged.
+  //
+  // Not on mount, either: the measuring pass moves every mark from the fallback
+  // track width to the measured one before the first paint, and an armed
+  // transition would turn that correction into a slide.
+  const zoomedRef = useRef(zoomedKey);
   const [zoomTweening, setZoomTweening] = useState(false);
   useEffect(() => {
+    if (zoomedRef.current === zoomedKey) return;
+    zoomedRef.current = zoomedKey;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- arming a transition for the length of one zoom change is a DOM concern with no render-time expression; deriving it would make it permanent
     setZoomTweening(true);
     const timer = setTimeout(() => setZoomTweening(false), ZOOM_TWEEN_MS);
