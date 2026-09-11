@@ -604,6 +604,12 @@ html.rosh-reduce-transparency *::after {
   border: 1.5px dashed var(--line-strong); box-shadow: none; cursor: default;
 }
 .rosh-tl-node.is-active { box-shadow: 0 0 0 2px var(--surface-sunken), 0 0 0 5px var(--line); }
+/* The flash as the scrubber's thumb crosses a mark. It rides the same 160ms
+   transition as the hover, so a fast drag pulses rather than strobes. */
+.rosh-tl-node.is-hit {
+  --rosh-tl-sc: 1.45;
+  box-shadow: 0 0 0 2px var(--surface-sunken), 0 0 0 5px var(--line-strong);
+}
 .rosh-tl-node:focus-visible, .rosh-tl-pill:focus-visible, .rosh-tl-thumb:focus-visible, .rosh-tl-more:focus-visible {
   outline: 2px solid var(--tl-focus); outline-offset: 3px;
 }

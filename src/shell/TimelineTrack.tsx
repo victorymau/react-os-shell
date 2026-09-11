@@ -224,6 +224,9 @@ const MONTH_LABEL_PITCH_PX = 72;
  *  ever used to decide whether two pieces of ruler text would collide. */
 const MONO_CHAR_PX = 5.6;
 
+/** How long a mark stays lit after the thumb has crossed it. */
+const SNAP_FLASH_MS = 460;
+
 /** How long a bubble survives the pointer leaving its dot. WCAG 1.4.13 asks for
  *  hoverable content, and the bubble sits a few pixels below the dot: without
  *  the grace the pointer dismisses it on the way. */
@@ -1225,6 +1228,34 @@ export default function TimelineTrack({
   const bubbleMark = marks.find((mark) => mark.key === bubbleKey) ?? null;
   const bubbleX = bubbleMark ? bubbleMark.x : 0;
   useMeasureEffect(() => { aimBubble(tipRef.current, bubbleX); }, [aimBubble, bubbleX]);
+
+  // The snap highlight: a mark the thumb has just passed lights up for a moment,
+  // so a scrub that crosses four reports reads as four events rather than as a
+  // bar getting longer. Written to the DOM rather than held in state — a drag
+  // moves the thumb every frame, and a re-render per frame to add a class that
+  // removes itself is a lot of React for a flash.
+  const thumbValue = thumb?.valueMs;
+  const lastThumbX = useRef<number | null>(null);
+  useEffect(() => {
+    if (thumbValue === undefined) return;
+    const x = axis.xByMs(thumbValue);
+    const previous = lastThumbX.current;
+    lastThumbX.current = x;
+    if (previous === null || x <= previous) return;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    for (const mark of marks) {
+      if (mark.x <= previous || mark.x > x) continue;
+      const el = nodeRefs.current.get(mark.key);
+      if (!el) continue;
+      el.classList.add('is-hit');
+      timers.push(setTimeout(() => el.classList.remove('is-hit'), SNAP_FLASH_MS));
+    }
+    return () => { for (const timer of timers) clearTimeout(timer); };
+    // `marks` and `axis` are rebuilt every render; the crossing is a function of
+    // the thumb moving, and re-running this on a hover would re-light marks the
+    // thumb crossed minutes ago.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [thumbValue]);
 
   const order = marks.map((mark) => mark.key);
   const tabKey = focusKey && order.includes(focusKey)

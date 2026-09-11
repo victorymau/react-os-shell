@@ -281,6 +281,22 @@ test('motion={false} draws the same card with nothing animating', () => {
   assert.match(html, /data-timeline-part="fill"/);
 });
 
+test('the thumb lights the marks it crosses, and nothing it has not reached', () => {
+  // A scrub that passes four reports should read as four events rather than as
+  // a bar getting longer.
+  let value = day('2026-01-05');
+  const view = render(track({ labels: 'active', thumb: { valueMs: value, onChange: () => {} } }));
+  const lit = () => dots(view.container)
+    .filter((d) => d.classList.contains('is-hit'))
+    .map((d) => d.dataset.timelineKey);
+  assert.deepEqual(lit(), [], 'nothing is lit before the thumb has moved');
+
+  value = day('2026-01-26');
+  view.rerender(track({ labels: 'active', thumb: { valueMs: value, onChange: () => {} } }));
+  assert.deepEqual(lit(), ['d1', 'd2'], 'the two it passed, and not the one ahead of it');
+  view.unmount();
+});
+
 test('activating a dot tells the caller which one, by key', () => {
   const picked: string[] = [];
   const view = render(track({ onActivate: (key) => picked.push(key) }));
