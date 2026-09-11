@@ -349,6 +349,55 @@ html.rosh-reduce-transparency *::after {
   --status-neutral-soft-ink: var(--ink-strong);
 }
 
+/* ── Timeline kind tokens ───────────────────────────────────────────────────
+ * The five non-accent categories a mark on a `TimelineTrack` can belong to, and
+ * the ink that reads on top of one.
+ *
+ * Tokens rather than utility classes because these are an IDENTITY encoding —
+ * "a shipment is emerald" — and an identity that follows the user's accent has
+ * stopped being one. That is the same reason `--viz-series-*` above is not
+ * remapped by themes.css. The accent kinds (`default`, `report`, and whichever
+ * mark is current) are the opposite case and are painted with `bg-blue-500` /
+ * `border-blue-500`, which the accent themes DO remap: "where we are" should
+ * follow the shell's accent.
+ *
+ * The dark steps are the same five hues re-stepped for the darker card, all
+ * clearing 3:1 against `--surface-sunken` (WCAG 1.4.11 — these are graphics,
+ * not text). The five hues are the approved prototype's: a shipment is violet
+ * rather than emerald so that it cannot be mistaken for a completion at a
+ * glance, and an inspection is orange rather than the amber of a drawing
+ * revision, because the production bar draws both. */
+:root {
+  --tl-dfm: #a2600b;
+  --tl-shipment: #6845d8;
+  --tl-testing: #0c8074;
+  --tl-completion: #0a8354;
+  --tl-inspection: #bd3f0d;
+  --tl-on-kind: #ffffff;
+  /* The focus ring, as blue-600: the repo's convention is a fixed blue ring
+     rather than an accent-following one, and a token is what lets a consumer
+     move it. */
+  --tl-focus: #2563eb;
+  /* The soft wash behind the current mark, a hovered dot and the mark a thumb
+     has just crossed. A box-shadow cannot be a utility class, so this is the
+     one accent-ish colour on the card that does not follow a custom accent —
+     the same trade the focus ring above already makes. */
+  --tl-soft: rgba(37, 99, 235, 0.15);
+}
+
+[data-theme="dark"] {
+  --tl-dfm: #dda15c;
+  --tl-shipment: #a78bfa;
+  --tl-testing: #2fcfbd;
+  --tl-completion: #34d399;
+  --tl-inspection: #fb923c;
+  /* Dark ink on a light-stepped fill, which is the pairing that reads on the
+     dark card — white on #34d399 does not. */
+  --tl-on-kind: #12141a;
+  --tl-focus: #93c5fd;
+  --tl-soft: rgba(111, 155, 255, 0.24);
+}
+
 /* ── Budget overrun hatch ───────────────────────────────────────────────────
  * `BudgetBar`'s third drawing. A run past its wall clock must not be pictured
  * as a full bar: a full solid bar is the calm "finished" shape, and this is the
@@ -448,6 +497,448 @@ html.rosh-reduce-transparency *::after {
     animation: none !important;
     opacity: 0 !important;
   }
+}
+
+/* ── Timeline track ─────────────────────────────────────────────────────────
+ * `TimelineTrack`, and through it `MilestoneTimeline` and `ProductionTimeline`.
+ *
+ * Written as classes here rather than as Tailwind utilities in the component
+ * for the same reason the chart family is: the whole card is drawn from ONE
+ * geometry object, and a dozen absolutely-positioned bands that have to agree
+ * with each other are clearer as named parts than as class strings. It is also
+ * what makes the motion impossible to get wrong — no component writes an
+ * animation, so none of them can forget the reduced-motion rule at the bottom.
+ *
+ * Colour comes from the neutral ramp and the `--tl-*` kind tokens, so both
+ * themes are covered without a single `[data-theme="dark"]` rule. The two
+ * exceptions are deliberate and live in the component: `bg-gray-200` for the
+ * rail and `bg-blue-500` for the fill, because those two must follow the dark
+ * remap and the user's accent respectively. */
+
+/* The card chrome both timelines wear. Border WIDTH and STYLE only — the colour
+   comes from the utility class on the element, which carries the dark remap. */
+.rosh-tl-card {
+  border-width: 1px; border-style: solid; border-radius: 12px; padding: 14px 16px 16px;
+}
+.rosh-tl-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 14px; }
+/* The sentence: icon, title, facts. It wraps inside itself and may shrink, so
+   the controls beside it never get pushed onto a row of their own. */
+.rosh-tl-head-main {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  flex: 1 1 auto; min-width: 0;
+}
+.rosh-tl-ico { flex: none; width: 15px; height: 15px; align-self: center; margin-right: -3px; }
+.rosh-tl-ico svg { width: 15px; height: 15px; }
+.rosh-tl-title { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: -0.005em; }
+/* `min-width: 0` is what lets a long meta line WRAP rather than push the
+   actions onto a row of their own: a flex item's default minimum is its
+   content, and five facts about a production order are wider than a card. */
+.rosh-tl-meta { margin: 0; font-size: 12px; font-variant-numeric: tabular-nums; min-width: 0; }
+.rosh-tl-meta b { font-weight: 500; }
+.rosh-tl-head-actions {
+  display: inline-flex; align-items: center; gap: 10px; margin-left: auto; flex: none;
+}
+
+/* The play control: a pill, not an icon button — a 20px circle beside an
+   uppercase heading is what the two cards used to disagree about. */
+.rosh-tl-play {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px 0 10px;
+  border-radius: 14px; cursor: pointer; white-space: nowrap;
+  font: inherit; font-size: 11.5px; font-weight: 500;
+  background: var(--surface-raised); border-width: 1px; border-style: solid;
+  transition: color 160ms ease-out, border-color 160ms ease-out;
+}
+.rosh-tl-play svg { width: 9px; height: 9px; fill: currentColor; }
+
+.rosh-tl-foot {
+  display: flex; align-items: center; gap: 14px 20px; flex-wrap: wrap;
+  margin-top: 14px; padding-top: 12px;
+  border-top-width: 1px; border-top-style: solid;
+}
+.rosh-tl-status { margin: 0; font-size: 12px; font-variant-numeric: tabular-nums; }
+.rosh-tl-legend { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.rosh-tl-legend > span {
+  display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px 0 7px;
+  border-width: 1px; border-style: solid; border-radius: 11px;
+  font-size: 10.5px; background: var(--surface-raised);
+}
+/* The legend's glyphs are the track's glyphs at legend size, so a chip can
+   never describe a shape the rail no longer draws. */
+.rosh-tl-glyph {
+  width: 10px; height: 10px; flex: none; box-sizing: border-box;
+  display: flex; align-items: center; justify-content: center;
+}
+.rosh-tl-glyph.is-ring { border-radius: 50%; border-width: 2px; border-style: solid; }
+.rosh-tl-glyph.is-diamond { border-radius: 2px; transform: rotate(45deg) scale(0.82); }
+.rosh-tl-glyph.is-disc { border-radius: 50%; }
+.rosh-tl-glyph svg { width: 7px; height: 7px; }
+
+.rosh-tl-body { display: grid; grid-template-columns: minmax(0, 1fr) 156px; gap: 20px; }
+.rosh-tl-body.is-solo { grid-template-columns: minmax(0, 1fr); }
+.rosh-tl-edge {
+  flex: none; align-self: center; white-space: nowrap;
+  font-size: 10px; line-height: 1.3; color: var(--ink-muted);
+}
+
+/* A 10px side inset, so a dot on the first or last day is never clipped. */
+.rosh-tl-stage { position: relative; padding: 0 10px; flex: 1 1 auto; min-width: 0; }
+.rosh-tl-layer { position: absolute; left: 10px; right: 10px; top: 0; bottom: 0; }
+
+/* The off-layout copy of every label, measured so the packer has real widths. */
+.rosh-tl-measure {
+  position: absolute; left: 0; top: 0; display: flex; gap: 8px;
+  visibility: hidden; pointer-events: none;
+}
+.rosh-tl-measure-box { flex: none; display: flex; flex-direction: column; white-space: nowrap; }
+
+.rosh-tl-rail { position: absolute; left: 0; right: 0; border-radius: 999px; }
+.rosh-tl-fill {
+  position: absolute; left: 0; border-radius: 999px;
+  transform-origin: left center;
+}
+/* A 1px inner sheen along the top of the fill — white rather than a token,
+   because it is a highlight rather than a colour, and it reads as one on the
+   accent in either theme. */
+.rosh-tl-fill::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit;
+  background: linear-gradient(rgba(255, 255, 255, 0.5), transparent 55%);
+}
+/* The notch in the rail where the axis stops keeping time. Painted in the
+   card's own ground, so it reads as a cut rather than as a mark. */
+.rosh-tl-cut {
+  position: absolute; width: 7px; transform: translateX(-50%);
+  background: var(--surface-sunken);
+}
+.rosh-tl-cut i, .rosh-tl-cutglyph i {
+  position: absolute; top: 0; width: 1px; height: 100%;
+  background: var(--line-strong); transform: skewX(-28deg);
+}
+.rosh-tl-cut i:first-child { left: 2px; }
+.rosh-tl-cut i:last-child { left: 5px; }
+
+.rosh-tl-tick { position: absolute; width: 1px; background: var(--line-strong); opacity: 0.85; }
+.rosh-tl-tick.is-week { opacity: 0.5; }
+.rosh-tl-month, .rosh-tl-rulercut span {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: 10px; line-height: 1.1; color: var(--ink-faint);
+}
+.rosh-tl-month { position: absolute; white-space: nowrap; }
+.rosh-tl-rulercut {
+  position: absolute; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  transform: translateX(-50%); white-space: nowrap;
+}
+.rosh-tl-cutglyph { position: relative; width: 7px; height: 7px; }
+.rosh-tl-cutglyph i:first-child { left: 1px; }
+.rosh-tl-cutglyph i:last-child { left: 4px; }
+
+.rosh-tl-todayline {
+  position: absolute; width: 0; border-left: 1px dashed var(--line-strong);
+  transform: translateX(-0.5px);
+}
+.rosh-tl-todaytag {
+  position: absolute; white-space: nowrap; border-radius: 5px; padding: 1px 6px;
+  font-size: 10px; font-weight: 500; letter-spacing: 0.02em;
+  color: var(--ink-muted); background: var(--surface-raised);
+}
+
+/* The list is the accessible reading of the card; the dots are absolutely
+   positioned against the layer, so the <li> must not establish a containing
+   block of its own. */
+.rosh-tl-nodes { list-style: none; margin: 0; padding: 0; }
+.rosh-tl-nodes > li { position: static; }
+.rosh-tl-node {
+  position: absolute; padding: 0; border: 0; background: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; border-radius: 50%;
+  transform: var(--rosh-tl-shift, translate(-50%, -50%))
+             rotate(var(--rosh-tl-rot, 0deg)) scale(var(--rosh-tl-sc, 1));
+}
+.rosh-tl-node svg { width: 10px; height: 10px; }
+/* The halo is the CARD's ground, not white: a pure-white ring is a defect on a
+   dark card, and this one is right in both themes without a remap. */
+.rosh-tl-node.is-dot {
+  width: 10px; height: 10px; background: var(--surface); border-width: 2px; border-style: solid;
+  box-shadow: 0 0 0 2px var(--surface-sunken);
+}
+.rosh-tl-node.is-key { width: 16px; height: 16px; box-shadow: 0 0 0 2px var(--surface-sunken); }
+/* "You are here" wears a soft halo as well as the ground ring — it is the one
+   mark a reader looks for before reading anything. */
+.rosh-tl-node.is-current {
+  width: 14px; height: 14px;
+  box-shadow: 0 0 0 2px var(--surface-sunken), 0 0 0 6px var(--tl-soft);
+}
+.rosh-tl-node.is-current svg { width: 9px; height: 9px; }
+.rosh-tl-node.is-diamond { border-radius: 3px; width: 14px; height: 14px; --rosh-tl-rot: 45deg; }
+.rosh-tl-node.is-diamond svg { transform: rotate(-45deg); }
+.rosh-tl-node.is-ghost {
+  width: 10px; height: 10px; background: var(--surface);
+  border: 1.5px dashed var(--line-strong); box-shadow: none; cursor: default;
+}
+.rosh-tl-node.is-active { box-shadow: 0 0 0 2px var(--surface-sunken), 0 0 0 5px var(--line); }
+/* The flash as the scrubber's thumb crosses a mark. It rides the same 160ms
+   transition as the hover, so a fast drag pulses rather than strobes. */
+.rosh-tl-node.is-hit {
+  --rosh-tl-sc: 1.5;
+  box-shadow: 0 0 0 2px var(--surface-sunken), 0 0 0 5px var(--tl-soft);
+}
+.rosh-tl-node:focus-visible, .rosh-tl-pill:focus-visible, .rosh-tl-thumb:focus-visible, .rosh-tl-more:focus-visible {
+  outline: 2px solid var(--tl-focus); outline-offset: 3px;
+}
+.rosh-tl-pulse {
+  position: absolute; inset: -1px; border-radius: inherit; pointer-events: none; opacity: 0;
+}
+
+.rosh-tl-label { position: absolute; display: flex; flex-direction: column; white-space: nowrap; }
+.rosh-tl-label.is-up { justify-content: flex-end; }
+/* The reveal for a label that fits no lane: a chip of its own, so it reads over
+   whichever lane label it lands on. */
+.rosh-tl-label.is-reveal {
+  z-index: 4; padding: 2px 5px; border-radius: 7px;
+  background: var(--surface-raised); border: 1px solid var(--line);
+  box-shadow: 0 1px 2px rgba(16, 20, 28, 0.07);
+}
+.rosh-tl-name {
+  font-size: 11px; font-weight: 500; line-height: 1.25; color: var(--ink-strong);
+  transition: color 160ms cubic-bezier(0, 0, 0.2, 1);
+}
+.rosh-tl-date, .rosh-tl-detail {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: 10px; line-height: 1.3; color: var(--ink-faint);
+}
+.rosh-tl-detail { font-family: inherit; color: var(--ink-muted); margin-top: 2px; }
+.rosh-tl-label.is-current .rosh-tl-name { font-weight: 600; }
+/* The label of whatever the pointer or the keyboard is on. Colour AND weight,
+   because on a card of eleven 11px labels colour alone is not a pointer. */
+.rosh-tl-label.is-hot .rosh-tl-name { color: var(--tl-focus); font-weight: 600; }
+.rosh-tl-label.is-hot .rosh-tl-date { color: var(--tl-focus); }
+/* A phase bracket: the three-sided box under the rail that says "these ran in
+   parallel". Border WIDTH and STYLE only — the colour comes from the utility
+   class on the element, which carries the dark remap, and a `border:` shorthand
+   here would reset it to currentColor and win on being later in the cascade. */
+.rosh-tl-phase {
+  position: absolute; height: 8px; pointer-events: none;
+  border-style: solid; border-width: 0 1px 1px 1px;
+  border-bottom-left-radius: 6px; border-bottom-right-radius: 6px;
+}
+.rosh-tl-phase-label {
+  position: absolute; transform: translateX(-50%); white-space: nowrap;
+  font-size: 9px; line-height: 1.2; pointer-events: none;
+}
+
+.rosh-tl-lead, .rosh-tl-cspan {
+  position: absolute; height: 1px; background: var(--line-strong); opacity: 0.8;
+}
+.rosh-tl-cspan { opacity: 0.7; }
+
+.rosh-tl-pill {
+  position: absolute; display: inline-flex; align-items: center; gap: 4px;
+  height: 19px; padding: 0 7px; border-radius: 10px; cursor: pointer; white-space: nowrap;
+  font: inherit; font-size: 10px; font-weight: 500;
+  color: var(--ink); background: var(--surface); border: 1px solid currentColor;
+  transition: box-shadow 160ms cubic-bezier(0, 0, 0.2, 1);
+}
+.rosh-tl-pill i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex: none; }
+.rosh-tl-pill:hover, .rosh-tl-pill[aria-expanded="true"] { box-shadow: 0 0 0 3px var(--line); }
+
+.rosh-tl-bubble, .rosh-tl-popover {
+  position: absolute; z-index: 6; min-width: 132px; max-width: 220px;
+  display: flex; flex-direction: column;
+  background: var(--surface-raised); border: 1px solid var(--line);
+  border-radius: 9px; padding: 7px 9px; transform: translateX(-50%);
+  box-shadow: 0 2px 4px rgba(16, 20, 28, 0.05), 0 14px 30px -14px rgba(16, 20, 28, 0.24);
+}
+/* The arrow is aimed at the dot the bubble describes, which is not the bubble's
+   own centre once it has been clamped inside the track. */
+.rosh-tl-bubble::before, .rosh-tl-popover::before {
+  content: ""; position: absolute; top: -4px; left: var(--rosh-tl-arrow, 50%);
+  width: 7px; height: 7px; margin-left: -3.5px; background: var(--surface-raised);
+  border-left: 1px solid var(--line); border-top: 1px solid var(--line);
+  transform: rotate(45deg);
+}
+/* A preview is the document in miniature rather than a second line of text, so
+   it gets room — 280px, the width at which a chip row and a snippet still read
+   on a phone. */
+.rosh-tl-bubble.is-preview { max-width: 280px; min-width: 180px; }
+.rosh-tl-preview {
+  display: flex; flex-direction: column; gap: 3px;
+  margin-top: 5px; font-size: 11px; color: var(--ink-muted);
+}
+/* The way out of the popover and into the thing it is previewing. */
+.rosh-tl-bubble-open {
+  margin-top: 6px; padding: 5px 0 0; width: 100%; text-align: left; cursor: pointer;
+  background: none; border: 0; border-top-width: 1px; border-top-style: solid;
+  border-top-color: var(--line);
+  font: inherit; font-size: 11px; font-weight: 500;
+}
+.rosh-tl-bubble-open:hover { text-decoration: underline; }
+.rosh-tl-bubble-open:focus-visible { outline: 2px solid var(--tl-focus); outline-offset: 2px; }
+
+.rosh-tl-popover-head {
+  margin: 0 0 5px; font-size: 10px; font-weight: 500; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--ink-faint);
+}
+.rosh-tl-popover ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.rosh-tl-popover li { display: flex; gap: 8px; justify-content: space-between; font-size: 11px; }
+
+.rosh-tl-hit { position: absolute; left: -10px; right: -10px; cursor: pointer; touch-action: none; }
+/* The magnet. A drag reports a stop change the moment the pointer crosses the
+   halfway line, and these 120ms carry the disc, its chip and the fill there
+   together — which is what makes six reports read as six settlings rather than
+   as one slide. The whole rule is off under reduced motion, at the bottom. */
+.rosh-tl-thumb {
+  position: absolute; width: 18px; height: 18px; border-radius: 50%; z-index: 5;
+  background: var(--surface); border: 2px solid currentColor;
+  box-shadow: 0 1px 2px rgba(16, 20, 28, 0.07), 0 0 0 4px var(--surface-sunken);
+  transform: translate(-50%, -50%); touch-action: none; cursor: grab;
+  transition: left 120ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.rosh-tl-fill.is-tweened { transition: width 120ms cubic-bezier(0.22, 1, 0.36, 1); }
+/* The label of the mark the thumb is on, as a control: it opens the document
+   behind the dot. Styled as the label it replaces, underlined on hover so it
+   reads as the link it is. */
+.rosh-tl-open {
+  padding: 0; border: 0; background: none; cursor: pointer; text-align: left;
+  font: inherit; font-size: 11px; font-weight: 500; line-height: 1.25;
+}
+.rosh-tl-open:hover { text-decoration: underline; }
+.rosh-tl-open:focus-visible { outline: 2px solid var(--tl-focus); outline-offset: 2px; border-radius: 4px; }
+.rosh-tl-thumb:active { cursor: grabbing; }
+.rosh-tl-thumb::after { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: currentColor; }
+.rosh-tl-chip {
+  position: absolute; transform: translateX(-50%); z-index: 5; white-space: nowrap;
+  transition: left 120ms cubic-bezier(0.22, 1, 0.36, 1);
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: 10.5px; font-weight: 500; padding: 3px 8px; border-radius: 7px;
+  background: var(--ink-strongest); color: var(--surface);
+}
+.rosh-tl-chip::after {
+  content: ""; position: absolute; bottom: -3px; left: 50%; width: 7px; height: 7px;
+  margin-left: -3.5px; border-radius: 1px; background: var(--ink-strongest); transform: rotate(45deg);
+}
+
+.rosh-tl-pending { padding-top: 16px; }
+.rosh-tl-pending-head { margin: 0 0 8px; font-size: 10px; font-weight: 500; color: var(--ink-faint); }
+.rosh-tl-ghosts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+.rosh-tl-ghosts li { display: flex; align-items: center; gap: 9px; font-size: 11px; color: var(--ink-muted); }
+.rosh-tl-ghosts .rosh-tl-node { position: relative; --rosh-tl-shift: translate(0, 0); flex: none; }
+.rosh-tl-ghosts b { font-weight: 500; color: var(--ink-faint); }
+.rosh-tl-more { margin-top: 9px; font-size: 11px; text-decoration: underline; cursor: pointer; }
+
+/* The vertical variant: under a 320px track the axis is abandoned rather than
+   squeezed, and the connector carries the fill. */
+.rosh-tl-v { list-style: none; margin: 0; padding: 0; }
+.rosh-tl-v > li {
+  position: relative; display: grid; grid-template-columns: 16px minmax(0, 1fr);
+  gap: 10px; padding-bottom: 14px;
+}
+.rosh-tl-v > li:last-child { padding-bottom: 0; }
+.rosh-tl-v .rosh-tl-node {
+  position: relative; --rosh-tl-shift: translate(0, 0);
+  justify-self: center; align-self: start; margin-top: 3px;
+}
+.rosh-tl-vline {
+  position: absolute; left: 8px; top: 17px; bottom: -1px; width: 1px;
+  background: var(--line-strong); transform-origin: top center;
+}
+.rosh-tl-vline.is-on { width: 2px; left: 7.5px; background: currentColor; }
+.rosh-tl-vline.is-dash { background: none; border-left: 1px dashed var(--line-strong); }
+.rosh-tl-vrow { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.rosh-tl-v > li[aria-current] .rosh-tl-name { font-weight: 600; }
+.rosh-tl-vgap {
+  position: relative; margin: 0; padding: 0 0 14px 26px; min-height: 20px;
+  font-family: var(--font-mono); font-size: 10px; color: var(--ink-faint);
+}
+
+/* ── Timeline motion ────────────────────────────────────────────────────────
+ * Mount budget <= 600ms: the fill draws in 420ms, the dots pop on a stagger
+ * that lands the last one by 520ms, and the labels settle by 580ms. `both` on
+ * every rule — with a delay the mark would otherwise paint its FINAL state and
+ * jump back when its delay elapsed. The draw is `scaleX`, not `width`: the
+ * track is under a ResizeObserver, and animating width relays out every dot on
+ * every frame. */
+@keyframes rosh-tl-draw { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes rosh-tl-drawy { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes rosh-tl-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes rosh-tl-pop {
+  from {
+    opacity: 0;
+    transform: var(--rosh-tl-shift, translate(-50%, -50%)) rotate(var(--rosh-tl-rot, 0deg)) scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: var(--rosh-tl-shift, translate(-50%, -50%)) rotate(var(--rosh-tl-rot, 0deg)) scale(1);
+  }
+}
+@keyframes rosh-tl-pulse { from { transform: scale(1); opacity: 0.35; } to { transform: scale(2.6); opacity: 0; } }
+
+.rosh-tl-draw { animation: rosh-tl-draw 420ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+.rosh-tl-drawy { animation: rosh-tl-drawy 420ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+.rosh-tl-fade { animation: rosh-tl-fade 160ms cubic-bezier(0, 0, 0.2, 1) both; }
+.rosh-tl-pop { animation: rosh-tl-pop 180ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+/* Three cycles, then stop. An endless "you are here" ring is the card's most
+   frequent motion, and frequency is what makes motion annoying. */
+.rosh-tl-pulse.is-on {
+  transform-origin: center;
+  animation: rosh-tl-pulse 2000ms cubic-bezier(0, 0, 0.2, 1) 600ms 3 both;
+}
+/* Hover is a TRANSITION, never a keyframe — a keyframe restarts on re-render,
+   and this element re-renders on every pointer move. */
+.rosh-tl-mark { transition: transform 160ms ease-out, box-shadow 160ms ease-out, background-color 160ms ease-out, border-color 160ms ease-out; }
+/* Half again as big, with a wash behind it: at 10px a 1.35 dot is a dot that
+   moved, and the point of the hover is that the reader can tell it answered. */
+.rosh-tl-mark:hover, .rosh-tl-mark:focus-visible {
+  --rosh-tl-sc: 1.5;
+  box-shadow: 0 0 0 2px var(--surface-sunken), 0 0 0 3px var(--tl-soft);
+}
+
+/* Zoom: the axis opening around a magnified stretch, and closing again. The
+   transition is armed by the component for the length of ONE change and then
+   taken away, because a positional transition left on permanently eases every
+   dot sideways while a window edge is being dragged — which reads as lag, not
+   as motion. */
+.rosh-tl-layer.is-zooming .rosh-tl-mark {
+  transition: left 240ms cubic-bezier(0.22, 1, 0.36, 1),
+              transform 160ms ease-out, box-shadow 160ms ease-out,
+              background-color 160ms ease-out, border-color 160ms ease-out;
+}
+.rosh-tl-layer.is-zooming .rosh-tl-label,
+.rosh-tl-layer.is-zooming .rosh-tl-lead,
+.rosh-tl-layer.is-zooming .rosh-tl-cspan,
+.rosh-tl-layer.is-zooming .rosh-tl-tick,
+.rosh-tl-layer.is-zooming .rosh-tl-month,
+.rosh-tl-layer.is-zooming .rosh-tl-rulercut,
+.rosh-tl-layer.is-zooming .rosh-tl-cut,
+.rosh-tl-layer.is-zooming .rosh-tl-todayline,
+.rosh-tl-layer.is-zooming .rosh-tl-fill {
+  transition: left 240ms cubic-bezier(0.22, 1, 0.36, 1),
+              width 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rosh-tl-layer.is-zooming .rosh-tl-mark,
+  .rosh-tl-layer.is-zooming .rosh-tl-label,
+  .rosh-tl-layer.is-zooming .rosh-tl-lead,
+  .rosh-tl-layer.is-zooming .rosh-tl-cspan,
+  .rosh-tl-layer.is-zooming .rosh-tl-tick,
+  .rosh-tl-layer.is-zooming .rosh-tl-month,
+  .rosh-tl-layer.is-zooming .rosh-tl-rulercut,
+  .rosh-tl-layer.is-zooming .rosh-tl-cut,
+  .rosh-tl-layer.is-zooming .rosh-tl-todayline,
+  .rosh-tl-layer.is-zooming .rosh-tl-fill { transition: none !important; }
+  .rosh-tl-draw, .rosh-tl-drawy, .rosh-tl-fade, .rosh-tl-pop {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+  /* The two draws rest at full scale; the pop rests at the node's own transform,
+     which carries its translate and rotate, so it cannot be reset to `none`. */
+  .rosh-tl-draw, .rosh-tl-drawy { transform: none !important; }
+  /* The ring RESTS invisible — it ends at opacity 0 — so the entrance treatment
+     above would pin a halo at an opacity it never reaches while animating. */
+  .rosh-tl-pulse.is-on { animation: none !important; opacity: 0 !important; }
+  /* Colour still moves; scale does not. */
+  .rosh-tl-mark { transition: background-color 160ms ease-out, border-color 160ms ease-out !important; }
+  .rosh-tl-mark:hover, .rosh-tl-mark:focus-visible { --rosh-tl-sc: 1; }
+  /* The thumb still MOVES under reduced motion — it just arrives. */
+  .rosh-tl-thumb, .rosh-tl-chip, .rosh-tl-fill.is-tweened { transition: none !important; }
 }
 
 /* Backgrounds */

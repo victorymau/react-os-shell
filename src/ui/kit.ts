@@ -200,6 +200,20 @@ export { default as MetricBar } from '../shell/MetricBar';
 export type { MetricBarProps } from '../shell/MetricBar';
 export { default as BudgetBar, budgetState } from '../shell/BudgetBar';
 export type { BudgetBarProps, BudgetState } from '../shell/BudgetBar';
+// The time axis both timelines are drawn on: rail, fill, date ruler, dots with
+// meaning in their shape, two packed label lanes with `×N` clustering (or one
+// active label), an optional scrubber thumb, the pending list, the motion and
+// the keyboard contract. Exported so a consumer can put its own domain on the
+// same axis rather than drawing a fourth bar.
+export { default as TimelineTrack } from '../shell/TimelineTrack';
+export type {
+  TimelineTrackProps,
+  TimelineTrackItem,
+  TimelineTrackKind,
+  TimelineTrackPending,
+  TimelineTrackPhase,
+  TimelineTrackThumb,
+} from '../shell/TimelineTrack';
 export { default as MilestoneTimeline } from '../shell/MilestoneTimeline';
 export type { Milestone, MilestoneKind, MilestoneTimelineProps } from '../shell/MilestoneTimeline';
 // The scrubbable production timeline: a hook that owns the slider, playback
