@@ -23,15 +23,17 @@ import assert from 'node:assert/strict';
 // First — installs the DOM globals before react-dom evaluates. Needed even for
 // the static renders: `fmtSliderDate` reads the user's date format out of
 // localStorage, which does not exist in a bare node process.
-import { act, render } from './dom';
+import { act, pressKey, render } from './dom';
 import { renderToStaticMarkup } from 'react-dom/server';
-import MilestoneTimeline, {
+import MilestoneTimeline, { type Milestone } from '../src/shell/MilestoneTimeline';
+// The geometry moved out of the card and into the primitive both timelines are
+// drawn on, so the pure helpers are specified where they now live.
+import {
   compressTimeAxis,
   packLabelLanes,
   LABEL_LANE_COUNT,
   type LabelLaneItem,
-  type Milestone,
-} from '../src/shell/MilestoneTimeline';
+} from '../src/shell/timelineGeometry';
 import { DAY_MS, toDayMs, fmtSliderDate } from '../src/shell/timelineDates';
 import { withConsoleError } from './capture-console';
 
@@ -166,11 +168,26 @@ const WITH_PENDING: Milestone[] = [
 const staticHtml = (element: React.ReactElement) =>
   withConsoleError(() => renderToStaticMarkup(element)).result;
 
-/** The right-hand block, which is where a pending milestone is listed. */
-function rightBlock(html: string): string {
-  const at = html.lastIndexOf('text-left shrink-0');
-  assert.notEqual(at, -1, `no right-hand block in: ${html}`);
+/** The pending column, which is where an undated milestone is listed. */
+function pendingBlock(html: string): string {
+  const at = html.indexOf('data-timeline-part="pending"');
+  assert.notEqual(at, -1, `no pending block in: ${html}`);
   return html.slice(at);
+}
+
+/** One per dot drawn on the rail. Dots are the only nodes the track marks as
+ *  items, so counting them counts dots — and unlike the `aria-label` count this
+ *  replaced, it does not move when a list or a thumb gains a name. */
+const dotCount = (html: string) => (html.match(/data-timeline-node="item"/g) ?? []).length;
+
+/** One per label actually drawn in a lane. */
+const laneLabelCount = (html: string) => (html.match(/data-timeline-part="label"/g) ?? []).length;
+
+/** The fill bar's width, as the style attribute states it. */
+function fillWidth(html: string): string {
+  const hit = html.match(/data-timeline-part="fill"[^>]*style="[^"]*width:([^";]+)"/);
+  assert.ok(hit, `no fill element in: ${html}`);
+  return hit[1];
 }
 
 test('an undated milestone gets no dot, no date, and a line in the pending list', () => {
@@ -178,20 +195,19 @@ test('an undated milestone gets no dot, no date, and a line in the pending list'
     <MilestoneTimeline title="Mould Development" milestones={WITH_PENDING} endDate="2025-05-01" />,
   );
 
-  // One dot per DATED milestone and not one more. The dots are the only thing
-  // in this component carrying aria-label, so counting them counts dots.
-  assert.equal((html.match(/aria-label="/g) ?? []).length, 4, `dot count in: ${html}`);
+  // One dot per DATED milestone and not one more.
+  assert.equal(dotCount(html), 4, `dot count in: ${html}`);
   assert.doesNotMatch(html, /aria-label="Sample Shipped/, 'no dot for an undated milestone');
   assert.doesNotMatch(html, /aria-label="Production Ready/);
   // The old rendering announced a fabricated position as "not reached yet".
   assert.doesNotMatch(html, /not reached yet/, 'no interpolated placeholder survives');
 
-  const right = rightBlock(html);
-  assert.match(right, /Sample Shipped/);
-  assert.match(right, /Production Ready/);
-  assert.match(right, /italic text-gray-400/, 'listed in the pending voice');
+  const pending = pendingBlock(html);
+  assert.match(pending, /Sample Shipped/);
+  assert.match(pending, /Production Ready/);
+  assert.match(pending, /Next · /, 'and the first of them is named as what happens next');
   assert.doesNotMatch(
-    right,
+    pending,
     /\d{2}\/\d{2}\/\d{4}/,
     'a pending milestone has no date to print — that was the interpolation bug',
   );
@@ -210,28 +226,26 @@ test('the fill stops at the last DATED milestone, on the axis the caller pinned'
     ['2025-01-01', '2025-02-10', '2025-02-12', '2025-04-01', '2025-05-01'].map(day),
     600,
   );
-  const fill = html.match(/bg-blue-300 rounded-full pointer-events-none" style="width:([^"]+)"/);
-  assert.ok(fill, `no fill element in: ${html}`);
-  assert.equal(fill[1], `${axis.xByMs(day('2025-04-01'))}px`);
+  assert.equal(fillWidth(html), `${axis.xByMs(day('2025-04-01'))}px`);
   assert.ok(
     axis.xByMs(day('2025-04-01')) < 600,
     'and stops short of the right edge the caller pinned',
   );
 });
 
-test('with nothing pending the last dated label keeps the right edge; with pending it joins the lanes', () => {
+test('the pending column exists only when something is pending', () => {
   const dated = WITH_PENDING.filter((m) => m.date);
 
-  const edged = rightBlock(staticHtml(
+  const noneePending = staticHtml(
     <MilestoneTimeline title="Mould Development" milestones={dated} endDate="2025-05-01" />,
-  ));
-  assert.match(edged, /Tooling Done/, 'the last dated label is the right edge, as it always was');
-  assert.match(edged, /\d{2}\/\d{2}\/\d{4}/, 'with its date');
+  );
+  assert.doesNotMatch(noneePending, /data-timeline-part="pending"/, 'nothing pending, no column');
+  assert.match(noneePending, /Tooling Done/, 'and the last dated milestone keeps a label of its own');
 
-  const pushed = rightBlock(staticHtml(
+  const pending = pendingBlock(staticHtml(
     <MilestoneTimeline title="Mould Development" milestones={WITH_PENDING} endDate="2025-05-01" />,
   ));
-  assert.doesNotMatch(pushed, /Tooling Done/, 'the pending list owns the block instead');
+  assert.doesNotMatch(pending, /Tooling Done/, 'a dated milestone is never listed as pending');
 });
 
 test('with nothing dated the axis stays empty and everything is pending', () => {
@@ -244,37 +258,36 @@ test('with nothing dated the axis stays empty and everything is pending', () => 
       ]}
     />,
   );
-  assert.doesNotMatch(html, /aria-label="/, 'nothing has a coordinate, so nothing has a dot');
-  assert.doesNotMatch(html, /bg-blue-300/, 'and no fill claims progress');
-  const right = rightBlock(html);
-  assert.match(right, /Kickoff/);
-  assert.match(right, /DFM v1/);
+  assert.equal(dotCount(html), 0, 'nothing has a coordinate, so nothing has a dot');
+  assert.doesNotMatch(html, /data-timeline-part="fill"/, 'and no fill claims progress');
+  const pending = pendingBlock(html);
+  assert.match(pending, /Kickoff/);
+  assert.match(pending, /DFM v1/);
 });
 
-test('the pending list caps at three lines and says how many it folded', () => {
+test('the pending list caps at two rows and offers the rest on a real button', () => {
+  // A `title` was the old answer and it is invisible on touch, which made the
+  // folded milestones unreachable on the device most likely to be reading them.
   const many: Milestone[] = [
     { key: 'a', label: 'Kickoff', date: '2025-01-01' },
     ...['One', 'Two', 'Three', 'Four', 'Five'].map((n) => ({ key: n, label: `Step ${n}`, date: null })),
   ];
-  const right = rightBlock(staticHtml(<MilestoneTimeline title="Mould Development" milestones={many} />));
-  for (const n of ['One', 'Two', 'Three']) assert.match(right, new RegExp(`Step ${n}`));
-  assert.match(right, /\+2 more/);
-  assert.match(right, /title="Step Four, Step Five"/, 'the folded ones are still readable');
-  assert.doesNotMatch(right, />Step Four</, 'but not as a fourth line');
+  const pending = pendingBlock(staticHtml(<MilestoneTimeline title="Mould Development" milestones={many} />));
+  for (const n of ['One', 'Two']) assert.match(pending, new RegExp(`Step ${n}`));
+  assert.doesNotMatch(pending, /Step Three/, 'the third is folded, not drawn');
+  assert.match(pending, /<button[^>]*>\+3 more<\/button>/, 'and the fold is a control, not a tooltip');
 });
 
-// ── Collapsed labels reveal on hover and focus ──────────────────────────────
+// ── Clusters, and the labels that still do not fit ──────────────────────────
 
 /**
  * Five DFM revisions on ONE day, and a test six days later.
  *
  * The shape a compressed axis cannot rescue: spreading the stretches between
- * DATES buys room for five milestones spread over a fortnight, which is why the
- * fortnight version of this fixture no longer collapses anything. One date is
- * still one coordinate though, so the fifth revision has nowhere to go however
- * much room the axis hands out — and the reveal on hover is what it gets
- * instead. `DFM v5` is the one: the test packs first (it is not a revision), and
- * same-day revisions are packed in the caller's order.
+ * DATES buys room for five milestones spread over a fortnight, but one date is
+ * still one coordinate, so five labels on 10 June have nowhere to go however
+ * much room the axis hands out. Five same-kind dots in a row is also five
+ * reports of ONE step, which is what the `×N` pill is for.
  */
 const CLUSTER: Milestone[] = [
   { key: 'start', label: 'Kickoff', date: '2025-01-01', onClick: () => {} },
@@ -288,16 +301,23 @@ const CLUSTER: Milestone[] = [
 ];
 
 /**
- * The text a sighted user can actually read.
- *
- * The measuring row is a full copy of every candidate label, `aria-hidden` and
- * off-layout, so a plain `textContent` says every label is on screen — including
- * the collapsed one whose whole point is that it is not.
+ * Three unlike kinds on one day: nothing to fold (a `×N` over three different
+ * kinds would be a lie), two lanes, so the third label has nowhere to go and
+ * collapses to a reveal.
  */
-function visibleText(container: Element): string {
-  const clone = container.cloneNode(true) as Element;
-  for (const hidden of Array.from(clone.querySelectorAll('[aria-hidden="true"]'))) hidden.remove();
-  return clone.textContent ?? '';
+const UNLIKE_SAME_DAY: Milestone[] = [
+  { key: 'start', label: 'Kickoff', date: '2025-01-01' },
+  { key: 'safety', label: 'Safety Tests', date: '2025-06-10', kind: 'testing', onClick: () => {} },
+  { key: 'ship', label: 'Sample Shipped', date: '2025-06-10', kind: 'shipment', onClick: () => {} },
+  { key: 'ready', label: 'Production Ready', date: '2025-06-10', kind: 'completion', onClick: () => {} },
+];
+
+/** The names actually drawn in a lane. The lane labels are `aria-hidden` (the
+ *  list of dots already says all of it), so `textContent` cannot answer this —
+ *  and neither can it tell a drawn label from the off-layout measuring copy. */
+function drawnLabels(container: Element): string[] {
+  return Array.from(container.querySelectorAll('[data-timeline-part="label"] .rosh-tl-name'))
+    .map((el) => el.textContent ?? '');
 }
 
 /** The dot announced with `label`. */
@@ -307,54 +327,107 @@ function dot(container: Element, label: string): HTMLElement {
   return found;
 }
 
-test('a collapsed label reveals on hover and hides again on leave', () => {
-  const view = render(<MilestoneTimeline title="Mould Development" milestones={CLUSTER} />);
-
-  // Four lanes hold four of the five same-day labels; the fifth has nowhere to
-  // go, so it is not drawn at all until it is asked for.
-  assert.doesNotMatch(visibleText(view.container), /DFM v5/, 'collapsed to begin with');
-  assert.match(visibleText(view.container), /DFM v1/, 'the ones that fit are drawn');
-  assert.match(visibleText(view.container), /Safety Tests/, 'as is the one that is not a revision');
-  assert.match(visibleText(view.container), /Sample Shipped/, 'and the undated one is listed');
-
-  const collapsed = dot(view.container, 'DFM v5');
+const hover = (el: Element) => act(() => {
   // React 18 synthesises mouseenter/leave from the delegated mouseover/mouseout
   // pair, so those are the events a user's pointer actually produces.
-  act(() => { collapsed.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true })); });
-  assert.match(visibleText(view.container), /DFM v5/, 'revealed on hover');
+  el.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true }));
+});
+const unhover = (el: Element) => act(() => {
+  el.dispatchEvent(new window.MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }));
+});
 
-  act(() => {
-    collapsed.dispatchEvent(new window.MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }));
-  });
-  assert.doesNotMatch(visibleText(view.container), /DFM v5/, 'hidden again on leave');
+test('a run of same-kind revisions folds into one pill, and every member keeps its dot', () => {
+  const view = render(<MilestoneTimeline title="Mould Development" milestones={CLUSTER} />);
 
+  const labels = drawnLabels(view.container);
+  assert.deepEqual(labels.filter((l) => l.startsWith('DFM')), [], 'no revision draws a label of its own');
+  const pill = view.container.querySelector('[data-timeline-part="cluster"]');
+  assert.ok(pill, 'the five revisions are one pill');
+  assert.match(pill.textContent ?? '', /DFM ×5/);
+  assert.ok(labels.includes('Safety Tests'), 'the milestone that is not a revision keeps its label');
+
+  // The pill never lies about position: every member is still a dot on the rail
+  // at its own coordinate, and still announces itself.
+  for (const n of [1, 2, 3, 4, 5]) {
+    assert.ok(dot(view.container, `DFM v${n}`), `DFM v${n} keeps its dot`);
+  }
   view.unmount();
 });
 
-test('keyboard focus reveals it too — a clickable dot is already in the tab order', () => {
+test('the pill opens a popover listing every member, and Escape closes it', () => {
   const view = render(<MilestoneTimeline title="Mould Development" milestones={CLUSTER} />);
-  const collapsed = dot(view.container, 'DFM v5');
-  assert.equal(collapsed.tagName, 'BUTTON', 'an onClick milestone is a button');
+  const pill = view.container.querySelector<HTMLElement>('[data-timeline-part="cluster"]')!;
+  const popover = () => view.container.querySelector('[data-timeline-part="cluster-popover"]');
+
+  assert.equal(popover(), null, 'closed to begin with');
+  assert.equal(pill.getAttribute('aria-expanded'), 'false');
+
+  // Hover previews it without pinning it.
+  hover(pill);
+  assert.ok(popover(), 'hover previews the members');
+  assert.equal(pill.getAttribute('aria-expanded'), 'false', 'a preview is not an expansion');
+  unhover(pill);
+  assert.equal(popover(), null);
+
+  act(() => { pill.click(); });
+  const open = popover();
+  assert.ok(open, 'click pins it');
+  assert.equal(pill.getAttribute('aria-expanded'), 'true');
+  assert.equal(pill.getAttribute('aria-controls'), open.id, 'and says which region it controls');
+  for (const n of [1, 2, 3, 4, 5]) assert.match(open.textContent ?? '', new RegExp(`DFM v${n}`));
+  assert.match(open.textContent ?? '', /10\/06\/2025/, 'each member with its date');
+
+  // WCAG 1.4.13: dismissible without moving the pointer or the focus.
+  pressKey('Escape');
+  assert.equal(popover(), null, 'Escape closes it');
+  view.unmount();
+});
+
+test('a label that fits no lane reveals on hover and hides again on leave', () => {
+  const view = render(<MilestoneTimeline title="Mould Development" milestones={UNLIKE_SAME_DAY} />);
+  const drawn = drawnLabels(view.container);
+  const collapsedLabel = ['Safety Tests', 'Sample Shipped', 'Production Ready']
+    .find((label) => !drawn.includes(label));
+  assert.ok(collapsedLabel, `two lanes hold two of the three, got ${JSON.stringify(drawn)}`);
+
+  const reveal = () => view.container.querySelector('[data-timeline-part="reveal"]');
+  assert.equal(reveal(), null, 'collapsed to begin with');
+
+  const collapsed = dot(view.container, collapsedLabel);
+  hover(collapsed);
+  assert.match(reveal()?.textContent ?? '', new RegExp(collapsedLabel), 'revealed on hover');
+  unhover(collapsed);
+  assert.equal(reveal(), null, 'hidden again on leave');
+  view.unmount();
+});
+
+test('keyboard focus reveals it too — a dot is a button whether or not it is clickable', () => {
+  const view = render(<MilestoneTimeline title="Mould Development" milestones={UNLIKE_SAME_DAY} />);
+  const drawn = drawnLabels(view.container);
+  const collapsedLabel = ['Safety Tests', 'Sample Shipped', 'Production Ready']
+    .find((label) => !drawn.includes(label))!;
+  const collapsed = dot(view.container, collapsedLabel);
+  assert.equal(collapsed.tagName, 'BUTTON');
 
   act(() => { collapsed.focus(); });
-  assert.match(visibleText(view.container), /DFM v5/, 'revealed on focus');
+  assert.ok(view.container.querySelector('[data-timeline-part="reveal"]'), 'revealed on focus');
   act(() => { collapsed.blur(); });
-  assert.doesNotMatch(visibleText(view.container), /DFM v5/, 'hidden on blur');
-
+  assert.equal(view.container.querySelector('[data-timeline-part="reveal"]'), null, 'hidden on blur');
   view.unmount();
 });
 
 test('the dot still announces and titles itself whether or not its label is drawn', () => {
-  // The reveal is a visual affordance. Nothing about it may be the only route to
-  // the fact: the dot carries the label and the date on itself either way.
+  // The reveal and the pill are visual affordances. Nothing about either may be
+  // the only route to the fact: the dot carries the label and the date itself.
   const view = render(<MilestoneTimeline title="Mould Development" milestones={CLUSTER} />);
-  const collapsed = dot(view.container, 'DFM v5');
+  const folded = dot(view.container, 'DFM v5');
   const shown = fmtSliderDate(day('2025-06-10'));
   assert.equal(shown, '10/06/2025', 'the default date format, with nothing stored');
-  assert.equal(collapsed.getAttribute('aria-label'), `DFM v5 on ${shown}`);
-  assert.equal(collapsed.getAttribute('title'), `DFM v5 • ${shown}`);
+  assert.equal(folded.getAttribute('aria-label'), `DFM v5 · ${shown}`);
+  assert.equal(folded.getAttribute('title'), `DFM v5 • ${shown}`);
   view.unmount();
 });
+
 
 // ── Lane priority ───────────────────────────────────────────────────────────
 
@@ -565,34 +638,30 @@ const MOULD_001F_AXIS = compressTimeAxis(
   TRACK,
 );
 
-/** The lane labels actually drawn. The chip a `LaneRow` renders is the only
- *  thing in this markup with that class pair — the off-layout measuring copy has
- *  no `absolute`, and a dot carries its label in attributes, not as text. */
-const laneLabelCount = (html: string) =>
-  (html.match(/-translate-x-1\/2 text-center text-\[10px\] leading-tight/g) ?? []).length;
-
-test('001F/1813 renders every label in a lane, and marks the tail it compressed', () => {
+test('001F/1813 folds the revisions, labels the rest, and marks the tail it compressed', () => {
   const html = staticHtml(
     <MilestoneTimeline title="Mould Development" milestones={MOULD_001F} endDate={MOULD_001F_END} />,
   );
 
-  // Six lane candidates: everything dated except the first, which is the inline
-  // label on the left. On the linear axis two of them collapsed to hover-only.
-  assert.equal(laneLabelCount(html), 6, `every dated label should have a lane, in: ${html}`);
-  for (const label of ['DFM v1', 'DFM v2', 'DFM v3', 'DFM v4', 'DFM Confirmed', 'Mould Complete']) {
+  // Three labels and one pill, where a linear axis with four lanes drew six
+  // labels and collapsed two of them to hover-only.
+  assert.equal(laneLabelCount(html), 3, `expected three lane labels, in: ${html}`);
+  for (const label of ['Project Initiated', 'DFM Confirmed', 'Mould Complete']) {
     assert.match(html, new RegExp(label));
   }
+  assert.equal((html.match(/data-timeline-part="cluster"/g) ?? []).length, 1, 'one pill');
+  assert.match(html, /DFM ×4/, 'and it says how many revisions it stands for');
+  // Every revision still has its own dot, at its own date.
+  for (const n of [1, 2, 3, 4]) assert.match(html, new RegExp(`aria-label="DFM v${n} · `));
 
   // One break glyph, on the 282-day tail. The four stretches that were only
   // WIDENED to the floor are not marked: they read as short already, and a glyph
   // there would describe a distortion nobody can see.
-  assert.equal((html.match(/Gap compressed:/g) ?? []).length, 1, 'exactly one stretch was cut');
-  assert.match(html, /title="Gap compressed: 282 days"/);
+  assert.equal((html.match(/data-timeline-part="break"/g) ?? []).length, 1, 'exactly one stretch was cut');
+  assert.match(html, /282 days/, 'and it says how many days it hides');
 
   // The fill comes off the same mapping as everything else.
-  const fill = html.match(/bg-blue-300 rounded-full pointer-events-none" style="width:([^"]+)"/);
-  assert.ok(fill, `no fill element in: ${html}`);
-  assert.equal(fill[1], `${MOULD_001F_AXIS.xByMs(day('2025-12-03'))}px`);
+  assert.equal(fillWidth(html), `${MOULD_001F_AXIS.xByMs(day('2025-12-03'))}px`);
   assert.ok(
     MOULD_001F_AXIS.xByMs(day('2025-12-03')) > 0.55 * TRACK,
     'and the reached part of the programme is most of the bar, not a sixth of it',
@@ -616,7 +685,7 @@ test('today gets its tick off the same mapping', () => {
       endDate={iso(30)}
     />,
   );
-  const tick = html.match(/style="left:([0-9.]+)px" title="Today/);
+  const tick = html.match(/class="rosh-tl-todayline[^"]*" style="left:([0-9.]+)px/);
   assert.ok(tick, `no today tick in: ${html}`);
   const x = Number(tick[1]);
   assert.ok(x > 0 && x < TRACK, `today should sit inside the track, got ${x}px`);
@@ -624,15 +693,16 @@ test('today gets its tick off the same mapping', () => {
   // the tick is interpolated on the same piecewise mapping as everything else
   // rather than on `(todayMs - startMs) / span`, so it lands between the
   // milestone before it and the right edge, not at 85% of a linear bar.
-  const lastMilestone = html.match(/style="width:([0-9.]+)px"/);
-  assert.ok(lastMilestone, 'the fill marks the last milestone');
-  assert.ok(x > Number(lastMilestone[1]), `today is after the last milestone, got ${x}px`);
+  assert.ok(
+    x > Number(fillWidth(html).replace('px', '')),
+    `today is after the last milestone, got ${x}px`,
+  );
 });
 
-test('the component gives its lanes to the key milestones, not the revisions', () => {
-  // Five labels on ONE day: one coordinate, four lanes, so one of them cannot be
-  // drawn. It has to be a revision — which is the case the priority exists for,
-  // wired through the component rather than asserted on the packer alone.
+test('the card gives its lanes to the milestones that settle something', () => {
+  // Five labels on ONE day: one coordinate, two lanes. The four revisions are
+  // one step reported four times, so they fold into a pill and the milestone a
+  // reader opened the card for keeps its label.
   const sameDay: Milestone[] = [
     { key: 'init', label: 'Project Initiated', date: '2025-10-09' },
     { key: 'dfm1', label: 'DFM v1', date: '2025-11-07', kind: 'dfm' },
@@ -645,9 +715,12 @@ test('the component gives its lanes to the key milestones, not the revisions', (
   const view = render(
     <MilestoneTimeline title="Mould Development" milestones={sameDay} endDate={MOULD_001F_END} />,
   );
-  const text = visibleText(view.container);
-  assert.match(text, /Mould Complete/, 'the milestone that settles something is drawn');
-  const drawn = ['DFM v1', 'DFM v2', 'DFM v3', 'DFM v4'].filter((label) => text.includes(label));
-  assert.equal(drawn.length, 3, `three of the four revisions fit, got ${JSON.stringify(drawn)}`);
+  const labels = drawnLabels(view.container);
+  assert.ok(labels.includes('Mould Complete'), `the key milestone is drawn, got ${JSON.stringify(labels)}`);
+  assert.deepEqual(labels.filter((l) => l.startsWith('DFM v')), [], 'and no revision competes with it');
+  assert.match(
+    view.container.querySelector('[data-timeline-part="cluster"]')?.textContent ?? '',
+    /DFM ×4/,
+  );
   view.unmount();
 });
