@@ -85,6 +85,23 @@ test('a fragment carries its body through verbatim', () => {
   assert.equal(parsed.title, 'A thing');
 });
 
+test('a title loses its quotes only when they wrap the whole value', () => {
+  // The parser used to strip a leading and a trailing quote independently, so
+  // on 2026-09-11 the title `Visible labels use the American spelling of
+  // "color"` parsed with its closing quote gone. Nothing renders the title
+  // yet, which is the only reason that shipped unnoticed.
+  const title = (t: string) => parseFragment(fragment('patch', t, '- x'), 'x.md').title;
+  assert.equal(title('"Quoted"'), 'Quoted');
+  assert.equal(title("'Quoted'"), 'Quoted');
+  assert.equal(
+    title('Visible labels use the American spelling of "color"'),
+    'Visible labels use the American spelling of "color"',
+  );
+  assert.equal(title('"color" is spelled the American way'), '"color" is spelled the American way');
+  assert.equal(title('"Mismatched\''), '"Mismatched\'', 'a mismatched pair is not a pair');
+  assert.equal(title('Plain title'), 'Plain title');
+});
+
 test('a body carrying its own `## ` heading is rejected', () => {
   // The release number is stamped at merge time. A heading in the body would
   // put a second one in the rendered file and split the release in two.
