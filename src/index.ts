@@ -57,6 +57,10 @@ export { default as ShellContextMenu } from './shell/ShellContextMenu';
 export type { ShellContextMenuProps } from './shell/ShellContextMenu';
 export { keepsNativeMenu, describeContextTarget, NATIVE_MENU_ATTR } from './shell/contextMenuTarget';
 export type { ShellContextTarget, ShellContextKind } from './shell/contextMenuTarget';
+// The copy path both menus use — `navigator.clipboard` with an `execCommand`
+// fallback, HTML beside the text, and a toast either way — for a consumer's
+// own menu item (`EntityListContextAction`) that copies something.
+export { copyToClipboard } from './shell/clipboard';
 
 // ── Notification system ──
 export { default as NotificationBell } from './shell/NotificationBell';

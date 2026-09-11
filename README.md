@@ -286,6 +286,16 @@ another one. `keepsNativeMenu(target)` and
 `describeContextTarget(target, selectionText)` are exported if you want the
 same decisions in your own handler.
 
+`EntityList` is one of those surfaces, and every list gets its row menu without
+wiring anything: **Open** (the row right-clicked), **Copy** for text selected
+under the pointer, **Copy `<first column>`** and **Copy rows** — the ticked
+rows as a table of the visible columns in their on-screen order, which pastes
+into a spreadsheet as cells — then **Export selected to CSV** when the list
+passes `exportEndpoint`, the page's own `contextActions`, and **Select all**,
+**Clear selection** and **Refresh** (when `onRetry` is wired). A consumer's own
+menu item that copies something can call `copyToClipboard(label, text, html?)`
+for the same copy path and toast.
+
 Note that a cross-origin iframe is outside the reach of any parent listener —
 the page inside it shows whatever menu it draws for itself.
 
