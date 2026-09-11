@@ -29,7 +29,7 @@ const COLUMNS = [
 const INITIAL: Task[] = [
   { id: 't1', title: 'Design the empty states', status: 'todo', order: 0 },
   { id: 't2', title: 'Write the onboarding copy', status: 'todo', order: 1 },
-  { id: 't3', title: 'Audit colour contrast', status: 'todo', order: 2 },
+  { id: 't3', title: 'Audit color contrast', status: 'todo', order: 2 },
   { id: 't4', title: 'Wire up the search index', status: 'todo', order: 3 },
   { id: 't5', title: 'Build the settings panel', status: 'in_progress', order: 0 },
   { id: 't6', title: 'Drag-and-drop reordering', status: 'in_progress', order: 1 },

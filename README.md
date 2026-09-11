@@ -264,7 +264,7 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 | `ShortcutHelp` | The keyboard cheatsheet shown on `?`. |
 | `NotificationBell` | Taskbar bell — config via `<Layout notifications={…}>`. |
 | `BugReportDetail` | Used inside an entity-window registry entry; reads from `<BugReportConfigProvider>`. |
-| `StatusBadge` | Coloured pill rendering a status string. Map status→semantic group via `<StatusBadgeProvider groups={{...}}>`. `label` overrides the derived text for a status that arrived from elsewhere; the colour still comes from `status`. `emphasis` (`subtle` default / `solid`, the same two words `Banner` uses) is the volume: the quiet register is a transparent wash that composites over a raised panel and a hovered row, the loud one is a saturated fill for the detail header where the same fact is the headline. Colour comes from the status tokens in `ui.css`, which carry both themes. |
+| `StatusBadge` | Colored pill rendering a status string. Map status→semantic group via `<StatusBadgeProvider groups={{...}}>`. `label` overrides the derived text for a status that arrived from elsewhere; the color still comes from `status`. `emphasis` (`subtle` default / `solid`, the same two words `Banner` uses) is the volume: the quiet register is a transparent wash that composites over a raised panel and a hovered row, the loud one is a saturated fill for the detail header where the same fact is the headline. Color comes from the status tokens in `ui.css`, which carry both themes. |
 | `SidebarLayout` | Two-pane layout with a drag-to-resize sidebar (`storageKey` persists the width). Pair with a `flushBody` window so the sidebar runs edge-to-edge. |
 | `SidebarNavItem`, `SidebarGroupLabel` | Filter-sidebar button (optional `count` badge and `severity` marker dot) plus its group heading. Roll the severity up in the app; omitting it renders exactly as before it existed. An unrecognised `severity` renders a visible "unknown" marker and logs — it never silently disappears. |
 | `MetricBar` | Value + proportional bar with optional `warn` / `crit` threshold ticks — the CPU / memory / disk row. `value={null}` renders "no data" (dashed empty track), never a zero-width bar; with no thresholds the fill stays grey rather than claiming health. `max` must be a positive finite number — given `0`/`NaN` the row prints the value but draws no bar, rather than dividing by zero into a full one. |
@@ -455,7 +455,7 @@ primitives** — a small semantic layer in
 
 A page that stamps no `data-theme` follows the reader's OS preference: the
 stylesheet carries the dark ramp under `prefers-color-scheme`, guarded so any
-explicit stamp wins. Utility colour classes remap only under
+explicit stamp wins. Utility color classes remap only under
 `[data-theme="dark"]`, so a page that paints with utilities stamps the
 attribute itself.
 
@@ -492,7 +492,7 @@ keeps its own renderer and walks the same token list.
 | `STOREFRONT_MARKUP`, `CAMPAIGN_MARKUP` | Standard plus a host's own LEGACY runs, so already-published copy keeps rendering as it does today. Designed to be deleted once stored content has been converted. |
 
 Two delimiter choices worth knowing. Italic is `_phrase_`, not `*phrase*`,
-because a single asterisk already means the accent colour in the products that
+because a single asterisk already means the accent color in the products that
 use this. And `_` never fires inside a word (CommonMark's own rule), which is
 what stops a mail-merge line holding `{{first_name}}` and `{{last_name}}` from
 italicising everything between them — checked with plain character tests, never a
@@ -598,7 +598,7 @@ so an app importing from both has one hook.
 | `reportBug(submit)` | Captures a screenshot via `getDisplayMedia`, opens the dialog, hands the payload to your `submit`. |
 | `formatDate(iso)` | Locale-aware date formatter. |
 | `budgetState(elapsed, budget)` | `no-reading` \| `no-budget` \| `within` \| `over` — the verdict `BudgetBar` draws by, exported so a run list sorts and filters by the same rule rather than re-deriving "late" a second time. |
-| `GROUP_COLORS`, `GROUP_COLORS_SOLID`, `groupColors(group, emphasis?)` | The status palette, both registers, as the class strings the badges emit — for a surface that has to build its own pill (a virtualised cell, a canvas legend) and must not guess at the colours. |
+| `GROUP_COLORS`, `GROUP_COLORS_SOLID`, `groupColors(group, emphasis?)` | The status palette, both registers, as the class strings the badges emit — for a surface that has to build its own pill (a virtualised cell, a canvas legend) and must not guess at the colors. |
 | `severityOf(value, warn?, crit?)` | The `SeverityTone` (`success` \| `warning` \| `danger`) a reading earns against **inclusive** bounds; `null` when there's no reading or no usable bounds — the shell hardcodes no threshold. Backs `MetricBar`; use it to roll a `SidebarNavItem severity` up. |
 | `isSeverityTone(value)` | Type guard for the three tones. Validate a backend rollup with it at the fetch boundary, where a bad token can still be reported against its payload, rather than letting it surface as a wrong pixel. |
 | `toast.success / .error / .info` | Toast notifications — auto-mounts container. |

@@ -59,7 +59,7 @@ renders in light mode and does not respond to `data-theme`.
 
 **Sizes are the exception.** An inline `style={{ width: 213 }}` is correct and
 expected — arbitrary Tailwind values (`w-[213px]`) produce no style in the
-compiled stylesheet, so px sizing goes through `style`. Colour never does.
+compiled stylesheet, so px sizing goes through `style`. Color never does.
 
 ## Component mapping
 
