@@ -21,7 +21,7 @@ import { act, pressKey, render } from './dom';
 import { renderToStaticMarkup } from 'react-dom/server';
 import TimelineTrack, { type TimelineTrackItem } from '../src/shell/TimelineTrack';
 import {
-  clusterLabel, clusterMarks, packLabelLanes, TRACK_LABEL_LANE_COUNT,
+  clusterLabel, clusterMarks, compressTimeAxis, packLabelLanes, TRACK_LABEL_LANE_COUNT,
 } from '../src/shell/timelineGeometry';
 import { toDayMs } from '../src/shell/timelineDates';
 import { withConsoleError } from './capture-console';
@@ -131,6 +131,29 @@ test('a compressed axis marks the idle stretch it cut; a linear one has none to 
   const x = (html: string) => html.match(/data-timeline-key="c"[^>]*style="[^"]*left:([0-9.]+)px/)?.[1];
   assert.notEqual(x(compressed), x(linear));
   assert.ok(Number(x(compressed)) > 3 * Number(x(linear)), `${x(compressed)} vs ${x(linear)}`);
+});
+
+test('a pixel on the track reports the date that pixel stands for', () => {
+  // The thumb's half of the mapping. Without it a drag across a compressed
+  // stretch would report a linear reading of a non-linear bar, and the date
+  // chip would disagree with the dot the thumb is sitting on.
+  const axis = compressTimeAxis(
+    [day('2025-10-09'), day('2025-10-24'), day('2025-12-03'), day('2026-09-11')],
+    600,
+  );
+  assert.equal(axis.msByPx(0), day('2025-10-09'));
+  assert.equal(axis.msByPx(600), day('2026-09-11'));
+  assert.equal(axis.msByPx(-50), day('2025-10-09'), 'off the end is the end, not an extrapolation');
+  assert.equal(axis.msByPx(9999), day('2026-09-11'));
+  for (const iso of ['2025-10-24', '2025-12-03']) {
+    assert.equal(axis.msByPx(axis.xByMs(day(iso))), day(iso), `${iso} does not survive the round trip`);
+  }
+  let previous = -Infinity;
+  for (let x = 0; x <= 600; x += 10) {
+    const ms = axis.msByPx(x);
+    assert.ok(ms >= previous, `px ${x} went backwards in time`);
+    previous = ms;
+  }
 });
 
 // ── Lanes and clusters ──────────────────────────────────────────────────────
