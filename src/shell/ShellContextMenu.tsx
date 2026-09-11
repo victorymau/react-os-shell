@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { PopupMenu, PopupMenuItem, PopupMenuDivider, MenuIcon } from './PopupMenu';
-import toast from './toast';
+import { copyToClipboard, selectionAt, type SelectedText } from './clipboard';
 import {
   describeContextTarget,
   keepsNativeMenu,
@@ -43,91 +43,6 @@ const ICONS = {
   link: 'M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244',
 } as const;
 
-/** The selection a right-click can offer to copy. `html` rides along with the
- *  text so a copied table pastes into a spreadsheet as a table, the way the
- *  browser's own Copy does. */
-interface Selected {
-  text: string;
-  html: string;
-}
-
-/**
- * What is selected — but only when the right-click landed on it. A browser
- * offers Copy for the selection under the pointer, not for one left behind in
- * another window, so neither do we.
- */
-function selectionAt(target: EventTarget | null): Selected | null {
-  let sel: Selection | null = null;
-  try { sel = window.getSelection(); } catch { return null; }
-  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
-  // Asked of each Range rather than of the Selection: `Range.intersectsNode`
-  // answers the same question consistently everywhere, where jsdom's
-  // `Selection.containsNode` answers it backwards.
-  const node = target as Node | null;
-  if (node && typeof node.nodeType === 'number') {
-    let underPointer = false;
-    for (let i = 0; i < sel.rangeCount && !underPointer; i++) {
-      underPointer = sel.getRangeAt(i).intersectsNode(node);
-    }
-    if (!underPointer) return null;
-  }
-  const text = sel.toString();
-  if (!text.trim()) return null;
-  const box = document.createElement('div');
-  for (let i = 0; i < sel.rangeCount; i++) box.appendChild(sel.getRangeAt(i).cloneContents());
-  return { text, html: box.innerHTML };
-}
-
-/**
- * Write to the clipboard, with HTML beside the text when there is some.
- *
- * `navigator.clipboard` first. Without it (file:// pages, an older WebView),
- * `execCommand('copy')` on a throwaway selection, with a one-shot `copy`
- * listener that supplies both flavours itself.
- */
-async function writeClipboard(text: string, html?: string): Promise<boolean> {
-  try {
-    if (html && typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
-      await navigator.clipboard.write([new ClipboardItem({
-        'text/plain': new Blob([text], { type: 'text/plain' }),
-        'text/html': new Blob([html], { type: 'text/html' }),
-      })]);
-      return true;
-    }
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch { /* fall through */ }
-  const onCopy = (e: ClipboardEvent) => {
-    e.clipboardData?.setData('text/plain', text);
-    if (html) e.clipboardData?.setData('text/html', html);
-    e.preventDefault();
-  };
-  const ta = document.createElement('textarea');
-  ta.value = text;
-  ta.style.position = 'fixed';
-  ta.style.opacity = '0';
-  document.body.appendChild(ta);
-  ta.select();
-  document.addEventListener('copy', onCopy);
-  try {
-    return document.execCommand('copy');
-  } catch {
-    return false;
-  } finally {
-    document.removeEventListener('copy', onCopy);
-    ta.remove();
-  }
-}
-
-function copy(label: string, text: string, html?: string) {
-  void writeClipboard(text, html).then(ok => {
-    if (ok) toast.success(`${label} copied`);
-    else toast.error(`Could not copy the ${label.toLowerCase()}`);
-  });
-}
-
 function openInNewTab(url: string) {
   window.open(url, '_blank', 'noopener,noreferrer');
 }
@@ -143,7 +58,7 @@ interface OpenMenu {
   x: number;
   y: number;
   target: ShellContextTarget;
-  selected: Selected | null;
+  selected: SelectedText | null;
 }
 
 export default function ShellContextMenu({ disabled }: ShellContextMenuProps = {}) {
@@ -204,7 +119,7 @@ export default function ShellContextMenu({ disabled }: ShellContextMenuProps = {
 
   if (selected) {
     sections.push([
-      <PopupMenuItem key="copy" onClick={run(() => copy('Text', selected.text, selected.html))}>
+      <PopupMenuItem key="copy" onClick={run(() => void copyToClipboard('Text', selected.text, selected.html))}>
         <MenuIcon d={ICONS.copy} />Copy
       </PopupMenuItem>,
     ]);
@@ -215,7 +130,7 @@ export default function ShellContextMenu({ disabled }: ShellContextMenuProps = {
       <PopupMenuItem key="open-link" onClick={run(() => openInNewTab(linkUrl))}>
         <MenuIcon d={ICONS.open} />Open link in new tab
       </PopupMenuItem>,
-      <PopupMenuItem key="copy-link" onClick={run(() => copy('Link address', linkUrl))}>
+      <PopupMenuItem key="copy-link" onClick={run(() => void copyToClipboard('Link address', linkUrl))}>
         <MenuIcon d={ICONS.link} />Copy link address
       </PopupMenuItem>,
     ]);
@@ -235,7 +150,7 @@ export default function ShellContextMenu({ disabled }: ShellContextMenuProps = {
     <PopupMenuItem key="reload" onClick={run(() => window.location.reload())}>
       <MenuIcon d={ICONS.reload} />Reload
     </PopupMenuItem>,
-    <PopupMenuItem key="copy-page" onClick={run(() => copy('Page address', window.location.href))}>
+    <PopupMenuItem key="copy-page" onClick={run(() => void copyToClipboard('Page address', window.location.href))}>
       <MenuIcon d={ICONS.link} />Copy page address
     </PopupMenuItem>,
   ]);
