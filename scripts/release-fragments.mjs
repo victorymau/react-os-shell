@@ -74,7 +74,9 @@ export function parseFragment(text, name) {
         `${name}: bad frontmatter line ${JSON.stringify(line)} (allowed keys: ${ALLOWED_KEYS.join(', ')})`,
       );
     }
-    keys[key] = line.slice(sep + 1).trim().replace(/^['"]|['"]$/g, '');
+    // Unwrap only a MATCHING pair of quotes. Stripping each end independently
+    // ate the closing quote of `... spelling of "color"` (2026-09-11).
+    keys[key] = line.slice(sep + 1).trim().replace(/^(['"])(.*)\1$/, '$2');
   }
   if (!BUMP_LEVELS.includes(keys.bump)) {
     throw new FragmentError(
