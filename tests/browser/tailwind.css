@@ -8,3 +8,9 @@
  * they say. */
 @import "tailwindcss";
 @source "../../src";
+/* The kit's own sheet, because it is half of what the components render: the
+   dark remaps, the neutral ramp, and the `rosh-*` component classes the chart
+   and timeline families draw with. Without it a `TimelineTrack` has no rail,
+   no lanes and no motion — and a check about labels not overlapping would be
+   measuring a column of unstyled divs. */
+@import "../../src/ui.css";

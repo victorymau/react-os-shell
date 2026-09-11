@@ -196,6 +196,19 @@ const PHASE_BAND_PX = 22;
  *  shell windows where the viewport says nothing about it. */
 const VERTICAL_BELOW_PX = 320;
 
+/** The stage's side inset, so a dot on the first or last day is not clipped —
+ *  `ui.css` sets the padding, and the threshold below has to know about it. */
+const EDGE_INSET_PX = 10;
+
+/** The pending column and the gap beside it, as `ui.css` sizes them.
+ *
+ *  The variant decision is taken against the CARD's width minus that column,
+ *  rather than against the track element itself, because the track only exists
+ *  in one of the two variants: a card measured through it goes vertical once
+ *  and can never come back, since there is then nothing left to observe. */
+const PENDING_COLUMN_PX = 156;
+const BODY_GAP_PX = 20;
+
 /** Two rows of pending, then a real button for the rest. A `title` is invisible
  *  on touch, so it cannot be the only way to read what was folded. */
 const PENDING_ROW_LIMIT = 2;
@@ -353,14 +366,29 @@ function sameWidths(a: Record<string, number>, b: Record<string, number>): boole
   return keys.every((k) => Math.abs((a[k] ?? 0) - (b[k] ?? 0)) < 0.5);
 }
 
-/** The track's own width, watched: the same eight milestones fit one lane in a
- *  maximised window and two in a side-by-side pane. */
-function useObservedWidth(ref: RefObject<HTMLElement>): number {
+/**
+ * An element's width, watched: the same eight milestones fit one lane in a
+ * maximised window and two in a side-by-side pane.
+ *
+ * `enabled` is how the observer follows an element that comes and goes — the
+ * track layer exists only in the horizontal variant, and an effect keyed on the
+ * ref alone never re-attaches when it is rendered again.
+ *
+ * A reading of zero is discarded rather than stored. A detaching element
+ * measures 0 and a ResizeObserver reports that last size on the way out, so
+ * "the element went away" and "the element is 0 px wide" arrive as the same
+ * number — and taking it would collapse the axis at the moment the card
+ * switched variants.
+ */
+function useObservedWidth(ref: RefObject<HTMLElement>, enabled: boolean): number {
   const [width, setWidth] = useState(0);
   useMeasureEffect(() => {
-    const el = ref.current;
+    const el = enabled ? ref.current : null;
     if (!el) return;
-    const read = () => setWidth(el.getBoundingClientRect().width);
+    const read = () => {
+      const next = el.getBoundingClientRect().width;
+      if (next > 0) setWidth(next);
+    };
     read();
     // Guarded: this package renders under jsdom and under the server renderer,
     // and neither is required to have a ResizeObserver.
@@ -368,7 +396,7 @@ function useObservedWidth(ref: RefObject<HTMLElement>): number {
     const observer = new ResizeObserver(read);
     observer.observe(el);
     return () => { observer.disconnect(); };
-  }, [ref]);
+  }, [ref, enabled]);
   return width;
 }
 
@@ -1035,6 +1063,7 @@ export default function TimelineTrack({
   // not care that "today" does not tick while the view is open.
   const [mountedToday] = useState(() => Date.now());
   const now = todayMs ?? mountedToday;
+  const rootRef = useRef<HTMLDivElement>(null);
   const layerRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<HTMLDivElement>(null);
   const tipRef = useRef<HTMLDivElement>(null);
@@ -1049,9 +1078,15 @@ export default function TimelineTrack({
   const tipId = useId();
   const popId = useId();
 
-  const observed = useObservedWidth(layerRef);
-  const trackPx = observed > 0 ? observed : FALLBACK_TRACK_PX;
-  const vertical = observed > 0 && observed < VERTICAL_BELOW_PX;
+  // The card's width decides the variant; the track's own width, when there is
+  // a track, is what every coordinate is computed against.
+  const rootWidth = useObservedWidth(rootRef, true);
+  const bodyColumn = rootWidth > 0
+    ? rootWidth - (pending.length > 0 ? PENDING_COLUMN_PX + BODY_GAP_PX : 0)
+    : 0;
+  const vertical = bodyColumn > 0 && bodyColumn - 2 * EDGE_INSET_PX < VERTICAL_BELOW_PX;
+  const layerWidth = useObservedWidth(layerRef, !vertical);
+  const trackPx = layerWidth > 0 ? layerWidth : FALLBACK_TRACK_PX;
   const geo = GEOMETRY[labels === 'active' ? 'active' : 'lanes'];
 
   // The axis. Anchored on both ends of the window and on every dated item inside
@@ -1248,19 +1283,22 @@ export default function TimelineTrack({
     },
   });
 
+  const usesFarLane = labels === 'active' || marks.length > 1;
+  // One root in both variants, because it is what the variant is decided from.
   if (vertical) {
     return (
-      <VerticalTrack
-        marks={marks} pending={pending} currentKey={resolvedCurrent} todayMs={now}
-        reveal={reveal} ariaLabel={ariaLabel} step={step}
-        nodeProps={nodeProps} onKeyDown={onListKeyDown}
-      />
+      <div ref={rootRef}>
+        <VerticalTrack
+          marks={marks} pending={pending} currentKey={resolvedCurrent} todayMs={now}
+          reveal={reveal} ariaLabel={ariaLabel} step={step}
+          nodeProps={nodeProps} onKeyDown={onListKeyDown}
+        />
+      </div>
     );
   }
 
-  const usesFarLane = labels === 'active' || marks.length > 1;
   return (
-    <div className={`rosh-tl-body${pending.length > 0 ? '' : ' is-solo'}`}>
+    <div ref={rootRef} className={`rosh-tl-body${pending.length > 0 ? '' : ' is-solo'}`}>
       <div className="flex items-stretch gap-3">
         {edgeCaptions?.start && <div className="rosh-tl-edge text-right">{edgeCaptions.start}</div>}
         <div className="rosh-tl-stage" style={{ height: `${stageHeight(geo, usesFarLane, phases.length > 0)}px` }}>
