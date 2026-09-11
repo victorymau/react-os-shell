@@ -262,9 +262,9 @@ test('renderReportPreview fills the reports that carry none, and never overrides
   const pinned = view.container.querySelector('[role="tooltip"]')?.textContent ?? '';
   assert.match(pinned, /its own card/);
   assert.doesNotMatch(pinned, /fallback for PP-2/, 'the item-level preview wins');
-  // It is a plain call per report, so the whole report is in hand — the caller
-  // reads `items` or `notes` off it, not just the number.
-  assert.deepEqual(asked, ['PP-1', 'PP-1']);
+  // Asked about the report that needed one and never about the one that did
+  // not — as a SET, because how many times the card renders is not a promise.
+  assert.deepEqual([...new Set(asked)], ['PP-1']);
   view.unmount();
 });
 
