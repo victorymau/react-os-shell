@@ -30,9 +30,15 @@ function BrowserControls() {
   useEffect(() => { openPage(ROUTE); }, [openPage]);
   return (
     <>
-      <button type="button" data-testid="public-close" onClick={() => closeEntity(WINDOW_ID)}>
-        Public close
-      </button>
+      {/* Above the window chrome. This page is served WITH the package's real
+          stylesheet, so the window is really positioned and its top-left
+          resize handle really sits over this corner of the document — an
+          unstyled page hid that, and the click "worked" by accident. */}
+      <div style={{ position: 'relative', zIndex: 100 }}>
+        <button type="button" data-testid="public-close" onClick={() => closeEntity(WINDOW_ID)}>
+          Public close
+        </button>
+      </div>
       <div id="taskbar-windows" />
     </>
   );

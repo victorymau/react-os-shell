@@ -1,6 +1,6 @@
 {
   "name": "react-os-shell",
-  "version": "4.95.0",
+  "version": "4.102.0",
   "description": "Desktop-style React UI shell — windows, taskbar, start menu, sticky notes, frosted glass theming, and bundled apps.",
   "license": "MIT",
   "author": "Victor Y. Mau",
@@ -32,6 +32,11 @@
       "types": "./dist/markup/index.d.ts",
       "import": "./dist/markup/index.js",
       "default": "./dist/markup/index.js"
+    },
+    "./file-intake": {
+      "types": "./dist/file-intake/index.d.ts",
+      "import": "./dist/file-intake/index.js",
+      "default": "./dist/file-intake/index.js"
     },
     "./markdown": {
       "types": "./dist/markdown/index.d.ts",

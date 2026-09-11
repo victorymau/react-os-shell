@@ -124,6 +124,24 @@ export { default as InputNumber } from '../forms/InputNumber';
 export type { InputNumberProps } from '../forms/InputNumber';
 export { default as FilePicker } from '../forms/FilePicker';
 export type { FilePickerProps } from '../forms/FilePicker';
+export {
+  default as ComposerAttachments,
+  AttachmentDropZone,
+  AttachmentList,
+  AttachButton,
+  PaperclipGlyph,
+} from '../forms/ComposerAttachments';
+export type {
+  ComposerAttachmentsProps,
+  AttachmentDropZoneProps,
+  AttachmentListProps,
+  AttachButtonProps,
+  FileIntake,
+} from '../forms/ComposerAttachments';
+// The intake behind every upload primitive, exported for a composer with a
+// layout of its own — never so a consumer can render its own file input.
+export { useFileIntake, FileIntakeAlert, acceptsFile } from '../forms/useFileIntake';
+export type { FileIntakeOptions, FileIntakeLimits, FileRejection, FileRejectionReason } from '../forms/useFileIntake';
 export { default as SearchableSelect } from '../shell/SearchableSelect';
 export type { SearchableOption, SearchableSelectProps } from '../shell/SearchableSelect';
 export { default as TagInput } from '../forms/TagInput';
@@ -146,6 +164,8 @@ export { default as Skeleton } from '../shell/Skeleton';
 export type { SkeletonProps, SkeletonVariant } from '../shell/Skeleton';
 export { default as DescriptionList } from '../shell/DescriptionList';
 export type { DescriptionListProps, DescriptionItem, DescriptionColumns } from '../shell/DescriptionList';
+export { default as SettingRow } from '../shell/SettingRow';
+export type { SettingRowProps } from '../shell/SettingRow';
 export { default as Result } from '../shell/Result';
 export type { ResultProps, ResultStatus } from '../shell/Result';
 export { default as CountBadge } from '../shell/CountBadge';
@@ -167,9 +187,9 @@ export { default as Tooltip } from '../shell/Tooltip';
 export type { TooltipProps } from '../shell/Tooltip';
 export { default as ColoredBadge } from '../shell/ColoredBadge';
 export type { ColoredBadgeProps } from '../shell/ColoredBadge';
-export { default as StatusBadge, StatusBadgeProvider } from '../shell/StatusBadge';
-export type { SemanticGroup } from '../shell/StatusBadge';
-export { GROUP_COLORS } from '../shell/StatusBadge';
+export { default as StatusBadge, StatusBadgeProvider, groupColors } from '../shell/StatusBadge';
+export type { SemanticGroup, StatusEmphasis } from '../shell/StatusBadge';
+export { GROUP_COLORS, GROUP_COLORS_SOLID } from '../shell/StatusBadge';
 export { default as EmptyState } from '../shell/EmptyState';
 export type { EmptyStateProps } from '../shell/EmptyState';
 export { default as PageHeader } from '../shell/PageHeader';
@@ -178,8 +198,32 @@ export { default as LoadingSpinner } from '../shell/Spinner';
 export type { LoadingSpinnerProps } from '../shell/Spinner';
 export { default as MetricBar } from '../shell/MetricBar';
 export type { MetricBarProps } from '../shell/MetricBar';
+export { default as BudgetBar, budgetState } from '../shell/BudgetBar';
+export type { BudgetBarProps, BudgetState } from '../shell/BudgetBar';
 export { default as MilestoneTimeline } from '../shell/MilestoneTimeline';
 export type { Milestone, MilestoneKind, MilestoneTimelineProps } from '../shell/MilestoneTimeline';
+// The scrubbable production timeline: a hook that owns the slider, playback
+// and the interpolated per-part snapshot, plus the bar that draws it. The
+// stage maths (`STAGES`, `calcOverall`, `calcReportOverall`) ships with it so
+// a consumer's items table and the bar's "N% overall" agree by construction.
+export {
+  default as ProductionTimeline,
+  useProductionTimeline,
+  calcOverall,
+  calcReportOverall,
+  STAGES,
+  POST_PRODUCTION_STATUSES,
+} from '../shell/ProductionTimeline';
+export type {
+  ProgressItem,
+  TimelineReport,
+  TimelineMarker,
+  TimelineMarkerKind,
+  ProductionTimelineSnapshot,
+  ProductionTimelineProps,
+  UseProductionTimelineOpts,
+} from '../shell/ProductionTimeline';
+export { DAY_MS, toDayMs, fmtSliderDate } from '../shell/timelineDates';
 export { default as ContainerFillChart } from '../shell/ContainerFillChart';
 export type { ContainerFillChartProps, ContainerFillItem } from '../shell/ContainerFillChart';
 // The regex renderer. It carries `Lite` in its name now that there are two,

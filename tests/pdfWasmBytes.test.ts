@@ -9,11 +9,11 @@ import { hasWasmPreamble, describeNonWasm, wasmBytesError } from '../src/apps/_w
  * enough. These drive the real functions rather than reading the source,
  * because the failure they guard is a wrong ANSWER, not a wrong spelling.
  *
- * `Preview.tsx` itself cannot be imported here: pdfjs-dist constructs a
+ * `PdfViewer.tsx` itself cannot be imported here: pdfjs-dist constructs a
  * `new DOMMatrix()` at module scope and Node has no DOM. That is exactly why
  * the decision lives in its own React-free module, and why the last test below
- * reads Preview's source to prove the module is actually WIRED IN — a helper
- * that is correct and unused would pass every other test on this page.
+ * reads the viewer's source to prove the module is actually WIRED IN — a
+ * helper that is correct and unused would pass every other test on this page.
  */
 
 const WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
@@ -66,13 +66,13 @@ test('the error names the file, the URL and the emit', () => {
   assert.match(err.message, /__REACT_OS_SHELL_PDF_WASM__/);
 });
 
-test('the check is wired into the Preview factory, not merely available to it', () => {
+test('the check is wired into the viewer\'s wasm factory, not merely available to it', () => {
   const root = process.env.REPO_ROOT ?? resolve(import.meta.dirname, '..');
-  const preview = readFileSync(join(root, 'src/apps/Preview.tsx'), 'utf-8');
-  assert.match(preview, /from '\.\/_wasmBytes'/);
+  const viewer = readFileSync(join(root, 'src/apps/PdfViewer.tsx'), 'utf-8');
+  assert.match(viewer, /from '\.\/_wasmBytes'/);
   // Between reading the body and returning it, the bytes must be checked.
   assert.match(
-    preview,
+    viewer,
     /await res\.arrayBuffer\(\)[\s\S]{0,200}hasWasmPreamble\(bytes\)[\s\S]{0,120}throw wasmBytesError\(/,
     'BundledPdfWasmFactory.fetch must reject a non-wasm body before returning it',
   );

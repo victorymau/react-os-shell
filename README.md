@@ -16,7 +16,7 @@ A backend-less playground hosted on GitHub Pages. Wallpapers, themes, sticky not
 
 **Shell:** `<Layout>`, `<StartMenu>`, `<Desktop>` (with sticky notes + folders), `<WindowManager>`, `<Modal>` (standard / compact / widget styles), `<PopupMenu>`, `<ConfirmDialog>`, `<GlobalSearch>` (Cmd-K), `<ShortcutHelp>`, `<NotificationBell>`, `<StatusBadge>`, `<SearchableSelect>`, frosted-glass theming.
 
-**UI primitives:** `<Button>`, `<Input>`, `<Textarea>`, `<Select>`, `<Checkbox>`, `<Radio>`, `<FormField>`, `<Label>`, `<Card>` / `<StatCard>`, `<Avatar>` / `<AvatarGroup>`, `<Banner>`, `<Tabs>`, `<Accordion>`, `<Tooltip>`, `<Pagination>`, `<MetricBar>`, and dependency-free `<Sparkline>` / `<LineChart>` / `<BarChart>` / `<DonutChart>` charts.
+**UI primitives:** `<Button>`, `<Input>`, `<Textarea>`, `<Select>`, `<Checkbox>`, `<Radio>`, `<FormField>`, `<Label>`, `<Card>` / `<StatCard>`, `<Avatar>` / `<AvatarGroup>`, `<Banner>`, `<Tabs>`, `<Accordion>`, `<Tooltip>`, `<Pagination>`, `<MetricBar>`, `<BudgetBar>`, `<SettingRow>`, and dependency-free `<Sparkline>` / `<LineChart>` / `<BarChart>` / `<DonutChart>` charts.
 
 **Page templates:** ready-made screens composed from the primitives — `<DashboardTemplate>`, `<DataTablePage>`, `<FormLayoutPage>`, `<CheckoutTemplate>`, `<EmailTemplate>`, `<ChatTemplate>`, `<GalleryTemplate>`, `<AuthScreen>`, `<ErrorPage>`. `<ErrorBoundary>` catches a render crash and shows the 500 page in place of a blank screen.
 
@@ -250,6 +250,11 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 | `Layout` | Top-level shell — desktop + taskbar + start menu. Mount once inside your providers. `branding={{ productName, logo, tagline }}` sets the visual identity in one object — start-menu button, startup splash, logout cover, mobile landing; its fields win over the older loose `productName`/`productIcon` props. The About dialog and What's New changelog stay on `DesktopHostConfig`. |
 | `BrandMark` | Aspect-preserving tenant mark for favicon, compact-icon and wordmark slots, with load-failure fallback, neutral monogram behaviour and optional tone-aware contrast treatment. |
 | `BrandAssetEditor` | Shared staged upload/remove lifecycle with one enforced file contract and standard browser, search-result and shell-slot previews. Persistence is injected through `onSave` and `onRemove`. |
+| `ComposerAttachments`, `AttachmentDropZone`, `AttachmentList`, `AttachButton` | Files attached to a message being written — a chat reply, a mail compose, a feedback thread. The paperclip ("Attach files"), a drop anywhere on the composer ("Drop files to attach"), and a paste into the text area all reach one pending `File[]` through the same checks, and a rejected file is announced. Holds the list and stops; the composer's send puts the files in its request. `ComposerAttachments` is the standard layout (text area, chips, trigger row); the three parts compose a composer with an icon rail or a footer of its own. `useFileIntake` is the hook behind every upload primitive, exported for exactly that — never so a consumer renders its own file input. |
+| `FilePicker` | Documents on a record: one dashed zone that is a button (click, Enter, Space) and a drop target, listing the chosen `File[]`. It never uploads — the form submits them as it submits everything else. `accept`, `maxSizeBytes` and `maxFiles` are enforced on a drop exactly as on a pick, and a rejected file is announced (`role="alert"`) naming the file and the rule. Forwards its ref to the zone for `FormErrorSummary`. |
+| `useFileIntake`, `acceptsFile`, `FileIntakeAlert` | The intake every upload primitive above takes its files through — the file dialog, a drop and a paste reach one set of checks (`accept`, `maxSizeBytes`, `maxFiles`) and one announced rejection list. For a surface with a layout of its own; never so a consumer renders its own file input. Also on the React-only subpath [`react-os-shell/file-intake`](#upload-intake-without-the-shell--react-os-shellfile-intake) for a page that cannot load the shell. |
+| `MediaUploadField` | The single image / video slot — logo, cover, avatar, favicon. Dashed zone empty, preview with Replace / Remove filled, both take a drop. `onFile` hands the consumer the chosen `File` to upload (the field owns the gesture); `onPick` opens the consumer's own library picker instead; with neither it emits an object-URL. `maxSizeBytes` joins `accept` on every gesture. |
+| `MediaUploadGrid` | The gallery sibling: thumbnails, an Add tile, per-thumb remove, drag-and-keyboard reorder, optional cover badge. `onFiles` receives EVERY file of a multi-file drop or dialog pick; `onPick` defers to a library picker. `maxFiles` counts against the items held. |
 | `StartMenu` / `Desktop` / `WindowManagerProvider` | Used internally by `Layout`; rarely instantiated directly. |
 | `Modal`, `ModalActions`, `CopyButton`, `CancelButton` | Window primitive supporting standard / compact / widget styles. |
 | `PopupMenu`, `PopupMenuItem`, `PopupMenuDivider`, `PopupMenuLabel` | Right-click / context-menu primitive. |
@@ -259,11 +264,14 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 | `ShortcutHelp` | The keyboard cheatsheet shown on `?`. |
 | `NotificationBell` | Taskbar bell — config via `<Layout notifications={…}>`. |
 | `BugReportDetail` | Used inside an entity-window registry entry; reads from `<BugReportConfigProvider>`. |
-| `StatusBadge` | Colored pill rendering a status string. Map status→semantic group via `<StatusBadgeProvider groups={{...}}>`. `label` overrides the derived text for a status that arrived from elsewhere; the color still comes from `status`. |
+| `StatusBadge` | Colored pill rendering a status string. Map status→semantic group via `<StatusBadgeProvider groups={{...}}>`. `label` overrides the derived text for a status that arrived from elsewhere; the color still comes from `status`. `emphasis` (`subtle` default / `solid`, the same two words `Banner` uses) is the volume: the quiet register is a transparent wash that composites over a raised panel and a hovered row, the loud one is a saturated fill for the detail header where the same fact is the headline. Color comes from the status tokens in `ui.css`, which carry both themes. |
 | `SidebarLayout` | Two-pane layout with a drag-to-resize sidebar (`storageKey` persists the width). Pair with a `flushBody` window so the sidebar runs edge-to-edge. |
 | `SidebarNavItem`, `SidebarGroupLabel` | Filter-sidebar button (optional `count` badge and `severity` marker dot) plus its group heading. Roll the severity up in the app; omitting it renders exactly as before it existed. An unrecognised `severity` renders a visible "unknown" marker and logs — it never silently disappears. |
 | `MetricBar` | Value + proportional bar with optional `warn` / `crit` threshold ticks — the CPU / memory / disk row. `value={null}` renders "no data" (dashed empty track), never a zero-width bar; with no thresholds the fill stays grey rather than claiming health. `max` must be a positive finite number — given `0`/`NaN` the row prints the value but draws no bar, rather than dividing by zero into a full one. |
-| `Button`, `Input`, `Textarea`, `Select`, `Checkbox`, `Radio`, `FormField`, `Label` | Form controls — controlled (`value`/`onChange`); `Input`/`Textarea` forward native props for react-hook-form. |
+| `BudgetBar` | A run's wall clock, drawn as **budget consumed** — not work done, which nothing here knows. Three states a glance separates: within budget (a solid fill), past the deadline (a hatched band, never the shape of a finished bar; with a `grace` the track spans budget + grace so it is only full when the reaper is due), and **no estimate at all** (no bar — not a zero one, not an empty track). Keeps `MetricBar`'s rule that `elapsed={null}` is no reading and `elapsed={0}` is a measurement. `budgetState(elapsed, budget)` is the same verdict for a list to sort by. |
+| `ProductionTimeline` | The scrubbable production bar: production start → estimated completion, one dot per supplier progress report, shipment / inspection markers, drag or play to see the interpolated per-part stage quantities on any day. `useProductionTimeline(opts)` owns the slider, playback and the derived snapshot so the caller's items table and the bar read the same state; `STAGES` / `calcOverall` / `calcReportOverall` are the stage maths it shares with that table. |
+| `SettingRow` | One setting: its name and current value on one baseline, the explanation at full width beneath in a smaller voice. The value never shrinks, so a short badge keeps its line instead of folding into a narrow column. Handles a value that is a control (`controlId` labels it), a read-only fact, a value nobody knows (an em dash in the faint ink, never an empty cell), and a `quiet` row nothing can write yet. `DescriptionList` is the record-detail neighbour and stays that. |
+| `Button`, `Input`, `Textarea`, `Select`, `Checkbox`, `Radio`, `Switch`, `FormField`, `Label` | Form controls — controlled (`value`/`onChange`); `Input`/`Textarea` forward native props for react-hook-form. `Button` and `Switch` take `disabledReason`: persistent text beside the control wired with `aria-describedby`, never a `title` — a tooltip needs a hover a disabled control does not reliably get. `Switch` also takes `disabledReasonId`, so a panel whose controls are all dead for one reason states it once and points every control at it. |
 | `FormErrorSummary` | The error list at the top of a failed form (WCAG 3.3.1, the GOV.UK pattern): takes focus when errors appear, each message is a link that focuses the offending control by its `FormField` id. Renders nothing while `errors` is empty. |
 | `TagInput` | Multi-value field — chosen values as removable chips, typing filters the option list in the same dropdown SearchableSelect uses. `allowFreeText` admits unlisted entries; Backspace in the empty input removes the last chip. The value array stays duplicate-free by construction. |
 | `DatePicker`, `TimePicker`, `DateTimePicker`, `DateRangePicker` | Date/time fields. The first three wrap the platform's own inputs in the kit's field styling; all are careful to speak LOCAL dates and wall-clock times (never `toISOString`). `TimePicker` hands back an `HH:MM` string — a time of day names no calendar day, so it never invents a Date. `DateRangePicker` takes `fullWidth` to fill a filter-grid cell instead of shrink-wrapping its label. |
@@ -274,7 +282,7 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 | `Stepper` | A linear wizard's progress strip — numbered circles, connectors, `aria-current="step"`. Controlled like Tabs; completed steps are clickable to go back (when `onChange` is wired), upcoming steps never are — moving forward belongs to the wizard's own Continue button, behind its validation. |
 | `Pagination` | Numbered page control (pairs with tables; complements `ListFooter`). |
 | `Sparkline`, `LineChart`, `BarChart`, `DonutChart`, `ScatterChart` | Dependency-free inline-SVG charts (`currentColor`-themed). `LineChart` is the multi-series trend with optional scale, legend, dots and area fill. `ScatterChart` takes `xDomain` / `yDomain` to override the derived axis, and `xScale` / `yScale` of `'log'` for a long tail; a point outside a supplied domain is dropped and counted in the accessible label. |
-| `BulkImportGrid` | Paste-or-upload bulk entry with column mapping, duplicate review and optional sum-merge. Hands resolved rows to `onImport`; owns no persistence. |
+| `BulkImportGrid` | Paste-or-upload bulk entry with column mapping, duplicate review and optional sum-merge. Hands resolved rows to `onImport`; owns no persistence. The whole panel takes a dropped CSV; the Upload CSV button opens the same dialog. |
 | `UndoProvider`, `UndoControls` | One undo stack per form window, covering its fields, line items and bulk imports. Wrap the form in the provider, register state with `useUndoable`, drop the controls wherever the form's actions live. Binds ⌘Z / ⇧⌘Z (and Ctrl+Y) except while the caret is in a field, where the browser's own undo wins. `WindowManager` already mounts one per window, scoped with `windowId` so a keypress reaches only the frontmost window; pass `windowId` yourself for any provider you mount outside a `<Modal>`, or two open windows will step back together. Offered to anyone who may edit the record — gate with `canEdit` and/or `perms`; a reader sees no controls and records no history. The shell-level provider cannot know the record's permissions, so a read-only form nests its own `<UndoProvider canEdit={false}>` to shadow it. |
 | `Calendar` | Month grid with full keyboard navigation (arrows, Home/End, PageUp/Down) and `role="grid"` semantics. Single or range. The shared grid behind `DatePicker` and `DateRangePicker`. |
 | `DashboardTemplate`, `DataTablePage`, `FormLayoutPage`, `CheckoutTemplate`, `EmailTemplate`, `ChatTemplate`, `GalleryTemplate`, `AuthScreen`, `ErrorPage` | Zero-prop starter page templates composed from the primitives. |
@@ -322,7 +330,54 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 | `bundledApps` | `WindowRegistry` — 12 ready-to-mount apps. |
 | `utilityApps`, `documentApps`, `webApps` | Subsets of `bundledApps`. |
 | `Calculator`, `Spreadsheet`, `Weather`, `CurrencyConverter`, `PomodoroTimer`, `TodoList`, `Browser` | Lazy components — use directly in custom registry entries. |
+| `PdfViewer` | Lazy component — the PDF reader on its own, for embedding. See below. |
 | `BUILTIN_APP_INFO` | Per-app metadata for the document/web apps (Spreadsheets, Notepad, Documents, Preview, Files, Browser): display name, independent app version and one-line description. Drives each app's "About" dialog (window title menu → About <App>), which also shows the shell version. |
+
+#### An embedded PDF — `PdfViewer`
+
+`PdfActionButton` and `setPdfPreview` open a PDF in a Preview **window**. When
+the document belongs *inside* something else — a preview beside the form that
+generates it, a document tab on a record — render `PdfViewer` directly:
+
+```tsx
+import { lazy, Suspense } from 'react';
+const PdfViewer = lazy(() => import('react-os-shell/apps').then(m => ({ default: m.PdfViewer })));
+
+<div className="h-[32rem]">
+  <Suspense fallback={<p>Loading viewer…</p>}>
+    <PdfViewer url={objectUrl} filename="Statement.pdf" fit="page" />
+  </Suspense>
+</div>
+```
+
+| Prop | |
+|---|---|
+| `url` | Object URL or remote URL. |
+| `filename` | Display name, and the filename the built-in Download uses. |
+| `fit` | `'width'` (default) fills the container's width and lets a tall page scroll — right for a viewer that owns a window. `'page'` fits the whole page, which is what a pane inside a dialog wants. Either way it is the *initial* mode: the reader can still zoom, and the Fit button re-arms it. |
+| `onDownload` | Replaces the built-in "save `url` as `filename`". |
+| `onEmail` | Adds an Email button to the toolbar. Omit it and there is none. |
+
+It fills its parent and scrolls inside, so **give the parent a resolved
+height** — `h-full` inside a flex column, or an explicit height. It brings its
+own toolbar (page nav, zoom, Fit, Print, Download); inside the Preview window
+those same buttons merge into the window's single toolbar row instead.
+
+Handing it a new `url` opens that document **on its first page** — the page
+number belongs to the document, not to the viewer, so re-rendering one viewer
+with a shorter document cannot leave it pointing past the end. No `key` needed.
+The reader's zoom is deliberately kept across the change: it is a preference
+for how large they want text, not a fact about the file.
+
+Import it **lazily**, as above. It statically imports `pdfjs-dist`, and the
+whole reason the bundled apps are `lazy()` is to keep a PDF parser out of a
+host's startup bundle — `scripts/verify-dist.mjs` fails the build if one gets
+in. `pdfjs-dist` is an optional peer: a consumer that never renders a PDF need
+not install it.
+
+The alternative this replaces is `<iframe src={objectUrl}>`, which hands the
+document to the browser's own plugin — its toolbar, its thumbnail rail, its
+idea of the zoom, none of it themeable and none of it testable.
 
 ### UI kit without the window manager — `react-os-shell/ui`
 
@@ -347,7 +402,9 @@ through a shared chunk.
 What you get: every form control, the display and layout primitives
 (`Card`/`StatCard`, `Avatar`, `Banner`, `Tabs`, `Accordion`, `Tooltip`,
 `StatusBadge`, `ColoredBadge`, `EmptyState`, `PageHeader`, `Spinner`,
-`Breadcrumbs`, `TopNav`, `SidebarLayout`, `MetricBar`, `Markdown`,
+`Breadcrumbs`, `TopNav`, `SidebarLayout`, `MetricBar`, `BudgetBar`, `MilestoneTimeline`,
+`ProductionTimeline`, `SettingRow`,
+`Markdown`,
 `HelpCenter`, `EditableGrid`, `SearchableSelect`, `PopupMenu`), the charts, all
 nine page templates, the pageless data primitives (`Pagination`, `Kanban`,
 `ListFooter`, `ListLoadError`), `toast`, and the theming hooks (`useTheme`,
@@ -496,6 +553,41 @@ cannot. It is why the till can render prose at all. Reach for it when the bundle
 is the constraint and the body is short; reach for `react-os-shell/markdown`
 when someone else wrote the text.
 
+### Upload intake without the shell — `react-os-shell/file-intake`
+
+The hook behind every upload primitive, for a page that must not load the rest
+of this package: a public applicant form, a storefront's return request.
+
+```tsx
+import { useFileIntake } from 'react-os-shell/file-intake';
+
+const intake = useFileIntake({
+  onAccept: ([file]) => setCv(file),
+  multiple: false,
+  accept: limits.accept,          // from the endpoint's published limits
+  maxSizeBytes: limits.maxSizeBytes,
+});
+
+<input {...intake.inputProps} />  {/* hidden, never a tab stop */}
+<button type="button" onClick={intake.open} {...intake.zoneProps}>Choose file</button>
+{intake.rejections.length > 0 && (
+  <ul role="alert">{intake.rejections.map(r => <li key={r.file.name}>{r.message}</li>)}</ul>
+)}
+```
+
+**It reaches `react` and nothing else** — not `react-dom`, no stylesheet, no
+toast container, no window manager. `scripts/verify-dist.mjs` walks the built
+graph of `dist/file-intake/index.js` on every build and fails it otherwise, and
+pins the export list below. The exports are the same bindings the kit exports,
+so an app importing from both has one hook.
+
+| Export | Notes |
+|---|---|
+| `useFileIntake(options)` | `inputProps` for the hidden native input, `zoneProps` for the one focusable control that is also the drop target, `pasteProps` for a composer's text area, `open()`, `dragOver`, `rejections`, `clearRejections()`. `accept`, `maxSizeBytes` and `maxFiles` apply to every gesture. It validates and hands back `File[]`; it never uploads. |
+| `acceptsFile(file, accept)` | The `accept` test the hook applies — extension rules match the name, `type/*` the MIME prefix. |
+| `FileIntakeAlert` | The rejection list as `role="alert"`, styled with Tailwind utilities (`text-xs text-red-600`). A page whose Tailwind does not scan this package renders `rejections` itself, as above — keep the `role="alert"`. |
+| `FileIntakeOptions`, `FileIntakeLimits`, `FileRejection`, `FileRejectionReason` | Types. |
+
 ### Misc
 
 | Export | Notes |
@@ -505,6 +597,8 @@ when someone else wrote the text.
 | `glassStyle()` | Returns the theme-aware frosted-glass `style` object. |
 | `reportBug(submit)` | Captures a screenshot via `getDisplayMedia`, opens the dialog, hands the payload to your `submit`. |
 | `formatDate(iso)` | Locale-aware date formatter. |
+| `budgetState(elapsed, budget)` | `no-reading` \| `no-budget` \| `within` \| `over` — the verdict `BudgetBar` draws by, exported so a run list sorts and filters by the same rule rather than re-deriving "late" a second time. |
+| `GROUP_COLORS`, `GROUP_COLORS_SOLID`, `groupColors(group, emphasis?)` | The status palette, both registers, as the class strings the badges emit — for a surface that has to build its own pill (a virtualised cell, a canvas legend) and must not guess at the colors. |
 | `severityOf(value, warn?, crit?)` | The `SeverityTone` (`success` \| `warning` \| `danger`) a reading earns against **inclusive** bounds; `null` when there's no reading or no usable bounds — the shell hardcodes no threshold. Backs `MetricBar`; use it to roll a `SidebarNavItem severity` up. |
 | `isSeverityTone(value)` | Type guard for the three tones. Validate a backend rollup with it at the fetch boundary, where a bad token can still be reported against its payload, rather than letting it surface as a wrong pixel. |
 | `toast.success / .error / .info` | Toast notifications — auto-mounts container. |

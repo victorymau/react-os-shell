@@ -7,15 +7,21 @@
  *
  * Presentational and controlled: it renders the `items` you pass and reports
  * intent through callbacks — it owns NO picker modal, NO upload, and NO ordering
- * logic. Adding is INJECTED via `onPick(droppedFile?)` (fires on click of the
- * Add tile / empty dropzone, and on a file drop onto the zone); removing via
- * `onRemove(id)`; reordering via `onReorder(from, to)`. The consumer resolves
- * each into its own state / API. Shares `mediaFileName` and the dropzone look
- * with {@link MediaUploadField} (DRY / SSoT).
+ * logic. Adding is either INJECTED via `onPick(droppedFile?)` — the consumer
+ * opens its own library picker on click — or OWNED here via `onFiles(files)`:
+ * the grid opens the native dialog on click, takes a drop of any number of
+ * files, and hands the consumer every file that passed `accept`, `maxSizeBytes`
+ * and `maxFiles` (harness PAT-10). Removing is `onRemove(id)`; reordering is
+ * `onReorder(from, to)`. The consumer resolves each into its own state / API.
+ * Shares `mediaFileName`, the dropzone look and the intake path with
+ * {@link MediaUploadField} (DRY / SSoT).
  */
 import { useId, useState, type DragEvent, type FocusEvent, type KeyboardEvent, type ReactNode } from 'react';
 import FormField from './FormField';
-import { isVideoUrl, mediaFileName, Spinner, UploadGlyph } from './mediaShared';
+import {
+  BusyOverlay, FilenameBadge, FOCUS_RING, dropzoneClass, isVideoUrl, mediaFileName, mediaPromptLine, UploadGlyph,
+} from './mediaShared';
+import { FileIntakeAlert, useFileIntake } from './useFileIntake';
 
 export interface MediaUploadGridItem {
   /** Stable key — used for React keys, remove, and reorder. */
@@ -40,6 +46,13 @@ export interface MediaUploadGridProps {
    * read-only for additions (no Add tile, no drop).
    */
   onPick?: (droppedFile?: File) => void;
+  /**
+   * Receive every chosen or dropped File that passed the checks — the grid owns
+   * the gesture (native dialog on the Add tile / empty zone, drop on the zone)
+   * and the consumer owns the upload. With `onPick` also set, click goes to the
+   * picker and a drop comes here.
+   */
+  onFiles?: (files: File[]) => void;
   /** Remove one item. The per-thumb ✕ shows only when this is provided. */
   onRemove?: (id: string) => void;
   /**
@@ -58,6 +71,10 @@ export interface MediaUploadGridProps {
   // ── Media ──
   /** Native accept string — drives preview kind, the drop filter, and the copy. Default `image/*`. */
   accept?: string;
+  /** Rejected above this many bytes, with the reason announced. */
+  maxSizeBytes?: number;
+  /** Rejected once the gallery holds this many items. */
+  maxFiles?: number;
   /** `object-fit` for the thumbnails. Default `cover`. */
   fit?: 'cover' | 'contain';
   /** Thumbnail (and Add tile) square size in px. Default 96. */
@@ -97,6 +114,7 @@ const REMOVE_ICON = (
 export default function MediaUploadGrid({
   items,
   onPick,
+  onFiles,
   onRemove,
   onReorder,
   label,
@@ -105,6 +123,8 @@ export default function MediaUploadGrid({
   required,
   className,
   accept = 'image/*',
+  maxSizeBytes,
+  maxFiles,
   fit = 'cover',
   thumbSize = 96,
   placeholder,
@@ -118,7 +138,6 @@ export default function MediaUploadGrid({
   readOnly = false,
 }: MediaUploadGridProps) {
   const gridId = useId();
-  const [zoneDragOver, setZoneDragOver] = useState(false);
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
   // Which focusable control holds focus, so we can draw an inline focus ring —
   // the kit's shipped stylesheet has no Tailwind focus/ring machinery to fall
@@ -126,47 +145,37 @@ export default function MediaUploadGrid({
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const ringStyle = (key: string) => ({
     outline: 'none' as const,
-    ...(focusedKey === key && !locked ? { boxShadow: '0 0 0 2px rgba(59,130,246,0.45)' } : {}),
+    ...(focusedKey === key && !locked ? { boxShadow: FOCUS_RING } : {}),
   });
   const blurKey = (key: string) => setFocusedKey(k => (k === key ? null : k));
 
   const locked = disabled || busy;
-  const canAdd = !!onPick && !locked && !readOnly;
+  const canAdd = (!!onPick || !!onFiles) && !locked && !readOnly;
   const canRemove = !!onRemove && !locked && !readOnly;
   const reorderEnabled = !!onReorder && !locked && !readOnly;
 
-  const acceptsVideo = accept.includes('video');
-  const acceptsImage = accept.includes('image') || accept === '*' || accept === '';
-  const kindWord = acceptsVideo && !acceptsImage ? 'video' : acceptsImage && !acceptsVideo ? 'image' : 'file';
-  const dimLine = placeholder ?? `Upload ${kindWord === 'image' ? 'an image' : `a ${kindWord}`}`;
+  const dimLine = placeholder ?? mediaPromptLine(accept);
 
-  const pick = (file?: File | null) => {
+  // Zone-level intake handles EXTERNAL file drops and the native dialog. Every
+  // file that passes the checks is delivered — one `onFiles` call, or one
+  // `onPick` per file for a consumer on the injected-picker contract. Internal
+  // reorder drags carry no `Files` type, so the zone ignores them.
+  const intake = useFileIntake({
+    accept, maxSizeBytes, maxFiles, acceptHint, multiple: true, disabled: !canAdd,
+    currentCount: items.length,
+    onAccept: files => {
+      if (onFiles) onFiles(files);
+      else for (const file of files) onPick!(file);
+    },
+  });
+  const zoneDragOver = intake.dragOver;
+
+  /** Click on the Add tile / empty zone: the injected picker, or the native dialog. */
+  const pick = () => {
     if (!canAdd) return;
-    onPick!(file ?? undefined);
+    if (onPick) onPick();
+    else intake.open();
   };
-
-  const isFileDrag = (e: DragEvent) => Array.from(e.dataTransfer.types || []).includes('Files');
-
-  // Zone-level drag/drop handles EXTERNAL file drops (add). Internal reorder
-  // drags are handled on the thumbnails and stop propagation, so they never
-  // trigger the zone highlight or an accidental add.
-  const zoneHandlers = canAdd
-    ? {
-        onDragOver: (e: DragEvent) => {
-          if (!isFileDrag(e)) return;
-          e.preventDefault();
-          setZoneDragOver(true);
-        },
-        onDragLeave: () => setZoneDragOver(false),
-        onDrop: (e: DragEvent) => {
-          const file = e.dataTransfer.files?.[0];
-          if (!file) return;
-          e.preventDefault();
-          setZoneDragOver(false);
-          pick(file);
-        },
-      }
-    : {};
 
   const square = { width: thumbSize, height: thumbSize } as const;
 
@@ -243,14 +252,7 @@ export default function MediaUploadGrid({
           </span>
         )}
 
-        {item.caption != null && (
-          <span
-            className="absolute inset-x-1 bottom-1 truncate rounded px-1.5 py-0.5 text-xs text-white"
-            style={{ background: 'rgba(0,0,0,0.6)' }}
-          >
-            {item.caption}
-          </span>
-        )}
+        {item.caption != null && <FilenameBadge>{item.caption}</FilenameBadge>}
 
         {canRemove && (
           <button
@@ -292,10 +294,7 @@ export default function MediaUploadGrid({
       aria-label={typeof dimLine === 'string' ? dimLine : 'Upload media'}
       onFocus={() => setFocusedKey('zone')}
       onBlur={() => blurKey('zone')}
-      className={[
-        'flex w-full flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed text-center transition-colors cursor-pointer',
-        zoneDragOver ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-gray-50 hover:bg-gray-100',
-      ].join(' ')}
+      className={dropzoneClass(zoneDragOver, false)}
       style={{ minHeight: thumbSize + 32, ...ringStyle('zone') }}
     >
       <span className="text-gray-400"><UploadGlyph /></span>
@@ -320,7 +319,7 @@ export default function MediaUploadGrid({
         aria-labelledby={label ? `${gridId}-label` : undefined}
         aria-describedby={error ? `${gridId}-error` : hint ? `${gridId}-hint` : undefined}
         aria-busy={busy || undefined}
-        {...zoneHandlers}
+        {...intake.zoneProps}
         className="relative rounded-lg transition-colors"
         style={{
           ...(locked ? { opacity: 0.6 } : {}),
@@ -338,17 +337,10 @@ export default function MediaUploadGrid({
           </div>
         )}
 
-        {busy && (
-          <div
-            role="status"
-            className="absolute inset-0 flex items-center justify-center gap-2 rounded-lg"
-            style={{ background: 'rgba(255,255,255,0.6)' }}
-          >
-            <Spinner />
-            <span className="text-xs font-medium text-gray-600">{busyLabel}</span>
-          </div>
-        )}
+        {busy && <BusyOverlay label={busyLabel} />}
       </div>
+      {!onPick && onFiles && <input {...intake.inputProps} />}
+      <FileIntakeAlert rejections={intake.rejections} />
     </FormField>
   );
 }

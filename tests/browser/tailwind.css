@@ -1,0 +1,10 @@
+/* The stylesheet the browser lane serves.
+ *
+ * Without it the entries render unstyled, and that is not merely ugly: the PDF
+ * text layer is `position: absolute; inset: 0` against a `relative` parent, so
+ * with no CSS its containing block becomes the viewport and it covers the
+ * toolbar — every click lands on the overlay instead of the button. Real
+ * styles also make the focus and scroll assertions in windowDirty mean what
+ * they say. */
+@import "tailwindcss";
+@source "../../src";

@@ -27,6 +27,8 @@ export interface ShellStrings {
   /** Window chrome: control tooltips and the title bar's accessible name. */
   window: {
     minimize: string;
+    /** Bring a hand-minimized window back — the tab's own control. */
+    restore: string;
     maximize: string;
     windowed: string;
     pinOnTop: string;
@@ -121,6 +123,7 @@ export interface ShellStrings {
 export const DEFAULT_SHELL_STRINGS: ShellStrings = {
   window: {
     minimize: 'Minimize',
+    restore: 'Restore',
     maximize: 'Maximize',
     windowed: 'Windowed',
     pinOnTop: 'Pin on top',

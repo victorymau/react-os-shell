@@ -54,14 +54,18 @@ const MARKDOWN_PEERS = ['react-markdown', 'remark-gfm', 'remark-breaks'];
 const UI_ENTRY = join(root, 'dist/ui/index.js');
 const MARKDOWN_ENTRY = join(root, 'dist/markdown/index.js');
 
-function specifiersOf(src) {
+const STATIC_IMPORT_RES = [
+  /(?:^|\n)\s*import\s+[^;'"]*from\s*['"]([^'"]+)['"]/g,
+  /(?:^|\n)\s*import\s*['"]([^'"]+)['"]/g,
+  /(?:^|\n)\s*export\s+[^;'"]*from\s*['"]([^'"]+)['"]/g,
+];
+const DYNAMIC_IMPORT_RE = /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
+
+/** `dynamic: false` reports only what the module pulls in EAGERLY — what a host
+ *  pays for at startup, as opposed to what a lazy chunk fetches on demand. */
+function specifiersOf(src, { dynamic = true } = {}) {
   const out = [];
-  for (const re of [
-    /(?:^|\n)\s*import\s+[^;'"]*from\s*['"]([^'"]+)['"]/g,
-    /(?:^|\n)\s*import\s*['"]([^'"]+)['"]/g,
-    /(?:^|\n)\s*export\s+[^;'"]*from\s*['"]([^'"]+)['"]/g,
-    /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
-  ]) {
+  for (const re of dynamic ? [...STATIC_IMPORT_RES, DYNAMIC_IMPORT_RE] : STATIC_IMPORT_RES) {
     let m;
     while ((m = re.exec(src))) out.push(m[1]);
   }
@@ -70,14 +74,14 @@ function specifiersOf(src) {
 
 /** Walk an entry's built graph, returning every file in it. With `allowed`,
  *  also report any bare import outside that set; pass null to only collect. */
-function walkEntry(entry, allowed, why) {
+function walkEntry(entry, allowed, why, opts) {
   const seen = new Set();
   const queue = [entry];
   while (queue.length) {
     const file = queue.shift();
     if (seen.has(file)) continue;
     seen.add(file);
-    for (const spec of specifiersOf(readFileSync(file, 'utf8'))) {
+    for (const spec of specifiersOf(readFileSync(file, 'utf8'), opts)) {
       if (spec.startsWith('.')) {
         const target = join(dirname(file), spec);
         if (existsSync(target)) queue.push(target);
@@ -118,6 +122,41 @@ if (!existsSync(MARKDOWN_ENTRY)) {
   );
 }
 
+// The file-intake entry is React and NOTHING else — not even react-dom. It
+// exists for the two consumers that cannot take the rest of this package: the
+// admin portal's public applicant page (an architecture test keeps the shell's
+// toast container, stylesheet and window manager out of that bundle, and walks
+// this same built graph from its own side) and the public storefront. The hook
+// renders nothing through a portal, so a react-dom edge here would mean the
+// window layer arrived through a shared chunk. A stylesheet edge would be worse
+// than a peer leak: the bundler would inject the shell's theme into a page that
+// has its own.
+const FILE_INTAKE_ENTRY = join(root, 'dist/file-intake/index.js');
+/** What the entry exports, exactly. Growing it is a reviewed change, not a star re-export. */
+const FILE_INTAKE_EXPORTS = ['FileIntakeAlert', 'acceptsFile', 'useFileIntake'];
+if (!existsSync(FILE_INTAKE_ENTRY)) {
+  note('dist/file-intake/index.js does not exist — did tsup lose the src/file-intake entry?');
+} else {
+  const graph = walkEntry(
+    FILE_INTAKE_ENTRY,
+    new Set(['react', 'react/jsx-runtime']),
+    'react-os-shell/file-intake may reach react only — the pages that import it ' +
+      'must not load react-dom through it, let alone the shell.',
+  );
+  for (const file of graph) {
+    for (const spec of specifiersOf(readFileSync(file, 'utf8'))) {
+      if (/\.css(?:[?#].*)?$/.test(spec)) {
+        note(
+          `STYLE LEAK: ${file.slice(root.length + 1)} imports '${spec}', which is reachable ` +
+            'from react-os-shell/file-intake. That entry must carry no stylesheet — its ' +
+            'consumers style their own pages.',
+        );
+      }
+    }
+  }
+  if (graph.size < 2) note(`the file-intake entry graph is only ${graph.size} file(s); expected its chunk`);
+}
+
 // ── 2b. …and the parser must not leak the OTHER way ─────────────────────────
 //
 // react-markdown reaching the root or the ui entry would quietly promote an
@@ -143,6 +182,38 @@ for (const [rel, label] of [['dist/index.js', 'react-os-shell'], ['dist/ui/index
   }
 }
 
+// ── 2c. The heavy optional peers stay behind a dynamic import ──────────────
+//
+// `react-os-shell/apps` is imported at startup by every host that composes the
+// bundled window registry, and `PdfViewer`'s static `pdfjs-dist` import is a
+// whole PDF parser — paid for before anyone has opened a document. What keeps
+// it out is that every app here is reached through `lazy(() => import(...))`,
+// and one plausible-looking `export { default as PdfViewer } from './PdfViewer'`
+// in the barrel would undo it: typecheck clean, tests green, nothing to see but
+// a slower first paint on five portals.
+//
+// Walking STATIC edges only is the whole point — the dynamic-import chunk that
+// holds pdfjs is exactly where it belongs, and a walk that follows both kinds
+// of edge cannot tell the two apart.
+const LAZY_ONLY_PEERS = ['pdfjs-dist', 'dxf-viewer', 'online-3d-viewer', 'xlsx', 'mammoth'];
+for (const rel of ['dist/index.js', 'dist/apps/index.js', 'dist/ui/index.js']) {
+  const entry = join(root, rel);
+  if (!existsSync(entry)) continue;
+  for (const file of walkEntry(entry, null, null, { dynamic: false })) {
+    for (const spec of specifiersOf(readFileSync(file, 'utf8'), { dynamic: false })) {
+      const peer = LAZY_ONLY_PEERS.find(p => spec === p || spec.startsWith(`${p}/`));
+      if (peer) {
+        note(
+          `EAGER PEER: ${file.slice(root.length + 1)} imports '${spec}' statically and is ` +
+            `reachable from ${rel} without passing through a dynamic import. ${peer} must ` +
+            'stay inside a lazy chunk — it is an OPTIONAL peer, so for a consumer that has ' +
+            'not installed it this is an unresolvable import at build time, not a slow load.',
+        );
+      }
+    }
+  }
+}
+
 // ── 3. The root entry is a superset of the kit, sharing one module instance ─
 //
 // This is the check that caught the bug it exists for. `src/index.ts` re-exports
@@ -155,11 +226,23 @@ for (const [rel, label] of [['dist/index.js', 'react-os-shell'], ['dist/ui/index
 // The identity half matters just as much: two copies of `toast` would each own
 // their own DOM container and listener set, so an app importing from both
 // entries would lose half its toasts with nothing erroring.
-if (existsSync(UI_ENTRY) && existsSync(join(root, 'dist/index.js'))) {
-  const [rootMod, uiMod] = await Promise.all([
-    import(new URL('../dist/index.js', import.meta.url)),
-    import(new URL('../dist/ui/index.js', import.meta.url)),
-  ]);
+/** Import built entries for the identity checks. A graph that cannot even load
+ *  (a stylesheet edge, an unresolvable chunk) is reported with everything else
+ *  found so far, rather than crashing before the report prints. */
+async function loadEntries(...rels) {
+  try {
+    return await Promise.all(rels.map(rel => import(new URL(`../${rel}`, import.meta.url))));
+  } catch (err) {
+    note(`could not load ${rels.join(' and ')} to compare their exports: ${err.message}`);
+    return null;
+  }
+}
+
+const rootAndUi = existsSync(UI_ENTRY) && existsSync(join(root, 'dist/index.js'))
+  ? await loadEntries('dist/index.js', 'dist/ui/index.js')
+  : null;
+if (rootAndUi) {
+  const [rootMod, uiMod] = rootAndUi;
   const missing = Object.keys(uiMod).filter(n => !(n in rootMod));
   if (missing.length) {
     note(
@@ -174,6 +257,32 @@ if (existsSync(UI_ENTRY) && existsSync(join(root, 'dist/index.js'))) {
       `these are DIFFERENT bindings on the two entries: ${forked.join(', ')}. ` +
         'The entries must share one module instance, or singletons like toast ' +
         'are duplicated for anyone importing from both.',
+    );
+  }
+}
+
+// …and the file-intake entry exports exactly its list, bound to the SAME
+// functions the kit exports. A second copy of the hook is harmless today, but
+// the list drifting is not: a name dropped by a barrel change is a consumer's
+// build failure, and a name added arrives with whatever it imports.
+const intakeAndUi = existsSync(FILE_INTAKE_ENTRY) && existsSync(UI_ENTRY)
+  ? await loadEntries('dist/file-intake/index.js', 'dist/ui/index.js')
+  : null;
+if (intakeAndUi) {
+  const [intakeMod, uiMod] = intakeAndUi;
+  const names = Object.keys(intakeMod).sort();
+  if (names.join() !== FILE_INTAKE_EXPORTS.join()) {
+    note(
+      `react-os-shell/file-intake exports [${names.join(', ')}], expected ` +
+        `[${FILE_INTAKE_EXPORTS.join(', ')}]. Change the list in scripts/verify-dist.mjs ` +
+        'in the same PR as the entry, deliberately.',
+    );
+  }
+  const forked = names.filter(n => intakeMod[n] !== uiMod[n]);
+  if (forked.length) {
+    note(
+      `react-os-shell/file-intake and react-os-shell/ui bind DIFFERENT copies of: ` +
+        `${forked.join(', ')}. Both must re-export the one module in src/forms/.`,
     );
   }
 }

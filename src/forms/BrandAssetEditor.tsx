@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Button from './Button';
 import MediaUploadField from './MediaUploadField';
 import BrandMark, { type BrandMarkSlot, type BrandMarkSurface } from './BrandMark';
@@ -32,30 +32,16 @@ export interface BrandAssetEditorProps {
   disabled?: boolean;
 }
 
-function byteLimitMessage(maxBytes: number) {
-  return `Image must be smaller than ${maxBytes.toLocaleString()} bytes.`;
-}
-
 function actionNoun(assetName: string) {
   const words = assetName.trim().toLocaleLowerCase().split(/\s+/);
   return words.at(-1) || 'image';
 }
 
-function acceptsFile(file: File, accept: string) {
-  const fileName = file.name.toLocaleLowerCase();
-  const fileType = file.type.toLocaleLowerCase();
-  return accept.split(',').map(value => value.trim().toLocaleLowerCase()).some(rule => {
-    if (!rule) return false;
-    if (rule.startsWith('.')) return fileName.endsWith(rule);
-    if (rule.endsWith('/*')) return fileType.startsWith(rule.slice(0, -1));
-    return fileType === rule;
-  });
-}
-
 /**
  * Shared staged-upload surface for portal branding. Network and persistence
- * remain consumer-owned through onSave/onRemove; validation, preview and file
- * lifecycle are identical everywhere.
+ * remain consumer-owned through onSave/onRemove; the file contract (`accept`,
+ * `maxBytes`) is enforced by the field's shared intake on every gesture, and
+ * the preview and file lifecycle are identical everywhere.
  */
 export default function BrandAssetEditor({
   committedUrl,
@@ -70,14 +56,13 @@ export default function BrandAssetEditor({
   onRemove,
   // `image/x-icon` alone rejects most real .ico files: browsers report them as
   // `image/vnd.microsoft.icon`, and some report nothing at all — hence the
-  // extension rule, which `acceptsFile` matches on the file name.
+  // extension rule, which the intake's `acceptsFile` matches on the file name.
   accept = 'image/png,image/x-icon,image/vnd.microsoft.icon,.ico,image/svg+xml,image/jpeg,image/webp',
   acceptHint = 'PNG · ICO · SVG · JPG · WEBP',
   maxBytes = 5 * 1024 * 1024,
   previews = [],
   disabled = false,
 }: BrandAssetEditorProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
   const objectUrlRef = useRef<string | null>(null);
   const [stagedFile, setStagedFile] = useState<File | null>(null);
   const [stagedUrl, setStagedUrl] = useState('');
@@ -101,27 +86,15 @@ export default function BrandAssetEditor({
     objectUrlRef.current = null;
   };
 
-  const stage = (file?: File) => {
-    if (!file || disabled) return;
-    if (!acceptsFile(file, accept)) {
-      setError(`Choose a supported image (${acceptHint}).`);
-      return;
-    }
-    if (file.size > maxBytes) {
-      setError(byteLimitMessage(maxBytes));
-      return;
-    }
+  /** A file the field already checked against `accept` and `maxBytes`. */
+  const stage = (file: File) => {
+    if (disabled) return;
     discardObjectUrl();
     const nextUrl = URL.createObjectURL(file);
     objectUrlRef.current = nextUrl;
     setStagedFile(file);
     setStagedUrl(nextUrl);
     setError('');
-  };
-
-  const onInput = (event: ChangeEvent<HTMLInputElement>) => {
-    stage(event.target.files?.[0]);
-    event.target.value = '';
   };
 
   const save = async () => {
@@ -167,19 +140,19 @@ export default function BrandAssetEditor({
         <MediaUploadField
           value={visibleUrl}
           onChange={() => {}}
-          onPick={file => file ? stage(file) : inputRef.current?.click()}
+          onFile={stage}
           label={assetName}
           hint={error || `Used for ${subjectName}.`}
           error={error || undefined}
           accept={accept}
           acceptHint={acceptHint}
+          maxSizeBytes={maxBytes}
           fit="contain"
           height={180}
           allowRemove={false}
           busy={saving || removing}
           disabled={disabled}
         />
-        <input ref={inputRef} type="file" accept={accept} hidden onChange={onInput} />
         <div className="mt-3 flex flex-wrap gap-2">
           <Button onClick={save} disabled={!stagedFile || disabled} loading={saving}>
             Save {noun}

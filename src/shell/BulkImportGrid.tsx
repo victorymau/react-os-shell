@@ -1,5 +1,6 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import EditableGrid, { withSpareRow } from './EditableGrid';
+import { FileIntakeAlert, useFileIntake } from '../forms/useFileIntake';
 import type { GridColumn } from './EditableGrid';
 import { CancelButton } from './Modal';
 import { findDuplicateKeys } from '../utils/mergeBulkItems';
@@ -468,7 +469,6 @@ function MergeReview({
  * totals strip.
  */
 export default function BulkImportGrid({ columns, onImport, description, mergeDuplicates = false }: BulkImportGridProps) {
-  const fileRef = useRef<HTMLInputElement>(null);
   const [gridData, setGridData] = useState<string[][]>(() =>
     Array.from({ length: 15 }, () => Array(columns.length).fill(''))
   );
@@ -523,9 +523,7 @@ export default function BulkImportGrid({ columns, onImport, description, mergeDu
     setGridData(withSpareRow(cleaned, colCount));
   }, [colCount, columns]);
 
-  const handleCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const loadCSVFile = (file: File) => {
     const reader = new FileReader();
     reader.onload = (ev) => {
       const text = (ev.target?.result as string) || '';
@@ -541,8 +539,14 @@ export default function BulkImportGrid({ columns, onImport, description, mergeDu
       }
     };
     reader.readAsText(file);
-    if (fileRef.current) fileRef.current.value = '';
   };
+
+  // The whole panel is the drop target — a CSV dragged from the desktop lands
+  // anywhere on it — and the "Upload CSV" button opens the same intake's dialog.
+  const csvIntake = useFileIntake({
+    accept: '.csv,.tsv,.txt', acceptHint: 'CSV · TSV · TXT', multiple: false,
+    onAccept: ([file]) => loadCSVFile(file),
+  });
 
   const handleMappingConfirm = (mapping: number[]) => {
     if (!pendingCSV) return;
@@ -625,7 +629,13 @@ export default function BulkImportGrid({ columns, onImport, description, mergeDu
   const descText = description || `Paste from spreadsheets, type directly, or upload a CSV. Rows don't need to be in order — they'll be matched. Values not in the list will be added to the end. Fields left blank will not be affected.`;
 
   return (
-    <div className="border border-gray-200 rounded-lg bg-gray-50 mb-3 overflow-hidden">
+    <div
+      {...csvIntake.zoneProps}
+      className={[
+        'border rounded-lg bg-gray-50 mb-3 overflow-hidden transition-colors',
+        csvIntake.dragOver ? 'border-dashed border-blue-500 bg-blue-50' : 'border-gray-200',
+      ].join(' ')}
+    >
       <div className="px-4 pt-3 pb-2 flex items-center justify-between">
         <p className="text-xs text-gray-500">
           {descText}
@@ -640,8 +650,8 @@ export default function BulkImportGrid({ columns, onImport, description, mergeDu
           {filledCount > 0 && (
             <button type="button" onClick={handleClear} className="text-gray-400 hover:text-gray-600 text-xs">Clear</button>
           )}
-          <input ref={fileRef} type="file" accept=".csv,.tsv,.txt" onChange={handleCSV} className="hidden" />
-          <button type="button" onClick={() => fileRef.current?.click()}
+          <input {...csvIntake.inputProps} />
+          <button type="button" onClick={csvIntake.open}
             className="text-blue-600 border border-blue-200 bg-white px-3 py-1.5 text-sm font-medium rounded-lg hover:bg-blue-50 hover:border-blue-300">Upload CSV</button>
           <button type="button" onClick={handleImport} disabled={importing || filledCount === 0}
             className="text-green-600 border border-green-200 bg-white px-3 py-1.5 text-sm font-medium rounded-lg hover:bg-green-50 hover:border-green-300 disabled:opacity-50">
@@ -690,6 +700,7 @@ export default function BulkImportGrid({ columns, onImport, description, mergeDu
       )}
 
       <EditableGrid columns={gridColumns} data={gridData} onChange={setGridData} />
+      <FileIntakeAlert rejections={csvIntake.rejections} className="px-4 py-1" />
       {error && <p className="text-xs text-red-600 px-4 py-1">{error}</p>}
     </div>
   );

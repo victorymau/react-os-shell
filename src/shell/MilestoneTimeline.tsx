@@ -1,22 +1,5 @@
 import { useState } from 'react';
-import { formatDate } from '../utils/date';
-
-// ─── Pure date helpers ───────────────────────────────────────────────────────
-
-/** Milliseconds in a day — used for axis padding + day-resolution math. */
-const DAY_MS = 86400000;
-
-/** Parse an ISO date string to epoch ms, or `null` when absent/unparseable. */
-function toDayMs(dateStr: string | null | undefined): number | null {
-  if (!dateStr) return null;
-  const t = new Date(dateStr).getTime();
-  return Number.isFinite(t) ? t : null;
-}
-
-/** Format an epoch-ms value as a short date using the user's date format. */
-function fmtSliderDate(ms: number): string {
-  return formatDate(new Date(ms).toISOString().slice(0, 10));
-}
+import { DAY_MS, toDayMs, fmtSliderDate } from './timelineDates';
 
 // ─── Public types ────────────────────────────────────────────────────────────
 

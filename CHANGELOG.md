@@ -2,6 +2,366 @@
 
 All notable changes to this project will be documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## 4.102.0
+
+- **`ProductionTimeline` + `useProductionTimeline`** — the scrubbable
+  production timeline the admin portal's Production Progress window has
+  carried locally: a bar from production start to estimated completion, one
+  dot per supplier progress report, shipment / inspection markers, drag or
+  play to see the interpolated per-part stage quantities on any day. Promoted
+  so the customer portal's order window can render the same bar over
+  order-level snapshots instead of keeping a second copy. Ships with the
+  stage maths (`STAGES`, `calcOverall`, `calcReportOverall`,
+  `POST_PRODUCTION_STATUSES`) and its types; the legend now names inspection
+  markers as well as shipments.
+- **`timelineDates`** (`DAY_MS`, `toDayMs`, `fmtSliderDate`) — one copy of
+  the date helpers `MilestoneTimeline` had privately, now shared with the
+  scrubber and exported. `toDayMs` drops a date outside 2000–2100 (a typo'd
+  "0202-12-20") rather than letting it become the axis' left edge and squash
+  every real dot; `MilestoneTimeline` inherits that guard, so such a
+  milestone now renders as "not reached" instead of stretching the bar.
+
+## 4.101.0
+
+- **New subpath: `react-os-shell/file-intake`.** `useFileIntake`, `acceptsFile`
+  and `FileIntakeAlert`, with the `FileIntakeOptions`, `FileIntakeLimits`,
+  `FileRejection` and `FileRejectionReason` types, on an entry that imports
+  React and nothing else — no `react-dom`, no stylesheet, no toast container,
+  no window manager.
+
+  Two pages need the intake every kit upload primitive uses (harness UI-15)
+  and cannot load the shell to get it: the admin portal's public applicant
+  page, whose bundle an architecture test keeps shell-free, and the public
+  storefront. Before this, each kept a native `<input type="file">` that
+  checked `accept` in the file dialog only and took no drop at all.
+
+  The entry is the same module instance as the kit's own exports, so an app
+  importing from both still has one hook. `scripts/verify-dist.mjs` walks the
+  built graph of `dist/file-intake/index.js` on every build and fails it if a
+  shared chunk carries anything but React into it, a stylesheet included, or
+  if the export list drifts.
+
+## 4.100.0
+
+- **`ComposerAttachments`: the one way a composer takes files.** A chat
+  reply, a mail compose form and a feedback thread each took attachments
+  three ways — a paperclip, a drop, a paste — and each portal composer wired
+  the three itself: five drop zones in five highlight styles, four copies of
+  the same 25 MB / 10-file guard, and three composers that took a pasted
+  screenshot but not a dropped one. Now one primitive, on `useFileIntake`, so
+  the checks and the rejection sentences are the ones every other upload
+  surface uses.
+
+  Wrap it around the text area and hand it the pending list:
+
+  ```tsx
+  <ComposerAttachments files={files} onChange={setFiles} maxSizeBytes={limits.maxBytes} maxFiles={limits.maxFiles}>
+    <Textarea value={body} onChange={…} />
+  </ComposerAttachments>
+  ```
+
+  A paste into the text area bubbles up to the wrapper, so the text area
+  needs no wiring; a paste of text is left alone. The overlay reads "Drop
+  files to attach" while a file drag is over the composer. The trigger reads
+  "Attach files", with the pending count on it. It holds `File[]` and stops
+  — the composer's send puts the files in its request however it sends
+  everything else. `onReject` reports each rejection batch for a composer
+  that toasts as well as announces.
+
+- **Three parts for a composer with a layout of its own.**
+  `AttachmentDropZone` (the drop and paste target with the overlay and the
+  hidden input), `AttachmentList` (chips with an image thumbnail from an
+  object URL the list owns and revokes, name, size, remove ×) and
+  `AttachButton` (the paperclip, labelled or icon-only for a rail, count on
+  either) compose the chat composer's rail and the mail form's footer.
+
+- **`useFileIntake`, `FileIntakeAlert` and `acceptsFile` are public.** The
+  intake behind every upload primitive is exported for a composer with a
+  layout of its own — never so a consumer renders its own file input, its own
+  drop zone or its own paste handler.
+
+## 4.99.0
+
+- **Every upload primitive takes files through one intake.** `FilePicker`,
+  `MediaUploadField`, `MediaUploadGrid`, `BrandAssetEditor` and
+  `BulkImportGrid` now share `useFileIntake`: the native dialog, a drop onto
+  the zone and a paste into a composer run the same checks and deliver the
+  same `File[]`. Before, each owned its own hidden input and its own
+  drag-over state, and the checks differed by gesture — `accept` reached the
+  native dialog only, so a file dropped onto a zone bypassed it. A dropped
+  `.pdf` on an `image/*` field is now rejected with a reason.
+
+  **A rejected file is announced.** The reasons render under the zone in a
+  `role="alert"` list — "photo.png is not an accepted file type (PDF)",
+  "big.png is 9 B — the limit is 4 B", "third.png was not added — 2 files is
+  the limit" — so a screen-reader user hears why the drop did nothing.
+
+  **A multi-file drop keeps every file.** `MediaUploadGrid` took the first
+  file of a drop and lost the rest without a word. It now delivers all of them
+  — one `onFiles(files)` call, or one `onPick(file)` per file for a consumer
+  on the injected-picker contract.
+
+- **`onFile` / `onFiles`: the primitive owns the gesture, the consumer owns
+  the upload.** `MediaUploadField` takes `onFile(file)` and `MediaUploadGrid`
+  takes `onFiles(files)`: click opens the native dialog, a drop lands on the
+  zone, and the consumer receives checked `File`s to send through its own
+  API module. `onPick` stays for a consumer with a library picker of its own.
+  The grid was read-only without `onPick`; with `onFiles` it now has a dialog
+  behind the Add tile.
+
+- **`maxSizeBytes` on `MediaUploadField`, `maxSizeBytes` and `maxFiles` on
+  `MediaUploadGrid`, `acceptHint` on `FilePicker`.** The media primitives had
+  no size or count limit at all; `FilePicker` had no hint to name in a type
+  rejection.
+
+- **`FilePicker` is one tab stop and forwards its ref.** The zone is a button
+  that opens the dialog on click, Enter or Space and takes a drop; the native
+  input behind it carries `tabIndex={-1}`, where before the `sr-only` input
+  and the visible "Choose files" button were two stops for one action. The
+  ref reaches the zone, so `FormErrorSummary` can focus it. The field now
+  wraps in `FormField` like every other control, so its label, hint and error
+  match the rest of a form.
+
+- **`BrandAssetEditor` no longer duplicates the field's hidden input or its
+  type check.** It hands `stage` to the field's `onFile` and the field's
+  intake enforces `accept` and `maxBytes`; the rejection sentences are the
+  shared ones above.
+
+- **`BulkImportGrid` takes a dropped CSV.** The whole panel is the drop
+  target; the Upload CSV button opens the same intake's dialog.
+
+- The dropzone, busy overlay and filename badge are drawn once in
+  `mediaShared` instead of once per primitive; the busy overlay uses the
+  `bg-white/60` utility so the dark theme's remap applies to it.
+
+## 4.98.1
+
+- **The desktop version watermark takes its own clicks.** It is the only way
+  into the What's New window and it was losing most of them. The button
+  declared no stacking level while every desktop icon declares `zIndex: 1`, so
+  the Trash — whose default position is measured up from the taskbar, out of
+  the same corner — painted over the digits and swallowed the click. A desktop
+  icon's handler calls `stopPropagation()` and only changes the selection, so
+  the click did visibly nothing.
+
+  Measured in Chromium at 1851x1301, over the 630 pixels the label occupies:
+  **120 were live on a small taskbar, 528 on a medium one and 294 on a large
+  one**; a click on the centre of the digits opened the window on a medium
+  taskbar only. All three are now 1334 of 1334 — the button declares
+  `zIndex: 2`, above the icon layer and below the PerfStats HUD's `z-[240]`,
+  the taskbar's `z-[250]` and every window.
+
+  The label also sits clear of the taskbar at every size. Its offset was a flat
+  64px, which is right for a medium taskbar and 8px short of a large one; the
+  taskbar is `position: fixed`, so those pixels were neither readable nor
+  clickable and are the 336 the large-taskbar figure above lost. The offset now
+  comes from the taskbar's real height. Measured from the bottom of the window,
+  the digits sat 66px up at every taskbar size before; they now sit **66px up
+  on a medium taskbar — the same pixel — 52px up on a small one and 82px up on
+  a large one**, which is the whole of the correction. The 12px inset from the
+  right edge is unchanged.
+
+  Padding makes the clickable box 58x23 rather than the 42x15 the glyphs
+  occupy, without moving the glyphs. It takes 301 of the Trash tile's 6,400
+  pixels — the bottom-left corner of its padding — and none of the pixels its
+  "Trash" label occupies.
+
+- **"Show version on desktop" no longer shows a ticked box over a desktop with
+  no version on it.** The watermark renders on an explicit `true`, matching the
+  documented opt-in default, while both settings checkboxes read the preference
+  as `?? true`. Anyone who had never touched the toggle saw it ticked and had
+  no watermark — and so no route into What's New at all. The checkboxes now
+  read `?? false`, like the opt-in preference next to them. Nobody's desktop
+  changes; the box now says what is actually on screen.
+
+- The real-browser lane (`npm run test:browser`) lets a check state the window
+  it is describing: `export const viewport = { width, height }` beside the
+  `describe` string, defaulting to the 1280x720 the runner always used. A
+  layout assertion at whatever size the runner happened to pick is an
+  assertion about the runner; the watermark guard runs at the 1851x1301 the
+  report came from. Checks may also re-navigate through `ctx.open(search)`,
+  which is how one entry gets mounted once per taskbar size.
+
+## 4.98.0
+
+- **A minimized inline `<Modal>` now shows a restore tab.** Minimizing hides a
+  window without unmounting it, which is how it keeps what was typed into it —
+  but only a window the taskbar lists had anything left to click. An inline
+  window (a list's create form, a review dialog) appears in no taskbar, so the
+  ─ control was a one-way door: the panel went to `display: none` with the
+  half-typed form inside it, and a reload was the only way out. Found on the
+  admin portal's New Contract window.
+
+  A hand-minimized window with no taskbar tab now draws one of its own at the
+  bottom-centre of the work area, above the taskbar: the window's title, a
+  restore control, and a close that still runs the dirty guard. Restoring puts
+  the same mount back on screen with its state intact.
+
+- A window the taskbar already lists grows no second tab, and "show desktop"
+  still hides windows without turning each one into a tab — only a hand
+  minimize does that, because those windows come back together and a
+  hand-minimized one does not.
+
+- `ShellStrings.window` gains `restore` (default `'Restore'`) for the new
+  control. Overrides are merged over the defaults, so an existing partial
+  strings object keeps working untouched.
+
+## 4.97.0
+
+- **A soft status tier, in the token layer, with its ink measured.** A status
+  used to be an opaque tint (`bg-green-100`) and a foreground calibrated against
+  one backdrop: the flat surface. On a raised panel or a hovered row that tint
+  is the same flat patch and reads as a hole, because it does not know what is
+  behind it. `--status-<group>-soft` is a wash of the group's own hue, so one
+  value composites correctly over `--surface`, `--surface-raised` and a hovered
+  row alike — and, being transparent, it is the same value in both themes.
+
+  The ink had to move with it, and the obvious ink was the trap. `--success-text`
+  / `--warning-text` / `--danger-text` clear AA on the flat surface — brand.css
+  says so and measures it — and over a wash of their own hue they do not:
+  4.02:1, 3.91:1 and 3.59:1 in light, 2.82:1, 4.58:1 and 3.86:1 in dark, against
+  the darkest surface a badge can land on. Six of eight under AA. So the soft
+  tier carries `--status-<group>-soft-ink`, one step further along the same hue,
+  and the floor it achieves is **5.67:1 light and 5.39:1 dark** across all nine
+  groups on all three surfaces. `tests/statusSoftTier.test.ts` measures every
+  pair rather than pinning its hex, and fails the build under 4.5 — including a
+  spec that fails if the ink is ever folded back onto the `-text` roles.
+
+  `GROUP_COLORS` now reads those tokens, which also retires the nine
+  `[data-theme="dark"] .bg-green-100.text-green-800` rules a tenth group would
+  have had to remember to add. `StatusBadge` and `ColoredBadge` change colour by
+  a shade in light and are unchanged in substance in dark.
+
+- **`StatusBadge` takes `emphasis`.** `subtle` (the default) is the quiet
+  register above; `solid` is a saturated fill with white on it, for the one
+  place the same fact is the headline. The same two words `Banner` already uses,
+  because the kit has one vocabulary for "how loud" rather than one per
+  component. A risk tier can now be quiet in a dense table row and loud in the
+  detail header that row opens without a second component and without a call
+  site picking colours. The provider's status→group mapping is untouched;
+  emphasis changes the volume and never the mapping.
+
+- **`Switch` takes `disabledReason`, and `disabledReasonId`.** The same contract
+  `Button` has carried: persistent text beside the control, wired with
+  `aria-describedby`, never a `title` — a tooltip needs a hover a disabled
+  control does not reliably get. `disabledReasonId` is the case a console runs
+  into that a form does not: eight controls dead for ONE reason. Point them all
+  at one element and the sentence is written once on the screen and announced
+  once per control, instead of repeated eight times.
+
+- **`SettingRow`** — a setting's name and its current value on one baseline,
+  with the explanation at full width beneath in a smaller voice. It replaces a
+  fixed narrow description column that folded a six-character badge onto three
+  lines while the right half of the row sat empty; the fix is not a wider column
+  but no column, so the value never shrinks and the row wraps instead. Handles
+  the four kinds of value a settings panel has: a control (`controlId` makes the
+  name its label), a read-only fact, one nobody knows (an em dash in the faint
+  ink, never an empty cell and never "off"), and a `quiet` row nothing can write
+  yet — dimmed by ink rather than `opacity`, which would multiply against
+  whatever is behind the row and unmeasure the contrast.
+
+- **`BudgetBar`** — a run's wall clock as **budget consumed**. Not work done:
+  nothing here knows how much of the task is left, and a bar implying it would
+  be the most confident lie on the screen. Three states a glance separates —
+  within budget (a solid fill), past the deadline (a hatched band, deliberately
+  not the shape of a full solid bar, which is the calm "finished" picture; given
+  a `grace` the track spans budget + grace, so the bar is only full when the
+  reaper is actually due and a marker sits where the budget ran out), and **no
+  estimate at all**, which draws no bar rather than a zero one. `MetricBar`'s
+  rule survives intact: `elapsed={null}` is no reading and draws nothing,
+  `elapsed={0}` is a measurement and draws a real meter at zero. `budgetState`
+  is exported so a run list sorts by the same verdict the row draws by.
+
+## 4.96.1
+
+- **A `PdfViewer` handed a new `url` opens that document on page one.** The
+  page number used to survive the change, so re-rendering one viewer with a
+  shorter document left it pointing past the end: page 3 of a three-page
+  statement, then a one-page one, asked pdf.js for a page that does not exist
+  and the canvas went blank with nothing thrown and nothing logged.
+
+  It never showed while the viewer was the Preview window's private panel —
+  Preview keys its panels by url, so the component never saw a second
+  document. It became reachable the moment 4.96.0 let a consumer embed one,
+  which is the case where a single viewer is re-rendered with a new blob.
+  Consumers no longer need `key={url}` to work around it.
+
+  The reader's zoom is deliberately NOT reset: it is a preference for how large
+  they want text, and it holds across documents the way it does in any reader.
+  Only the page is a fact about the file.
+
+- **The real-browser lane takes more than one scenario.** `test-browser.mjs`
+  was a single hard-coded run; it now discovers `tests/browser/<name>.entry.tsx`
+  + `<name>.check.mjs` pairs, so adding a scenario is adding two files. It also
+  serves the package's real stylesheet and pdf.js's installed worker — the
+  first because an unstyled page is not merely ugly (the PDF text layer is
+  `inset: 0` against a `relative` parent, so with no CSS its containing block
+  is the viewport and it covers the toolbar), the second because a test that
+  reaches unpkg fails whenever npm does.
+
+  The page-reset check lives there rather than in the jsdom suite because it
+  needs pdf.js to actually READ a document, and `tests/dom.ts` stubs the canvas
+  types as empty constructors. Driving real pdf.js under the spec runner was
+  tried first and abandoned: its main-thread fallback calls `Promise.try`,
+  which Node 22 does not have, and on Node 24 the document never arrived —
+  green on the author's Node and red on both of CI's.
+
+- **`Previous page` / `Next page` have accessible names.** They were icon-only
+  buttons with none, which is also why nothing could address them from a test.
+
+- **The dirty-close scenario's own control moved above the window chrome.** It
+  now renders with real styles, where the window's top-left resize handle
+  really does sit over that corner — the unstyled page hid that, and the click
+  had been working by accident.
+
+## 4.96.0
+
+- **`PdfViewer` — the PDF reader outside the Preview window.** It was
+  `Preview.tsx`'s private `PdfPanel`, reachable only by opening a window:
+  `PdfActionButton` and `setPdfPreview` both stage a document and call
+  `openPage('/preview')`. A consumer that wanted a PDF *inside* something —
+  a preview beside the form that generates it, a document tab on a record —
+  had no component to reach for, and both that tried fell back on
+  `<iframe src={objectUrl}>`.
+
+  That fallback is not a smaller version of this viewer, it is the browser's
+  own plugin: its toolbar, a ~250px thumbnail rail and its own idea of the
+  zoom, in a pane that had none to spare — and a portrait page cropped at the
+  fold, so the totals someone is checking before they send the document are
+  the part not on screen. None of it is themeable, and none of it is testable.
+
+  ```tsx
+  const PdfViewer = lazy(() => import('react-os-shell/apps').then(m => ({ default: m.PdfViewer })));
+  <PdfViewer url={objectUrl} filename="Statement.pdf" fit="page" />
+  ```
+
+  Lazy, like every other app in that barrel, and for the same reason: the
+  static `pdfjs-dist` import must not reach a host's startup bundle.
+
+- **`fit` chooses what auto-fit tracks.** `'width'` — the default, and what
+  the Preview window keeps — fills the container's width and lets a tall page
+  scroll. `'page'` fits the whole page, taking whichever axis binds first.
+  A viewer that owns a window wants the first; a preview pane in a dialog
+  wants the second. Either way it is the initial mode, and the Fit button
+  re-arms it after a manual zoom.
+
+- **A panel with nowhere to portal to now renders its own toolbar.** Inside
+  Preview each format panel portals its page nav, zoom and download buttons
+  into the window's single toolbar row. With no slot in context `PanelActions`
+  returned `null`, which was invisible for as long as every panel lived in a
+  window — and would have shipped the embedded viewer with no page nav and no
+  zoom at all.
+
+- **`scripts/verify-dist.mjs` fails the build on an eagerly-imported heavy
+  peer.** `pdfjs-dist`, `dxf-viewer`, `online-3d-viewer`, `xlsx` and `mammoth`
+  must stay behind a dynamic import on every entry. One plausible-looking
+  `export { default as PdfViewer } from './PdfViewer'` in the apps barrel
+  would put a PDF parser in five portals' startup bundles, with a clean
+  typecheck, green tests and nothing to see but a slower first paint — and for
+  a consumer who never installed the optional peer, an unresolvable import.
+  The walk follows static edges only; following both kinds cannot tell a
+  startup cost from a lazy chunk.
+
 ## 4.95.0
 
 - **A list screen no longer re-fetches the whole user profile every time it
