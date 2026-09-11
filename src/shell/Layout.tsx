@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import apiClient from '../api/client';
 import GlobalSearch, { type SearchConfig } from './GlobalSearch';
 import ShortcutHelp from './ShortcutHelp';
+import ShellContextMenu from './ShellContextMenu';
 import NotificationBell, { type NotificationsConfig } from './NotificationBell';
 import { getPomoSnapshot, subscribePomo } from './pomodoroStore';
 import { useShellPrefs } from './ShellPrefs';
@@ -115,6 +116,10 @@ export interface LayoutProps {
    *  dedicated mobile app here (see MobileAppConfig). When omitted, small
    *  screens get a plain "best viewed on desktop" notice. */
   mobileApp?: MobileAppConfig;
+  /** The shell-wide right-click menu (`ShellContextMenu`). On by default;
+   *  `false` hands every right-click back to the browser — for a consumer
+   *  that is mid-migration, or that draws a menu of its own everywhere. */
+  contextMenu?: boolean;
 }
 
 export interface ClockCalendarConfig {
@@ -762,6 +767,7 @@ export default function Layout({
   taskbarTrayLeft,
   clockCalendar,
   mobileApp,
+  contextMenu = true,
 }: LayoutProps = {}) {
   // `branding` wins over the loose props — one object, one place, and a
   // consumer can move over field by field.
@@ -1207,6 +1213,10 @@ export default function Layout({
         onSelect={result => openEntity(result.entity_type, result.entity_id, undefined, result.label)}
       />
       <ShortcutHelp />
+      {/* One right-click menu for the whole shell. Surfaces with their own
+          menu already preventDefault(), so this only fills the gaps where
+          the browser's native menu used to show through. */}
+      <ShellContextMenu disabled={!contextMenu} />
     </div>
   );
 }

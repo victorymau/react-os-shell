@@ -2,6 +2,125 @@
 
 All notable changes to this project will be documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## 4.104.0
+
+- **Every `EntityList` now has a row menu, whether or not the page feeds it.**
+  Until now a list drew a right-click menu only when it passed
+  `exportEndpoint` or `contextActions`, and a bare list fell through to the
+  browser's menu — or, since 4.103.0, to the shell-wide one, which knows
+  nothing about rows. The row menu now always opens, and leads with what a row
+  is for:
+
+  - **Open** — the row right-clicked, through `onRowClick`.
+  - **Copy** — the text selected under the pointer, when there is some (the
+    same item the shell-wide menu offers; a row menu claims the event, so it
+    carries it too).
+  - **Copy `<first column>`** — "Copy PO #", "Copy Name": the first visible
+    column of every ticked row, one per line. The column is read off the row
+    when the menu opens, so it follows the user's own column order.
+  - **Copy rows** — the ticked rows as a table of the visible columns, in
+    their on-screen order, with a header row. Written as tab-separated text
+    *and* HTML, so it pastes into a spreadsheet as cells. The cells are read
+    from what is on screen — a status badge copies as its label, a formatted
+    amount as formatted — rather than from the raw record.
+  - **Export selected to CSV** — unchanged, still only with `exportEndpoint`.
+  - The page's `contextActions`, now set off by a divider of their own.
+  - **Select all** ("Select all 25 loaded" when more rows exist than have
+    loaded), **Clear selection**, and **Refresh** when `onRetry` is wired —
+    `onRetry` is the list's refetch, so the menu reuses it rather than asking
+    for a second callback.
+
+  The browser's own menu stays where the shell-wide menu keeps it: a text
+  field or an image inside a row, a `data-native-context-menu` subtree, and
+  Shift+right-click anywhere.
+
+  **Consumer impact.** A list that passed neither prop used to show no row
+  menu; it now shows this one, and every existing menu gains the new items
+  around its own. A page whose `contextActions` already offered an "Open" or a
+  "Copy number" item now shows both — drop the page's copy.
+
+- **`copyToClipboard(label, text, html?)` is exported** — the copy path both
+  menus use (`navigator.clipboard`, falling back to `execCommand('copy')`,
+  with HTML beside the text when given) followed by a `"<label> copied"`
+  toast, or an error toast when the browser refuses. For a consumer's own menu
+  item that copies something. The failure toast no longer lower-cases the
+  label into its sentence ("Could not copy the link address" is now "Could not
+  copy to the clipboard"), which a column heading like "PO #" did not survive.
+
+## 4.103.0
+
+- **One right-click menu everywhere in the shell — `ShellContextMenu`.**
+  Right-click was a patchwork: fourteen surfaces in this package drew their own
+  menu, and everywhere else the browser's native menu came up, which reads as a
+  hole in a desktop OS. `Layout` now mounts `ShellContextMenu`, a single
+  `contextmenu` listener on the document that fills the gaps.
+
+  The existing handlers stand as they are: every one of them calls
+  `preventDefault()`, so the global listener sees `defaultPrevented` and stands
+  down, and the specific menu still wins wherever there is one. (The one
+  handler that did not is fixed below.)
+
+  The menu is drawn with the same `PopupMenu` as every other menu in the shell,
+  and its items follow what was clicked — Copy for the selection under the
+  pointer (with its formatting, so a copied table pastes into a spreadsheet as
+  cells), Open / Copy link address for a link — over a Back / Forward / Reload /
+  Copy page address section that is always present.
+
+  Deliberate exemptions — these keep the browser's own menu:
+  - **Text inputs, textareas and contenteditable.** Their spellcheck
+    suggestions and "Add to dictionary" cannot be rebuilt by a web page, and a
+    Paste item of our own would need a clipboard permission prompt. Non-text
+    inputs — a checkbox, a range, a color swatch — have none of that to lose
+    and get the shell menu.
+  - **Images, canvases, video and audio.** Save image as, Copy image and the
+    playback controls are the browser's.
+  - **A long-press on a touch screen.** It fires `contextmenu` too, and taking
+    it would cancel the browser's touch text selection.
+  - **Shift+right-click anywhere**, so "Inspect" is still one gesture away.
+
+  A consumer can opt a subtree out with `data-native-context-menu` (an embedded
+  viewer, a third-party widget), or turn the menu off entirely with
+  `<Layout contextMenu={false}>`. `keepsNativeMenu` and `describeContextTarget`
+  are exported for a consumer that wants the same decisions in its own handler.
+
+- **A right-click inside an open menu opens nothing more.** `PopupMenu` now
+  claims `contextmenu` on itself — a text field inside a menu still keeps the
+  browser's — so no menu, the shell-wide one included, ever opens on top of
+  another.
+
+- **A window with unsaved changes now asks before the page unloads.**
+  `useWindowDirty` guarded closing its window, but a reload, Back out of the
+  app or closing the tab discarded every window at once without a word — and
+  the new menu puts Reload one row under Forward. While any registration is
+  dirty, the browser now asks first (`beforeunload`).
+
+- **The widget settings dialog no longer leaks the browser's native menu.** Its
+  wrapper stopped `contextmenu` from propagating — so the widget underneath
+  would not open its own menu — but never prevented the default, which left the
+  browser menu showing. It does now, except on a text field placed in the
+  dialog, which keeps the browser's menu as it does everywhere else.
+
+## 4.102.1
+
+- **Visible labels use the American spelling of `color`.** Three strings on
+  screen change: the markup toolbar's `◆` button is titled "Highlight in the
+  brand color", Customization settings reads "Show section color stripe", and
+  the help text under that checkbox now says "color" too. The README, the docs
+  and the demo follow suit.
+
+  Nothing but wording moves. The `colour` identifier the chart components pass
+  around is not a word anyone reads, so it is untouched — as are every prop,
+  the stored preference key `window_accent_stripe`, and all component names.
+  Consumers standardizing their own interface on American English were meeting
+  these as the last British spellings on the screen.
+
+  **One of the three is exported data.** The toolbar title lives in
+  `MARKUP_TOOLS` (`react-os-shell/markup`), and it is also the button's
+  `aria-label` — so a consumer test that finds the button by the old wording,
+  `'Highlight in the brand colour'`, stops matching. Read the title from
+  `MARKUP_TOOLS` rather than repeating it, and the next change to the wording
+  cannot break it either.
+
 ## 4.102.0
 
 - **`ProductionTimeline` + `useProductionTimeline`** — the scrubbable

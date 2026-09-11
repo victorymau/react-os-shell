@@ -399,10 +399,10 @@ export default function Customization({ omit, section }: CustomizationProps = {}
             onChange={e => savePref('window_accent_stripe', e.target.checked)}
             className="h-4 w-4 mt-0.5 rounded border-gray-300 text-blue-600" />
           <span className="text-sm text-gray-700">
-            Show section colour stripe
+            Show section color stripe
             <span className="block text-xs text-gray-400">
-              Draws a thin coloured line between a window's title bar and its content,
-              one colour per area of the app, so overlapping windows are easier to tell
+              Draws a thin colored line between a window's title bar and its content,
+              one color per area of the app, so overlapping windows are easier to tell
               apart at a glance.
             </span>
           </span>

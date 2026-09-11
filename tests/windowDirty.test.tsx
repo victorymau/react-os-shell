@@ -494,3 +494,21 @@ test('the package root exports useWindowDirty', () => {
   assert.equal(publicUseWindowDirty, useWindowDirty);
 });
 
+test('a dirty window asks before the page unloads; a clean one lets it go', async (t) => {
+  // A reload, Back out of the app or closing the tab discards every window at
+  // once, and no Modal is asked — and the shell's right-click menu puts Reload
+  // one row under Forward. The browser's own prompt is the only guard there is.
+  const mounted = await mountPage();
+  t.after(() => mounted.unmount());
+  const unloadIsHeld = () => {
+    const event = new window.Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  };
+
+  assert.equal(unloadIsHeld(), true, 'a dirty registration asks before the page goes');
+  clickTestButton('first-false');
+  await flush();
+  assert.equal(unloadIsHeld(), false, 'once every registration is clean the page goes without asking');
+});
+
