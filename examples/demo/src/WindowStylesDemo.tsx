@@ -203,6 +203,32 @@ export function AutoHeightFillWindow() {
   );
 }
 
+// Fit-to-width: a ~1,300px table in an `lg` (672px) window. The window opens
+// wide enough that the table stops scrolling sideways, capped at the screen;
+// the `autoWidth: false` twin keeps the old fixed width and its scrollbar.
+export function AutoWidthWindow() {
+  const cols = ['DFM #', 'Brand', 'Mould code', 'Version', 'Received', 'Feedback date', 'Feedback', '3D model', 'Blueprint', 'Status'];
+  return (
+    <div className="space-y-3 text-sm">
+      <p className="text-gray-600">Registered at <Chip>size: 'lg'</Chip> (672 px) and holding a table about 1,300 px wide. With fit-to-width it opens wide enough to show every column, capped at the screen, instead of opening with a horizontal scrollbar.</p>
+      <div className="overflow-x-auto rounded-xl border border-gray-200">
+        <table className="text-left" style={{ width: cols.length * 130 }}>
+          <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+            <tr>{cols.map(c => <th key={c} className="px-3 py-2 whitespace-nowrap">{c}</th>)}</tr>
+          </thead>
+          <tbody>
+            {Array.from({ length: 8 }, (_, r) => (
+              <tr key={r} className="border-t border-gray-200">
+                {cols.map((c, i) => <td key={c} className="px-3 py-2 whitespace-nowrap text-gray-700">{i === 0 ? `DF#${11700 + r}` : `${c} ${r + 1}`}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export function MultiInstanceWindow() {
   return (
     <Body title="Multi-instance" flags={['multiInstance: true', 'autoHeight: true']}>
@@ -239,6 +265,8 @@ const STYLES: { route: string; name: string; flags: string[]; blurb: string }[] 
   { route: '/win-auto-footer', name: 'Auto height (actions footer)', flags: ['autoHeight: true', '<ModalActions>'], blurb: 'The portalled footer un-hides after the first measure — the window must grow by its height instead of cutting off the last row.' },
   { route: '/win-auto-fill', name: 'Auto height (fill)', flags: ['autoHeight: true', "size: 'md'"], blurb: 'A fill-height root (header / flex-1 / footer) opens at the ladder height instead of collapsing.' },
   { route: '/win-auto-delayed', name: 'Auto height (delayed load)', flags: ['autoHeight: true', 'multiInstance: true'], blurb: 'Content fetches async (spinner then tall content). First open must hug the loaded content, not freeze at the spinner height.' },
+  { route: '/win-auto-width', name: 'Fit to width', flags: ['autoWidth (default)', "size: 'lg'"], blurb: 'A 1,300 px table in a 672 px window — it opens wide enough that the table stops scrolling sideways, capped at the screen.' },
+  { route: '/win-auto-width-off', name: 'Fit to width (off)', flags: ['autoWidth: false', "size: 'lg'"], blurb: 'The same table with fit-to-width off: the ladder width, scrollbar and all.' },
   { route: '/win-pinned', name: 'Pin on top', flags: ['allowPinOnTop: true'], blurb: 'Title-bar pin keeps the window above everything.' },
   { route: '/win-multi', name: 'Multi-instance', flags: ['multiInstance: true'], blurb: 'Each Open spawns another copy — the taskbar groups them.' },
   { route: '/win-pos', name: 'Initial position', flags: ["initialPosition: 'top-right'"], blurb: 'Opens anchored to a corner instead of centered.' },

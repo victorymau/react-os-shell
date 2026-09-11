@@ -159,6 +159,8 @@ setShellWindowRegistry(createWindowRegistry(bundledApps, {
   '/win-auto-footer': { component: winStyle('AutoHeightFooterWindow'), label: 'Auto-height footer window', size: 'sm', autoHeight: true, multiInstance: true },
   '/win-auto-fill': { component: winStyle('AutoHeightFillWindow'), label: 'Auto-height fill window', size: 'md', autoHeight: true },
   '/win-auto-delayed': { component: winStyle('DelayedLoadWindow'), label: 'Auto-height delayed-load window', size: 'lg', autoHeight: true, multiInstance: true },
+  '/win-auto-width': { component: winStyle('AutoWidthWindow'), label: 'Fit-to-width window', size: 'lg', multiInstance: true },
+  '/win-auto-width-off': { component: winStyle('AutoWidthWindow'), label: 'Fixed-width window', size: 'lg', autoWidth: false, multiInstance: true },
   '/win-pinned': { component: winStyle('PinnedWindow'), label: 'Pinned window', size: 'sm', allowPinOnTop: true },
   '/win-multi': { component: winStyle('MultiInstanceWindow'), label: 'Multi-instance window', size: 'sm', autoHeight: true, multiInstance: true },
   '/win-pos': { component: winStyle('PositionedWindow'), label: 'Positioned window', size: 'sm', autoHeight: true, initialPosition: 'top-right' },

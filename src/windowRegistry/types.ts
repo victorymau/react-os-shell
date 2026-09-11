@@ -44,6 +44,11 @@ export interface PageRegistryEntry {
   autoHeight?: boolean;
   /** Floor for `autoHeight` (px). Defaults to 240. */
   autoMinHeight?: number;
+  /** Fit the window's width to its content when it opens: a body that would
+   *  scroll sideways grows the window until it doesn't, up to the work area.
+   *  On by default — `false` keeps the size-ladder / `dimensions` width
+   *  exactly. Widgets and `appStyle` windows never fit. */
+  autoWidth?: boolean;
   /** When true, openPage(path) opens a new instance each time instead of
    *  activating an existing one. Each instance gets a unique window id and
    *  the taskbar groups them under a single icon. */
@@ -85,6 +90,8 @@ export interface ModalRegistryEntry {
   autoHeight?: boolean;
   /** Floor for `autoHeight` (px). Defaults to 240. */
   autoMinHeight?: number;
+  /** Fit width to content on open. See PageRegistryEntry.autoWidth. */
+  autoWidth?: boolean;
   /** App-style window: small title bar, no body padding, no footer. */
   appStyle?: boolean;
   /** Flush body — keeps the STANDARD full title bar and footer, but drops the

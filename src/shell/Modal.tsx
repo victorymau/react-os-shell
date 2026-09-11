@@ -11,7 +11,7 @@ import { getSwipingParentKey, setSwipingParentKey, subscribeSwipingParentKey } f
 import { beginWindowGesture } from './perfEvents';
 import WindowErrorBoundary from './WindowErrorBoundary';
 import { useShellPrefs } from './ShellPrefs';
-import { boxFillsWorkArea, computeMaximizedBox, isSidebarStripReserved, readAlwaysMaximizedFlag } from './workArea';
+import { boxFillsWorkArea, computeMaximizedBox, growBoxToWidth, isSidebarStripReserved, readAlwaysMaximizedFlag, scrollerIsFluid, widthToFit } from './workArea';
 import { runEscapeInterceptors } from './escapeInterceptors';
 
 /** Context that passes the modal's unique ID to children */
@@ -385,6 +385,13 @@ interface ModalProps {
   autoHeight?: boolean;
   /** Minimum height (px) when `autoHeight` is on. Defaults to 240. */
   autoMinHeight?: number;
+  /** Fit the width to the content when the window opens: a body that would
+   *  scroll sideways grows the window until it doesn't, up to the work area.
+   *  Grow-only, and only for the first few seconds — never after the user
+   *  moves, resizes or maximizes it. On by default; `false` keeps the
+   *  size-ladder / `dimensions` width exactly. Widgets, `appStyle` windows and
+   *  mobile never fit. */
+  autoWidth?: boolean;
   /** Custom menu items for widget right-click context menu */
   widgetMenu?: React.ReactNode;
   /** Custom window dimensions [width, height] in pixels */
@@ -414,6 +421,11 @@ interface ModalProps {
 const sizeDefaults: Record<string, number> = {
   sm: 384, md: 512, lg: 672, xl: 896, '2xl': 1152, '3xl': 1408,
 };
+
+// How long after opening fit-to-width keeps watching the body (see
+// `autoWidth`). Long enough for a lazy page and its first fetch to land; short
+// enough that a window never changes size under someone well into using it.
+const AUTO_WIDTH_WATCH_MS = 4000;
 
 // The user's "Default window size" preference (Settings → Behavior). Layout
 // publishes it as the `--default-window-size` CSS var; here it scales a
@@ -1261,7 +1273,7 @@ export function ExposeBackdrop() {
 }
 
 
-export default function Modal({ open, onClose, title, icon, copyText, size = 'lg', dirty = false, onNext, onPrev, footer, bodyScroll, onMinimize, initialBox, actions, actionsLeft, allowPinOnTop, initialPosition, widget, compact, appStyle, flushBody, autoHeight, autoMinHeight, widgetMenu, dimensions, windowKey, openedFromKey, accentRgb, children }: ModalProps) {
+export default function Modal({ open, onClose, title, icon, copyText, size = 'lg', dirty = false, onNext, onPrev, footer, bodyScroll, onMinimize, initialBox, actions, actionsLeft, allowPinOnTop, initialPosition, widget, compact, appStyle, flushBody, autoHeight, autoMinHeight, autoWidth, widgetMenu, dimensions, windowKey, openedFromKey, accentRgb, children }: ModalProps) {
   const isMobile = useIsMobile();
   // Mobile swipe-from-left-edge gesture: track horizontal offset of the panel.
   // 0 = at rest. While the user is dragging from the left edge, this grows
@@ -1925,6 +1937,76 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     return () => ro.disconnect();
   }, [autoHeight, autoHeightResolved, widget, open, maximized, autoMinHeight]);
 
+  // Fit-to-width. A window opens at a fixed width — its size-ladder step or its
+  // registry `dimensions` — whatever it holds, so a wide list opened with a
+  // horizontal scrollbar even on a screen with room to spare, and the user
+  // widened it by hand on every open. For a short while after opening, a window
+  // whose body scrolls sideways grows until the scrollbar is gone, capped at
+  // the work area less the margin `calcWindowed` leaves. Grow-only and
+  // one-shot, like `autoHeight`: once the watch ends it is an ordinary
+  // fixed-size window.
+  //
+  //   • Content lands over several frames (lazy page, fetched rows, column
+  //     prefs), so the body is watched rather than measured once — until
+  //     AUTO_WIDTH_WATCH_MS after open, or sooner once it reaches the cap.
+  //   • Any width change the fit didn't make — a resize, a snap, a keyboard
+  //     nudge, maximize — ends the watch: the user has taken over.
+  //   • A widening is PROBED before it is committed: the panel takes the
+  //     candidate width for one synchronous layout and every overflowing
+  //     scroller is re-read, so only scrollers that actually gain from the
+  //     width count (`scrollerIsFluid`). A fixed-width sidebar or a chart sized
+  //     from its container never earns a wider window, and is remembered so a
+  //     busy body doesn't re-probe it every frame.
+  const fitWidth = autoWidth !== false && !widget && !appStyle && !isMobile;
+  const [autoWidthResolved, setAutoWidthResolved] = useState(() => !fitWidth);
+  useLayoutEffect(() => {
+    if (autoWidthResolved || !open) return;
+    if (!fitWidth || maximized) { setAutoWidthResolved(true); return; }
+    const panel = panelRef.current;
+    const body = bodyRef.current;
+    if (!panel || !body) return;
+    const rigid = new WeakSet<Element>();
+    let expectedW = boxRef.current.w;
+    let frame = 0;
+    const stop = () => setAutoWidthResolved(true);
+    const measure = () => {
+      frame = 0;
+      const cur = boxRef.current;
+      if (Math.abs(cur.w - expectedW) > 1 || document.body.classList.contains('rosh-gesturing')) { stop(); return; }
+      const area = computeMaximizedBox();
+      const capW = area.w - padding * 2;
+      if (cur.w >= capW) { stop(); return; }
+      const scrollers: HTMLElement[] = [];
+      const over: number[] = [];
+      for (const el of [body, ...Array.from(body.querySelectorAll<HTMLElement>('*'))]) {
+        const o = el.scrollWidth - el.clientWidth;
+        if (o <= 4 || rigid.has(el)) continue;
+        const ox = getComputedStyle(el).overflowX;
+        if (ox !== 'auto' && ox !== 'scroll') continue;
+        scrollers.push(el);
+        over.push(o);
+      }
+      if (!scrollers.length) return;
+      const probeW = Math.min(capW, cur.w + Math.max(...over));
+      const gain = probeW - cur.w;
+      const prevWidth = panel.style.width;
+      panel.style.width = `${probeW}px`;
+      const measured = scrollers.map((el, i) => ({ over: over[i], residual: el.scrollWidth - el.clientWidth }));
+      panel.style.width = prevWidth;
+      measured.forEach((m, i) => { if (!scrollerIsFluid(m, gain)) rigid.add(scrollers[i]); });
+      const next = growBoxToWidth(cur, widthToFit(cur.w, gain, measured), area, padding);
+      if (next === cur) return;
+      expectedW = next.w;
+      setBox(next);
+    };
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(measure); };
+    measure();
+    const mo = new MutationObserver(schedule);
+    mo.observe(body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['style', 'class', 'hidden'] });
+    const deadline = setTimeout(stop, AUTO_WIDTH_WATCH_MS);
+    return () => { mo.disconnect(); if (frame) cancelAnimationFrame(frame); clearTimeout(deadline); };
+  }, [autoWidthResolved, open, fitWidth, maximized]);
+
   // When sidebar mode is toggled at runtime, snap existing windows to the
   // maximized box so they instantly fill the new work area.
   useEffect(() => {
@@ -1993,13 +2075,22 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     if (!open) return;
     setTouched(false);
     closingRef.current = false;
+    setAutoWidthResolved(!fitWidth);
     // If we have a saved position in the store, restore it instead of resetting.
     // For `autoHeight` windows the stored `h` is only a placeholder — height is
     // owned by live measurement — so keep the currently-measured `h` rather
-    // than clobbering it back to the (stale/seeded) saved value.
+    // than clobbering it back to the (stale/seeded) saved value. Fit-to-width
+    // has the same race on `x`/`w`: its first measure runs in a layout effect
+    // of this same commit and may already have widened the window, and the
+    // saved box predates that — restoring it whole undid every fit of a window
+    // that had been opened before.
     if (boxKey && _windowPositions[boxKey]) {
       const saved = _windowPositions[boxKey];
-      setBox(prev => clampReachable(autoHeight ? { ...saved, h: prev.h } : { ...saved }));
+      setBox(prev => clampReachable({
+        ...saved,
+        ...(autoHeight ? { h: prev.h } : {}),
+        ...(fitWidth ? { x: prev.x, w: prev.w } : {}),
+      }));
       return;
     }
     if (initialBox) {
