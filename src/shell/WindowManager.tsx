@@ -467,6 +467,13 @@ function findPanelByLabel(label: string): HTMLElement | null {
 // window *may* be pinned, and every bundled app sets it.)
 const PEEK_STYLE_ID = 'rosh-peek-style';
 const PEEK_Z = 249;
+// The hover popover is a passive hint, so it sits just above the taskbar
+// (z-250) and BELOW every menu (PopupMenu, z-400): a right-click menu is the
+// thing the user asked for and must never open underneath the thumbnails.
+// It used to ride the z-9999 lane reserved for Dialog / Drawer / the startup
+// and logout animations, which put it over the group menu opened on the very
+// tab being hovered.
+const PREVIEW_Z = 300;
 function ensurePeekStyle() {
   if (typeof document === 'undefined' || document.getElementById(PEEK_STYLE_ID)) return;
   const style = document.createElement('style');
@@ -667,8 +674,9 @@ function TaskbarTabPreview({ items, anchorEl, onActivate, onClose, onMouseEnter,
   return createPortal(
     <div
       ref={popoverRef}
+      data-taskbar-preview=""
       style={{
-        position: 'fixed', left: pos.left, top: pos.top, zIndex: 9999,
+        position: 'fixed', left: pos.left, top: pos.top, zIndex: PREVIEW_Z,
         maxWidth: 'calc(100vw - 16px)',
         opacity: pos.ready ? 1 : 0,
       }}
@@ -785,8 +793,19 @@ function TaskbarWindows({ openWindows, onRemove, onSplitView, onActivate, onActi
   const [groupMenu, setGroupMenu] = useState<{ x: number; y: number; items: MinimizedItem[]; label: string } | null>(null);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleEnter = (items: MinimizedItem[], el: HTMLElement) => {
+    // No thumbnails while a group menu is up: the menu is what the user asked
+    // for, and a popover sliding in beside it only competes for the pointer.
+    if (groupMenu) return;
     if (hoverTimerRef.current) { clearTimeout(hoverTimerRef.current); hoverTimerRef.current = null; }
     hoverTimerRef.current = setTimeout(() => { setHoveredItems(items); setHoveredAnchor(el); }, 350);
+  };
+  // Right-click leaves the pointer on the tab, so the hover popover would stay
+  // put and the menu open on top of — or, before PREVIEW_Z, underneath — it.
+  // Drop the popover and its pending timer the moment a menu is asked for;
+  // it comes back on the next fresh mouseenter once the menu has gone.
+  const dismissPreview = () => {
+    if (hoverTimerRef.current) { clearTimeout(hoverTimerRef.current); hoverTimerRef.current = null; }
+    setHoveredItems(null); setHoveredAnchor(null);
   };
   const handleLeave = () => {
     if (hoverTimerRef.current) { clearTimeout(hoverTimerRef.current); hoverTimerRef.current = null; }
@@ -853,6 +872,7 @@ function TaskbarWindows({ openWindows, onRemove, onSplitView, onActivate, onActi
             onDoubleClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('modal-center', { detail: { windowKey: primary.id, label: primary.label } })); }}
             onContextMenu={(e) => {
               e.preventDefault(); e.stopPropagation();
+              dismissPreview();
               // A grouped tab is not one window, so it cannot borrow one
               // window's menu: "Close" there would silently pick a single
               // instance out of the stack. Give the group its own menu whose

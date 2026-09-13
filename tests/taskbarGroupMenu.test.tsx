@@ -144,3 +144,47 @@ test('a taskbar menu event reaches one window, not every window sharing its labe
   // label-only match had both of them open a menu at the same point.
   assert.equal(occurrences('Add to desktop'), 1, 'exactly one window opened a menu');
 });
+
+function hoverTab(groupKey: string) {
+  const tab = document.querySelector<HTMLElement>(`[data-tab-group="${groupKey}"]`);
+  assert.ok(tab, `a taskbar tab exists for ${groupKey}`);
+  // React derives onMouseEnter from the native mouseover/mouseout pair.
+  act(() => { tab.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); });
+}
+
+const preview = () => document.querySelector<HTMLElement>('[data-taskbar-preview]');
+
+test('right-clicking a tab drops the hover thumbnails, and they stack below the menu', async (t) => {
+  const mounted = await mount([MULTI, MULTI]);
+  t.after(() => mounted.unmount());
+
+  hoverTab(MULTI);
+  await waitFor(() => preview() !== null, 'hovering the tab never opened the thumbnails');
+  // The ladder: the popover is a passive hint and must sit under every
+  // PopupMenu (z-400) — it used to ride z-9999 and cover the menu.
+  const previewZ = Number(preview()!.style.zIndex);
+  assert.ok(previewZ < 400, `the thumbnails (z-${previewZ}) sit below the menu (z-400)`);
+
+  // Right-click leaves the pointer on the tab, so nothing else would close the
+  // popover: the menu must do it, or it opens with the thumbnails in the way.
+  rightClickTab(MULTI);
+  await flush();
+  assert.equal(preview(), null, 'asking for the menu dismissed the thumbnails');
+  assert.match(document.body.textContent ?? '', /Close all \(2\)/, 'and the group menu opened');
+  const menu = Array.from(document.querySelectorAll<HTMLElement>('div')).find(el => /z-\[400\]/.test(el.className));
+  assert.ok(menu, 'the menu is a PopupMenu at z-400');
+
+  // Sliding back over the tab while the menu is up must not bring them back.
+  hoverTab(MULTI);
+  await new Promise(resolve => setTimeout(resolve, 500));
+  await flush();
+  assert.equal(preview(), null, 'no thumbnails while the menu is open');
+
+  // Once the menu is gone a fresh hover behaves as before. Close it the way
+  // a user does with the pointer — a press anywhere outside the menu.
+  act(() => { document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true })); });
+  await flush();
+  assert.doesNotMatch(document.body.textContent ?? '', /Close all/, 'pressing outside closed the menu');
+  hoverTab(MULTI);
+  await waitFor(() => preview() !== null, 'the thumbnails did not come back after the menu closed');
+});
