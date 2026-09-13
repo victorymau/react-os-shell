@@ -147,9 +147,15 @@ export function UndoProvider({ children, canEdit = true, perms, windowId }: Undo
   // rate is a sound tell. Trip once, say which slice and why, and stop
   // recording — a dead undo stack and a console error can be diagnosed.
   const runaway = useRef({ last: 0, count: 0, tripped: false });
+  // Set by a `baseline()` / `clear()` — see them below `record`.
+  const seeded = useRef(false);
 
   const record = useCallback((label: string, coalesceKey: string | null) => {
-    if (!enabled || suspended.current || pending.current) return;
+    // A change landing while a `baseline()` settles is the seed it was called
+    // for — noted, not recorded, and it is what decides whether the history
+    // goes (see the lifting effect below).
+    if (suspended.current) { seeded.current = true; return; }
+    if (!enabled || pending.current) return;
     const r = runaway.current;
     if (r.tripped) return;
     const now = Date.now();
@@ -231,26 +237,51 @@ export function UndoProvider({ children, canEdit = true, perms, windowId }: Undo
    * does, and would leave the load recorded.
    */
   const [baselineToken, setBaselineToken] = useState(0);
-
-  const baseline = useCallback(() => {
+  const tokenCounter = useRef(0);
+  // The token the current suspension is waiting on. The lifting effect runs
+  // on mount too, and on a mount it sees a suspension a child's effect began
+  // in that same commit — lifting it there would put the child's own seed
+  // (`setCompany(default); baseline()`) back into the history as a step, which
+  // is exactly the "Undo company" a form opened with. So it lifts only in the
+  // commit the token it was given arrives in, which is the one after.
+  const suspendUntil = useRef(0);
+  const forceClear = useRef(false);
+  const suspend = useCallback(() => {
     suspended.current = true;
+    seeded.current = false;
     pending.current = null;
-    setBaselineToken(t => t + 1);
-    dispatch({ type: 'clear' });
+    tokenCounter.current += 1;
+    suspendUntil.current = tokenCounter.current;
+    setBaselineToken(tokenCounter.current);
   }, []);
+  const baseline = useCallback(() => { suspend(); }, [suspend]);
 
   useEffect(() => {
-    if (!suspended.current) return;
+    if (!suspended.current || baselineToken !== suspendUntil.current) return;
     suspended.current = false;
     pending.current = null;
-    dispatch({ type: 'clear' });
+    // The history goes only when a record actually landed — a seed the slices
+    // took while suspended — or the caller asked for it outright (`clear()`).
+    // A `baseline()` with nothing arriving behind it is what the start of a
+    // background refetch looks like from a form that keeps its once-per-id
+    // guard: the values on screen are still the user's edits, and wiping the
+    // history there is what greyed Undo/Redo out a moment after a bulk import
+    // with nothing saved.
+    if (seeded.current || forceClear.current) dispatch({ type: 'clear' });
+    seeded.current = false;
+    forceClear.current = false;
   }, [baselineToken]);
 
-  // Same operation, named for the other end of the edit. Kept distinct at the
-  // call site because "clear on save" and "baseline on load" are different
-  // facts about the form, and a reader of either line should not have to work
-  // out which one was meant.
-  const clear = baseline;
+  // The other end of the edit: after a save, "earlier" is on the server and
+  // the history goes whether or not anything on screen moved. Kept distinct
+  // at the call site because "clear on save" and "baseline on load" are
+  // different facts about the form, and a reader of either line should not
+  // have to work out which one was meant.
+  const clear = useCallback(() => {
+    forceClear.current = true;
+    dispatch({ type: 'clear' });
+    suspend();
+  }, [suspend]);
 
   const canUndo = enabled && state.past.length > 0;
   const canRedo = enabled && state.future.length > 0;

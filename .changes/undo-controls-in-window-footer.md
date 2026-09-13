@@ -21,3 +21,18 @@ title: Undo/Redo is shown by the window footer, not mounted by each form
   tree, kept registering with the outer stack, which stayed enabled — so the
   nested pair never moved while ⌘Z on a locked form still did. `useUndo()` now
   also reports `hasState`.
+- **`baseline()` keeps the history unless a record actually lands.** It used
+  to discard the stack on every call, and a form's hydration effect reaches it
+  on more edges than the load — most often the start of a background refetch,
+  where a once-per-id guard skips re-seeding and nothing on screen moves. The
+  app-wide polling and focus refetch made that a wipe every minute and on
+  every return from a spreadsheet, so Undo/Redo went grey a moment after a
+  bulk import with nothing saved (Purchase Invoice, then Goods Receipt and
+  Goods Issue by the same shape). Now the history goes only when a slice takes
+  a value while the baseline settles — a real seed — and `clear()`, the
+  after-save call, is its own operation that always empties it.
+- **A default set and baselined in the same mount effect is no longer a
+  step.** The lifting effect ran on mount and saw a suspension a child's effect
+  had just begun in that same commit; lifting it there let the child's own seed
+  record, so a new invoice opened with "Undo company" lit. The suspension now
+  lifts only in the commit its token arrives in.
