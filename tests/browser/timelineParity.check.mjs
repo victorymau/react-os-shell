@@ -67,6 +67,15 @@ async function settled(page) {
 const IDENTITY = new Set(['none', 'matrix(1, 0, 0, 1, 0, 0)']);
 
 export default async function check(page, { pageErrors, open }) {
+  // The fixture pins the mould card's `endDate` to 2026-09-11 and the check
+  // below reads that as "endDate IS today" — which was true on the day it was
+  // written and false two days later, when the track (correctly) stopped
+  // drawing a Today mark on a window that had ended. Freeze the page's clock
+  // on that date so the check keeps meaning what it says. `setFixedTime` fixes
+  // only `Date`; timers and animation frames stay real, which the motion
+  // assertions further down depend on.
+  await page.clock.setFixedTime(new Date('2026-09-11T12:00:00Z'));
+
   // ── 720px: the ordinary case ──────────────────────────────────────────────
   await open('?width=720');
   await page.locator('[data-testid="mould"] [data-timeline-part="fill"]').waitFor();
