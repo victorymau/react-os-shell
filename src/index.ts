@@ -219,6 +219,6 @@ export { default as useEditHotkey } from './hooks/useEditHotkey';
 // guard has to live beside the dispatch that supplies the id.
 export { default as useModalSave } from './hooks/useModalSave';
 export { default as useModalDuplicate } from './hooks/useModalDuplicate';
-export { UndoProvider, useUndo, useUndoable, useUndoableState } from './shell/UndoProvider';
+export { UndoProvider, useUndo, useUndoable, useUndoableState, useUndoCanEdit } from './shell/UndoProvider';
 export type { UndoControlsApi, UndoableOptions, UndoProviderProps } from './shell/UndoProvider';
 export type { UndoStep, UndoState, UndoSnapshot } from './hooks/undoHistory';

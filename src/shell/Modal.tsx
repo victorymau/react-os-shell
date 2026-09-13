@@ -13,6 +13,8 @@ import WindowErrorBoundary from './WindowErrorBoundary';
 import { useShellPrefs } from './ShellPrefs';
 import { boxFillsWorkArea, computeMaximizedBox, growBoxToWidth, isSidebarStripReserved, readAlwaysMaximizedFlag, scrollerIsFluid, widthToFit } from './workArea';
 import { runEscapeInterceptors } from './escapeInterceptors';
+import { UndoContext } from './undoContext';
+import UndoControls from './UndoControls';
 
 /** Context that passes the modal's unique ID to children */
 const ModalIdContext = createContext<string>('');
@@ -1409,7 +1411,25 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   // can't drift apart. Presence booleans rather than the nodes themselves:
   // consumer JSX props get a new identity every render and would thrash the
   // measurement effect's dependency array.
-  const hasFooterContent = !!(footer || actions || actionsLeft) || hasActions;
+  // Undo/Redo for the window's form, shown by the shell rather than mounted
+  // by the form. The stack is the one `WindowManager` mounts ABOVE this Modal
+  // (`UndoProvider windowId={item.id}`), which is why the footer reads it
+  // rather than the provider portalling in through `ModalActions` as a
+  // provider nested inside a window does. Only the window's own Modal shows
+  // it — a dialog a form opens is a Modal inside a Modal, and the enclosing id
+  // says so — and only once the form has registered state, so a list window or
+  // a detail with nothing to take back gets no dead pair.
+  const undoCtx = useContext(UndoContext);
+  const nestedInWindow = useContext(ModalIdContext) !== '';
+  const showsUndo = !!undoCtx && !nestedInWindow && undoCtx.enabled && undoCtx.hasState
+    && !widget && !compact && !appStyle;
+  const claimAutoMount = undoCtx?.claimAutoMount;
+  useEffect(() => {
+    if (!showsUndo || !claimAutoMount) return;
+    claimAutoMount(true);
+    return () => claimAutoMount(false);
+  }, [showsUndo, claimAutoMount]);
+  const hasFooterContent = !!(footer || actions || actionsLeft) || hasActions || showsUndo;
   // Every window must surface a clickable icon — it's the only entry point
   // to the window menu. Fall back to a generic "window" glyph when the
   // consumer hasn't supplied one. Consumer icons rarely include explicit
@@ -2924,6 +2944,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
           className={`px-4 py-2 border-t border-gray-200 shrink-0 flex items-center justify-between text-xs select-none cursor-move${isActive ? ' backdrop-blur-sm' : ''}${widget || compact || appStyle || isMobile || !hasFooterContent ? ' hidden' : ''}`}
           style={{ touchAction: 'none', backgroundColor: isActive ? `rgb(var(--window-footer-rgb) / var(--active-header-opacity, 0.8))` : `rgb(var(--window-footer-rgb) / var(--inactive-header-opacity, 0.7))` }}>
           <div className="flex items-center gap-2 min-w-0">
+            {showsUndo && <UndoControls auto />}
             {actionsLeft}
             <div ref={actionsLeftRef} data-modal-actions-left className="flex items-center gap-2" />
             {footer}
