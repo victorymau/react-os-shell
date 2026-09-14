@@ -424,3 +424,49 @@ test('toDayMs rejects an implausible year rather than stretching the axis to it'
   assert.equal(toDayMs('2026-05-01'), Date.UTC(2026, 4, 1));
   assert.equal(DAY_MS, 86400000);
 });
+
+// ── The start anchor ────────────────────────────────────────────────────────
+
+test('the bar says where the window opens, not where the first report landed', () => {
+  // "The timeline must start at zero, not at the first production report"
+  // (Henry, 2026-09-14, watching the customer portal). The window opens on the
+  // PO's production start date — 1 May here — and the first report is nine days
+  // in, which on a two-month axis is close enough to the left end to read as
+  // the beginning of the programme.
+  const view = bar({ reports: REPORTS });
+  const caption = view.container.querySelector('[data-timeline-part="start-caption"]');
+  assert.ok(caption, 'no start caption on the production bar');
+  assert.equal(caption!.textContent, 'Start · 01/05/2026');
+  assert.ok(view.container.querySelector('.rosh-tl-start'), 'and a ring stands on the origin');
+  // Nothing was filed that day, so the ring stays closed: the nearest report is
+  // a tenth of the axis away.
+  assert.equal(view.container.querySelector('.rosh-tl-start.is-around'), null);
+  view.unmount();
+});
+
+test('the start anchor moves no report and adds no rung to the slider', () => {
+  const view = bar({ reports: REPORTS });
+  const slider = view.container.querySelector('[role="slider"]')!;
+  assert.equal(slider.getAttribute('aria-valuemax'), '1', 'two reports, indices 0..1');
+  assert.equal(
+    view.container.querySelectorAll('[data-timeline-node="item"]').length, 2,
+    'and the ordered list is still the reports',
+  );
+  view.unmount();
+});
+
+test('a caller may write the caption itself — edgeCaptions goes straight through', () => {
+  const view = bar({
+    reports: REPORTS,
+    edgeCaptions: { start: 'Start · PO issued', end: 'Contractual delivery' },
+  });
+  assert.equal(
+    view.container.querySelector('[data-timeline-part="start-caption"]')?.textContent,
+    'Start · PO issued',
+  );
+  assert.equal(
+    view.container.querySelector('[data-timeline-part="end-caption"]')?.textContent,
+    'Contractual delivery',
+  );
+  view.unmount();
+});

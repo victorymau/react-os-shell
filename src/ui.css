@@ -353,49 +353,69 @@ html.rosh-reduce-transparency *::after {
  * The five non-accent categories a mark on a `TimelineTrack` can belong to, and
  * the ink that reads on top of one.
  *
- * Tokens rather than utility classes because these are an IDENTITY encoding —
- * "a shipment is emerald" — and an identity that follows the user's accent has
- * stopped being one. That is the same reason `--viz-series-*` above is not
- * remapped by themes.css. The accent kinds (`default`, `report`, and whichever
- * mark is current) are the opposite case and are painted with `bg-blue-500` /
- * `border-blue-500`, which the accent themes DO remap: "where we are" should
- * follow the shell's accent.
+ * Every one of them RESOLVES TO A TOKEN THE KIT ALREADY OWNS — no literal here.
+ * "The timeline's colors must be the ROS defaults, not hard-coded", and
+ * "inspection must not be red" (Henry, 2026-09-14, watching the customer
+ * portal). That supersedes the identity encoding this block used to carry, in
+ * which a shipment was violet, a DFM revision amber and an inspection orange:
+ * a bar drawn in five bespoke hues is five colours the design system never
+ * chose, and the orange one read as a fault on a report that is routine. The
+ * SHAPE is what tells the kinds apart now — a diamond is goods moving, a flag
+ * opened the programme, a flask is a test or an inspection, a check finished
+ * something — and shape survives a greyscale print and a colour-blind reader,
+ * which a hue never did.
  *
- * The dark steps are the same five hues re-stepped for the darker card, all
- * clearing 3:1 against `--surface-sunken` (WCAG 1.4.11 — these are graphics,
- * not text). The five hues are the approved prototype's: a shipment is violet
- * rather than emerald so that it cannot be mistaken for a completion at a
- * glance, and an inspection is orange rather than the amber of a drawing
- * revision, because the production bar draws both. */
+ * The mapping, and the whole of it:
+ *
+ *   --tl-dfm         →  --status-active-solid   / dark --status-active-soft-ink
+ *   --tl-shipment    →  --status-active-solid   / dark --status-active-soft-ink
+ *   --tl-testing     →  --status-active-solid   / dark --status-active-soft-ink
+ *   --tl-completion  →  --status-success-solid  / dark --status-success-soft-ink
+ *   --tl-inspection  →  --status-active-solid   / dark --status-active-soft-ink
+ *   --tl-on-kind     →  --status-on-solid       / dark --surface-sunken
+ *   --tl-focus       →  --status-active-solid   / dark --status-active-soft-ink
+ *   --tl-soft        →  --status-active-soft    (a wash; it holds in both)
+ *
+ * `--status-active-*` is the kit's blue tier — the same semantic the accent
+ * kinds (`default`, `report`, and whichever mark is current) reach through the
+ * `bg-blue-500` / `border-blue-500` utilities that themes.css remaps. A
+ * completion keeps the one distinction worth a hue, because "it finished" is
+ * the kit's success role and nothing else on the bar claims it.
+ *
+ * The dark steps are the light tier's counterpart on the darker card, not a
+ * second palette: `--status-*-solid` is tuned against a white surface and drops
+ * to 2.6:1 on `--surface-sunken`, so dark reads the `-soft-ink` step, which is
+ * the same hue lightened for exactly this ground. Every pairing clears 3:1
+ * there (WCAG 1.4.11 — these are graphics, not text), and `--tl-on-kind`
+ * inverts with it: white ink on a dark fill in light, the card's own sunken
+ * ground on a light fill in dark. */
 :root {
-  --tl-dfm: #a2600b;
-  --tl-shipment: #6845d8;
-  --tl-testing: #0c8074;
-  --tl-completion: #0a8354;
-  --tl-inspection: #bd3f0d;
-  --tl-on-kind: #ffffff;
-  /* The focus ring, as blue-600: the repo's convention is a fixed blue ring
-     rather than an accent-following one, and a token is what lets a consumer
-     move it. */
-  --tl-focus: #2563eb;
+  --tl-dfm: var(--status-active-solid);
+  --tl-shipment: var(--status-active-solid);
+  --tl-testing: var(--status-active-solid);
+  --tl-completion: var(--status-success-solid);
+  --tl-inspection: var(--status-active-solid);
+  --tl-on-kind: var(--status-on-solid);
+  /* The focus ring. The repo's convention is a fixed blue ring rather than an
+     accent-following one, and the blue the kit already names is the active
+     status tier. */
+  --tl-focus: var(--status-active-solid);
   /* The soft wash behind the current mark, a hovered dot and the mark a thumb
-     has just crossed. A box-shadow cannot be a utility class, so this is the
-     one accent-ish colour on the card that does not follow a custom accent —
-     the same trade the focus ring above already makes. */
-  --tl-soft: rgba(37, 99, 235, 0.15);
+     has just crossed. A box-shadow cannot be a utility class, so it reads the
+     status tier's own wash — transparent, which is why it needs no dark step. */
+  --tl-soft: var(--status-active-soft);
 }
 
 [data-theme="dark"] {
-  --tl-dfm: #dda15c;
-  --tl-shipment: #a78bfa;
-  --tl-testing: #2fcfbd;
-  --tl-completion: #34d399;
-  --tl-inspection: #fb923c;
-  /* Dark ink on a light-stepped fill, which is the pairing that reads on the
-     dark card — white on #34d399 does not. */
-  --tl-on-kind: #12141a;
-  --tl-focus: #93c5fd;
-  --tl-soft: rgba(111, 155, 255, 0.24);
+  --tl-dfm: var(--status-active-soft-ink);
+  --tl-shipment: var(--status-active-soft-ink);
+  --tl-testing: var(--status-active-soft-ink);
+  --tl-completion: var(--status-success-soft-ink);
+  --tl-inspection: var(--status-active-soft-ink);
+  /* The card's own ground as the ink, because the fill is the light step here:
+     white on `--status-success-soft-ink` does not read. */
+  --tl-on-kind: var(--surface-sunken);
+  --tl-focus: var(--status-active-soft-ink);
 }
 
 /* ── Budget overrun hatch ───────────────────────────────────────────────────
@@ -575,10 +595,16 @@ html.rosh-reduce-transparency *::after {
 
 .rosh-tl-body { display: grid; grid-template-columns: minmax(0, 1fr) 156px; gap: 20px; }
 .rosh-tl-body.is-solo { grid-template-columns: minmax(0, 1fr); }
+/* The caption on an end of the axis — "Start · 20/01/2026". Inside the stage
+   rather than flanking it, so it sits over the coordinate it names instead of
+   beside a bar whose left edge it could only point at. Mono, like every other
+   date the card draws. */
 .rosh-tl-edge {
-  flex: none; align-self: center; white-space: nowrap;
+  position: absolute; white-space: nowrap;
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
   font-size: 10px; line-height: 1.3; color: var(--ink-muted);
 }
+.rosh-tl-edge.is-end { transform: translateX(-100%); }
 
 /* A 10px side inset, so a dot on the first or last day is never clipped. */
 .rosh-tl-stage { position: relative; padding: 0 10px; flex: 1 1 auto; min-width: 0; }
@@ -672,6 +698,23 @@ html.rosh-reduce-transparency *::after {
 .rosh-tl-node.is-ghost {
   width: 10px; height: 10px; background: var(--surface);
   border: 1.5px dashed var(--line-strong); box-shadow: none; cursor: default;
+}
+/* The start anchor. Hollow and dashed, because it is not an event — nothing was
+   filed on the day the axis opens, and a solid disc there would claim there
+   was. Decoration only: it takes no pointer, so the scrubber's hit strip runs
+   straight over it. */
+.rosh-tl-start {
+  position: absolute; box-sizing: border-box; pointer-events: none;
+  width: 12px; height: 12px; border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--surface); border: 1.5px dashed var(--line-strong);
+  box-shadow: 0 0 0 2px var(--surface-sunken);
+}
+/* A dated mark landed on the start day. The ring opens out to encircle it
+   rather than sitting under it — wider than the 16px key node, and transparent,
+   so both are legible and neither has moved off its date. */
+.rosh-tl-start.is-around {
+  width: 26px; height: 26px; background: none; box-shadow: none;
 }
 .rosh-tl-node.is-active { box-shadow: 0 0 0 2px var(--surface-sunken), 0 0 0 5px var(--line); }
 /* The flash as the scrubber's thumb crosses a mark. It rides the same 160ms

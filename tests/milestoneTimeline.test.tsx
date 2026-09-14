@@ -794,3 +794,72 @@ test('the card gives its lanes to the milestones that settle something', () => {
   );
   view.unmount();
 });
+
+// ── The start anchor on the mould bar ───────────────────────────────────────
+
+/**
+ * The mould card gets the production card's start anchor, because the two are
+ * one track (Henry, 2026-09-14, ruling 5).
+ *
+ * Its window is derived, not given: `startMs` is the EARLIEST DATED milestone,
+ * and both portals build "Project Initiated" from `mould.initiation_date` as the
+ * first entry of the list (`src/utils/mouldMilestones.tsx`). So on a mould with
+ * an initiation date the anchor and that milestone share an instant, and the
+ * anchor has to be drawn without covering it; on a mould with none, the
+ * milestone is undated and listed as pending, and the axis opens on the first
+ * DFM log instead — with the anchor there.
+ */
+const INITIATED_FIRST: Milestone[] = [
+  { key: 'init', label: 'Project Initiated', date: '2025-10-09', glyph: 'flag' },
+  { key: 'dfm1', label: 'DFM v1', date: '2025-10-24', kind: 'dfm' },
+  { key: 'complete', label: 'Mould Complete', date: '2025-12-03', kind: 'completion' },
+];
+
+test('the mould bar anchors its own start, and says which day that is', () => {
+  const html = staticHtml(
+    <MilestoneTimeline title="Mould Development" milestones={INITIATED_FIRST} endDate="2026-09-11" />,
+  );
+  assert.match(html, /class="rosh-tl-start[^"]*"[^>]*left:0px/);
+  assert.match(html, /data-timeline-part="start-caption"[^>]*>Start · 09\/10\/2025</);
+  // The card's own meta line already said it; the bar now says it too, in the
+  // place the reader is looking.
+  assert.match(html, /started 09\/10\/2025/);
+});
+
+test('an initiation date and the anchor are the same instant, and neither covers the other', () => {
+  const html = staticHtml(
+    <MilestoneTimeline title="Mould Development" milestones={INITIATED_FIRST} endDate="2026-09-11" />,
+  );
+  // The ring opens out around the milestone rather than sitting under it.
+  assert.match(html, /class="rosh-tl-start is-around/);
+  assert.match(
+    html, /data-timeline-key="init"[^>]*style="[^"]*left:0px/,
+    'and "Project Initiated" keeps the coordinate its date gives it',
+  );
+  // Both readable: the caption took one lane, the milestone's label the other.
+  const rows = [...html.matchAll(/data-timeline-part="label"[^>]*top:([0-9.]+)px[^>]*>(.*?)<\/div>/g)]
+    .map((m) => ({ top: Number(m[1]), text: m[2].replace(/<[^>]*>/g, ' ') }));
+  const opener = rows.find((row) => row.text.includes('Project Initiated'));
+  assert.ok(opener, `no label for the opening milestone: ${JSON.stringify(rows)}`);
+  const capTop = Number(html.match(/data-timeline-part="start-caption"[^>]*top:([0-9.]+)px/)![1]);
+  assert.ok(
+    opener!.top > capTop,
+    `the milestone label (${opener!.top}px) should sit below the caption (${capTop}px)`,
+  );
+});
+
+test('with no initiation date the axis opens on the first dated milestone, anchor and all', () => {
+  // `mould.initiation_date` is nullable, and both portals pass it straight
+  // through: the milestone then has no coordinate and is listed as pending, so
+  // the window's left edge is the earliest DFM log. The anchor follows it.
+  const undated: Milestone[] = [
+    { key: 'init', label: 'Project Initiated', date: null, glyph: 'flag' },
+    ...INITIATED_FIRST.slice(1),
+  ];
+  const html = staticHtml(
+    <MilestoneTimeline title="Mould Development" milestones={undated} endDate="2026-09-11" />,
+  );
+  assert.match(pendingBlock(html), /Project Initiated/, 'the milestone is pending, not placed');
+  assert.match(html, /data-timeline-part="start-caption"[^>]*>Start · 24\/10\/2025</);
+  assert.match(html, /class="rosh-tl-start is-around/, 'the first DFM log is the day the bar opens');
+});

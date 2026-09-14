@@ -262,8 +262,9 @@ export default async function check(page, { pageErrors, open }) {
   assert.match(await foot.innerText(), /Showing PP#\d+ · /);
   assert.doesNotMatch(await foot.innerText(), /Estimated/, 'the thumb only rests on reports');
   assert.equal(await page.locator('[data-testid="production"] .rosh-tl-legend > span').count(), 3);
-  // And the edge captions are gone: the ruler carries the dates now.
-  assert.equal(await page.locator('[data-testid="production"] .rosh-tl-edge').count(), 0);
+  // The edge caption is inside the stage now, over the coordinate it names,
+  // rather than flanking a bar whose left edge it could only point at.
+  assert.equal(await page.locator('[data-testid="production"] .rosh-tl-edge').count(), 1);
 
   // Today is at the right edge of the mould card, because `endDate` IS today —
   // which is exactly the case a strict "inside the window" test dropped.
@@ -440,6 +441,82 @@ export default async function check(page, { pageErrors, open }) {
     /Showing PP#1014[1-5]/,
     'the thumb got there without the card being told it had',
   );
+
+  // ── The palette, and the start anchor, in a browser that resolves them ────
+  //
+  // "The timeline's colors must be the ROS defaults, not hard-coded" and
+  // "inspection must not be red" (Henry, 2026-09-14). jsdom computes no custom
+  // property, so the suite's static specs can only read the stylesheet; here
+  // the chip has a colour, and it is the one the token tier hands it.
+  for (const theme of ['light', 'dark']) {
+    await open(`?width=720${theme === 'dark' ? '&theme=dark' : ''}`);
+    await page.locator('[data-testid="production"] [data-timeline-part="fill"]').waitFor();
+
+    // The tier a kind is supposed to read, resolved by the browser through a
+    // probe rather than restated here as a hex the spec could drift from.
+    const tier = theme === 'dark' ? '--status-active-soft-ink' : '--status-active-solid';
+    const seen = await page.evaluate(({ tier }) => {
+      const probe = document.createElement('span');
+      probe.style.color = `var(${tier})`;
+      document.body.appendChild(probe);
+      const accent = getComputedStyle(probe).color;
+      probe.remove();
+      const chip = (which) => document.querySelector(
+        `[data-testid="production"] .rosh-tl-legend .rosh-tl-glyph.${which}`,
+      );
+      const diamond = chip('is-diamond');
+      const disc = chip('is-disc');
+      return {
+        accent,
+        shipment: getComputedStyle(diamond).backgroundColor,
+        inspection: getComputedStyle(disc).backgroundColor,
+      };
+    }, { tier });
+
+    assert.equal(seen.inspection, seen.accent,
+      `${theme}: the inspection chip is ${seen.inspection}, not the kit's ${tier} (${seen.accent})`);
+    assert.equal(seen.shipment, seen.accent, `${theme}: the shipment chip drifted from the same tier`);
+    // And measured, not merely named: nothing on this bar is a red, an orange
+    // or an amber. 0-65 degrees of hue is that whole range.
+    const [r, g, b] = seen.inspection.match(/[\d.]+/g).slice(0, 3).map(Number);
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const hue = max === min ? 0 : max === r
+      ? (60 * ((g - b) / (max - min)) + 360) % 360
+      : max === g ? 60 * ((b - r) / (max - min)) + 120 : 60 * ((r - g) / (max - min)) + 240;
+    assert.ok(max - min < 24 || hue > 65,
+      `${theme}: the inspection chip is hue ${Math.round(hue)} — red through amber`);
+
+    // The start anchor, on both cards: a caption the reader can see, over a
+    // ring standing on the axis origin.
+    for (const card of ['mould', 'production']) {
+      const caption = page.locator(`[data-testid="${card}"] [data-timeline-part="start-caption"]`);
+      await caption.waitFor({ state: 'visible' });
+      assert.match(await caption.innerText(), /^Start · \d{2}\/\d{2}\/\d{4}$/,
+        `${theme}/${card}: the start caption does not name the day the window opens`);
+      const capBox = await caption.boundingBox();
+      const ringBox = await page.locator(`[data-testid="${card}"] .rosh-tl-start`).boundingBox();
+      const layer = await page.locator(`[data-testid="${card}"] .rosh-tl-layer`).boundingBox();
+      const rail = await page.locator(`[data-testid="${card}"] .rosh-tl-rail`).boundingBox();
+      assert.ok(Math.abs(ringBox.x + ringBox.width / 2 - layer.x) < 1.5,
+        `${theme}/${card}: the ring is ${ringBox.x - layer.x}px off the axis origin`);
+      assert.ok(capBox.y + capBox.height <= rail.y + 1,
+        `${theme}/${card}: the caption sits on the rail rather than above it`);
+      // And it shares no pixel with a label — the packer was told about it.
+      assertNoOverlap([...await labelBoxes(page, card), { box: capBox, text: 'start caption' }], card);
+    }
+  }
+  // The mould card opens ON its first milestone, so the ring encircles it
+  // instead of hiding under it; the production card's window opens days before
+  // its first report, so there the ring closes back up.
+  await open('?width=720');
+  await page.locator('[data-testid="mould"] [data-timeline-part="fill"]').waitFor();
+  assert.equal(await page.locator('[data-testid="mould"] .rosh-tl-start.is-around').count(), 1);
+  assert.equal(await page.locator('[data-testid="production"] .rosh-tl-start.is-around').count(), 0);
+  const around = await page.locator('[data-testid="mould"] .rosh-tl-start').boundingBox();
+  const opener = await page.locator('[data-testid="mould"] [aria-label^="Project Initiated"]').boundingBox();
+  assert.ok(around.width > opener.width + 6,
+    `the ring (${around.width}px) does not clear the milestone it encircles (${opener.width}px)`);
 
   // ── 300px: the axis is abandoned, not squeezed ────────────────────────────
   await open('?width=300');

@@ -21,8 +21,10 @@ export type { TimelineScrubProgress } from './timelinePlayback';
 // ─── Public types ────────────────────────────────────────────────────────────
 
 /**
- * Visual category for one mark on the track. Drives shape, colour and glyph, so
- * a reader can tell a shipment from a drawing revision without reading a word.
+ * Visual category for one mark on the track. Drives SHAPE and glyph, so a reader
+ * can tell a shipment from a drawing revision without reading a word — and
+ * without a hue doing the telling. Every kind but `completion` paints in the
+ * accent; see the mapping block in `ui.css` for why.
  *
  * `MilestoneKind` is this list minus the two only a production bar has, and
  * `TimelineMarkerKind` is the two a marker may be — one union, so a kind added
@@ -30,11 +32,11 @@ export type { TimelineScrubProgress } from './timelinePlayback';
  */
 export type TimelineTrackKind =
   | 'default'    // accent disc, a flag on the one that opened the programme
-  | 'dfm'        // amber disc with a document — an engineering iteration
-  | 'shipment'   // violet diamond — goods moving
-  | 'testing'    // teal disc with a flask — a test, a sign-off, a mould check
-  | 'completion' // green disc with a check — the thing finished
-  | 'inspection' // orange disc with a flask — a QC report filed against the order
+  | 'dfm'        // accent disc with a document — an engineering iteration
+  | 'shipment'   // accent diamond — goods moving
+  | 'testing'    // accent disc with a flask — a test, a sign-off, a mould check
+  | 'completion' // success disc with a check — the thing finished
+  | 'inspection' // accent disc with a flask — a QC report filed against the order
   | 'report'     // accent ring — a supplier's production-progress report
 ;
 
@@ -259,7 +261,21 @@ export interface TimelineTrackProps {
   /** Drives the thumb along the rail by itself. Needs a `thumb`; without one
    *  there is nothing to move. */
   playback?: TimelineTrackPlayback;
-  /** Text flanking the track — the "start" and "completed" edge captions. */
+  /**
+   * The captions on the two ends of the axis.
+   *
+   * `start` names the START ANCHOR — the ring the track draws at `startMs`
+   * whether or not anything happened on that day — and defaults to
+   * `Start · <date>` in the reader's own date format. It is what makes "the
+   * timeline starts at zero, not at the first production report" (Henry,
+   * 2026-09-14) something the reader can SEE: before it, a bar whose first
+   * report landed two days after the production start date opened with the
+   * report sitting on the rail's left end, and nothing said the axis had begun
+   * earlier.
+   *
+   * `end` is optional and has no default: the right edge is either today, which
+   * has its own tag, or a completion, which has its own mark.
+   */
   edgeCaptions?: { start?: ReactNode; end?: ReactNode };
   /** Parallel-work brackets under the rail. */
   phases?: TimelineTrackPhase[];
@@ -346,6 +362,28 @@ const PENDING_ROW_LIMIT = 2;
 /** A week tick is drawn only where the weeks stand this far apart. */
 const WEEK_TICK_MIN_PX = 14;
 
+/**
+ * The start anchor's footprint. A dated mark landing inside it is ON the start
+ * day as far as the eye is concerned, and the ring opens out to encircle it
+ * rather than sitting under it — neither hides the other, and neither moves,
+ * because moving one would put it on a date it does not have.
+ */
+const START_MARK_PX = 14;
+
+/** The start/end caption's own height, so it can be hung off the rail rather
+ *  than off a lane: the two label strategies put their lanes in different
+ *  places, and the caption's relationship to the rail is the same in both. */
+const START_CAPTION_PX = 13;
+
+/** What the start caption is assumed to be worth in lane-packing width when a
+ *  consumer passed something richer than a string. Wide enough for the default
+ *  `Start · 20/01/2026`, which is the only caption the kit itself writes. */
+const START_CAPTION_FALLBACK_PX = 96;
+
+/** The lane the start caption reserves, under a key no mark can collide with —
+ *  a consumer's `TimelineTrackItem.key` is its own, and this one is not. */
+const START_LANE_KEY = '__rosh-tl-start__';
+
 /** A month is LABELLED only when it clears this much from the last label, so the
  *  same code serves a 73-day order and a 337-day mould. */
 const MONTH_LABEL_PITCH_PX = 72;
@@ -418,9 +456,9 @@ const KIND_STYLES: Record<TimelineTrackKind, KindStyle> = {
  *
  * The milestone spec and the reader's eye do not line up everywhere: "DFM
  * Confirmed" is a `default` milestone in the spec and a signed drawing on the
- * card, so a caller naming `glyph: 'doc'` gets the amber that goes with it
- * rather than an accent disc with a document inside it. Only `default` borrows
- * — a kind that was stated is never overridden.
+ * card, so a caller naming `glyph: 'doc'` gets the filled document disc that
+ * goes with it rather than a bare accent disc. Only `default` borrows — a kind
+ * that was stated is never overridden.
  */
 const GLYPH_KIND: Partial<Record<TimelineGlyphName, TimelineTrackKind>> = {
   doc: 'dfm',
@@ -749,20 +787,31 @@ function Ruler({ startMs, endMs, axis, geo, reveal }: {
   });
   const blocked = (from: number, to: number) => bands.some(([low, high]) => from < high && to > low);
 
+  // The axis begins HERE, and a tick is what says so. What stood at x = 0
+  // before was the month boundary preceding `startMs`, drawn as a label with no
+  // tick under it — a month the window does not contain, pinned to a coordinate
+  // that is not its date, and the only thing the left end of the bar had to say
+  // for itself. The start caption carries the start date now, so the ruler
+  // labels boundaries STRICTLY INSIDE the window and marks the start itself.
+  ticks.push(
+    <i key="start" data-timeline-part="start-tick" className="rosh-tl-tick"
+      style={{ left: '0px', top: `${y}px`, height: '6px' }} />,
+  );
+
   const cursor = new Date(startMs);
   cursor.setUTCDate(1);
   let lastLabelX = -Infinity;
   let firstLabel = true;
   while (cursor.getTime() < endMs) {
     const t = cursor.getTime();
-    const beforeStart = t < startMs;
-    if (!axis.inCut(beforeStart ? startMs : t)) {
-      const x = beforeStart ? 0 : axis.xByMs(t);
-      if (!beforeStart) {
-        ticks.push(
-          <i key={`mo-${t}`} className="rosh-tl-tick" style={{ left: `${x}px`, top: `${y}px`, height: '6px' }} />,
-        );
-      }
+    // `<=`, not `<`: a window that opens on the first of a month already has a
+    // tick there, and a second one on top of it is a thicker line, not a date.
+    const beforeStart = t <= startMs;
+    if (!beforeStart && !axis.inCut(t)) {
+      const x = axis.xByMs(t);
+      ticks.push(
+        <i key={`mo-${t}`} className="rosh-tl-tick" style={{ left: `${x}px`, top: `${y}px`, height: '6px' }} />,
+      );
       // Pitch is measured label-start to label-start, so a long "Apr 2026" does
       // not swallow the month that follows it.
       if (x - lastLabelX >= MONTH_LABEL_PITCH_PX || firstLabel) {
@@ -930,6 +979,56 @@ function TrackRail({ axis, geo, fillTo, reveal, trackPx, tweened = false }: {
   );
 }
 
+/**
+ * The start anchor: where the axis begins, drawn whether or not anything
+ * happened there.
+ *
+ * A window opens on the day production started, not on the day the first report
+ * was filed — but nothing used to be DRAWN at `startMs`, so a report two days
+ * in (0.84% of a 237-day window, ~7.6px inside a 10px inset) sat on the rail's
+ * left end and read as the beginning of the programme. The ring says otherwise,
+ * and the caption under it says when.
+ *
+ * It is decoration, not a mark: `aria-hidden`, `pointer-events: none`, absent
+ * from the ordered list the screen reader walks, and never one of the thumb's
+ * stops. The date it stands for is in the caption, which is text.
+ *
+ * `around` is the collision case — a dated mark inside `START_MARK_PX` of the
+ * start, which is every mould card, whose window opens ON its first milestone.
+ * The ring opens out and encircles that mark instead of sitting under it: both
+ * stay visible, and neither moves, because time stays linear.
+ */
+function StartMark({ geo, caption, endCaption, around, reveal, trackPx }: {
+  geo: TrackGeometry;
+  caption: ReactNode;
+  endCaption: ReactNode;
+  around: boolean;
+  reveal: boolean;
+  trackPx: number;
+}) {
+  const capTop = geo.rail - START_CAPTION_PX - 4;
+  const fade = reveal ? ' rosh-tl-fade' : '';
+  const delay = reveal ? { animationDelay: '420ms' } : {};
+  return (
+    <div aria-hidden="true" data-timeline-part="start">
+      <i className={`rosh-tl-start${around ? ' is-around' : ''}${fade}`}
+        style={{ left: '0px', top: `${geo.rail + RAIL_PX / 2}px`, ...delay }} />
+      {caption != null && caption !== false && (
+        <span className={`rosh-tl-edge${fade}`} data-timeline-part="start-caption"
+          style={{ left: '0px', top: `${capTop}px`, ...delay }}>
+          {caption}
+        </span>
+      )}
+      {endCaption != null && endCaption !== false && (
+        <span className={`rosh-tl-edge is-end${fade}`} data-timeline-part="end-caption"
+          style={{ left: `${trackPx}px`, top: `${capTop}px`, ...delay }}>
+          {endCaption}
+        </span>
+      )}
+    </div>
+  );
+}
+
 /** Today: a dashed rule through the bands, with a tag that says so. */
 function TodayMark({ x, geo, trackPx, label, reveal }: {
   x: number;
@@ -1048,12 +1147,17 @@ interface LaneBox {
 function LaneLabels({
   groups, trackPx, geo, startMs, endMs, currentKey, hoveredKey, reveal, step, zoomedKey,
   popId, aimBubble, openCluster, setOpenCluster, previewCluster, setPreviewCluster, setZoomKey,
+  startCaptionPx,
 }: {
   groups: ClusterGroup<Mark>[];
   trackPx: number;
   geo: TrackGeometry;
   startMs: number;
   endMs: number;
+  /** How much room the start caption claims at x = 0, so a label on the start
+   *  day is packed into the other lane instead of overprinting it. 0 where the
+   *  caller drew no caption. */
+  startCaptionPx: number;
   currentKey: string | null;
   hoveredKey: string | null;
   reveal: boolean;
@@ -1120,18 +1224,29 @@ function LaneLabels({
   boxes.sort((a, b) => a.x - b.x);
 
   const lanes = packLabelLanes(
-    boxes.map((box) => ({
-      key: box.key,
-      ms: box.group.type === 'cluster' ? box.group.members[0].ms : box.group.mark.ms,
-      xPx: box.x,
-      widthPx: box.widthPx,
-      // A pill claims its lane FIRST, which puts it in the row above the rail
-      // the way the prototype draws it: it speaks for several marks, so the
-      // labels that have to give way around it are single ones — and a single
-      // label that finds no lane still reveals on hover, where a pill pushed
-      // into the lower lane leaves the row above it empty.
-      priority: box.group.type === 'cluster' ? -1 : 0,
-    })),
+    [
+      // The start caption is not a label, but it occupies the same band and the
+      // same pixels, so the packer has to know about it: the mould card's
+      // window opens ON its first milestone, and without this reservation
+      // "Project Initiated" and "Start · 09/10/2025" are printed over each
+      // other. Claimed before everything, so what gives way is the label — into
+      // the second lane, which is what the packer is for.
+      ...(startCaptionPx > 0
+        ? [{ key: START_LANE_KEY, ms: startMs, xPx: 0, widthPx: startCaptionPx, priority: -2 }]
+        : []),
+      ...boxes.map((box) => ({
+        key: box.key,
+        ms: box.group.type === 'cluster' ? box.group.members[0].ms : box.group.mark.ms,
+        xPx: box.x,
+        widthPx: box.widthPx,
+        // A pill claims its lane FIRST, which puts it in the row above the rail
+        // the way the prototype draws it: it speaks for several marks, so the
+        // labels that have to give way around it are single ones — and a single
+        // label that finds no lane still reveals on hover, where a pill pushed
+        // into the lower lane leaves the row above it empty.
+        priority: box.group.type === 'cluster' ? -1 : 0,
+      })),
+    ],
     trackPx, startMs, Math.max(endMs - startMs, DAY_MS),
     { laneCount: TRACK_LABEL_LANE_COUNT },
   );
@@ -1545,6 +1660,15 @@ export default function TimelineTrack({
     });
   const marks = [...itemMarks, ...markerMarks].sort((a, b) => a.x - b.x || a.ms - b.ms);
 
+  // The start anchor. The caption defaults to the window's own left edge, in the
+  // reader's date format, because that is the fact the bar was failing to state.
+  const startCaption = edgeCaptions?.start ?? `Start · ${fmtSliderDate(startMs)}`;
+  const startCaptionPx = startCaption == null || startCaption === false
+    ? 0
+    : typeof startCaption === 'string'
+      ? Math.ceil(monoWidth(startCaption))
+      : START_CAPTION_FALLBACK_PX;
+
   // Clustering is decided on the UNZOOMED axis, before any magnification, and
   // the answer is handed to the labels. Deciding it after the zoom would let a
   // cluster dissolve because it had been opened — and the pill the pointer is
@@ -1571,6 +1695,10 @@ export default function TimelineTrack({
     // number on each of them.
     for (const mark of marks) mark.x = view.xByMs(mark.ms);
   }
+  // A mark on (or within a hair of) the start day, read off the coordinates
+  // actually drawn rather than the ones before a magnification. The mould card
+  // is always this case: its window opens on its first milestone.
+  const startCrowded = marks.some((mark) => mark.x < START_MARK_PX);
   const zoomedKey = zoomed && zoomedGroup ? groupKey(zoomedGroup) : null;
 
   // A zoom opens and closes over 240ms, and the transition that carries it is
@@ -1955,7 +2083,6 @@ export default function TimelineTrack({
   return (
     <div ref={rootRef} className={`rosh-tl-body${pending.length > 0 ? '' : ' is-solo'}`}>
       <div className="flex items-stretch gap-3">
-        {edgeCaptions?.start && <div className="rosh-tl-edge text-right">{edgeCaptions.start}</div>}
         <div className="rosh-tl-stage" style={{ height: `${stageHeight(geo, usesFarLane, phases.length > 0)}px` }}>
           {/* `is-gliding` takes the thumb's 120 ms transitions away for as long
               as an animation frame is placing it: a transition chasing a tween
@@ -1967,6 +2094,8 @@ export default function TimelineTrack({
             <TrackRail axis={view} geo={geo} fillTo={fillTo} reveal={reveal} trackPx={trackPx}
               tweened={!!thumb} />
             <Ruler startMs={startMs} endMs={endMs} axis={view} geo={geo} reveal={reveal} />
+            <StartMark geo={geo} caption={startCaption} endCaption={edgeCaptions?.end}
+              around={startCrowded} reveal={reveal} trackPx={trackPx} />
             {/* Today is drawn even where the axis was cut, unlike a ruler tick:
                 a tick inside a cut labels a coordinate with no date, but "you
                 are here" is the one landmark a reader needs most in exactly the
@@ -2013,6 +2142,7 @@ export default function TimelineTrack({
                 groups={groups} trackPx={trackPx} geo={geo} startMs={startMs} endMs={endMs}
                 currentKey={resolvedCurrent} hoveredKey={hoveredKey} reveal={reveal} step={step}
                 zoomedKey={zoomedKey} popId={popId} aimBubble={aimBubble}
+                startCaptionPx={startCaptionPx}
                 openCluster={openCluster} setOpenCluster={setOpenCluster}
                 previewCluster={previewCluster} setPreviewCluster={setPreviewCluster}
                 setZoomKey={setZoomKey}
@@ -2065,7 +2195,6 @@ export default function TimelineTrack({
             )}
           </div>
         </div>
-        {edgeCaptions?.end && <div className="rosh-tl-edge text-left">{edgeCaptions.end}</div>}
       </div>
       {pending.length > 0 && <PendingColumn pending={pending} reveal={reveal} />}
     </div>

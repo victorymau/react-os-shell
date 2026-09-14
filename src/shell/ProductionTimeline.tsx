@@ -4,7 +4,7 @@ import TimelineCard from './TimelineCard';
 import { TimelineGlyph, TimelineProgressIcon } from './timelineGlyphs';
 import TimelineTrack, {
   type TimelineMarker, type TimelineMarkerKind, type TimelineScrubProgress,
-  type TimelineTrackItem, type TimelineTrackPlayback,
+  type TimelineTrackItem, type TimelineTrackPlayback, type TimelineTrackProps,
 } from './TimelineTrack';
 
 /**
@@ -463,10 +463,11 @@ export function useProductionTimeline(opts: UseProductionTimelineOpts): Producti
 function TimelineScrubber({
   startMs, endMs, reports, markers, valueMs, activeId,
   onChange, onPickReport, onOpenReport, onOpenMarker, onDragStart, renderReportPreview,
-  playback,
+  playback, edgeCaptions,
 }: {
   startMs: number;
   endMs: number;
+  edgeCaptions?: TimelineTrackProps['edgeCaptions'];
   reports: TimelineReport[];
   markers: TimelineMarker[];
   valueMs: number;
@@ -523,6 +524,7 @@ function TimelineScrubber({
           onPickReport(key);
         }}
         playback={playback}
+        edgeCaptions={edgeCaptions}
         thumb={{
           valueMs,
           onChange,
@@ -534,10 +536,9 @@ function TimelineScrubber({
             return report ? `${report.progress_number} · ${fmtSliderDate(ms)}` : fmtSliderDate(ms);
           },
         }}
-        // The window's ends used to be captions flanking the bar. The date
-        // ruler under the rail says the same thing in the same place as every
-        // other date on the card, so the captions survive only for a reader who
-        // cannot see the ruler.
+        // The window's ends are the start anchor's caption and, at the right,
+        // whatever the caller chose to say. The accessible name states both
+        // dates for a reader who has neither the ruler nor the caption.
         ariaLabel={
           `Production reports and events, ${fmtSliderDate(startMs)} to ${fmtSliderDate(endMs)}`
         }
@@ -595,6 +596,15 @@ export interface ProductionTimelineProps {
   /** The card's heading, in sentence case. Defaults to "Production progress";
    *  the PO number is the card's subject, not part of its title. */
   heading?: string;
+  /**
+   * The captions on the two ends of the axis, passed straight to the track.
+   *
+   * Omitted, the track writes `Start · <date>` from the window's own left edge
+   * and nothing on the right — which is the answer this card wants, and the
+   * reason the prop is here at all is a caller who knows something the kit does
+   * not ("Start · PO issued", a contractual completion date).
+   */
+  edgeCaptions?: TimelineTrackProps['edgeCaptions'];
 }
 
 /**
@@ -654,7 +664,7 @@ function useReportPlayback(stops: number[], goTo: (ms: number) => void) {
  *  backend has already pro-rated to that customer. */
 export default function ProductionTimeline({
   snapshot, onPickReport, onOpenReport, onOpenMarker, renderReportPreview,
-  onScrubProgress, heading = 'Production progress',
+  onScrubProgress, heading = 'Production progress', edgeCaptions,
 }: ProductionTimelineProps) {
   const {
     reports, markers, poNumber,
@@ -777,6 +787,7 @@ export default function ProductionTimeline({
           onOpenReport={onOpenReport}
           onOpenMarker={onOpenMarker}
           renderReportPreview={renderReportPreview}
+          edgeCaptions={edgeCaptions}
           onDragStart={play.stop}
           // Arriving moves the slider and nothing else. `onPickReport` is what a
           // CLICK on a dot means, and in the admin window that swaps the whole

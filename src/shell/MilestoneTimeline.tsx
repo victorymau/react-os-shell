@@ -53,7 +53,7 @@ export interface Milestone {
    * It exists because the milestone spec's kinds and the reader's eye do not
    * line up everywhere: "DFM Confirmed" is a `default` milestone in the spec
    * and a signed drawing to the reader, so the portal sets `glyph: 'doc'` and
-   * gets the amber document the prototype drew.
+   * gets the filled document disc rather than a bare one.
    */
   glyph?: TimelineGlyphName | 'none';
   /**

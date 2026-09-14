@@ -994,3 +994,102 @@ test('the entrance plays again on a fresh mount — every window open, not once 
   );
   second.unmount();
 });
+
+// ── The start anchor ────────────────────────────────────────────────────────
+
+/** Every drawn lane label, with the row it landed on and the words in it. */
+function laneLabels(html: string): { top: number; text: string }[] {
+  return [...html.matchAll(/data-timeline-part="label"[^>]*top:([0-9.]+)px[^>]*>(.*?)<\/div>/g)]
+    .map((m) => ({ top: Number(m[1]), text: m[2].replace(/<[^>]*>/g, ' ').trim() }));
+}
+
+test('the axis draws where it begins, and the caption says when', () => {
+  // "The timeline must start at zero, not at the first production report"
+  // (Henry, 2026-09-14). Before this the left end of the bar held whatever mark
+  // happened to be nearest it, and a report two days into a 237-day window read
+  // as the beginning of the programme.
+  const html = staticHtml(track());
+  const ring = html.match(/class="rosh-tl-start[^"]*"[^>]*style="([^"]*)"/);
+  assert.ok(ring, `no start anchor in: ${html.slice(0, 400)}`);
+  assert.match(ring![1], /left:0px/, 'the ring stands on the axis origin');
+  assert.match(
+    html,
+    /data-timeline-part="start-caption"[^>]*>Start · 05\/01\/2026</,
+    'and the caption names the date, in the reader’s own format',
+  );
+  // Decoration, not a mark: the ordered list a screen reader walks is the four
+  // items and nothing else.
+  const at = html.indexOf('data-timeline-part="start"');
+  assert.match(html.slice(Math.max(0, at - 120), at), /aria-hidden="true"/);
+});
+
+test('the ruler ticks the start, and labels only the months inside the window', () => {
+  // A month boundary BEFORE the window used to be drawn at x = 0 with no tick —
+  // a label naming a month the bar does not contain, pinned to a coordinate
+  // that is not its date. The window here opens on 5 January.
+  const html = staticHtml(track());
+  assert.match(html, /data-timeline-part="start-tick"[^>]*left:0px/);
+  const ruler = html.slice(html.indexOf('data-timeline-part="ruler"'));
+  assert.doesNotMatch(ruler.slice(0, ruler.indexOf('</div>') + 6), /Jan/,
+    'January is where the window opens, not a boundary inside it');
+  assert.match(html, /rosh-tl-month[^>]*>Feb 2026</, 'the first boundary inside it carries the year');
+});
+
+test('the start anchor is not a mark: never current, never a stop, never focusable', () => {
+  const html = staticHtml(track());
+  assert.equal((html.match(/aria-current="step"/g) ?? []).length, 1);
+  assert.match(html, /aria-current="step"[\s\S]{0,200}data-timeline-key="done"/);
+  assert.equal((html.match(/tabindex="0"/g) ?? []).length, 1, 'still one tab stop');
+  assert.doesNotMatch(html, /rosh-tl-start[^>]*tabindex/);
+  // With a thumb the stops are the caller's and only the caller's: the anchor
+  // adds no rung to the slider.
+  const scrub = staticHtml(track({
+    labels: 'active',
+    thumb: { valueMs: day('2026-01-20'), onChange: () => {}, stops: ITEMS.map((i) => i.ms) },
+  }));
+  assert.match(scrub, /role="slider"[^>]*aria-valuemax="3"/, 'four stops, indices 0..3');
+  assert.match(scrub, /data-timeline-part="start-caption"/, 'and the caption is still drawn');
+});
+
+test('a mark on the start day is encircled rather than covered, and does not move', () => {
+  // Every mould card is this case: `MilestoneTimeline` opens its window ON its
+  // first milestone, so the anchor and "Project Initiated" share a coordinate.
+  // Time stays linear, so what gives is the RING — it opens out around the mark
+  // instead of sitting under it.
+  const html = staticHtml(track());
+  assert.match(html, /class="rosh-tl-start is-around/, 'the ring opens out');
+  assert.match(
+    html,
+    /data-timeline-key="start"[^>]*style="[^"]*left:0px/,
+    'and the milestone keeps the date it has',
+  );
+  // Nothing within the footprint: the ring closes back up.
+  const clear = staticHtml(track({
+    items: ITEMS.filter((i) => i.key !== 'start'),
+    startMs: day('2026-01-01'),
+  }));
+  assert.match(clear, /class="rosh-tl-start[ "]/, 'still drawn where nothing happened');
+  assert.doesNotMatch(clear, /is-around/);
+});
+
+test('and the label on the start day takes the second lane rather than the caption’s', () => {
+  const rows = laneLabels(staticHtml(track()));
+  const opener = rows.find((row) => row.text.includes('Project Initiated'));
+  assert.ok(opener, `no label for the opening milestone: ${JSON.stringify(rows)}`);
+  const lanes = [...new Set(rows.map((row) => row.top))].sort((a, b) => a - b);
+  assert.equal(lanes.length, 2, `expected both lanes in use: ${lanes.join(', ')}`);
+  assert.equal(
+    opener!.top, lanes[1],
+    'the caption claimed the lane above the rail, so the label went below it',
+  );
+});
+
+test('a caller can write the start caption itself, and add one at the far end', () => {
+  const html = staticHtml(track({ edgeCaptions: { start: 'PO issued', end: 'Delivered' } }));
+  assert.match(html, /data-timeline-part="start-caption"[^>]*>PO issued</);
+  assert.match(html, /data-timeline-part="end-caption"[^>]*>Delivered</);
+  assert.doesNotMatch(html, /Start · /, 'the default gives way rather than doubling up');
+  // The end caption is optional and has no default: the right edge is either
+  // today, which has a tag, or a completion, which has a mark.
+  assert.doesNotMatch(staticHtml(track()), /data-timeline-part="end-caption"/);
+});
