@@ -2,10 +2,12 @@
  * The schedule playback follows: which stretch of rail the thumb is crossing,
  * how long that takes, and where it is partway through.
  *
- * Pure — no React, no DOM, no clock. `TimelineTrack` owns the animation frame
- * and asks these two functions where the thumb goes, which is what lets the
- * timing be specified rather than observed: a spec can assert that a 200 px
- * stretch takes 700 ms without rendering anything or waiting for it.
+ * Pure — no React, no DOM, and no clock of its own: a reading of the wall clock
+ * is an argument. `TimelineTrack` owns the animation frame and the dwell timer
+ * and asks these functions where the thumb goes, which is what lets the timing
+ * be specified rather than observed: a spec can assert that a 200 px stretch
+ * takes 700 ms, and that five idle seconds end one rest rather than five, with
+ * nothing rendered and nothing waited for.
  *
  * The whole file exists because of one distinction. A tween in TIME — walk the
  * date from report to report and let the axis place it — looks right on a linear
@@ -171,4 +173,181 @@ export function positionAt(segment: PlaybackSegment, t: number): { px: number; m
   if (t >= 1 || segment.durationMs <= 0) return { px: segment.toPx, ms: segment.toMs };
   const px = segment.fromPx + (segment.toPx - segment.fromPx) * easeInOut(t);
   return { px, ms: segment.msByPx(px) };
+}
+
+/**
+ * Where the thumb is between two stops, for a consumer that draws numbers.
+ *
+ * The kit does not render the table under the timeline, and the table is the
+ * reason this exists: while the thumb travels from one report to the next, the
+ * quantities beneath it should travel too rather than waiting for the arrival
+ * and then jumping. So the fraction the thumb is placed by is handed out, and
+ * the consumer interpolates whatever it is showing on the same number.
+ */
+export interface TimelineScrubProgress {
+  /** The stop the thumb left. */
+  fromKey: string;
+  /** The stop it is heading for. */
+  toKey: string;
+  /** 0 at `fromKey`, 1 at `toKey`. EASED during a glide — the same number that
+   *  places the disc, so the figures and the disc move together — and linear
+   *  during a drag, because there is no curve in a hand. */
+  t: number;
+  /** The date under the thumb, epoch ms, read back through the axis. */
+  ms: number;
+}
+
+/**
+ * Where playback has got to, and the whole of what a pause has to keep.
+ *
+ * One leg at a time, and the rest at a node is the leg's OWN rest, taken before
+ * it sets off: that is what puts a pause on the report the reader has just
+ * arrived at rather than on the one it is heading for, and it means arriving at
+ * the last node has nothing left to schedule.
+ */
+export interface PlaybackCursor {
+  /** Index into the segment list. */
+  index: number;
+  /** `'rest'` sits on `segments[index].fromKey`; `'glide'` crosses to its `toKey`. */
+  phase: 'rest' | 'glide';
+  /** Progress through the glide as of `sinceMs`, 0 to 1. */
+  t: number;
+  /** What is left of the rest as of `sinceMs`, in ms. */
+  restLeftMs: number;
+  /**
+   * The wall clock the two above were read at, or `null` for "the next reading
+   * is the first".
+   *
+   * Null is how a phase declines to be charged for time it was not running:
+   * a fresh leg, a leg the dwell timer handed over while the page had no
+   * frames, and — the one that matters — a resume, because the clock kept
+   * running through the pause and a resumed rest that was charged for it would
+   * be no rest at all.
+   */
+  sinceMs: number | null;
+}
+
+/** Everything one reading of the clock decides. */
+export interface PlaybackFrame {
+  /** The cursor to keep. `null` means playback is over. */
+  cursor: PlaybackCursor | null;
+  /** Where to put the thumb, or `null` when there was no leg to read. */
+  at: { px: number; ms: number } | null;
+  /** The stop just reached — at MOST one per reading, however long the gap. */
+  arrived: { key: string; ms: number } | null;
+  /** The in-flight fraction, or `null` at a stop. */
+  progress: TimelineScrubProgress | null;
+}
+
+/**
+ * Advance a playback to `nowMs` — the wall clock, not a frame count.
+ *
+ * The distinction is the whole of this function. Playback used to advance by
+ * animation-frame deltas clamped to 100 ms, which spends a 700 ms rest in seven
+ * frames: right at 60 fps and wrong everywhere else, because a frame is not a
+ * unit of time. An occluded or throttled surface hands out frames at whatever
+ * rate it likes — the customer portal, embedded and idle, held the thumb on its
+ * first report for EIGHT SECONDS on 2026-09-14 — and a control whose timing is
+ * measured in frames stretches with it, without bound. Read against the clock,
+ * a rest is 700 ms whether it took forty frames or one.
+ *
+ * The deltas it does take are unclamped, so their sum between a phase's first
+ * reading and this one IS the wall clock between them; re-anchoring on every
+ * reading rather than at the leg's start is what lets a pause freeze the thumb
+ * where the reader can see it, at the last position painted.
+ *
+ * At most ONE arrival per reading, which is the other half of the fix. A page
+ * that comes back after five idle seconds owes the reader four reports, and
+ * announcing all four in the frame it wakes up in announces none of them: the
+ * status line would land on the last, having never shown the three before it.
+ * One per reading walks the backlog forward at a pace somebody can read.
+ */
+export function advancePlayback(
+  segments: PlaybackSegment[],
+  cursor: PlaybackCursor,
+  nowMs: number,
+): PlaybackFrame {
+  const segment = segments[cursor.index];
+  if (!segment) return { cursor: null, at: null, arrived: null, progress: null };
+  const elapsed = cursor.sinceMs === null ? 0 : Math.max(0, nowMs - cursor.sinceMs);
+
+  if (cursor.phase === 'rest') {
+    const left = cursor.restLeftMs - elapsed;
+    // Still resting. Idempotent: it holds the thumb on the node it is resting
+    // at, which is also where a render arriving mid-rest would have put it.
+    if (left > 0) {
+      return {
+        cursor: { ...cursor, restLeftMs: left, sinceMs: nowMs },
+        at: positionAt(segment, 0),
+        arrived: null,
+        progress: null,
+      };
+    }
+    // The rest is over on the clock, however few readings it took. The glide
+    // starts HERE and not `left` ms ago: a page that went five seconds without
+    // a frame owes the reader a glide, not five seconds of one already spent.
+    return {
+      cursor: { index: cursor.index, phase: 'glide', t: 0, restLeftMs: 0, sinceMs: nowMs },
+      at: positionAt(segment, 0),
+      arrived: null,
+      progress: null,
+    };
+  }
+
+  const t = segment.durationMs > 0 ? Math.min(1, cursor.t + elapsed / segment.durationMs) : 1;
+  const at = positionAt(segment, t);
+  if (t < 1) {
+    return {
+      cursor: { ...cursor, t, sinceMs: nowMs },
+      at,
+      arrived: null,
+      progress: { fromKey: segment.fromKey, toKey: segment.toKey, t: easeInOut(t), ms: at.ms },
+    };
+  }
+  // Arrived. The next leg's rest is charged from this reading, because that is
+  // the moment the reader was given something to read.
+  const next = segments[cursor.index + 1];
+  return {
+    cursor: next
+      ? { index: cursor.index + 1, phase: 'rest', t: 0, restLeftMs: next.dwellMs, sinceMs: nowMs }
+      : null,
+    at,
+    arrived: { key: segment.toKey, ms: segment.toMs },
+    progress: null,
+  };
+}
+
+/**
+ * The two stops a date falls between, and how far along it is.
+ *
+ * A drag is the other way the thumb ends up between two reports, and the only
+ * continuous thing about a MAGNETIC drag is the pointer: the disc is drawn on
+ * the nearest stop the whole way across, so a consumer interpolating its table
+ * has to be told where the hand is instead.
+ *
+ * `null` outside the run of stops. Before the first and after the last there is
+ * no pair to be between, and a consumer showing that end stop's own figures is
+ * showing the truth.
+ */
+export function progressBetween(nodes: PlaybackNode[], ms: number): TimelineScrubProgress | null {
+  if (!Number.isFinite(ms)) return null;
+  const ordered = nodes
+    .filter((node) => Number.isFinite(node.ms))
+    .slice()
+    .sort((a, b) => a.ms - b.ms);
+  for (let i = 0; i + 1 < ordered.length; i++) {
+    const from = ordered[i];
+    const to = ordered[i + 1];
+    if (ms < from.ms || ms > to.ms) continue;
+    const span = to.ms - from.ms;
+    return {
+      fromKey: from.key,
+      toKey: to.key,
+      // A pair at one coordinate is an arrival rather than a journey, so the
+      // hand is at its far end by definition.
+      t: span > 0 ? clamp((ms - from.ms) / span, 0, 1) : 1,
+      ms,
+    };
+  }
+  return null;
 }

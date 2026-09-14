@@ -11,7 +11,12 @@ import {
   packLabelLanes, FALLBACK_TRACK_PX, TRACK_LABEL_LANE_COUNT,
   type ClusterGroup, type CompressedAxis,
 } from './timelineGeometry';
-import { playbackSegments, positionAt, type PlaybackNode } from './timelinePlayback';
+import {
+  advancePlayback, playbackSegments, positionAt, progressBetween,
+  type PlaybackCursor, type PlaybackNode, type TimelineScrubProgress,
+} from './timelinePlayback';
+
+export type { TimelineScrubProgress } from './timelinePlayback';
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
@@ -185,6 +190,26 @@ export interface TimelineTrackPlayback {
    * next segment is measured from.
    */
   onArrive: (key: string, ms: number) => void;
+  /**
+   * Where the thumb is BETWEEN two stops, on every frame it is travelling, and
+   * `null` the moment it is not — on arrival, on a pause, on a cancel, at the
+   * end of the run, and on the release of a drag.
+   *
+   * `onArrive` is the event; this is the journey, and a consumer needs both for
+   * a different reason. The kit does not render the table under the timeline,
+   * and the table is why this exists: while the thumb travels from one report
+   * to the next, the quantities beneath it should travel too rather than
+   * waiting for the arrival and jumping. `t` is the EASED fraction — the same
+   * number that places the disc — so figures interpolated on it move with the
+   * disc and not against it.
+   *
+   * A drag reports the same shape with the pointer's LINEAR fraction between
+   * its two neighbouring stops: the disc snaps to the nearest one as it goes, so
+   * the hand is the only continuous thing there is to report. Under
+   * `prefers-reduced-motion` a playback has no travel to report, so the only
+   * value it ever passes is `null`.
+   */
+  onProgress?: (state: TimelineScrubProgress | null) => void;
   /** Playback is over — the last stop was reached, or a drag, a click or a key
    *  took the thumb back. The caller is expected to set `playing` false; the
    *  next `playing` turns into a fresh run rather than a resume. */
@@ -337,13 +362,6 @@ const SNAP_FLASH_MS = 460;
  *  the grace the pointer dismisses it on the way. */
 const BUBBLE_GRACE_MS = 160;
 
-/** The longest frame the playback tween will believe. A tab in the background
- *  gets no animation frames at all, so the first one after it comes forward can
- *  report minutes; advanced by that, a playback would jump from the second report
- *  to the last and announce neither of the four in between. Clamped, a hidden tab
- *  costs the playback the time it was hidden for and nothing else. */
-const MAX_FRAME_MS = 100;
-
 /** Does the machine ask for stillness? Read once per card, as `Modal` reads it —
  *  a media query consulted during render would make render impure, and a user who
  *  changes the setting is one window open away from the new answer. */
@@ -483,25 +501,6 @@ interface Mark {
   onOpen?: () => void;
   /** False for a context marker — on the rail, but not part of the programme. */
   isItem: boolean;
-}
-
-/**
- * Where a playback has got to.
- *
- * One leg at a time, and the rest at a node is the leg's OWN rest, taken before
- * it sets off: that is what puts a pause on the report the reader has just
- * arrived at rather than on the one it is heading for, and it means arriving at
- * the last node has nothing left to schedule.
- */
-interface PlaybackCursor {
-  /** Index into the segment list. */
-  index: number;
-  /** `'rest'` sits on `segments[index].fromKey`; `'glide'` crosses to its `toKey`. */
-  phase: 'rest' | 'glide';
-  /** Progress through the glide, 0 to 1. */
-  t: number;
-  /** What is left of the rest, in ms. */
-  restLeftMs: number;
 }
 
 /** Every `data-*` a part of the track carries, so a spec or a browser check can
@@ -1269,11 +1268,19 @@ function LaneLabels({
  * stop index the screen reader hears stays on the value the caller is showing,
  * because a slider mid-travel has not changed its value yet.
  */
-function ThumbLayer({ thumb, value, snap, axis, geo, startMs, endMs, trackPx, layerRef, glide, onScrub }: {
+function ThumbLayer({
+  thumb, value, snap, axis, geo, startMs, endMs, trackPx, layerRef, glide, onScrub,
+  nodes, onProgress,
+}: {
   thumb: TimelineTrackThumb;
   /** The user has taken hold of the thumb — once per gesture, before the value
    *  moves. Playback lets go when this fires. */
   onScrub?: () => void;
+  /** The stops playback visits, with their keys: what names the two neighbours a
+   *  drag is between. Empty where the track has no playback to report to. */
+  nodes: PlaybackNode[];
+  /** Where the hand is between two of those stops, or `null` on release. */
+  onProgress: (state: TimelineScrubProgress | null) => void;
   /** `thumb.valueMs`, clamped and snapped — what is actually drawn. */
   value: number;
   /** Where playback has the thumb, or null when the caller's value places it. */
@@ -1321,12 +1328,18 @@ function ThumbLayer({ thumb, value, snap, axis, geo, startMs, endMs, trackPx, la
     draggingRef.current = false;
     (event.currentTarget as Element).releasePointerCapture?.(event.pointerId);
     // The value is already on a stop — every move snapped — so the release has
-    // nothing left to settle.
+    // nothing left to settle, and there is no longer a hand between two of them.
+    onProgress(null);
     thumb.onDragEnd?.();
   };
   const drag = (event: React.PointerEvent) => {
     if (!draggingRef.current) return;
-    moveTo(msFromEvent(event.clientX));
+    const ms = msFromEvent(event.clientX);
+    moveTo(ms);
+    // The POINTER's position, not the magnet's. The disc is drawn on the nearest
+    // stop the whole way across, so the hand is the only continuous thing a
+    // consumer interpolating its figures can be told about.
+    onProgress(progressBetween(nodes, ms));
   };
 
   /** Where a key takes the thumb: the neighbouring STOP where there are stops,
@@ -1662,12 +1675,23 @@ export default function TimelineTrack({
   // before the driver reads.
   useEffect(() => { liveRef.current = { segments, value: thumbAt, playback }; });
 
+  /** The last in-flight fraction handed out, so that consecutive nothings are
+   *  one nothing: a consumer interpolating a table on this re-renders on every
+   *  call, and a thumb at rest is not news forty times a second. */
+  const progressRef = useRef<TimelineScrubProgress | null>(null);
+  const reportProgress = useCallback((next: TimelineScrubProgress | null) => {
+    if (next === null && progressRef.current === null) return;
+    progressRef.current = next;
+    liveRef.current.playback?.onProgress?.(next);
+  }, []);
+
   /** Playback is over: the last stop, or the user taking the thumb back. */
   const endPlayback = useCallback(() => {
     cursorRef.current = null;
     setGlide(null);
+    reportProgress(null);
     liveRef.current.playback?.onStop?.();
-  }, []);
+  }, [reportProgress]);
 
   const playing = !!playback?.playing && !!thumb;
   useEffect(() => {
@@ -1691,53 +1715,96 @@ export default function TimelineTrack({
         phase: 'rest',
         t: 0,
         restLeftMs: opening.segments[from].dwellMs,
+        sinceMs: null,
       };
     }
 
     let frame = 0;
-    let previous: number | null = null;
+    let dwellTimer: ReturnType<typeof setTimeout> | undefined;
     /** Paint a position, and only a position that is new: 700 ms of rest is 44
      *  frames, and React bails out of a re-render when the state it is given is
      *  the object it already had. */
     const paint = (next: { px: number; ms: number }) => setGlide((prev) => (
       prev && prev.px === next.px && prev.ms === next.ms ? prev : next
     ));
-    const tick = (nowMs: number) => {
-      const dt = previous === null ? 0 : Math.min(Math.max(nowMs - previous, 0), MAX_FRAME_MS);
-      previous = nowMs;
+
+    /**
+     * Give the rest the cursor is on a deadline of its own — ONCE, when the rest
+     * begins, and never again while it runs.
+     *
+     * A frame is where the thumb MOVES, so travel can only be read there. A rest
+     * is not travel, and animation frames are the wrong clock to wait on: an
+     * occluded or throttled surface hands them out at whatever rate it likes, and
+     * the customer portal, embedded and idle, held the thumb on its first report
+     * for eight seconds because a 700 ms rest was seven frames of a page that was
+     * getting one a second. So the rest is waited out on a timer.
+     *
+     * "Once" is load-bearing. Re-arming this from each frame — the obvious shape,
+     * and the wrong one — pushes the deadline another 700 ms out every time a
+     * frame arrives, which is the same unbounded stretch by a different route.
+     */
+    const waitOutRest = () => {
+      clearTimeout(dwellTimer);
+      const cursor = cursorRef.current;
+      if (cursor?.phase !== 'rest') return;
+      dwellTimer = setTimeout(restOver, Math.max(0, cursor.restLeftMs));
+    };
+
+    /** The rest is over on the wall clock. The glide it hands over to is charged
+     *  from its own first frame, because travel nobody was shown is not travel. */
+    const restOver = () => {
+      const cursor = cursorRef.current;
+      if (cursor?.phase !== 'rest') return;
+      const segment = liveRef.current.segments[cursor.index];
+      if (!segment) { endPlayback(); return; }
+      cursorRef.current = {
+        index: cursor.index, phase: 'glide', t: 0, restLeftMs: 0, sinceMs: null,
+      };
+      paint(positionAt(segment, 0));
+      // No frame is asked for here. One is always in flight — every reading
+      // registers the next — and cancelling it to register another does not make
+      // one arrive any sooner; on a surface whose frames are timer-driven it
+      // restarts the wait, and in a healthy one it moves this loop behind
+      // anything else that registered in the meantime, which is a frame of lag
+      // on every paint for the rest of the run.
+    };
+
+    const read = (nowMs: number) => {
       const live = liveRef.current;
       const cursor = cursorRef.current;
       // Cancelled from outside — a drag, a click, a key. Do not reschedule.
       if (!cursor) return;
-      const segment = live.segments[cursor.index];
-      if (!segment) { endPlayback(); return; }
-
-      if (cursor.phase === 'rest') {
-        cursor.restLeftMs = Math.max(0, cursor.restLeftMs - dt);
-        if (cursor.restLeftMs === 0) { cursor.phase = 'glide'; cursor.t = 0; }
-        // Idempotent: it holds the thumb on the node it is resting at, which is
-        // also where a render that arrived mid-rest would have put it.
-        paint(positionAt(segment, 0));
-      } else {
-        cursor.t = segment.durationMs > 0
-          ? Math.min(1, cursor.t + dt / segment.durationMs)
-          : 1;
-        paint(positionAt(segment, cursor.t));
-        if (cursor.t >= 1) {
-          live.playback?.onArrive(segment.toKey, segment.toMs);
-          const next = live.segments[cursor.index + 1];
-          if (!next) { endPlayback(); return; }
-          cursor.index += 1;
-          cursor.phase = 'rest';
-          cursor.t = 0;
-          cursor.restLeftMs = next.dwellMs;
-        }
+      const step = advancePlayback(live.segments, cursor, nowMs);
+      cursorRef.current = step.cursor;
+      if (step.at) paint(step.at);
+      reportProgress(step.progress);
+      if (step.arrived) live.playback?.onArrive(step.arrived.key, step.arrived.ms);
+      if (!step.cursor) { endPlayback(); return; }
+      // Only a CHANGE of phase touches the other clock: the rest an arrival opens
+      // gets its deadline here, and a rest this frame ended has none left to keep.
+      // A rest that is merely still running must not be re-armed.
+      if (step.cursor.phase !== cursor.phase || step.cursor.index !== cursor.index) {
+        waitOutRest();
       }
-      frame = requestAnimationFrame(tick);
+      frame = requestAnimationFrame(read);
     };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [playing, endPlayback]);
+
+    waitOutRest();
+    frame = requestAnimationFrame(read);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(dwellTimer);
+      // A pause, or a card on its way out. What is LEFT of the phase survives on
+      // the cursor; the reading it was taken against does not, because the wall
+      // clock keeps running while nothing is playing and a resumed rest charged
+      // for the pause would be no rest at all.
+      if (cursorRef.current) {
+        cursorRef.current.sinceMs = null;
+        // Frozen mid-travel: there is a position, but no journey in flight.
+        reportProgress(null);
+      }
+    };
+  }, [playing, endPlayback, reportProgress]);
 
   const fillTo = thumb
     ? (glide ? glide.ms : thumbAt)
@@ -1993,7 +2060,8 @@ export default function TimelineTrack({
                  drag and the sweep wrote the same position every frame. */
               <ThumbLayer thumb={thumb} value={thumbAt} snap={snapThumb} axis={view} geo={geo}
                 startMs={startMs} endMs={endMs} trackPx={trackPx} layerRef={layerRef}
-                glide={glide} onScrub={playback ? endPlayback : undefined} />
+                glide={glide} onScrub={playback ? endPlayback : undefined}
+                nodes={playbackNodes} onProgress={reportProgress} />
             )}
           </div>
         </div>

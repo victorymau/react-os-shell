@@ -186,24 +186,40 @@ export default async function check(page, { pageErrors, open }) {
     firstReport,
     { timeout: 4000 },
   );
-  const glide = await page.evaluate(async () => {
+  // Six consecutive frames, sampled from the thumb's OWN writes rather than from
+  // a second animation-frame loop polling for them. Two rAF loops racing each
+  // other report the order their callbacks happened to be registered in: when the
+  // poller's callback runs a millisecond before the one that moves the thumb — and
+  // whether it does depends on which frame a `waitForFunction` resolved on — it
+  // reads the previous frame's style and calls a travelling thumb stalled, about a
+  // third of the time. A mutation of the style attribute IS the frame that moved
+  // it, so there is nothing left to race.
+  const glide = await page.evaluate(async (count) => {
     const thumb = document.querySelector('[data-timeline-part="thumb"]');
     const status = document.querySelector('[data-testid="production"] .rosh-tl-status');
     const chip = document.querySelector('[data-timeline-part="chip"]');
     const fill = document.querySelector('[data-testid="production"] [data-timeline-part="fill"]');
     const samples = [];
-    for (let i = 0; i < 6; i++) {
-      await new Promise((resolve) => { requestAnimationFrame(resolve); });
-      samples.push({
-        left: parseFloat(thumb.style.left),
-        painted: thumb.getBoundingClientRect().x,
-        fill: fill.getBoundingClientRect().width,
-        chip: chip.innerText.trim(),
-        status: status.innerText.trim(),
+    await new Promise((resolve) => {
+      const stop = () => { observer.disconnect(); resolve(); };
+      const observer = new MutationObserver(() => {
+        samples.push({
+          left: parseFloat(thumb.style.left),
+          painted: thumb.getBoundingClientRect().x,
+          fill: fill.getBoundingClientRect().width,
+          chip: chip.innerText.trim(),
+          status: status.innerText.trim(),
+        });
+        if (samples.length >= count) stop();
       });
-    }
+      observer.observe(thumb, { attributes: true, attributeFilter: ['style'] });
+      // A thumb that has stopped moving writes nothing, and a promise nobody
+      // resolves is a check that hangs instead of failing.
+      setTimeout(stop, 4000);
+    });
     return samples;
-  });
+  }, 6);
+  assert.equal(glide.length, 6, `the thumb moved ${glide.length} times in four seconds of gliding`);
   for (let i = 1; i < glide.length; i++) {
     assert.ok(
       glide[i].left > glide[i - 1].left,
@@ -365,6 +381,65 @@ export default async function check(page, { pageErrors, open }) {
   assert.ok(walked.length > 1, 'the stepped walk never moved at all');
   await stepped.click();
   await page.emulateMedia({ reducedMotion: 'no-preference' });
+
+  // ── The clock, not the frame rate ─────────────────────────────────────────
+  // The incident this answers. In the customer portal's embedded pane, idle, the
+  // thumb sat on its first report for EIGHT SECONDS and set off when frames
+  // resumed (2026-09-14: `.rosh-tl-thumb` style.left sampled every 50ms held at
+  // 8.8px from 0ms through 8,031ms; an earlier run froze for forty seconds).
+  // Frames were sparse and the playback clock was made of them, so a 700ms rest
+  // cost seven frames whatever the clock said.
+  //
+  // A throttled surface, reproduced: ONE frame every 500ms. The rest is waited
+  // out on a timer, so it is over at 700ms whatever the frames are doing; the
+  // leg then takes a frame to anchor and a frame to cross, which puts the
+  // arrival near 1,500ms. Paced by frames instead, the rest alone is seven of
+  // them and the leg five: twelve frames, six seconds, and at 3,000ms the thumb
+  // has not left the first report. This is the one assertion in the suite that a
+  // real clock can make and jsdom cannot.
+  await open('?width=720');
+  await page.locator('[data-testid="production"] [data-timeline-part="fill"]').waitFor();
+  const sparseFirst = await reportLeft('PP#10140');
+  const sparseSecond = await reportLeft('PP#10141');
+  // 350ms per 100px of rail, floored at 450ms — the schedule's own arithmetic,
+  // restated here so the wait is read off the fixture rather than guessed.
+  const legMs = Math.min(Math.max(((sparseSecond - sparseFirst) * 350) / 100, 450), 1400);
+  const sparseFrameMs = 500;
+  const sparseWaitMs = 3000;
+  assert.ok(
+    700 + legMs + 2 * sparseFrameMs < sparseWaitMs,
+    `the fixture's first leg is ${legMs}ms, too long for a ${sparseWaitMs}ms wait`,
+  );
+  await page.evaluate((gap) => {
+    window.__realFrames = {
+      request: window.requestAnimationFrame.bind(window),
+      cancel: window.cancelAnimationFrame.bind(window),
+    };
+    window.requestAnimationFrame = (cb) => window.setTimeout(() => { cb(performance.now()); }, gap);
+    window.cancelAnimationFrame = (id) => { window.clearTimeout(id); };
+  }, sparseFrameMs);
+  // A direct DOM click: Playwright's own actionability check waits on animation
+  // frames, and those are the thing being starved.
+  await page.locator('[data-testid="production"] .rosh-tl-play').evaluate((el) => { el.click(); });
+  await page.waitForTimeout(sparseWaitMs);
+  const sparseAt = await thumbLeft();
+  await page.evaluate(() => {
+    window.requestAnimationFrame = window.__realFrames.request;
+    window.cancelAnimationFrame = window.__realFrames.cancel;
+  });
+  assert.ok(
+    sparseAt >= sparseSecond - 1,
+    `${sparseWaitMs}ms at one frame every ${sparseFrameMs}ms left the thumb at ${sparseAt}, `
+      + `short of the second report at ${sparseSecond}`,
+  );
+  // The second report or a later one — three seconds is enough for the run to
+  // have rested on PP#10141 and set off again, and which of the two it is on is
+  // not the claim. The claim is that it is no longer on the first.
+  assert.match(
+    await page.locator('[data-testid="production"] .rosh-tl-status').innerText(),
+    /Showing PP#1014[1-5]/,
+    'the thumb got there without the card being told it had',
+  );
 
   // ── 300px: the axis is abandoned, not squeezed ────────────────────────────
   await open('?width=300');

@@ -24,7 +24,7 @@ import { fakeFrames, withReducedMotion } from './frames';
 import { useState } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import TimelineTrack, {
-  type TimelineTrackItem, type TimelineTrackThumb,
+  type TimelineScrubProgress, type TimelineTrackItem, type TimelineTrackThumb,
 } from '../src/shell/TimelineTrack';
 import {
   clusterLabel, clusterMarks, compressTimeAxis, packLabelLanes, TRACK_LABEL_LANE_COUNT,
@@ -496,6 +496,8 @@ test('the label above the thumb opens the document; the dot only selects it', ()
 function playback(overrides: Partial<React.ComponentProps<typeof TimelineTrack>> = {}) {
   const arrived: string[] = [];
   const activated: string[] = [];
+  /** Every in-flight fraction the track handed out, in order, nulls included. */
+  const progress: (TimelineScrubProgress | null)[] = [];
   let stops = 0;
   let control!: { play: () => void; pause: () => void };
   function Harness() {
@@ -517,6 +519,7 @@ function playback(overrides: Partial<React.ComponentProps<typeof TimelineTrack>>
         playback={{
           playing,
           onArrive: (key, ms) => { arrived.push(key); setValue(ms); },
+          onProgress: (state) => { progress.push(state); },
           onStop: () => { stops += 1; setPlaying(false); },
         }}
         {...overrides}
@@ -529,6 +532,7 @@ function playback(overrides: Partial<React.ComponentProps<typeof TimelineTrack>>
     ...view,
     arrived,
     activated,
+    progress,
     stopped: () => stops,
     play: () => control.play(),
     pause: () => control.pause(),
@@ -682,6 +686,194 @@ test('under reduced motion playback is the step it always was', () => {
     }
     frames.until(() => view.stopped() > 0, 'the stepped walk never ended', { budget: 800 });
     assert.deepEqual(view.arrived, ['r2', 'r3', 'r4'], 'every report, once, in order');
+  } finally {
+    frames.restore();
+    stillness();
+    view.unmount();
+  }
+});
+
+test('playback keeps its own time: a rest is 700ms, not seven frames', () => {
+  // The bug this replaces. Playback advanced by frame deltas clamped to 100ms,
+  // so a 700ms rest needed seven frames and a leg needed five — fine at 60fps
+  // and unbounded anywhere else. In the customer portal, embedded and idle, the
+  // thumb sat on its first report for EIGHT SECONDS (2026-09-14, `.rosh-tl-thumb`
+  // style.left sampled every 50ms: 8.8px at 0ms, still 8.8px at 8,031ms).
+  //
+  // Three frames here, spanning eight seconds. Under the frame-paced version
+  // that is 300ms of playback and the thumb has not left the first report.
+  const frames = fakeFrames();
+  const view = playback();
+  try {
+    view.play();
+    frames.frame(16);
+    assert.deepEqual(view.arrived, [], 'the first reading only anchors the rest');
+    assert.equal(view.thumbLeft(), view.dotLeft('r1'));
+
+    frames.frame(4_000);
+    assert.deepEqual(view.arrived, [], 'a rest that is over is not an arrival');
+    assert.equal(
+      view.thumbLeft(), view.dotLeft('r1'),
+      'the glide was spent while nobody was being shown it',
+    );
+
+    frames.frame(4_000);
+    assert.deepEqual(view.arrived, ['r2'], 'one frame past the rest and the leg, and it is there');
+    assert.equal(view.thumbLeft(), view.dotLeft('r2'));
+
+    // And the backlog walks forward at a pace somebody can read: a gap of four
+    // seconds a frame is three legs' worth of time, and each frame still
+    // announces at most one report. Announcing four at once announces none.
+    for (let i = 0; i < 6 && view.stopped() === 0; i++) {
+      const before = view.arrived.length;
+      frames.frame(4_000);
+      assert.ok(view.arrived.length - before <= 1, `frame ${i} announced ${view.arrived.length - before} reports`);
+    }
+    assert.deepEqual(view.arrived, ['r2', 'r3', 'r4']);
+    assert.equal(view.stopped(), 1);
+  } finally {
+    frames.restore();
+    view.unmount();
+  }
+});
+
+test('a pause keeps what is left of the rest rather than spending it', () => {
+  // The rest is measured against the clock, and the clock runs through a pause.
+  // So the pause has to drop the reading the remainder was taken at, or 25
+  // seconds of a paused card resume a 700ms rest as no rest at all — the thumb
+  // would set off the instant the button was pressed.
+  const frames = fakeFrames();
+  const view = playback();
+  try {
+    view.play();
+    frames.frame(16);
+    frames.frame(300);
+    assert.equal(view.thumbLeft(), view.dotLeft('r1'), '400ms of the rest still to run');
+
+    view.pause();
+    assert.equal(frames.armed, 0, 'the loop was cancelled rather than left running');
+    frames.run(5, 5_000);
+
+    view.play();
+    frames.frame(16);
+    frames.frame(300);
+    assert.equal(view.thumbLeft(), view.dotLeft('r1'), 'the paused rest resumed as no rest at all');
+    assert.deepEqual(view.arrived, []);
+    frames.frame(200);
+    frames.frame(600);
+    assert.deepEqual(view.arrived, ['r2'], 'and then it went, on time');
+  } finally {
+    frames.restore();
+    view.unmount();
+  }
+});
+
+test('onProgress hands out the journey, and null at both ends of it', () => {
+  // Henry, 2026-09-14: while the thumb travels between two reports the
+  // quantities in the table below have to travel too, rather than waiting for
+  // the arrival and jumping. The kit does not draw that table, so it hands out
+  // the fraction — the EASED one, the number that places the disc, so the
+  // figures and the disc agree about where they are.
+  const frames = fakeFrames();
+  const view = playback();
+  try {
+    view.play();
+    frames.run(10, 16);
+    // `.length` rather than a deepEqual against `[]`: node's assert narrows its
+    // first argument to the second's type, and `never[]` is not a useful type for
+    // the rest of this spec to read the array as.
+    assert.equal(view.progress.length, 0, 'a thumb at rest is not in flight');
+
+    frames.until(() => view.progress.length > 0, 'nothing was ever reported in flight');
+    frames.run(4, 16);
+    assert.deepEqual(view.arrived, [], 'still crossing');
+    const flight = view.progress.filter((state): state is TimelineScrubProgress => state !== null);
+    assert.ok(flight.length >= 4, `only ${flight.length} frames of a 490ms glide reported`);
+    for (const state of flight) {
+      assert.equal(state.fromKey, 'r1');
+      assert.equal(state.toKey, 'r2');
+      assert.ok(state.t > 0 && state.t < 1, `t=${state.t} is not between two reports`);
+    }
+    for (let i = 1; i < flight.length; i++) {
+      assert.ok(flight[i].t >= flight[i - 1].t, `the fraction went back at ${i}`);
+    }
+    // The same number that draws the disc: t of the way between the two dots IS
+    // where the thumb is.
+    const now = view.progress.at(-1);
+    assert.ok(now, 'the last frame of a glide reported nothing');
+    const x = view.dotLeft('r1') + (view.dotLeft('r2') - view.dotLeft('r1')) * now.t;
+    assert.ok(Math.abs(x - view.thumbLeft()) < 0.01, `t places the thumb at ${x}, it is at ${view.thumbLeft()}`);
+
+    // Arrival ends the journey: the consumer's table goes back to reading the
+    // snapshot it was just handed.
+    frames.until(() => view.arrived.length > 0, 'it never arrived');
+    assert.equal(view.progress.at(-1), null, 'arriving is not a journey');
+
+    // So does a pause, and so does the end of the run.
+    frames.until(() => view.progress.at(-1) !== null, 'the next glide never set off');
+    view.pause();
+    assert.equal(view.progress.at(-1), null, 'a frozen thumb is not in flight');
+    view.play();
+    frames.until(() => view.stopped() > 0, 'playback never ended', { budget: 800 });
+    assert.equal(view.progress.at(-1), null);
+
+    // And nothing is said twice: a consumer interpolating a table on this
+    // re-renders on every call.
+    for (let i = 1; i < view.progress.length; i++) {
+      assert.ok(
+        view.progress[i] !== null || view.progress[i - 1] !== null,
+        `two nulls in a row at ${i}`,
+      );
+    }
+  } finally {
+    frames.restore();
+    view.unmount();
+  }
+});
+
+test('a drag reports where the hand is, and lets go on release', () => {
+  // The other way the thumb sits between two reports. The disc snaps to the
+  // nearest one as the drag goes, so the pointer is the only continuous thing
+  // there is to report — and a consumer's table follows the hand.
+  const view = playback();
+  try {
+    const hit = view.container.querySelector<HTMLElement>('[data-timeline-part="hit"]')!;
+    const pointer = (clientX: number, type: string) => act(() => {
+      hit.dispatchEvent(new window.MouseEvent(type, { clientX, bubbles: true }));
+    });
+    const half = (view.dotLeft('r1') + view.dotLeft('r2')) / 2;
+    pointer(half, 'pointerdown');
+    pointer(half, 'pointermove');
+    const state = view.progress.at(-1);
+    assert.ok(state, 'the drag reported nothing');
+    assert.equal(state.fromKey, 'r1');
+    assert.equal(state.toKey, 'r2');
+    // Linear, not eased: there is no curve in a hand. Halfway along a linear
+    // axis is halfway through the week between the two reports.
+    assert.ok(Math.abs(state.t - 0.5) < 0.02, `halfway across reported t=${state.t}`);
+
+    // On to the next pair, and the neighbours change with it.
+    const later = (view.dotLeft('r2') + view.dotLeft('r3')) / 2;
+    pointer(later, 'pointermove');
+    assert.equal(view.progress.at(-1)?.fromKey, 'r2');
+    assert.equal(view.progress.at(-1)?.toKey, 'r3');
+
+    pointer(later, 'pointerup');
+    assert.equal(view.progress.at(-1), null, 'the release is the end of it');
+  } finally {
+    view.unmount();
+  }
+});
+
+test('under reduced motion there is no journey to report', () => {
+  const stillness = withReducedMotion();
+  const frames = fakeFrames();
+  const view = playback();
+  try {
+    view.play();
+    frames.until(() => view.stopped() > 0, 'the stepped walk never ended', { budget: 800 });
+    assert.deepEqual(view.arrived, ['r2', 'r3', 'r4'], 'the walk stays');
+    assert.equal(view.progress.length, 0, 'and the travel it would have reported goes');
   } finally {
     frames.restore();
     stillness();

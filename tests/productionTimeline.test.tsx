@@ -22,6 +22,7 @@ import ProductionTimeline, {
   type ProductionTimelineSnapshot,
   type UseProductionTimelineOpts,
 } from '../src/shell/ProductionTimeline';
+import { type TimelineScrubProgress } from '../src/shell/TimelineTrack';
 import { DAY_MS, toDayMs } from '../src/shell/timelineDates';
 
 function item(part_number: string, order_qty: number, casting = 0, cnc = 0, painting = 0): ProgressItem {
@@ -227,6 +228,85 @@ test('Play rewinds to the first report and travels to the next, one pixel at a t
     assert.equal(thumbLeft(), dotLeft('PP-2'));
     frames.until(() => play().textContent === 'Play', 'playback never ended', { budget: 800 });
     assert.equal(play().getAttribute('aria-pressed'), 'false');
+  } finally {
+    frames.restore();
+    view.unmount();
+  }
+});
+
+test('the bar plays on the clock, not on the frame rate', () => {
+  // The customer portal, embedded and idle on 2026-09-14, gave the card a frame
+  // every second or so and the thumb sat on its first report for eight seconds:
+  // playback advanced by frame deltas clamped to 100ms, so a 700ms rest cost
+  // seven frames whatever the clock said. Three frames here, spanning eight
+  // seconds — and under the frame-paced version that is 300ms of playback.
+  const frames = fakeFrames();
+  function Bar() {
+    const snap = useProductionTimeline({ ...BASE, poStatus: 'completed' });
+    return <ProductionTimeline snapshot={snap} onPickReport={() => {}} />;
+  }
+  const view = render(<Bar />);
+  const at = (selector: string) => view.container.querySelector<HTMLElement>(selector)!;
+  const play = () => at('.rosh-tl-play');
+  const status = () => at('.rosh-tl-status').textContent ?? '';
+
+  try {
+    act(() => { play().click(); });
+    assert.match(status(), /Showing PP-1/);
+    frames.frame(16);
+    assert.match(status(), /Showing PP-1/, 'the first reading only anchors the rest');
+    frames.frame(4_000);
+    assert.match(status(), /Showing PP-1/, 'the rest is over, and an arrival is a separate event');
+    frames.frame(4_000);
+    assert.match(status(), /Showing PP-2/, 'three frames and eight seconds got it there');
+    assert.equal(play().textContent, 'Play', 'the last report ends the run');
+  } finally {
+    frames.restore();
+    view.unmount();
+  }
+});
+
+test('onScrubProgress lets a consumer table follow the thumb between two reports', () => {
+  // Henry, 2026-09-14: the quantities under the bar have to move with the thumb
+  // rather than waiting for it to land. The card does not draw that table — the
+  // consumer does — so it forwards the track's in-flight fraction, keyed by
+  // report id, and the consumer interpolates its own figures on it.
+  const frames = fakeFrames();
+  const seen: (TimelineScrubProgress | null)[] = [];
+  function Bar() {
+    const snap = useProductionTimeline({ ...BASE, poStatus: 'completed' });
+    return (
+      <ProductionTimeline snapshot={snap} onPickReport={() => {}}
+        onScrubProgress={(state) => { seen.push(state); }} />
+    );
+  }
+  const view = render(<Bar />);
+  const at = (selector: string) => view.container.querySelector<HTMLElement>(selector)!;
+  const play = () => at('.rosh-tl-play');
+  const status = () => at('.rosh-tl-status').textContent ?? '';
+
+  try {
+    act(() => { play().click(); });
+    frames.run(8, 16);
+    // `.length`, not a deepEqual against `[]`: node's assert would narrow `seen`
+    // to `never[]` for the rest of the spec.
+    assert.equal(seen.length, 0, 'the rest is not a journey');
+
+    frames.until(() => seen.length > 0, 'nothing was reported in flight');
+    frames.run(3, 16);
+    const flight = seen.filter((state): state is TimelineScrubProgress => state !== null);
+    assert.ok(flight.length >= 3, `only ${flight.length} frames reported`);
+    for (const state of flight) {
+      // The report IDs, which is what `onPickReport` and the snapshot speak.
+      assert.equal(state.fromKey, 'r1');
+      assert.equal(state.toKey, 'r2');
+      assert.ok(state.t > 0 && state.t < 1, `t=${state.t} is not between the two`);
+      assert.ok(state.ms > day('2026-05-10') && state.ms < day('2026-05-20'), 'the date is between them too');
+    }
+    assert.match(status(), /Showing PP-1/, 'and the status line has not ticked over');
+
+    frames.until(() => /Showing PP-2/.test(status()), 'the thumb never arrived');
+    assert.equal(seen.at(-1), null, 'arriving is the end of the journey');
   } finally {
     frames.restore();
     view.unmount();

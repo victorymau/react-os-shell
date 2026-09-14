@@ -3,8 +3,8 @@ import { DAY_MS, toDayMs, fmtSliderDate } from './timelineDates';
 import TimelineCard from './TimelineCard';
 import { TimelineGlyph, TimelineProgressIcon } from './timelineGlyphs';
 import TimelineTrack, {
-  type TimelineMarker, type TimelineMarkerKind, type TimelineTrackItem,
-  type TimelineTrackPlayback,
+  type TimelineMarker, type TimelineMarkerKind, type TimelineScrubProgress,
+  type TimelineTrackItem, type TimelineTrackPlayback,
 } from './TimelineTrack';
 
 /**
@@ -575,6 +575,23 @@ export interface ProductionTimelineProps {
    * its date above whatever this returns; repeating either says it twice.
    */
   renderReportPreview?: (report: TimelineReport) => ReactNode;
+  /**
+   * Where the thumb is between two reports while it is on its way there, keyed
+   * by report id, and `null` the moment it is on one.
+   *
+   * `onPickReport` and the snapshot answer "which report", which is all a table
+   * needs while the bar is still. It is not all it needs while the bar MOVES:
+   * the thumb travels between two reports for up to 1.4 s, and a table that
+   * waits for the arrival jumps by a whole report's worth of quantities at the
+   * end of a journey the reader watched. Given this, a caller can interpolate
+   * its own figures on `t` — the same eased fraction that places the disc, so
+   * the numbers and the disc move together — and on a drag, which reports the
+   * hand's linear fraction between its two neighbouring reports.
+   *
+   * Optional, and undefined by default: a consumer that only reads the snapshot
+   * needs no change.
+   */
+  onScrubProgress?: (state: TimelineScrubProgress | null) => void;
   /** The card's heading, in sentence case. Defaults to "Production progress";
    *  the PO number is the card's subject, not part of its title. */
   heading?: string;
@@ -637,7 +654,7 @@ function useReportPlayback(stops: number[], goTo: (ms: number) => void) {
  *  backend has already pro-rated to that customer. */
 export default function ProductionTimeline({
   snapshot, onPickReport, onOpenReport, onOpenMarker, renderReportPreview,
-  heading = 'Production progress',
+  onScrubProgress, heading = 'Production progress',
 }: ProductionTimelineProps) {
   const {
     reports, markers, poNumber,
@@ -769,6 +786,7 @@ export default function ProductionTimeline({
           playback={{
             playing: play.playing,
             onArrive: (_key, ms) => setScrubMs(ms),
+            onProgress: onScrubProgress,
             onStop: play.stop,
           }}
         />
