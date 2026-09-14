@@ -5,6 +5,8 @@ import ResizableTable from './ResizableTable';
 import LoadingSpinner from '../shell/LoadingSpinner';
 import ListFooter from './ListFooter';
 import ListLoadError from './ListLoadError';
+import Checkbox from '../forms/Checkbox';
+import { useShellStrings } from '../shell/strings';
 import { PopupMenu, PopupMenuItem, PopupMenuDivider, PopupMenuLabel } from '../shell/PopupMenu';
 import { keepsNativeMenu } from '../shell/contextMenuTarget';
 import { copyToClipboard, selectionAt, type SelectedText } from '../shell/clipboard';
@@ -174,6 +176,10 @@ export default function EntityList<T>(props: EntityListProps<T>) {
 
   const [menu, setMenu] = useState<RowMenu<T> | null>(null);
   const bodyRef = useRef<HTMLTableSectionElement>(null);
+  // The same catalog DataTable's selection column reads, so the two say the
+  // same words — and say them in the consumer's language when a provider is
+  // mounted. English defaults without one.
+  const strings = useShellStrings();
 
   const toggleItem = (item: T) => {
     setSelected(prev => {
@@ -329,6 +335,11 @@ export default function EntityList<T>(props: EntityListProps<T>) {
   if (items.length === 0) return <>{emptyState}</>;
 
   const allSelected = items.length > 0 && selected.size === items.length;
+  // The state the header box was missing. "Some of these rows are selected" is
+  // not "none of them": an unchecked select-all above three ticked rows says
+  // the page is clear, and the operator's next click — meaning "select
+  // everything" — selects everything, which is what it already looked like.
+  const someSelected = selected.size > 0 && !allSelected;
 
   const fullColumns: EntityListColumn[] = [
     {
@@ -337,11 +348,18 @@ export default function EntityList<T>(props: EntityListProps<T>) {
       defaultWidth: 52,
       minWidth: 52,
       headerNode: (
-        <input
-          type="checkbox"
+        <Checkbox
+          aria-label={strings.table.selectAll}
           checked={allSelected}
+          indeterminate={someSelected}
           onChange={toggleAll}
-          className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600"
+          // 14px, which is what this column has always drawn — a row of them
+          // down a dense list reads differently at 16. It cannot be a class:
+          // `Checkbox` carries `h-4 w-4` in its own base, and Tailwind emits
+          // `.h-3\.5` BEFORE `.h-4`, so `h-3.5` in the className loses the
+          // cascade however it is ordered in the attribute. An inline style is
+          // the kit's documented way out of exactly that.
+          style={{ height: 14, width: 14 }}
         />
       ),
     },
@@ -448,12 +466,18 @@ export default function EntityList<T>(props: EntityListProps<T>) {
                     {cols.map(col => (
                       <td key={col.key} data-col-key={col.key} className="px-4 py-3 whitespace-nowrap text-sm overflow-hidden">
                         {col.key === '_select' ? (
-                          <input
-                            type="checkbox"
+                          <Checkbox
+                            aria-label={strings.table.selectRow}
                             checked={selected.has(id)}
-                            onClick={e => { e.stopPropagation(); toggleItem(item); }}
-                            readOnly
-                            className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600"
+                            onChange={() => toggleItem(item)}
+                            // The row itself opens the record. The box only
+                            // ever selects, so its click stops here — the
+                            // toggle rides `onChange`, which React raises from
+                            // the same native click as a separate synthetic
+                            // event and so survives the stop.
+                            onClick={e => e.stopPropagation()}
+                            // See the header box: 14px cannot be a class.
+                            style={{ height: 14, width: 14 }}
                           />
                         ) : renderCell(item, col.key)}
                       </td>

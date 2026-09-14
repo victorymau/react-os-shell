@@ -23,13 +23,37 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 const SERIES = [4, 6, 5, 8, 7, 11, 9, 13, 12, 16, 14, 18];
 
+/** A 16px glyph for the sidebar's leading slot. Sized by the row, coloured by
+ *  the row's state — the wrapper carries `h-4 w-4` and the ink. */
+function SectionGlyph({ d }: { d: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" d={d} />
+    </svg>
+  );
+}
+
+const GLYPHS = {
+  overview: 'M4 6h16M4 12h16M4 18h10',
+  compute: 'M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 7h10v10H7V7z',
+  storage: 'M4 7c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zm0 0v10c0 1.7 3.6 3 8 3s8-1.3 8-3V7M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3',
+  workers: 'M17 20h5v-2a3 3 0 00-5-2m-2 4H2v-2a3 3 0 015-2m10-4a3 3 0 10-6 0 3 3 0 006 0z',
+} as const;
+
 /** Severity rolled up per section by the app — the sidebar renders a tone, it
- *  never computes one. `Overview` makes no health claim, so it omits it. */
-const SECTIONS: { id: string; label: string; count?: number; severity?: SeverityTone }[] = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'compute', label: 'Compute', count: 3, severity: 'success' },
-  { id: 'storage', label: 'Storage', count: 4, severity: 'danger' },
-  { id: 'workers', label: 'Workers', count: 6, severity: 'warning' },
+ *  never computes one. `Overview` makes no health claim, so it omits it.
+ *
+ *  `icon` is the same glyph the Start menu shows for the destination, so one
+ *  place looks like one place; `trailing` carries what the count cannot say —
+ *  here the region a section is pinned to, and a "leaves the shell" mark. */
+const SECTIONS: {
+  id: string; label: string; count?: number; severity?: SeverityTone;
+  icon?: keyof typeof GLYPHS; trailing?: string;
+}[] = [
+  { id: 'overview', label: 'Overview', icon: 'overview' },
+  { id: 'compute', label: 'Compute', count: 3, severity: 'success', icon: 'compute', trailing: 'AU' },
+  { id: 'storage', label: 'Storage', count: 4, severity: 'danger', icon: 'storage', trailing: 'AU' },
+  { id: 'workers', label: 'Workers', count: 6, severity: 'warning', icon: 'workers' },
 ];
 
 const TERMS = [
@@ -162,7 +186,15 @@ export default function PrimitivesDemo() {
             <Banner tone="info" title="Heads up">A new version is available.</Banner>
             <Banner tone="success" title="Saved">Your changes were published.</Banner>
             <Banner tone="warning" title="Usage limit near">You've used 90% of your quota.</Banner>
-            <Banner tone="danger" title="Payment failed" onDismiss={() => {}}>Update your card to continue.</Banner>
+            {/* `action` puts the fix in the banner, at the right edge — after the
+                text so a screen reader reaches the problem first, before the
+                dismiss so "Update card" is never past "close this". */}
+            <Banner
+              tone="danger" title="Payment failed" onDismiss={() => {}}
+              action={<Button size="sm" variant="danger">Update card</Button>}
+            >
+              Update your card to continue.
+            </Banner>
           </div>
         </Section>
 
@@ -219,13 +251,20 @@ export default function PrimitivesDemo() {
                   label={s.label}
                   count={s.count}
                   severity={s.severity}
+                  icon={s.icon && <SectionGlyph d={GLYPHS[s.icon]} />}
+                  trailing={s.trailing && (
+                    <span className="rounded-full bg-gray-100 px-1.5 text-[10px] font-medium text-gray-600">
+                      {s.trailing}
+                    </span>
+                  )}
                   active={section === s.id}
                   onClick={() => setSection(s.id)}
                 />
               ))}
               <p className="px-2.5 pt-2 text-[11px] italic text-gray-400">
                 The marker is the sidebar's alarm surface — a problem several levels down stays
-                visible on the item that leads to it.
+                visible on the item that leads to it. The glyph leads the row a step quieter than
+                the label; the chip takes the right edge, after the count.
               </p>
             </div>
           </div>

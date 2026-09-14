@@ -273,6 +273,7 @@ export type { SidebarLayoutProps } from '../shell/SidebarLayout';
 export { default as SidebarActionButton } from '../shell/SidebarActionButton';
 export type { SidebarActionButtonProps } from '../shell/SidebarActionButton';
 export { SidebarNavItem, SidebarGroupLabel } from '../shell/SidebarNav';
+export type { SidebarNavItemProps } from '../shell/SidebarNav';
 export { default as TopNav } from '../shell/TopNav';
 export type { TopNavProps, TopNavItem } from '../shell/TopNav';
 export { default as Breadcrumbs } from '../shell/Breadcrumbs';

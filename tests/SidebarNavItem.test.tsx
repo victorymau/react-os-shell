@@ -7,31 +7,44 @@ import { withConsoleError } from './capture-console';
 const noop = () => {};
 
 /**
- * The two literals below are the markup 3.24 produced, captured from the
- * pre-`severity` component. `severity` is additive, so an item that doesn't use
- * it must keep rendering byte-for-byte what every existing call site already
- * renders — that is the whole backward-compatibility claim, asserted rather
- * than promised.
+ * The two literals below are the markup a plain item renders — no severity, no
+ * icon, no trailing slot. Every optional prop is additive, so an item that uses
+ * none of them must render one fixed thing, and that claim is asserted here
+ * rather than promised.
+ *
+ * The baseline MOVED when `icon` and `trailing` landed, and only inside the
+ * label span. The button, the count badge and the marker are untouched:
+ *
+ *   class="truncate"  →  class="min-w-0 truncate mr-auto"  +  title
+ *
+ * - `min-w-0` is a fix, not a rearrangement: a flex item defaults to
+ *   `min-width: auto` and refuses to shrink below its content, so `truncate`
+ *   never fired and a long bucket name pushed the count off the row instead.
+ * - `mr-auto` was already there whenever a marker was, for the reason the
+ *   component documents; two more optional children made "whenever" mean
+ *   "always", and unconditional is the same geometry in the two-child case.
+ * - `title` is the tooltip that makes a truncated label recoverable, and only
+ *   a string can be one — see the ReactNode case below.
  */
-const V3_24_INACTIVE_WITH_COUNT =
+const PLAIN_INACTIVE_WITH_COUNT =
   '<button type="button" class="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-sm text-left text-gray-700 hover:bg-gray-100">' +
-  '<span class="truncate">Open</span>' +
+  '<span class="min-w-0 truncate mr-auto" title="Open">Open</span>' +
   '<span class="shrink-0 inline-flex items-center justify-center min-w-[1.25rem] px-1.5 h-5 rounded-full text-[11px] font-medium bg-gray-100 text-gray-600">12</span>' +
   '</button>';
 
-const V3_24_ACTIVE_ZERO_COUNT =
+const PLAIN_ACTIVE_ZERO_COUNT =
   '<button type="button" class="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-sm text-left bg-blue-50 font-medium text-blue-700">' +
-  '<span class="truncate">Open</span>' +
+  '<span class="min-w-0 truncate mr-auto" title="Open">Open</span>' +
   '</button>';
 
-test('renders byte-identical to 3.24 when severity is omitted', () => {
+test('renders one fixed markup when every optional prop is omitted', () => {
   assert.equal(
     renderToStaticMarkup(<SidebarNavItem label="Open" count={12} active={false} onClick={noop} />),
-    V3_24_INACTIVE_WITH_COUNT,
+    PLAIN_INACTIVE_WITH_COUNT,
   );
   assert.equal(
     renderToStaticMarkup(<SidebarNavItem label="Open" count={0} active onClick={noop} />),
-    V3_24_ACTIVE_ZERO_COUNT,
+    PLAIN_ACTIVE_ZERO_COUNT,
   );
 });
 
@@ -61,15 +74,21 @@ test('the marker is decorative, with the severity word carried as text', () => {
   );
 });
 
-test('the marker sits against the label, not at the far edge', () => {
-  // `justify-between` would strand the label in the middle of the button once a
-  // third child exists; the auto margin is what keeps dot and label together.
-  const withMarker = renderToStaticMarkup(
-    <SidebarNavItem label="Servers" count={3} active={false} onClick={noop} severity="warning" />,
+test('the label absorbs the free space, so nothing is stranded mid-row', () => {
+  // `justify-between` deals the free space out BETWEEN children, which lands
+  // the label in the middle of the button the moment a third one exists — and
+  // with `icon`, `severity` and `trailing` there can now be five. The auto
+  // margin takes all of it in one place instead: everything before the label
+  // packs left, everything after it packs right.
+  const crowded = renderToStaticMarkup(
+    <SidebarNavItem
+      label="Servers" count={3} active={false} onClick={noop}
+      severity="warning" icon={<svg />} trailing={<span>ext</span>}
+    />,
   );
-  assert.match(withMarker, /<span class="truncate mr-auto">Servers<\/span>/);
-  const without = renderToStaticMarkup(<SidebarNavItem label="Servers" count={3} active={false} onClick={noop} />);
-  assert.match(without, /<span class="truncate">Servers<\/span>/);
+  assert.match(crowded, /<span class="min-w-0 truncate mr-auto" title="Servers">Servers<\/span>/);
+  const plain = renderToStaticMarkup(<SidebarNavItem label="Servers" count={3} active={false} onClick={noop} />);
+  assert.match(plain, /<span class="min-w-0 truncate mr-auto" title="Servers">Servers<\/span>/);
 });
 
 test('severity leaves the count badge and active styling alone', () => {
@@ -136,7 +155,81 @@ test('a null or undefined severity is still "no claim", not a bad token', () => 
         <SidebarNavItem label="Open" count={12} active={false} onClick={noop} severity={absent as never} />,
       ),
     );
-    assert.equal(html, V3_24_INACTIVE_WITH_COUNT, `${String(absent)} renders 3.24's markup`);
+    assert.equal(html, PLAIN_INACTIVE_WITH_COUNT, `${String(absent)} renders the plain markup`);
     assert.equal(errors.length, 0, `${String(absent)} is silent`);
   }
+});
+
+/* ── icon, trailing, and a ReactNode label ──────────────────────────────── */
+
+test('the icon leads the row, a step quieter than the words it introduces', () => {
+  // Two specific colours rather than `inherit`: the glyph names the same place
+  // the label does, and a icon drawn in the label's own ink competes with it.
+  const idle = renderToStaticMarkup(
+    <SidebarNavItem label="Warehouses" active={false} onClick={noop} icon={<svg data-testid="glyph" />} />,
+  );
+  assert.match(idle, /class="shrink-0 h-4 w-4 text-gray-400"/, 'idle glyph is gray-400');
+
+  const active = renderToStaticMarkup(
+    <SidebarNavItem label="Warehouses" active onClick={noop} icon={<svg />} />,
+  );
+  assert.match(active, /class="shrink-0 h-4 w-4 text-blue-600"/, 'active glyph is blue-600');
+  // …against the row's own blue-700, which the icon does NOT take.
+  assert.match(active, /text-left bg-blue-50 font-medium text-blue-700/, 'the row keeps its own ink');
+});
+
+test('the icon is decoration — the label is what names the item', () => {
+  const html = renderToStaticMarkup(
+    <SidebarNavItem label="Warehouses" active={false} onClick={noop} icon={<svg />} />,
+  );
+  // A glyph announced beside the label is the item's name read twice.
+  assert.match(html, /<span aria-hidden="true" class="shrink-0 h-4 w-4 text-gray-400">/);
+  // And it comes first: the identity glyph belongs at the leading edge.
+  assert.ok(html.indexOf('aria-hidden') < html.indexOf('>Warehouses<'), 'icon before label');
+});
+
+test('the icon sits outside the severity dot, so the dot stays on the label', () => {
+  // Order: icon, dot, label. A dot stranded to the LEFT of the icon reads as
+  // the icon's status rather than the section's — which is the one thing this
+  // marker must never do.
+  const html = renderToStaticMarkup(
+    <SidebarNavItem label="Storage" active={false} onClick={noop} icon={<svg />} severity="danger" />,
+  );
+  const iconAt = html.indexOf('h-4 w-4 text-gray-400');
+  const dotAt = html.indexOf('h-1.5 w-1.5 rounded-full');
+  const labelAt = html.indexOf('>Storage<');
+  assert.ok(iconAt >= 0 && dotAt >= 0 && labelAt >= 0, 'all three render');
+  assert.ok(iconAt < dotAt && dotAt < labelAt, `expected icon → dot → label, got ${iconAt}/${dotAt}/${labelAt}`);
+});
+
+test('trailing takes the right edge, after the count, and keeps its size', () => {
+  const html = renderToStaticMarkup(
+    <SidebarNavItem
+      label="Docs" count={4} active={false} onClick={noop}
+      trailing={<span data-mark="ext">↗</span>}
+    />,
+  );
+  // `shrink-0`: the label is what gives way when the sidebar narrows.
+  assert.match(html, /<span class="shrink-0"><span data-mark="ext">↗<\/span><\/span>/);
+  // It is not a second count — both render, in that order.
+  assert.ok(html.indexOf('>4<') < html.indexOf('data-mark'), 'count then trailing');
+});
+
+test('an omitted icon or trailing renders no slot at all', () => {
+  // Not an empty span each: an item that uses neither must stay the markup the
+  // baseline above pins, and two stray children would also re-open the
+  // free-space problem `mr-auto` closes.
+  const html = renderToStaticMarkup(<SidebarNavItem label="Open" count={12} active={false} onClick={noop} />);
+  assert.equal(html, PLAIN_INACTIVE_WITH_COUNT);
+});
+
+test('a ReactNode label renders, and takes no tooltip it cannot write', () => {
+  // The reason `title` is conditional: there is no text here to read without
+  // walking the tree, and `title="[object Object]"` is worse than no tooltip.
+  const html = renderToStaticMarkup(
+    <SidebarNavItem label={<><em>ACME</em> Pty Ltd</>} count={2} active={false} onClick={noop} />,
+  );
+  assert.match(html, /<em>ACME<\/em> Pty Ltd/, 'the node renders');
+  assert.match(html, /<span class="min-w-0 truncate mr-auto">/, 'and the span carries no title');
+  assert.doesNotMatch(html, /title="\[object Object\]"/);
 });

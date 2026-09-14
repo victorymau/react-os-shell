@@ -27,6 +27,21 @@ export interface BannerProps {
   children?: ReactNode;
   /** Override the default tone icon. */
   icon?: ReactNode;
+  /**
+   * What to do about it — at the right edge of the banner, after the text and
+   * before the dismiss ×. A `Button size="sm"`, a link, a pair of them.
+   *
+   * A banner that names a condition and leaves the fix somewhere else is the
+   * common shape of a notice nobody acts on: "Your card was declined" with the
+   * billing screen three menus away. Putting the control in the banner is the
+   * whole point, and it goes beside the text rather than under it so the
+   * banner keeps its one-row height in a form.
+   *
+   * Vertically centred against the whole box and `shrink-0`, so a two-line
+   * message does not drag the button down with its last line and a long one
+   * does not squeeze it — the text is what wraps.
+   */
+  action?: ReactNode;
   /** When provided, renders a dismiss × that calls this. */
   onDismiss?: () => void;
   /**
@@ -73,7 +88,7 @@ function ToneIcon({ tone }: { tone: BannerTone }) {
 }
 
 export default function Banner({
-  tone = 'info', emphasis = 'subtle', title, children, icon, onDismiss, sticky = false, className = '',
+  tone = 'info', emphasis = 'subtle', title, children, icon, action, onDismiss, sticky = false, className = '',
 }: BannerProps) {
   const t = TONE[tone];
   const solid = emphasis === 'solid';
@@ -93,6 +108,10 @@ export default function Banner({
           <div className={`${solid ? '' : 'text-gray-700'} ${title ? 'mt-0.5' : ''}`.trim()}>{children}</div>
         )}
       </div>
+      {/* `self-center` against the row's `items-start`: the icon and the text
+          hang from the top because that is where the first line is, and an
+          action has no first line to align to. */}
+      {action != null && <div className="shrink-0 self-center">{action}</div>}
       {onDismiss && (
         <button
           type="button"

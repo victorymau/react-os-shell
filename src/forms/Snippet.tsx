@@ -76,6 +76,28 @@ export interface SnippetProps {
   /** Wrap instead of truncating. For a value with no useful prefix — a PEM
    *  block, a multi-line command — where the first 40 characters say nothing. */
   multiline?: boolean;
+  /**
+   * Lands on the COPY BUTTON, not on the box — so a `FormField htmlFor` points
+   * its `<label>` at something a click can focus, and the row behaves like the
+   * fields above it. A `<button>` is labelable, so `for`/`id` is a real
+   * association here and not a decoration.
+   *
+   * With `hideCopyButton` there is nothing focusable left, so it falls back to
+   * the box itself: the id still has to resolve to an element, or the label
+   * and the hint below point at nothing at all.
+   */
+  id?: string;
+  /**
+   * The hint or error a wrapping `FormField` generates — "this is the URL your
+   * webhook posts to", "rotate this if it leaks".
+   *
+   * `FormField` clones its single element child with this prop, and a
+   * component that does not accept it drops it on the floor: the `<p>` renders
+   * under the snippet, looks wired, and is announced to nobody. It goes on the
+   * same element as `id` and for the same reason — a description belongs on
+   * what the user focuses.
+   */
+  'aria-describedby'?: string;
   className?: string;
 }
 
@@ -125,6 +147,8 @@ export default function Snippet({
   hideCopyButton = false,
   onCopy,
   multiline = false,
+  id,
+  'aria-describedby': describedBy,
   className = '',
 }: SnippetProps) {
   const [copied, setCopied] = useState(false);
@@ -151,8 +175,14 @@ export default function Snippet({
 
   const { box, button } = SIZES[size];
 
+  // The copy button is the focusable element, so it is where a label and a
+  // description belong. Without one the box is all there is.
+  const onButton = !hideCopyButton;
+
   return (
     <div
+      id={onButton ? undefined : id}
+      aria-describedby={onButton ? undefined : describedBy}
       className={['inline-flex max-w-full items-center rounded-md', VARIANTS[variant], box, className]
         .filter(Boolean)
         .join(' ')}
@@ -171,7 +201,9 @@ export default function Snippet({
       {!hideCopyButton && (
         <>
           <IconButton
+            id={id}
             aria-label={label ? `Copy ${label}` : 'Copy'}
+            aria-describedby={describedBy}
             onClick={copy}
             className={`${button} text-gray-400`}
           >

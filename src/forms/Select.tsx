@@ -144,7 +144,7 @@ const ListboxSelect = forwardRef<HTMLSelectElement, SelectProps>(function Listbo
   // `touchSize` is pulled out and dropped for the same reason as NativeSelect:
   // it is Select's prop, and `rest` lands on the hidden native <select>.
   { value, onChange, options, placeholder, invalid, className = '', id, disabled, size,
-    touchSize: _touchSize,
+    touchSize: _touchSize, title,
     'aria-describedby': describedBy, 'aria-label': ariaLabel, 'aria-labelledby': labelledBy, ...rest },
   ref,
 ) {
@@ -296,6 +296,14 @@ const ListboxSelect = forwardRef<HTMLSelectElement, SelectProps>(function Listbo
         aria-describedby={describedBy}
         aria-label={ariaLabel}
         aria-labelledby={labelledBy}
+        // Same reasoning, one layer out: a `title` is a tooltip, and a tooltip
+        // needs a hover. The hidden <select> is `sr-only` — a 1px clipped box
+        // nobody's pointer can reach — so `title` riding `rest` onto it meant
+        // the caller's explanation of an abbreviated or ambiguous field was
+        // rendered where it could never be seen. It is also a fallback
+        // accessible name when nothing else names the control, and a name on
+        // an `aria-hidden` element names nothing.
+        title={title}
         disabled={disabled}
         onClick={() => (open ? close() : openList())}
         onKeyDown={onKeyDown}

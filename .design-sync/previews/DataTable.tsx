@@ -51,3 +51,28 @@ export function Empty() {
     </div>
   );
 }
+
+// `selection` draws the kit's own Checkbox — the accent that follows the
+// user's theme, the focus ring every other box in the kit has, and the third
+// state the column needs: the header reads MIXED while only part of the page
+// is chosen. An empty select-all above three ticked rows says "nothing is
+// selected", and the click that follows it selects everything.
+export function Selection() {
+  const [selected, setSelected] = useState<string[]>(['1', '3']);
+  return (
+    <div className="p-5">
+      <DataTable
+        columns={[
+          { key: 'number', title: 'Order', dataIndex: 'number', width: 140 },
+          { key: 'customer', title: 'Customer', dataIndex: 'customer', ellipsis: true },
+          { key: 'status', title: 'Status', render: r => <StatusBadge status={r.status} /> },
+          { key: 'total', title: 'Total', dataIndex: 'total', align: 'right' },
+        ]}
+        data={rows}
+        rowKey="id"
+        bordered
+        selection={{ selected, onChange: setSelected }}
+      />
+    </div>
+  );
+}

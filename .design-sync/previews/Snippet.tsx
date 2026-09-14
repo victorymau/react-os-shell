@@ -1,4 +1,4 @@
-import { Snippet } from 'react-os-shell';
+import { FormField, Snippet } from 'react-os-shell';
 
 // Snippet — a value the user copies rather than reads. Monospace, truncated
 // with the whole value on its title, and a copy button that flips to a check
@@ -59,6 +59,32 @@ export function MultilineAndReadOnly() {
         value={'-----BEGIN CERTIFICATE-----\nMIIBkTCB+wIJAK3f2Qe1xR9hMA0GCSqGSIb3DQEBCwUA\n-----END CERTIFICATE-----'}
       />
       <Snippet value="build-2026-09-14-a41f8c" hideCopyButton variant="flat" />
+    </div>
+  );
+}
+
+// A Snippet inside a FormField, which is the row a settings panel actually
+// wants: a label, the value, and a hint under it. `id` lands on the copy
+// button rather than on the box — the button is the only focusable thing here,
+// so it is what the `<label for>` points at and what the hint describes. Pass
+// both through FormField's `htmlFor` and it wires itself.
+export function InAFormField() {
+  return (
+    <div className="max-w-lg space-y-4 p-5">
+      <FormField
+        label="Webhook endpoint"
+        htmlFor="snippet-hook"
+        hint="Your server must answer within 5 seconds or we retry."
+      >
+        <Snippet value="https://hooks.efficient.test/t/8e1c4f2a" label="the webhook endpoint" id="snippet-hook" />
+      </FormField>
+      <FormField
+        label="Tenant id"
+        htmlFor="snippet-tenant"
+        hint="Quote this when you open a support ticket."
+      >
+        <Snippet value="tnt_8e1c4f2a" label="the tenant id" variant="flat" id="snippet-tenant" />
+      </FormField>
     </div>
   );
 }

@@ -21,6 +21,7 @@
  */
 import { useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type UIEvent } from 'react';
 import Pagination from './Pagination';
+import Checkbox from '../forms/Checkbox';
 import { useShellStrings } from '../shell/strings';
 import type { SortState } from './types';
 
@@ -382,13 +383,17 @@ export default function DataTable<T>({
                     hasPinned ? 'left-0' : '',
                   ].filter(Boolean).join(' ')}
                 >
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     aria-label={strings.table.selectAll}
                     checked={allSelected}
-                    ref={el => { if (el) el.indeterminate = someSelected && !allSelected; }}
+                    // Was a bare ref callback writing the DOM property. The
+                    // kit's own box owns that dance — and the part the local
+                    // version was missing: a browser CLEARS `indeterminate`
+                    // whenever `checked` is assigned, so it has to be rewritten
+                    // after every render that touches the checked state, not
+                    // only when the mixed-ness itself changes.
+                    indeterminate={someSelected && !allSelected}
                     onChange={toggleAll}
-                    className="h-4 w-4 rounded border-gray-300 text-blue-600"
                   />
                 </th>
               )}
@@ -494,12 +499,10 @@ export default function DataTable<T>({
                           onClick={e => e.stopPropagation()}
                           className={[cellBase, hasPinned ? 'sticky left-0 z-10 bg-white' : ''].filter(Boolean).join(' ')}
                         >
-                          <input
-                            type="checkbox"
+                          <Checkbox
                             aria-label={strings.table.selectRow}
                             checked={selectedSet.has(key)}
                             onChange={() => toggleRow(key)}
-                            className="h-4 w-4 rounded border-gray-300 text-blue-600"
                           />
                         </td>
                       );
