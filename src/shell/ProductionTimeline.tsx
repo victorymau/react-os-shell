@@ -712,7 +712,7 @@ export default function ProductionTimeline({
           <>
             {scrubbedAway && currentReportProgressNumber && (
               <button type="button" onClick={() => { play.stop(); resetToCurrent(); }}
-                className="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                className="text-xs text-blue-600 underline-offset-4 hover:underline font-medium">
                 Back to {currentReportProgressNumber}
               </button>
             )}
@@ -721,7 +721,7 @@ export default function ProductionTimeline({
                 is how a play control ends up saying "Pause ▶". */}
             <button type="button" onClick={play.toggle} aria-pressed={play.playing}
               title={play.playing ? 'Pause' : 'Play the timeline, report by report'}
-              className="rosh-tl-play text-gray-700 border-gray-300 hover:text-blue-600 hover:border-blue-500">
+              className="rosh-tl-play text-gray-700 border-gray-300 hover:text-blue-600 hover:border-blue-600">
               {play.playing
                 ? <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 1.5h2.3v7H2zM5.7 1.5H8v7H5.7z" /></svg>
                 : <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 1.2 8.4 5 2 8.8z" /></svg>}
@@ -751,7 +751,7 @@ export default function ProductionTimeline({
             <div className="rosh-tl-legend">
               {reports.length > 0 && (
                 <span className="border-gray-200 text-gray-500">
-                  <i aria-hidden="true" className="rosh-tl-glyph is-ring border-blue-500" />
+                  <i aria-hidden="true" className="rosh-tl-glyph is-ring border-blue-600" />
                   Production report
                 </span>
               )}

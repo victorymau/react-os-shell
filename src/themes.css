@@ -235,6 +235,11 @@
 [data-custom-accent] .border-blue-300 { border-color: var(--accent-300) !important; }
 [data-custom-accent] .border-blue-200 { border-color: var(--accent-200) !important; }
 [data-custom-accent] .hover\:bg-blue-700:hover { background-color: var(--accent-700) !important; }
+/* The hover steps of the 600 ink and the 600 border. Without these a control
+   whose RESTING state follows the accent jumps back to literal blue under the
+   pointer — the timeline's Play pill is the one that showed it. */
+[data-custom-accent] .hover\:text-blue-600:hover { color: var(--accent-600) !important; }
+[data-custom-accent] .hover\:border-blue-600:hover { border-color: var(--accent-600) !important; }
 [data-custom-accent] .hover\:bg-blue-100:hover { background-color: var(--accent-100) !important; }
 [data-custom-accent] .hover\:bg-blue-50:hover { background-color: var(--accent-50) !important; }
 [data-custom-accent] .focus\:border-blue-500:focus { border-color: var(--accent-500) !important; }

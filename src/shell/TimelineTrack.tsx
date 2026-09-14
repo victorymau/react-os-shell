@@ -428,11 +428,11 @@ interface KindStyle {
   /** Which glyph sits inside a filled node, unless the item names another. */
   glyph?: TimelineGlyphName;
   /**
-   * The kind's colour, as a token reference — declared light AND dark in
-   * `ui.css`. `undefined` means "the accent", which cannot be a token: the kit's
-   * accent themes work by REMAPPING the blue utility classes, so an
-   * accent-coloured mark has to wear `bg-blue-500` / `border-blue-500` to follow
-   * the accent the user picked.
+   * The kind's colour, as a token reference — declared once in `ui.css`, the
+   * same in both themes. `undefined` means "the accent", which `nodeDressing`
+   * spells `var(--tl-accent)` — and every `--tl-*` kind token IS that accent
+   * now, so a kind mark and an accent mark are one colour and the GLYPH is what
+   * tells them apart.
    */
   token?: string;
 }
@@ -485,26 +485,35 @@ function resolveGlyph(
   return KIND_STYLES[kind].glyph ?? (opensProgramme ? 'flag' : undefined);
 }
 
-/** The classes and inline colour one node wears. Kept together because the
- *  choice between a token and an accent utility is per kind, and applying both
- *  would let one silently win. */
+/**
+ * The classes and the inline colour one node wears.
+ *
+ * Every mark takes its colour from a `--tl-*` token as an INLINE style, and
+ * none of them from a `bg-blue-*` / `border-blue-*` utility. That is not a
+ * preference — the utility route silently did not work here. `.rosh-tl-node`
+ * declares `background: none` and `border: 0` of its own, and `ui.css` is
+ * UNLAYERED while Tailwind's utilities live in `@layer utilities`: an unlayered
+ * declaration beats a layered one whatever the specificity, so the base rule
+ * won and the accent class lost. The current mark rendered as a transparent
+ * disc and a default dot as a BLACK ring — except under a custom accent, where
+ * `themes.css` remaps the same classes with `!important` and they suddenly
+ * appeared. An inline style outranks all of it, in every consumer, whatever
+ * their layer order.
+ *
+ * The kind tokens and the accent are the same value now (see the `--tl-*` block
+ * in `ui.css`), so this is one colour reached one way.
+ */
 function nodeDressing(kind: TimelineTrackKind, role: NodeRole): { className: string; style: CSSProperties } {
   const style = KIND_STYLES[kind];
   const classes = ['rosh-tl-node', 'rosh-tl-mark', `is-${role}`];
   if (style.diamond) classes.push('is-diamond');
-  const css: CSSProperties = {};
-  if (role === 'current') {
-    // The current mark is the accent's, whatever its kind: it is not "a
-    // shipment", it is where you are.
-    classes.push('bg-blue-500', 'text-white');
-  } else if (style.token) {
-    if (role === 'key') { css.backgroundColor = style.token; css.color = 'var(--tl-on-kind)'; }
-    else css.borderColor = style.token;
-  } else if (role === 'key') {
-    classes.push('bg-blue-500', 'text-white');
-  } else {
-    classes.push('border-blue-500');
-  }
+  // The current mark is the accent's, whatever its kind: it is not "a
+  // shipment", it is where you are. A kind that names no token is the accent
+  // too, which is what makes the glyph the only thing telling the kinds apart.
+  const colour = role === 'current' ? 'var(--tl-accent)' : style.token ?? 'var(--tl-accent)';
+  const css: CSSProperties = role === 'dot'
+    ? { borderColor: colour }
+    : { backgroundColor: colour, color: 'var(--tl-on-kind)' };
   return { className: classes.join(' '), style: css };
 }
 
@@ -918,13 +927,13 @@ function VerticalTrack({ marks, pending, currentKey, todayMs, reveal, ariaLabel,
               style={reveal ? stagger(index, step) : undefined}
               {...(mark.key === currentKey ? { 'aria-current': 'step' as const } : {})}>
               <i aria-hidden="true"
-                className={`rosh-tl-vline text-blue-500${reached ? ' is-on' : ' is-dash'}${reached && reveal ? ' rosh-tl-drawy' : ''}`} />
+                className={`rosh-tl-vline text-blue-600${reached ? ' is-on' : ' is-dash'}${reached && reveal ? ' rosh-tl-drawy' : ''}`} />
               <button {...nodeProps(mark)}
                 className={`${dressing.className}${reveal ? ' rosh-tl-pop' : ''}`}
                 style={{ ...dressing.style, ...(reveal ? stagger(index, step) : {}) }}>
                 {glyph && <TimelineGlyph name={glyph} />}
                 {mark.role === 'current' && (
-                  <span aria-hidden="true" className={`rosh-tl-pulse bg-blue-500${reveal ? ' is-on' : ''}`} />
+                  <span aria-hidden="true" className={`rosh-tl-pulse bg-blue-600${reveal ? ' is-on' : ''}`} />
                 )}
               </button>
               <span className="rosh-tl-vrow" aria-hidden="true">
@@ -962,7 +971,7 @@ function TrackRail({ axis, geo, fillTo, reveal, trackPx, tweened = false }: {
       <div className="rosh-tl-rail bg-gray-200" style={{ top: `${geo.rail}px`, height: `${RAIL_PX}px` }} />
       {fillTo !== null && (
         <div data-timeline-part="fill"
-          className={`rosh-tl-fill bg-blue-500${tweened ? ' is-tweened' : ''}${reveal ? ' rosh-tl-draw' : ''}`}
+          className={`rosh-tl-fill bg-blue-600${tweened ? ' is-tweened' : ''}${reveal ? ' rosh-tl-draw' : ''}`}
           style={{
             top: `${geo.rail}px`,
             height: `${RAIL_PX}px`,
@@ -2130,7 +2139,7 @@ export default function TimelineTrack({
                       }}>
                       {glyph && <TimelineGlyph name={glyph} />}
                       {mark.role === 'current' && (
-                        <span aria-hidden="true" className={`rosh-tl-pulse bg-blue-500${reveal ? ' is-on' : ''}`} />
+                        <span aria-hidden="true" className={`rosh-tl-pulse bg-blue-600${reveal ? ' is-on' : ''}`} />
                       )}
                     </button>
                   </li>

@@ -349,73 +349,82 @@ html.rosh-reduce-transparency *::after {
   --status-neutral-soft-ink: var(--ink-strong);
 }
 
-/* ── Timeline kind tokens ───────────────────────────────────────────────────
- * The five non-accent categories a mark on a `TimelineTrack` can belong to, and
- * the ink that reads on top of one.
+/* ── Timeline accent tokens ─────────────────────────────────────────────────
+ * Every colour a `TimelineTrack` paints with, and the ink that reads on top of
+ * one. There is ONE of them.
  *
- * Every one of them RESOLVES TO A TOKEN THE KIT ALREADY OWNS — no literal here.
- * "The timeline's colors must be the ROS defaults, not hard-coded", and
- * "inspection must not be red" (Henry, 2026-09-14, watching the customer
- * portal). That supersedes the identity encoding this block used to carry, in
- * which a shipment was violet, a DFM revision amber and an inspection orange:
- * a bar drawn in five bespoke hues is five colours the design system never
- * chose, and the orange one read as a fault on a report that is routine. The
- * SHAPE is what tells the kinds apart now — a diamond is goods moving, a flag
- * opened the programme, a flask is a test or an inspection, a check finished
- * something — and shape survives a greyscale print and a colour-blind reader,
- * which a hue never did.
+ * "The timeline's blue is not our theme blue; it must be the theme colour, and
+ * pure flat blue — no skeuomorphic shading — consistent with everything else"
+ * (Henry, 2026-09-14, translated from his Chinese ruling). The bar used to mix
+ * three blues that were all nearly right and none of them the theme's: the
+ * `blue-500` utilities on the fill and the accent marks, `--status-active-solid`
+ * (#1d4ed8, which no accent remap reaches) behind the kind tokens, and
+ * `--status-success-solid` behind a completion. The theme's blue is the 600
+ * step — what the primary `Button` wears, what a link wears, what an active tab
+ * underlines with — so that is what all of them are now.
  *
- * The mapping, and the whole of it:
+ * A completion no longer keeps a hue of its own either: the CHECK GLYPH is what
+ * says it finished, and shape survives a greyscale print and a colour-blind
+ * reader in a way a second hue never did. The same argument already retired the
+ * five bespoke kind hues (a violet shipment, an amber DFM, an orange
+ * inspection) — a diamond is goods moving, a flask is a test, a document is a
+ * drawing revision.
  *
- *   --tl-dfm         →  --status-active-solid   / dark --status-active-soft-ink
- *   --tl-shipment    →  --status-active-solid   / dark --status-active-soft-ink
- *   --tl-testing     →  --status-active-solid   / dark --status-active-soft-ink
- *   --tl-completion  →  --status-success-solid  / dark --status-success-soft-ink
- *   --tl-inspection  →  --status-active-solid   / dark --status-active-soft-ink
- *   --tl-on-kind     →  --status-on-solid       / dark --surface-sunken
- *   --tl-focus       →  --status-active-solid   / dark --status-active-soft-ink
- *   --tl-soft        →  --status-active-soft    (a wash; it holds in both)
+ * THE VALUE, and why it is a chain rather than a token:
  *
- * `--status-active-*` is the kit's blue tier — the same semantic the accent
- * kinds (`default`, `report`, and whichever mark is current) reach through the
- * `bg-blue-500` / `border-blue-500` utilities that themes.css remaps. A
- * completion keeps the one distinction worth a hue, because "it finished" is
- * the kit's success role and nothing else on the bar claims it.
+ *   var(--accent-600, var(--color-blue-600, #2563eb))
  *
- * The dark steps are the light tier's counterpart on the darker card, not a
- * second palette: `--status-*-solid` is tuned against a white surface and drops
- * to 2.6:1 on `--surface-sunken`, so dark reads the `-soft-ink` step, which is
- * the same hue lightened for exactly this ground. Every pairing clears 3:1
- * there (WCAG 1.4.11 — these are graphics, not text), and `--tl-on-kind`
- * inverts with it: white ink on a dark fill in light, the card's own sunken
- * ground on a light fill in dark. */
+ *   --accent-600      what `useTheme` stamps inline on <html> when the user
+ *                     picks a custom accent, and what `themes.css` remaps the
+ *                     `blue-600` utilities to under `[data-custom-accent]`. A
+ *                     mark and a primary Button therefore move together.
+ *   --color-blue-600  Tailwind v4's own theme variable, which is LITERALLY what
+ *                     `.bg-blue-600` resolves to — so with no custom accent the
+ *                     two are the same computed value, not two values that look
+ *                     alike. It is not #2563eb: v4 states the palette in OKLCH
+ *                     and `blue-600` renders rgb(21 93 252).
+ *   #2563eb           the last resort — Tailwind v3's blue-600, and the value
+ *                     `brand.css` gives `--accent-600` — for a consumer that
+ *                     ships neither of the above.
+ *
+ * `ui.css` cannot declare `--accent-600` itself: a portal takes this file (or
+ * `styles.css`) WITHOUT `brand.css`, and declaring a default here would shadow
+ * nothing but would also stop `brand.css` from ever being the answer. The
+ * fallback chain is the portable form.
+ *
+ * NO DARK STEP. `.bg-blue-600` and `.border-blue-600` are not remapped for dark
+ * — a primary Button is the same fill on a dark page — so neither is the bar.
+ * The 600 step measures 3.40:1 on the dark `--surface-sunken` and 4.95:1 on the
+ * light one, clearing WCAG 1.4.11 (these are graphics, not text) in both, and
+ * `--tl-on-kind` is white ink on it at 5.17:1 either way.
+ *
+ * The one thing that DOES move in dark is ink the kit paints through
+ * `.text-blue-600` — the thumb, a cluster pill, the links — because blue-600 as
+ * TEXT on a dark surface is 3.17:1 and fails AA. `ui.css` already remaps that
+ * class to #93c5fd for dark, and the timeline inherits it rather than inventing
+ * a step of its own. */
 :root {
-  --tl-dfm: var(--status-active-solid);
-  --tl-shipment: var(--status-active-solid);
-  --tl-testing: var(--status-active-solid);
-  --tl-completion: var(--status-success-solid);
-  --tl-inspection: var(--status-active-solid);
-  --tl-on-kind: var(--status-on-solid);
-  /* The focus ring. The repo's convention is a fixed blue ring rather than an
-     accent-following one, and the blue the kit already names is the active
-     status tier. */
-  --tl-focus: var(--status-active-solid);
+  /* The one colour. Everything below is an alias, kept as separate names
+     because a consumer retuning ONE kind is a conversation worth having in a
+     stylesheet rather than a fork of the component. */
+  --tl-accent: var(--accent-600, var(--color-blue-600, #2563eb));
+  --tl-dfm: var(--tl-accent);
+  --tl-shipment: var(--tl-accent);
+  --tl-testing: var(--tl-accent);
+  --tl-completion: var(--tl-accent);
+  --tl-inspection: var(--tl-accent);
+  /* The ink on a filled mark. `--on-accent` is white in both themes by
+     `brand.css`'s own contract — the accent fill does not move, so neither does
+     what reads on it. */
+  --tl-on-kind: var(--on-accent, #ffffff);
+  /* The focus ring, and the colour a hot label's name and date take. */
+  --tl-focus: var(--tl-accent);
   /* The soft wash behind the current mark, a hovered dot and the mark a thumb
-     has just crossed. A box-shadow cannot be a utility class, so it reads the
-     status tier's own wash — transparent, which is why it needs no dark step. */
-  --tl-soft: var(--status-active-soft);
-}
-
-[data-theme="dark"] {
-  --tl-dfm: var(--status-active-soft-ink);
-  --tl-shipment: var(--status-active-soft-ink);
-  --tl-testing: var(--status-active-soft-ink);
-  --tl-completion: var(--status-success-soft-ink);
-  --tl-inspection: var(--status-active-soft-ink);
-  /* The card's own ground as the ink, because the fill is the light step here:
-     white on `--status-success-soft-ink` does not read. */
-  --tl-on-kind: var(--surface-sunken);
-  --tl-focus: var(--status-active-soft-ink);
+     has just crossed. A box-shadow cannot be a utility class, so the accent is
+     mixed down here instead — 16% is the alpha the kit's own `-soft` status
+     washes carry, and `color-mix` is the only form of it that can follow a
+     custom accent, since `rgba()` cannot take a variable for its channels. */
+  --tl-soft: color-mix(in srgb, var(--tl-accent) 16%, transparent);
 }
 
 /* ── Budget overrun hatch ───────────────────────────────────────────────────
@@ -529,11 +538,21 @@ html.rosh-reduce-transparency *::after {
  * what makes the motion impossible to get wrong — no component writes an
  * animation, so none of them can forget the reduced-motion rule at the bottom.
  *
- * Colour comes from the neutral ramp and the `--tl-*` kind tokens, so both
+ * Colour comes from the neutral ramp and the `--tl-*` accent tokens, so both
  * themes are covered without a single `[data-theme="dark"]` rule. The two
  * exceptions are deliberate and live in the component: `bg-gray-200` for the
- * rail and `bg-blue-500` for the fill, because those two must follow the dark
- * remap and the user's accent respectively. */
+ * rail and `bg-blue-600` for the fill, because those two must follow the dark
+ * remap and the user's accent respectively.
+ *
+ * FLAT, and kept that way by `tests/timelineTokens.test.ts`: no gradient and no
+ * drop shadow anywhere in this block. The fill carried a white gloss along its
+ * top edge and three elements carried a soft drop shadow (the reveal chip, the
+ * bubble and the popover, the scrubber thumb); all of them are gone, and the
+ * border or the flat ring that was underneath each one does the separating on
+ * its own. The `0 0 0 Npx` box-shadows that remain are RINGS — a halo in the
+ * card's own ground, a focus ring, the soft accent wash — which is a flat
+ * colour at a radius, not a shadow. Nothing else in the kit wears a gradient
+ * fill, and `StatusBadge` wears no shadow at all. */
 
 /* The card chrome both timelines wear. Border WIDTH and STYLE only — the colour
    comes from the utility class on the element, which carries the dark remap. */
@@ -621,13 +640,6 @@ html.rosh-reduce-transparency *::after {
 .rosh-tl-fill {
   position: absolute; left: 0; border-radius: 999px;
   transform-origin: left center;
-}
-/* A 1px inner sheen along the top of the fill — white rather than a token,
-   because it is a highlight rather than a colour, and it reads as one on the
-   accent in either theme. */
-.rosh-tl-fill::after {
-  content: ""; position: absolute; inset: 0; border-radius: inherit;
-  background: linear-gradient(rgba(255, 255, 255, 0.5), transparent 55%);
 }
 /* The notch in the rail where the axis stops keeping time. Painted in the
    card's own ground, so it reads as a cut rather than as a mark. */
@@ -737,7 +749,6 @@ html.rosh-reduce-transparency *::after {
 .rosh-tl-label.is-reveal {
   z-index: 4; padding: 2px 5px; border-radius: 7px;
   background: var(--surface-raised); border: 1px solid var(--line);
-  box-shadow: 0 1px 2px rgba(16, 20, 28, 0.07);
 }
 .rosh-tl-name {
   font-size: 11px; font-weight: 500; line-height: 1.25; color: var(--ink-strong);
@@ -787,7 +798,6 @@ html.rosh-reduce-transparency *::after {
   display: flex; flex-direction: column;
   background: var(--surface-raised); border: 1px solid var(--line);
   border-radius: 9px; padding: 7px 9px; transform: translateX(-50%);
-  box-shadow: 0 2px 4px rgba(16, 20, 28, 0.05), 0 14px 30px -14px rgba(16, 20, 28, 0.24);
 }
 /* The arrow is aimed at the dot the bubble describes, which is not the bubble's
    own centre once it has been clamped inside the track. */
@@ -830,7 +840,7 @@ html.rosh-reduce-transparency *::after {
 .rosh-tl-thumb {
   position: absolute; width: 18px; height: 18px; border-radius: 50%; z-index: 5;
   background: var(--surface); border: 2px solid currentColor;
-  box-shadow: 0 1px 2px rgba(16, 20, 28, 0.07), 0 0 0 4px var(--surface-sunken);
+  box-shadow: 0 0 0 4px var(--surface-sunken);
   transform: translate(-50%, -50%); touch-action: none; cursor: grab;
   transition: left 120ms cubic-bezier(0.22, 1, 0.36, 1);
 }

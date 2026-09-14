@@ -445,19 +445,22 @@ export default async function check(page, { pageErrors, open }) {
   // ── The palette, and the start anchor, in a browser that resolves them ────
   //
   // "The timeline's colors must be the ROS defaults, not hard-coded" and
-  // "inspection must not be red" (Henry, 2026-09-14). jsdom computes no custom
-  // property, so the suite's static specs can only read the stylesheet; here
-  // the chip has a colour, and it is the one the token tier hands it.
+  // "inspection must not be red" (Henry, 2026-09-14), and then, the same day:
+  // "the timeline's blue is not our theme blue; it must be the theme colour".
+  // The tier the kinds used to read — `--status-active-*` — was neither
+  // hard-coded nor red, and was still the wrong blue, because no accent theme
+  // remaps it. They read `--tl-accent` now, which is the theme's own 600 step.
+  // jsdom computes no custom property, so the suite's static specs can only
+  // read the stylesheet; here the chip has a colour.
   for (const theme of ['light', 'dark']) {
     await open(`?width=720${theme === 'dark' ? '&theme=dark' : ''}`);
     await page.locator('[data-testid="production"] [data-timeline-part="fill"]').waitFor();
 
-    // The tier a kind is supposed to read, resolved by the browser through a
-    // probe rather than restated here as a hex the spec could drift from.
-    const tier = theme === 'dark' ? '--status-active-soft-ink' : '--status-active-solid';
-    const seen = await page.evaluate(({ tier }) => {
+    // The token the kinds are supposed to read, resolved by the browser through
+    // a probe rather than restated here as a hex the spec could drift from.
+    const seen = await page.evaluate(() => {
       const probe = document.createElement('span');
-      probe.style.color = `var(${tier})`;
+      probe.style.color = 'var(--tl-accent)';
       document.body.appendChild(probe);
       const accent = getComputedStyle(probe).color;
       probe.remove();
@@ -471,11 +474,11 @@ export default async function check(page, { pageErrors, open }) {
         shipment: getComputedStyle(diamond).backgroundColor,
         inspection: getComputedStyle(disc).backgroundColor,
       };
-    }, { tier });
+    });
 
     assert.equal(seen.inspection, seen.accent,
-      `${theme}: the inspection chip is ${seen.inspection}, not the kit's ${tier} (${seen.accent})`);
-    assert.equal(seen.shipment, seen.accent, `${theme}: the shipment chip drifted from the same tier`);
+      `${theme}: the inspection chip is ${seen.inspection}, not the theme accent (${seen.accent})`);
+    assert.equal(seen.shipment, seen.accent, `${theme}: the shipment chip drifted from the accent`);
     // And measured, not merely named: nothing on this bar is a red, an orange
     // or an amber. 0-65 degrees of hue is that whole range.
     const [r, g, b] = seen.inspection.match(/[\d.]+/g).slice(0, 3).map(Number);
