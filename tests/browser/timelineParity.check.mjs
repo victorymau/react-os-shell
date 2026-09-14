@@ -161,7 +161,85 @@ export default async function check(page, { pageErrors, open }) {
   await play.click();
   assert.equal(await play.innerText(), 'Pause');
   assert.equal(await play.getAttribute('aria-pressed'), 'true');
+
+  // ── Playback: the thumb TRAVELS between two reports ───────────────────────
+  // jsdom can only be told what a frame is; this is the claim under a real
+  // clock and a real compositor — that consecutive animation frames each find
+  // the thumb further along the rail than the last one, and that nothing under
+  // the bar changes until it gets somewhere. What it replaced stepped from
+  // report to report on a timer, and a step is indistinguishable from a stall
+  // followed by a jump.
+  const thumbLeft = () => page.locator('[data-timeline-part="thumb"]')
+    .evaluate((el) => parseFloat(el.style.left));
+  const reportLeft = (label) => page.locator(`[data-testid="production"] [aria-label^="${label}"]`)
+    .evaluate((el) => parseFloat(el.style.left));
+  const firstReport = await reportLeft('PP#10140');
+  const secondReport = await reportLeft('PP#10141');
+  assert.ok(
+    Math.abs((await thumbLeft()) - firstReport) < 1,
+    'Play did not rewind to the first report',
+  );
+  // It rests on the report it is leaving before it sets off, so wait for the
+  // travel rather than for a duration.
+  await page.waitForFunction(
+    (x0) => parseFloat(document.querySelector('[data-timeline-part="thumb"]').style.left) > x0 + 0.5,
+    firstReport,
+    { timeout: 4000 },
+  );
+  const glide = await page.evaluate(async () => {
+    const thumb = document.querySelector('[data-timeline-part="thumb"]');
+    const status = document.querySelector('[data-testid="production"] .rosh-tl-status');
+    const chip = document.querySelector('[data-timeline-part="chip"]');
+    const fill = document.querySelector('[data-testid="production"] [data-timeline-part="fill"]');
+    const samples = [];
+    for (let i = 0; i < 6; i++) {
+      await new Promise((resolve) => { requestAnimationFrame(resolve); });
+      samples.push({
+        left: parseFloat(thumb.style.left),
+        painted: thumb.getBoundingClientRect().x,
+        fill: fill.getBoundingClientRect().width,
+        chip: chip.innerText.trim(),
+        status: status.innerText.trim(),
+      });
+    }
+    return samples;
+  });
+  for (let i = 1; i < glide.length; i++) {
+    assert.ok(
+      glide[i].left > glide[i - 1].left,
+      `frame ${i} of the glide did not advance: ${glide.map((s) => s.left).join(' → ')}`,
+    );
+  }
+  assert.ok(
+    glide.at(-1).painted > glide[0].painted,
+    'the disc moved in its style and not on the screen',
+  );
+  for (const sample of glide) {
+    assert.ok(
+      sample.left > firstReport && sample.left < secondReport,
+      `the thumb was at ${sample.left}, outside the stretch it is crossing`,
+    );
+    // The rail fill follows the thumb, and the line under the bar does not
+    // change until the thumb has arrived somewhere.
+    assert.ok(Math.abs(sample.fill - sample.left) < 2, `the fill lagged the thumb: ${sample.fill} vs ${sample.left}`);
+    assert.equal(sample.status, glide[0].status, 'the status line ticked over mid-glide');
+  }
+  assert.match(glide[0].status, /Showing PP#10140/);
+  // The chip counts days as the thumb crosses them, rather than repeating the
+  // date of the report it left.
+  assert.ok(new Set(glide.map((s) => s.chip)).size >= 1);
+  assert.ok(glide.every((s) => /\d/.test(s.chip)), `the chip stopped saying a date: ${glide[0].chip}`);
+
+  // Pause freezes it where it is — which is nowhere a report sits.
   await play.click();
+  assert.equal(await play.innerText(), 'Play');
+  const frozen = await thumbLeft();
+  await page.waitForTimeout(400);
+  assert.equal(await thumbLeft(), frozen, 'a pause settled the thumb instead of freezing it');
+  assert.ok(
+    frozen > firstReport && frozen < secondReport,
+    `a pause snapped the thumb to ${frozen} rather than leaving it mid-glide`,
+  );
 
   // The footer: a status line, and legend chips drawn with the track's glyphs.
   const foot = page.locator('[data-testid="production"] .rosh-tl-foot');
@@ -260,6 +338,32 @@ export default async function check(page, { pageErrors, open }) {
     await page.locator('.rosh-tl-pulse').first().evaluate((el) => getComputedStyle(el).opacity),
     '0',
   );
+  // Playback still walks the reports; what goes is the travel between them. The
+  // jsdom spec asserts this against a stubbed media query — this is the one
+  // that proves the component asks the real one.
+  const stepped = page.locator('[data-testid="production"] .rosh-tl-play');
+  await stepped.click();
+  const stops = await page.locator('[data-testid="production"] [data-timeline-node="item"]')
+    .evaluateAll((nodes) => nodes.map((el) => parseFloat(el.style.left)));
+  // A frame count rather than a deadline: a loop bounded by the clock is a
+  // loop that never ends if the clock is the thing that is wrong.
+  const walked = await page.evaluate(async (count) => {
+    const thumb = document.querySelector('[data-timeline-part="thumb"]');
+    const seen = [];
+    for (let i = 0; i < count; i++) {
+      await new Promise((resolve) => { requestAnimationFrame(resolve); });
+      seen.push(parseFloat(thumb.style.left));
+    }
+    return [...new Set(seen)];
+  }, 110);
+  for (const x of walked) {
+    assert.ok(
+      stops.some((stop) => Math.abs(stop - x) < 0.5),
+      `under reduced motion the thumb was at ${x}, between two reports (stops: ${stops.join(', ')})`,
+    );
+  }
+  assert.ok(walked.length > 1, 'the stepped walk never moved at all');
+  await stepped.click();
   await page.emulateMedia({ reducedMotion: 'no-preference' });
 
   // ── 300px: the axis is abandoned, not squeezed ────────────────────────────

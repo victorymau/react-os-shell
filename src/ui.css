@@ -792,6 +792,14 @@ html.rosh-reduce-transparency *::after {
   transition: left 120ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .rosh-tl-fill.is-tweened { transition: width 120ms cubic-bezier(0.22, 1, 0.36, 1); }
+/* While playback carries the thumb, an animation frame sets its position every
+   16ms and the magnet's 120ms transitions have to come off: a transition chasing
+   a tween trails it by its own duration, which reads as the thumb lagging the
+   date on its chip — and a pause would keep sliding for 120ms after the frame
+   that froze it, landing somewhere nobody asked for. */
+.rosh-tl-layer.is-gliding .rosh-tl-thumb,
+.rosh-tl-layer.is-gliding .rosh-tl-chip,
+.rosh-tl-layer.is-gliding .rosh-tl-fill.is-tweened { transition: none; }
 /* The label of the mark the thumb is on, as a control: it opens the document
    behind the dot. Styled as the label it replaces, underlined on hover so it
    reads as the link it is. */

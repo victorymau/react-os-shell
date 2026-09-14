@@ -11,6 +11,7 @@ import {
   packLabelLanes, FALLBACK_TRACK_PX, TRACK_LABEL_LANE_COUNT,
   type ClusterGroup, type CompressedAxis,
 } from './timelineGeometry';
+import { playbackSegments, positionAt, type PlaybackNode } from './timelinePlayback';
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
@@ -154,6 +155,45 @@ export interface TimelineTrackThumb {
   ariaLabel?: string;
 }
 
+/**
+ * Playback: the thumb travelling the rail on its own, stop to stop.
+ *
+ * The caller owns the button and the `playing` flag; the track owns the travel,
+ * because the travel is measured in pixels of ITS axis and the caller has never
+ * been told how wide the track is. Flip `playing` on and the thumb glides from
+ * the stop it is on to the next one, rests there, and goes on; flip it off
+ * mid-glide and it freezes where it is, with the same flag turning it back on
+ * from exactly there.
+ *
+ * `onArrive` is deliberately NOT `onActivate`. Activating a mark is what a click
+ * means, and in both portals that navigates — the admin window swaps itself to
+ * the report you clicked. A playback that activated each stop in turn would
+ * therefore walk the user through six windows and, by remounting the card,
+ * cancel itself on the first one. Arriving is a quieter event: move the value,
+ * swap the snapshot, leave the window alone.
+ */
+export interface TimelineTrackPlayback {
+  /** True while the thumb should be travelling. */
+  playing: boolean;
+  /**
+   * The thumb has reached a stop. Fired once per stop, in axis order, at the
+   * moment of arrival and never mid-glide — which is what keeps the consumer's
+   * status line ("Showing PP#…") an account of where the thumb IS rather than a
+   * counter that ticks while it moves.
+   *
+   * The caller is expected to move `thumb.valueMs` to `ms`: that is what the
+   * next segment is measured from.
+   */
+  onArrive: (key: string, ms: number) => void;
+  /** Playback is over — the last stop was reached, or a drag, a click or a key
+   *  took the thumb back. The caller is expected to set `playing` false; the
+   *  next `playing` turns into a fresh run rather than a resume. */
+  onStop?: () => void;
+  /** Multiplier on the glide and the dwell alike. Defaults to 1, which is the
+   *  timing `timelinePlayback.ts` specifies. */
+  speed?: number;
+}
+
 export interface TimelineTrackProps {
   /** Left edge of the window, epoch ms. */
   startMs: number;
@@ -191,6 +231,9 @@ export interface TimelineTrackProps {
   onActivate?: (key: string) => void;
   /** Turns the track into a scrubber. */
   thumb?: TimelineTrackThumb;
+  /** Drives the thumb along the rail by itself. Needs a `thumb`; without one
+   *  there is nothing to move. */
+  playback?: TimelineTrackPlayback;
   /** Text flanking the track — the "start" and "completed" edge captions. */
   edgeCaptions?: { start?: ReactNode; end?: ReactNode };
   /** Parallel-work brackets under the rail. */
@@ -293,6 +336,27 @@ const SNAP_FLASH_MS = 460;
  *  hoverable content, and the bubble sits a few pixels below the dot: without
  *  the grace the pointer dismisses it on the way. */
 const BUBBLE_GRACE_MS = 160;
+
+/** The longest frame the playback tween will believe. A tab in the background
+ *  gets no animation frames at all, so the first one after it comes forward can
+ *  report minutes; advanced by that, a playback would jump from the second report
+ *  to the last and announce neither of the four in between. Clamped, a hidden tab
+ *  costs the playback the time it was hidden for and nothing else. */
+const MAX_FRAME_MS = 100;
+
+/** Does the machine ask for stillness? Read once per card, as `Modal` reads it —
+ *  a media query consulted during render would make render impure, and a user who
+ *  changes the setting is one window open away from the new answer. */
+function prefersReducedMotion(): boolean {
+  try {
+    return typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch {
+    // A jsdom without media queries, or a browser that refused the query: the
+    // answer that keeps the motion is the one the stylesheet would also give.
+    return false;
+  }
+}
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -419,6 +483,25 @@ interface Mark {
   onOpen?: () => void;
   /** False for a context marker — on the rail, but not part of the programme. */
   isItem: boolean;
+}
+
+/**
+ * Where a playback has got to.
+ *
+ * One leg at a time, and the rest at a node is the leg's OWN rest, taken before
+ * it sets off: that is what puts a pause on the report the reader has just
+ * arrived at rather than on the one it is heading for, and it means arriving at
+ * the last node has nothing left to schedule.
+ */
+interface PlaybackCursor {
+  /** Index into the segment list. */
+  index: number;
+  /** `'rest'` sits on `segments[index].fromKey`; `'glide'` crosses to its `toKey`. */
+  phase: 'rest' | 'glide';
+  /** Progress through the glide, 0 to 1. */
+  t: number;
+  /** What is left of the rest, in ms. */
+  restLeftMs: number;
 }
 
 /** Every `data-*` a part of the track carries, so a spec or a browser check can
@@ -1179,11 +1262,22 @@ function LaneLabels({
  * six reports reads as six settlings instead of a slide — and reduced motion
  * takes the transition away in the stylesheet, where the rest of the card's
  * motion rule already lives.
+ *
+ * `glide` is the exception, and the only one: while playback owns the thumb the
+ * disc, its chip and the fill are placed by an animation frame at a coordinate
+ * that is not a stop, and the date on the chip is read back out of the axis. The
+ * stop index the screen reader hears stays on the value the caller is showing,
+ * because a slider mid-travel has not changed its value yet.
  */
-function ThumbLayer({ thumb, value, snap, axis, geo, startMs, endMs, trackPx, layerRef }: {
+function ThumbLayer({ thumb, value, snap, axis, geo, startMs, endMs, trackPx, layerRef, glide, onScrub }: {
   thumb: TimelineTrackThumb;
+  /** The user has taken hold of the thumb — once per gesture, before the value
+   *  moves. Playback lets go when this fires. */
+  onScrub?: () => void;
   /** `thumb.valueMs`, clamped and snapped — what is actually drawn. */
   value: number;
+  /** Where playback has the thumb, or null when the caller's value places it. */
+  glide: { px: number; ms: number } | null;
   /** Clamp + snap any time onto an allowed value. */
   snap: (ms: number) => number;
   /** The allowed stops, ascending, or null for a continuous slider. */
@@ -1195,7 +1289,10 @@ function ThumbLayer({ thumb, value, snap, axis, geo, startMs, endMs, trackPx, la
   layerRef: RefObject<HTMLDivElement>;
 }) {
   const draggingRef = useRef(false);
-  const x = axis.xByMs(value);
+  const x = glide ? glide.px : axis.xByMs(value);
+  /** The time under the disc: the caller's value at rest, the interpolated one
+   *  while playback is carrying it between two stops. */
+  const at = glide ? glide.ms : value;
   const chipWidth = 88;
   const stops = sortedStops(thumb.stops);
   const index = stops ? stops.indexOf(value) : -1;
@@ -1214,6 +1311,7 @@ function ThumbLayer({ thumb, value, snap, axis, geo, startMs, endMs, trackPx, la
   };
 
   const beginDrag = (event: React.PointerEvent) => {
+    onScrub?.();
     draggingRef.current = true;
     (event.currentTarget as Element).setPointerCapture?.(event.pointerId);
     thumb.onDragStart?.();
@@ -1251,7 +1349,7 @@ function ThumbLayer({ thumb, value, snap, axis, geo, startMs, endMs, trackPx, la
     return null;
   };
 
-  const valueText = thumb.valueText ? thumb.valueText(value) : fmtSliderDate(value);
+  const valueText = thumb.valueText ? thumb.valueText(at) : fmtSliderDate(at);
   const days = Math.max(1, Math.round((endMs - startMs) / DAY_MS));
 
   return (
@@ -1264,7 +1362,7 @@ function ThumbLayer({ thumb, value, snap, axis, geo, startMs, endMs, trackPx, la
         onPointerCancel={endDrag} />
       <div className="rosh-tl-chip" data-timeline-part="chip"
         style={{ left: `${clampLabelLeft(x, chipWidth, trackPx) + chipWidth / 2}px`, top: `${geo.tag}px` }}>
-        {thumb.chip ? thumb.chip(value) : fmtSliderDate(value)}
+        {thumb.chip ? thumb.chip(at) : fmtSliderDate(at)}
       </div>
       <div role="slider" tabIndex={0} className="rosh-tl-thumb text-blue-600" data-timeline-part="thumb"
         aria-label={thumb.ariaLabel ?? 'Scrub the timeline'}
@@ -1283,6 +1381,7 @@ function ThumbLayer({ thumb, value, snap, axis, geo, startMs, endMs, trackPx, la
           const next = keyTarget(event);
           if (next === null) return;
           event.preventDefault();
+          onScrub?.();
           moveTo(next);
         }} />
     </>
@@ -1310,8 +1409,10 @@ function stageHeight(geo: TrackGeometry, usesFarLane: boolean, hasPhases: boolea
  * What it owns: the axis (linear or compressed), the rail and its fill, the date
  * ruler, the dots and their glyphs, label placement (two packed lanes with `×N`
  * clustering, or one active label), the local magnification of a dense stretch,
- * the optional scrubber thumb and its stops, the hover previews, the pending
- * list, the motion, and the keyboard and screen-reader contract. What it does
+ * the optional scrubber thumb and its stops, its playback — the travel between
+ * two stops is measured in pixels of this axis, which is why the caller owns the
+ * button and this owns the movement — the hover previews, the pending list, the
+ * motion, and the keyboard and screen-reader contract. What it does
  * not own: the card around it, its heading, its legend, or any domain summary —
  * those belong to the consumer, which knows what the bar is about. `TimelineCard`
  * is where both of the kit's own timelines put theirs.
@@ -1326,12 +1427,13 @@ function stageHeight(geo: TrackGeometry, usesFarLane: boolean, hasPhases: boolea
  */
 export default function TimelineTrack({
   startMs, endMs, axis: axisMode = 'linear', items, markers = [], pending = [],
-  fillToMs, todayMs, labels = 'lanes', activeKey = null, onActivate, thumb,
+  fillToMs, todayMs, labels = 'lanes', activeKey = null, onActivate, thumb, playback,
   edgeCaptions, phases = [], currentKey, zoomRange = null, motion = true, ariaLabel,
 }: TimelineTrackProps) {
   // Captured once at mount so render stays idempotent — day-resolution marks do
   // not care that "today" does not tick while the view is open.
   const [mountedToday] = useState(() => Date.now());
+  const [stillness] = useState(prefersReducedMotion);
   const now = todayMs ?? mountedToday;
   const rootRef = useRef<HTMLDivElement>(null);
   const layerRef = useRef<HTMLDivElement>(null);
@@ -1524,8 +1626,121 @@ export default function TimelineTrack({
   };
   const thumbAt = thumb ? snapThumb(thumb.valueMs) : null;
 
+  // ── Playback ───────────────────────────────────────────────────────────────
+  // The stops the walk visits: the dated ITEMS, and only the ones the thumb is
+  // allowed to rest on. A marker is context rather than progress — a playback
+  // that stopped on a goods issue would be showing the snapshot of a report
+  // filed days earlier and pointing at a shipment.
+  const playbackNodes: PlaybackNode[] = playback && thumb
+    ? itemMarks
+      .filter((mark) => !thumbStops || thumbStops.includes(mark.ms))
+      .map((mark) => ({ key: mark.key, ms: mark.ms }))
+    : [];
+  // Rebuilt every render against the axis being DRAWN, so a resize or a zoom
+  // mid-playback changes what is left to cross rather than leaving the thumb
+  // travelling to a coordinate that has moved.
+  const segments = playbackSegments(view, playbackNodes, {
+    speed: playback?.speed,
+    reducedMotion: stillness,
+  });
+
+  /** Where playback has the thumb, or null while the caller's value places it.
+   *  State rather than a write to the node: the disc, its chip, the fill and
+   *  `aria-valuetext` all read this, and four imperative writers is how they end
+   *  up disagreeing about where the thumb is. */
+  const [glide, setGlide] = useState<{ px: number; ms: number } | null>(null);
+  /** Which leg is being crossed and how far through it. A ref because the driver
+   *  reads and writes it inside an animation frame, and because it has to
+   *  survive a pause — surviving is what makes resuming continue rather than
+   *  restart. */
+  const cursorRef = useRef<PlaybackCursor | null>(null);
+  /** The schedule as it is NOW, for a loop that was started several renders ago
+   *  and must not close over the arrangement it started with. */
+  const liveRef = useRef({ segments, value: thumbAt, playback });
+  // No dependency list: every render publishes its schedule, and this is
+  // declared above the driver so the render that flips `playing` has published
+  // before the driver reads.
+  useEffect(() => { liveRef.current = { segments, value: thumbAt, playback }; });
+
+  /** Playback is over: the last stop, or the user taking the thumb back. */
+  const endPlayback = useCallback(() => {
+    cursorRef.current = null;
+    setGlide(null);
+    liveRef.current.playback?.onStop?.();
+  }, []);
+
+  const playing = !!playback?.playing && !!thumb;
+  useEffect(() => {
+    // Not playing is not the same as stopped: a PAUSE lands here, and it has to
+    // leave both the cursor and the painted position alone. That is the whole
+    // mechanism behind "resume continues the same segment from where it froze".
+    if (!playing) return;
+    const opening = liveRef.current;
+    const from = opening.value === null
+      ? -1
+      : opening.segments.findIndex((segment) => segment.fromMs === opening.value);
+    // Nowhere to go: the thumb is on the last stop, or there are no stops. The
+    // caller hears about it at once rather than watching a Pause button that
+    // will never do anything.
+    if (from < 0) { endPlayback(); return; }
+    // A cursor that belongs to a different leg than the one the caller's value
+    // sits on is a stale session — the caller rewound, or jumped. Start over.
+    if (!cursorRef.current || cursorRef.current.index !== from) {
+      cursorRef.current = {
+        index: from,
+        phase: 'rest',
+        t: 0,
+        restLeftMs: opening.segments[from].dwellMs,
+      };
+    }
+
+    let frame = 0;
+    let previous: number | null = null;
+    /** Paint a position, and only a position that is new: 700 ms of rest is 44
+     *  frames, and React bails out of a re-render when the state it is given is
+     *  the object it already had. */
+    const paint = (next: { px: number; ms: number }) => setGlide((prev) => (
+      prev && prev.px === next.px && prev.ms === next.ms ? prev : next
+    ));
+    const tick = (nowMs: number) => {
+      const dt = previous === null ? 0 : Math.min(Math.max(nowMs - previous, 0), MAX_FRAME_MS);
+      previous = nowMs;
+      const live = liveRef.current;
+      const cursor = cursorRef.current;
+      // Cancelled from outside — a drag, a click, a key. Do not reschedule.
+      if (!cursor) return;
+      const segment = live.segments[cursor.index];
+      if (!segment) { endPlayback(); return; }
+
+      if (cursor.phase === 'rest') {
+        cursor.restLeftMs = Math.max(0, cursor.restLeftMs - dt);
+        if (cursor.restLeftMs === 0) { cursor.phase = 'glide'; cursor.t = 0; }
+        // Idempotent: it holds the thumb on the node it is resting at, which is
+        // also where a render that arrived mid-rest would have put it.
+        paint(positionAt(segment, 0));
+      } else {
+        cursor.t = segment.durationMs > 0
+          ? Math.min(1, cursor.t + dt / segment.durationMs)
+          : 1;
+        paint(positionAt(segment, cursor.t));
+        if (cursor.t >= 1) {
+          live.playback?.onArrive(segment.toKey, segment.toMs);
+          const next = live.segments[cursor.index + 1];
+          if (!next) { endPlayback(); return; }
+          cursor.index += 1;
+          cursor.phase = 'rest';
+          cursor.t = 0;
+          cursor.restLeftMs = next.dwellMs;
+        }
+      }
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [playing, endPlayback]);
+
   const fillTo = thumb
-    ? thumbAt
+    ? (glide ? glide.ms : thumbAt)
     : fillToMs !== undefined
       ? fillToMs
       : itemMarks.length > 0 ? Math.min(itemMarks[itemMarks.length - 1].ms, now) : null;
@@ -1675,7 +1890,12 @@ export default function TimelineTrack({
       <div className="flex items-stretch gap-3">
         {edgeCaptions?.start && <div className="rosh-tl-edge text-right">{edgeCaptions.start}</div>}
         <div className="rosh-tl-stage" style={{ height: `${stageHeight(geo, usesFarLane, phases.length > 0)}px` }}>
-          <div ref={layerRef} className={`rosh-tl-layer${zoomTweening ? ' is-zooming' : ''}`}>
+          {/* `is-gliding` takes the thumb's 120 ms transitions away for as long
+              as an animation frame is placing it: a transition chasing a tween
+              lags behind it, and a pause would then keep sliding for another
+              120 ms after the frame that froze it. */}
+          <div ref={layerRef}
+            className={`rosh-tl-layer${zoomTweening ? ' is-zooming' : ''}${glide ? ' is-gliding' : ''}`}>
             <MeasuringRow marks={marks} innerRef={measureRef} />
             <TrackRail axis={view} geo={geo} fillTo={fillTo} reveal={reveal} trackPx={trackPx}
               tweened={!!thumb} />
@@ -1768,8 +1988,12 @@ export default function TimelineTrack({
               </div>
             )}
             {thumb && thumbAt !== null && (
+              /* Taking hold of the thumb ends a playback rather than fighting
+                 it: two hands on one disc is the bug the prototype had, where a
+                 drag and the sweep wrote the same position every frame. */
               <ThumbLayer thumb={thumb} value={thumbAt} snap={snapThumb} axis={view} geo={geo}
-                startMs={startMs} endMs={endMs} trackPx={trackPx} layerRef={layerRef} />
+                startMs={startMs} endMs={endMs} trackPx={trackPx} layerRef={layerRef}
+                glide={glide} onScrub={playback ? endPlayback : undefined} />
             )}
           </div>
         </div>

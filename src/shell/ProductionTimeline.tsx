@@ -4,6 +4,7 @@ import TimelineCard from './TimelineCard';
 import { TimelineGlyph, TimelineProgressIcon } from './timelineGlyphs';
 import TimelineTrack, {
   type TimelineMarker, type TimelineMarkerKind, type TimelineTrackItem,
+  type TimelineTrackPlayback,
 } from './TimelineTrack';
 
 /**
@@ -462,12 +463,15 @@ export function useProductionTimeline(opts: UseProductionTimelineOpts): Producti
 function TimelineScrubber({
   startMs, endMs, reports, markers, valueMs, activeId,
   onChange, onPickReport, onOpenReport, onOpenMarker, onDragStart, renderReportPreview,
+  playback,
 }: {
   startMs: number;
   endMs: number;
   reports: TimelineReport[];
   markers: TimelineMarker[];
   valueMs: number;
+  /** Passed straight to the track, which owns the travel between two reports. */
+  playback?: TimelineTrackPlayback;
   activeId: string;
   onChange: (ms: number) => void;
   onPickReport: (id: string) => void;
@@ -518,6 +522,7 @@ function TimelineScrubber({
           if (ms != null) onChange(ms);
           onPickReport(key);
         }}
+        playback={playback}
         thumb={{
           valueMs,
           onChange,
@@ -575,43 +580,46 @@ export interface ProductionTimelineProps {
   heading?: string;
 }
 
-/** How long the thumb rests on a report while playing. Long enough to read the
- *  stage row it just changed, short enough that six reports is four seconds. */
-const PLAY_DWELL_MS = 600;
-
 /**
- * Playback, report by report.
+ * Playback, report to report.
  *
- * The hook's own `startPlay` sweeps the window continuously, which was right
- * while the bar interpolated between reports and is wrong now that the thumb
- * only rests on one: a sweep would spend most of its time on dates that hold no
- * snapshot. So the card steps its own stops instead, and the hook's sweep is
- * left in place for a caller that still wants it.
+ * Three answers, in order. The hook's own `startPlay` sweeps the window
+ * continuously, which was right while the bar interpolated between reports and
+ * wrong once the thumb only rested on one — most of that sweep was spent on dates
+ * holding no snapshot. So the card stepped its own stops with a timer, and the
+ * thumb teleported: "the playback should glide smoothly and continuously, not
+ * jump from node to node" (Henry, 2026-09-14, watching the customer portal).
+ * Now the TRACK carries the thumb between two stops, because the distance
+ * between them is a distance in pixels of its axis, and this hook keeps only
+ * what a card can answer: whether we are playing, where a fresh run starts,
+ * and whether the next press is a resume.
+ *
+ * Pausing keeps the run alive so the track can carry on from the pixel it froze
+ * at; stopping ends it, and the press after that rewinds to the first report.
  */
 function useReportPlayback(stops: number[], goTo: (ms: number) => void) {
   const [playing, setPlaying] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** True while a run exists. A pause is still a run — that is the difference
+   *  between resuming and starting over. */
+  const runningRef = useRef(false);
 
   const stop = () => {
-    if (timerRef.current != null) clearTimeout(timerRef.current);
-    timerRef.current = null;
+    runningRef.current = false;
     setPlaying(false);
   };
-  useEffect(() => () => { if (timerRef.current != null) clearTimeout(timerRef.current); }, []);
 
   const toggle = () => {
-    if (playing) { stop(); return; }
+    // Pause: the run survives, and so does the thumb's position, which is where
+    // the next press picks it up.
+    if (playing) { setPlaying(false); return; }
     if (stops.length === 0) return;
+    // A fresh run starts at the first report: the question Play answers is "show
+    // me the buildup", and the buildup starts at the beginning.
+    if (!runningRef.current) {
+      runningRef.current = true;
+      goTo(stops[0]);
+    }
     setPlaying(true);
-    goTo(stops[0]);
-    let at = 0;
-    const next = () => {
-      at += 1;
-      if (at >= stops.length) { timerRef.current = null; setPlaying(false); return; }
-      goTo(stops[at]);
-      timerRef.current = setTimeout(next, PLAY_DWELL_MS);
-    };
-    timerRef.current = setTimeout(next, PLAY_DWELL_MS);
   };
 
   return { playing, toggle, stop };
@@ -753,6 +761,16 @@ export default function ProductionTimeline({
           onOpenMarker={onOpenMarker}
           renderReportPreview={renderReportPreview}
           onDragStart={play.stop}
+          // Arriving moves the slider and nothing else. `onPickReport` is what a
+          // CLICK on a dot means, and in the admin window that swaps the whole
+          // detail to another report — a playback that fired it per stop would
+          // walk the user through six windows and, by remounting this card,
+          // cancel itself on the first of them.
+          playback={{
+            playing: play.playing,
+            onArrive: (_key, ms) => setScrubMs(ms),
+            onStop: play.stop,
+          }}
         />
       </TimelineCard>
     </div>

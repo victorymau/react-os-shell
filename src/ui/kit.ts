@@ -213,6 +213,7 @@ export type {
   TimelineTrackPending,
   TimelineTrackPhase,
   TimelineTrackThumb,
+  TimelineTrackPlayback,
 } from '../shell/TimelineTrack';
 export { default as MilestoneTimeline } from '../shell/MilestoneTimeline';
 export type { Milestone, MilestoneKind, MilestoneTimelineProps } from '../shell/MilestoneTimeline';

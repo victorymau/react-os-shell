@@ -1,0 +1,174 @@
+/**
+ * The schedule playback follows: which stretch of rail the thumb is crossing,
+ * how long that takes, and where it is partway through.
+ *
+ * Pure — no React, no DOM, no clock. `TimelineTrack` owns the animation frame
+ * and asks these two functions where the thumb goes, which is what lets the
+ * timing be specified rather than observed: a spec can assert that a 200 px
+ * stretch takes 700 ms without rendering anything or waiting for it.
+ *
+ * The whole file exists because of one distinction. A tween in TIME — walk the
+ * date from report to report and let the axis place it — looks right on a linear
+ * axis and stalls on a compressed one: an idle stretch cut down to a 48 px notch
+ * holds most of the window's DAYS, so a time-paced thumb spends most of its
+ * journey inside a notch it crosses in 48 px. So the tween is in PIXELS. The
+ * thumb travels the rail at one visual speed throughout, the date under it is
+ * read back through the axis's inverse mapping, and a cut therefore does what a
+ * cut is for: the thumb crosses it in 48 px of travel and the chip skips the
+ * days the axis is not showing.
+ */
+import type { CompressedAxis } from './timelineGeometry';
+
+/**
+ * How much time 100 px of rail is worth, in ms.
+ *
+ * 350 ms per 100 px puts a weekly report about 450 ms from the next one on a
+ * 700 px card and the two ends of a year-long programme about 2.4 s apart before
+ * the clamps. Slower reads as a progress bar the user is waiting on; faster and
+ * the dates under the thumb are unreadable.
+ */
+const MS_PER_100_PX = 350;
+
+/** The floor. Under it a glide is a flicker: two reports a day apart are ~10 px
+ *  on a 700 px card, and 35 ms of travel is one or two frames. */
+const MIN_GLIDE_MS = 450;
+
+/** The ceiling. NN/g puts the usable band at 100–400 ms and calls ≥ 500 ms
+ *  "cumbersome"; a scrubber crossing a bar is the one case where longer is the
+ *  point, but past ~1.4 s a single stretch outlasts the reader's patience for
+ *  it, and the rest of the programme is still to come. */
+const MAX_GLIDE_MS = 1400;
+
+/** How long the thumb rests on a report before leaving it. Long enough to read
+ *  the stage row that just changed, short enough that six reports is about
+ *  seven seconds end to end. */
+export const PLAYBACK_DWELL_MS = 700;
+
+/** A stretch shorter than this is not travel: two reports filed on one day sit
+ *  at one coordinate, and easing across half a pixel for 450 ms is a stall. */
+const ZERO_TRAVEL_PX = 0.5;
+
+/** One stop playback visits: the mark's key, and when it happened. */
+export interface PlaybackNode {
+  key: string;
+  ms: number;
+}
+
+/** One node-to-node leg of a playback, with every number the driver needs. */
+export interface PlaybackSegment {
+  /** The node the thumb leaves. */
+  fromKey: string;
+  /** The node it arrives at — the key `onArrive` is called with. */
+  toKey: string;
+  fromMs: number;
+  toMs: number;
+  /** Where those two sit on the rail, in px. */
+  fromPx: number;
+  toPx: number;
+  /** How far the thumb actually travels. The duration is derived from THIS and
+   *  not from `toMs - fromMs`, which is the whole point of the file. */
+  lengthPx: number;
+  /** How long the glide takes. 0 means "arrive at once" — a zero-length stretch,
+   *  or reduced motion, where the thumb still moves but nothing tweens. */
+  durationMs: number;
+  /** How long to rest on `toKey` after arriving. */
+  dwellMs: number;
+  /** The axis's inverse mapping, carried so `positionAt` can report the date
+   *  under a pixel without the caller threading the axis back in. */
+  msByPx: (px: number) => number;
+}
+
+export interface PlaybackScheduleOptions {
+  /** Multiplier on every duration AND every dwell — 2 plays twice as fast.
+   *  Values that are not a positive finite number are read as 1. */
+  speed?: number;
+  /**
+   * `prefers-reduced-motion: reduce`. Every glide becomes 0 ms, so playback is
+   * the stepwise walk it has always been: the thumb appears at the next report,
+   * dwells, appears at the one after. The dwell is kept, because the dwell is
+   * not motion — it is how long the snapshot stays readable.
+   */
+  reducedMotion?: boolean;
+  /** Override the rest at each node. Defaults to `PLAYBACK_DWELL_MS`. */
+  dwellMs?: number;
+}
+
+const clamp = (value: number, low: number, high: number) => Math.min(Math.max(value, low), high);
+
+/**
+ * Sine in–out — the CSS `cubic-bezier(0.37, 0, 0.63, 1)`.
+ *
+ * Ease-in-out because playback is system-triggered rather than user-triggered
+ * (Polaris), and SINE rather than the cubic one because a cubic in-out spends
+ * its first three frames under a single pixel: on a 450 ms glide that is 50 ms
+ * of a thumb that has been told to move and has not. The complaint this whole
+ * change answers is a thumb that does not appear to travel, so the curve may not
+ * have dead frames at its ends.
+ */
+const easeInOut = (t: number): number => -(Math.cos(Math.PI * t) - 1) / 2;
+
+/**
+ * The legs of one playback, left to right.
+ *
+ * Nodes are sorted by date and de-duplicated by coordinate-carrying key; `n`
+ * nodes give `n - 1` segments, so a single node schedules nothing and playback
+ * ends the moment it starts — which is the honest answer for a programme with
+ * one report in it.
+ *
+ * `axis` is whatever mapping the track is currently drawing on, including a
+ * magnified one: the durations are read off the pixels the reader can see, so a
+ * zoomed stretch takes longer to cross precisely because it is wider.
+ */
+export function playbackSegments(
+  axis: Pick<CompressedAxis, 'xByMs' | 'msByPx'>,
+  nodes: PlaybackNode[],
+  opts: PlaybackScheduleOptions = {},
+): PlaybackSegment[] {
+  const speed = Number.isFinite(opts.speed) && (opts.speed ?? 0) > 0 ? (opts.speed as number) : 1;
+  const dwell = Math.max(0, opts.dwellMs ?? PLAYBACK_DWELL_MS) / speed;
+  const ordered = nodes
+    .filter((node) => Number.isFinite(node.ms))
+    .slice()
+    .sort((a, b) => a.ms - b.ms);
+
+  const segments: PlaybackSegment[] = [];
+  for (let i = 0; i + 1 < ordered.length; i++) {
+    const from = ordered[i];
+    const to = ordered[i + 1];
+    const fromPx = axis.xByMs(from.ms);
+    const toPx = axis.xByMs(to.ms);
+    const lengthPx = Math.max(0, toPx - fromPx);
+    const glide = lengthPx <= ZERO_TRAVEL_PX || opts.reducedMotion
+      ? 0
+      : clamp((lengthPx * MS_PER_100_PX) / 100, MIN_GLIDE_MS, MAX_GLIDE_MS) / speed;
+    segments.push({
+      fromKey: from.key,
+      toKey: to.key,
+      fromMs: from.ms,
+      toMs: to.ms,
+      fromPx,
+      toPx,
+      lengthPx,
+      durationMs: glide,
+      dwellMs: dwell,
+      msByPx: axis.msByPx,
+    });
+  }
+  return segments;
+}
+
+/**
+ * Where the thumb is `t` of the way through a segment, as a pixel and as a date.
+ *
+ * `t` is raw progress in [0, 1]; the easing is applied here so that every caller
+ * — the driver, a spec, the browser check — is reading the same curve. The two
+ * ends are returned exactly rather than through the mapping, because a float
+ * rounding at `t = 1` would put the chip on the day before the report it has
+ * just arrived at.
+ */
+export function positionAt(segment: PlaybackSegment, t: number): { px: number; ms: number } {
+  if (!(t > 0)) return { px: segment.fromPx, ms: segment.fromMs };
+  if (t >= 1 || segment.durationMs <= 0) return { px: segment.toPx, ms: segment.toMs };
+  const px = segment.fromPx + (segment.toPx - segment.fromPx) * easeInOut(t);
+  return { px, ms: segment.msByPx(px) };
+}
