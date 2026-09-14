@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
-  Button, Input, Textarea, Select, Checkbox, Radio, FormField,
+  Button, Input, Textarea, Select, Checkbox, Radio, RadioGroup, FormField,
+  Snippet, Kbd, CMD_ENTER, ALT_SHIFT_E,
   Card, StatCard, Avatar, AvatarGroup, Banner, Tabs, Accordion, Tooltip,
   Pagination, Sparkline, BarChart, DonutChart,
   MetricBar, SidebarNavItem, SidebarGroupLabel, type SeverityTone,
@@ -31,6 +32,12 @@ const SECTIONS: { id: string; label: string; count?: number; severity?: Severity
   { id: 'workers', label: 'Workers', count: 6, severity: 'warning' },
 ];
 
+const TERMS = [
+  { value: 'net_30', label: 'Net 30', description: 'Due 30 days after the invoice date.' },
+  { value: 'net_60', label: 'Net 60', description: 'Due 60 days after the invoice date.' },
+  { value: 'prepaid', label: 'Prepaid', description: 'Payment before the goods leave the factory.' },
+];
+
 export default function PrimitivesDemo() {
   const [tab, setTab] = useState('overview');
   const [plan, setPlan] = useState('pro');
@@ -38,6 +45,8 @@ export default function PrimitivesDemo() {
   const [country, setCountry] = useState('us');
   const [page, setPage] = useState(3);
   const [section, setSection] = useState('storage');
+  const [terms, setTerms] = useState('net_30');
+  const [selectTerms, setSelectTerms] = useState('net_30');
 
   return (
     <div className="h-full overflow-auto bg-gray-50 p-6">
@@ -75,6 +84,49 @@ export default function PrimitivesDemo() {
               <Radio name="p-plan" checked={plan === 'pro'} onChange={() => setPlan('pro')} label="Pro" />
               <Radio name="p-plan" checked={plan === 'team'} onChange={() => setPlan('team')} label="Team" />
             </div>
+          </div>
+        </Section>
+
+        <Section title="Radio group & option descriptions">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+            <RadioGroup
+              name="terms"
+              label="Payment terms"
+              hint="Applies to every order on this account."
+              value={terms}
+              onChange={setTerms}
+              options={TERMS}
+            />
+            <div className="space-y-4">
+              <FormField label="Payment terms (Select)" htmlFor="p-terms" hint="Open the list — each option explains itself.">
+                <Select id="p-terms" value={selectTerms} onChange={setSelectTerms} options={TERMS} />
+              </FormField>
+              <RadioGroup
+                name="p-unit"
+                label="Weight unit"
+                orientation="horizontal"
+                value="kg"
+                onChange={() => {}}
+                options={[
+                  { value: 'kg', label: 'Kilograms' },
+                  { value: 'lb', label: 'Pounds' },
+                  { value: 't', label: 'Tonnes', disabled: true },
+                ]}
+              />
+            </div>
+          </div>
+        </Section>
+
+        <Section title="Snippet & Kbd">
+          <div className="flex flex-wrap items-center gap-3">
+            <Snippet value="https://api.efficient.test/v1" label="the API base URL" />
+            <Snippet value="tnt_8e1c4f2a" label="the tenant id" variant="flat" size="sm" />
+            <Snippet value="npm ci && npm run build" symbol="$" label="the build command" />
+          </div>
+          <Snippet value="sk_live_8Hf2c41d9ba0e7a91" label="the API key">sk_live_8Hf2…a91</Snippet>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button size="sm">Save <Kbd keys={CMD_ENTER} className="ml-1.5 border-gray-100" /></Button>
+            <Button variant="secondary" size="sm">Edit <Kbd keys={ALT_SHIFT_E} size="sm" className="ml-1.5" /></Button>
           </div>
         </Section>
 

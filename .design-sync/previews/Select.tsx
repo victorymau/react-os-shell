@@ -22,3 +22,22 @@ export function States() {
     </div>
   );
 }
+
+// An option can carry a `description` — a second muted line shown in the OPEN
+// list only, for a label that is a term the user has to already know. The
+// trigger stays one line, which is why this static capture shows the label
+// alone: open the list in the live desktop to see the second line.
+const TERMS = [
+  { value: 'net_30', label: 'Net 30', description: 'Due 30 days after the invoice date.' },
+  { value: 'net_60', label: 'Net 60', description: 'Due 60 days after the invoice date.' },
+  { value: 'prepaid', label: 'Prepaid', description: 'Payment before the goods leave the factory.' },
+];
+
+export function OptionDescriptions() {
+  const [terms, setTerms] = useState('net_30');
+  return (
+    <div className="max-w-md p-5">
+      <Select value={terms} onChange={setTerms} options={TERMS} />
+    </div>
+  );
+}

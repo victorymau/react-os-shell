@@ -91,6 +91,17 @@
       "cardMode": "column",
       "primaryStory": "Settings"
     },
+    "RadioGroup": {
+      "cardMode": "column",
+      "primaryStory": "WithDescriptions"
+    },
+    "Snippet": {
+      "cardMode": "column",
+      "primaryStory": "Values"
+    },
+    "Kbd": {
+      "primaryStory": "InControls"
+    },
     "InputNumber": {
       "cardMode": "column",
       "primaryStory": "Quantities"

@@ -37,6 +37,21 @@ import { registerModalEscapeInterceptor } from '../shell/escapeInterceptors';
 export interface SelectOption {
   value: string;
   label: string;
+  /**
+   * A second, muted line under the label IN THE OPEN LIST — what choosing this
+   * option means, where the label alone is a term the user has to already know
+   * ("Net 30", "FOB", "Partial shipment").
+   *
+   * Deliberately absent from the closed trigger: the trigger is one line in a
+   * form row, and a two-line trigger changes the height of every field beside
+   * it the moment one option grows a description.
+   *
+   * `NativeSelect` — and so `Select` on touch — ignores it. An `<option>` can
+   * hold text and nothing else, and there is no honest way to render a second
+   * line inside an OS picker. Reach for `SearchableSelect` when the secondary
+   * text has to survive on a phone.
+   */
+  description?: string;
   disabled?: boolean;
 }
 
@@ -358,7 +373,19 @@ const ListboxSelect = forwardRef<HTMLSelectElement, SelectProps>(function Listbo
                   : value === o.value ? 'font-medium text-blue-600'
                   : 'text-gray-700'}`}
             >
-              {o.label}
+              {/* Without a description the option is the bare label it has
+                  always been — same element, same classes, same markup. The
+                  two-line form is opt-in per option, so a list where one
+                  option explains itself does not restyle the rest. */}
+              {o.description ? (
+                <>
+                  <span className="block truncate">{o.label}</span>
+                  {/* Its own ink, not the row's: the row goes blue when it is
+                      active or selected, and a description that followed would
+                      read as a second label rather than as a note. */}
+                  <span className="mt-0.5 block truncate text-xs font-normal text-gray-500">{o.description}</span>
+                </>
+              ) : o.label}
             </div>
           ))}
         </div>,

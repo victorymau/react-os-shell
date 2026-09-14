@@ -57,6 +57,8 @@ export { default as Checkbox } from '../forms/Checkbox';
 export type { CheckboxProps } from '../forms/Checkbox';
 export { default as Radio } from '../forms/Radio';
 export type { RadioProps } from '../forms/Radio';
+export { default as RadioGroup } from '../forms/RadioGroup';
+export type { RadioGroupProps, RadioGroupOption, RadioGroupOrientation } from '../forms/RadioGroup';
 export { default as FormField } from '../forms/FormField';
 export type { FormFieldProps } from '../forms/FormField';
 export { default as FormErrorSummary } from '../forms/FormErrorSummary';
@@ -100,6 +102,11 @@ export { default as DateTimePicker } from '../forms/DateTimePicker';
 export type { DateTimePickerProps } from '../forms/DateTimePicker';
 export { INPUT_BASE, INPUT_SIZES, inputClasses } from '../forms/styles';
 export type { InputSize } from '../forms/styles';
+// A value the user copies rather than reads — an endpoint, a tenant id, a
+// command. `CopyButton` is the affordance alone and lives with the window
+// manager; this is the box around it, and it is what a settings panel wants.
+export { default as Snippet } from '../forms/Snippet';
+export type { SnippetProps, SnippetSize, SnippetVariant } from '../forms/Snippet';
 
 // Anchored-popup placement, exported because a consumer that has to build its
 // own popup — a hover card, a typeahead over an endpoint the kit does not
@@ -351,6 +358,10 @@ export { formatDate } from '../utils/date';
 export { default as useClickOutside } from '../hooks/useClickOutside';
 export { useIsMobile } from '../shell/useIsMobile';
 export { ALT_SHIFT_E, ALT_SHIFT_D, ALT_SHIFT_N, CMD_ENTER, CMD_S, CMD_K, CMD_DOT, CMD_A, MOD, ALT, SHIFT, ENTER, isMac } from '../shell/Kbd';
+// The badge those strings are shown in. They shipped without one, so every
+// consumer wrote its own `<kbd className=…>` — 109 of them in the admin portal.
+export { Kbd } from '../shell/Kbd';
+export type { KbdProps, KbdSize } from '../shell/Kbd';
 
 // ── Chart primitives ──
 // The layer every chart is built from, exported on its own so a consumer with
