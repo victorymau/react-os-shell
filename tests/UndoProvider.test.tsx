@@ -278,6 +278,157 @@ test('baseline() survives a refetch into an open window', async () => {
   closeAllWindows();
 });
 
+/** The PI shape: a once-per-id hydration guard that still reaches
+ *  `baseline()` on the edge where the query flips to fetching — nothing is
+ *  re-seeded, so nothing on screen changes, and the history must not go. */
+function GuardedForm({ api }: { api: Partial<FormApi & { rebaseline: () => void }> }) {
+  const [name, setName] = useUndoableState('', { label: 'name' });
+  const { baseline } = useUndo();
+  api.set = setName;
+  api.rebaseline = baseline;
+  return <span data-testid="value">{name}</span>;
+}
+
+test('baseline() with nothing arriving behind it keeps the history — the refetch edge', async () => {
+  openWindow('win-refetch-edge');
+  const api: Partial<FormApi & { rebaseline: () => void }> = {};
+  const r = render(<UndoProvider windowId="win-refetch-edge"><GuardedForm api={api} /></UndoProvider>);
+
+  type(api, 'user edit');
+  await flush();
+  // The background refetch starts; the form's guard skips re-seeding but the
+  // effect still ends in baseline(). No value moves.
+  act(() => { api.rebaseline!(); });
+  await flush();
+  await flush();
+
+  pressKey('z', { meta: true });
+  await flush();
+  assert.equal(valueOf(r), '', 'the edit before the refetch edge is still there to undo');
+
+  r.unmount();
+  closeAllWindows();
+});
+
+/** A default written into state and baselined in the same MOUNT effect —
+ *  the entity picker on a new invoice. */
+function MountDefaultForm({ api }: { api: Partial<FormApi> }) {
+  const [name, setName] = useUndoableState('', { label: 'company' });
+  const { baseline } = useUndo();
+  api.set = setName;
+  useEffect(() => { setName('default entity'); baseline(); }, [setName, baseline]);
+  return <span data-testid="value">{name}</span>;
+}
+
+test('a default set and baselined in the mount effect is not a step', async () => {
+  openWindow('win-mount-default');
+  const api: Partial<FormApi> = {};
+  const r = render(<UndoProvider windowId="win-mount-default"><MountDefaultForm api={api} /></UndoProvider>);
+  await flush();
+  await flush();
+  assert.equal(valueOf(r), 'default entity');
+
+  pressKey('z', { meta: true });
+  await flush();
+  assert.equal(valueOf(r), 'default entity', 'a window nobody touched has nothing to undo');
+
+  type(api, 'picked by the user');
+  await flush();
+  pressKey('z', { meta: true });
+  await flush();
+  assert.equal(valueOf(r), 'default entity', 'and a real pick undoes back to the default');
+
+  r.unmount();
+  closeAllWindows();
+});
+
+function SavingForm({ api }: { api: Partial<FormApi & { save: () => void }> }) {
+  const [name, setName] = useUndoableState('', { label: 'name' });
+  const { clear } = useUndo();
+  api.set = setName;
+  api.save = clear;
+  return <span data-testid="value">{name}</span>;
+}
+
+test('clear() after a save empties the history even though nothing on screen moved', async () => {
+  openWindow('win-save-clear');
+  const api: Partial<FormApi & { save: () => void }> = {};
+  const r = render(<UndoProvider windowId="win-save-clear"><SavingForm api={api} /></UndoProvider>);
+
+  type(api, 'saved value');
+  await flush();
+  act(() => { api.save!(); });
+  await flush();
+  await flush();
+
+  pressKey('z', { meta: true });
+  await flush();
+  assert.equal(valueOf(r), 'saved value', '"earlier" is on the server now');
+
+  r.unmount();
+  closeAllWindows();
+});
+
+/** A form that hydrates per record and names it — `baseline(id)`. */
+function KeyedForm({ api }: { api: Partial<FormApi & { arrive: (v: string, key: string) => void }> }) {
+  const [loaded, setLoaded] = useState<{ value: string; key: string } | null>(null);
+  const [name, setName] = useUndoableState('', { label: 'name' });
+  const { baseline } = useUndo();
+  api.set = setName;
+  api.arrive = (value, key) => setLoaded({ value, key });
+  useEffect(() => {
+    if (!loaded) return;
+    setName(loaded.value);
+    baseline(loaded.key);
+  }, [loaded, baseline, setName]);
+  return <span data-testid="value">{name}</span>;
+}
+
+test('baseline(key): switching records drops the history even when the new values equal the old', async () => {
+  openWindow('win-record-switch');
+  const api: Partial<FormApi & { arrive: (v: string, key: string) => void }> = {};
+  const r = render(<UndoProvider windowId="win-record-switch"><KeyedForm api={api} /></UndoProvider>);
+
+  act(() => { api.arrive!('first record', 'A'); });
+  await flush();
+  type(api, 'typed on A');
+  await flush();
+  // Record B arrives holding exactly what is on screen — nothing records.
+  act(() => { api.arrive!('typed on A', 'B'); });
+  await flush();
+  await flush();
+
+  pressKey('z', { meta: true });
+  await flush();
+  assert.equal(valueOf(r), 'typed on A', "record A's edit does not undo on record B");
+
+  r.unmount();
+  closeAllWindows();
+});
+
+test('baseline(key): a refetch of the same record with nothing landing keeps the history', async () => {
+  openWindow('win-record-refetch');
+  const api: Partial<FormApi & { arrive: (v: string, key: string) => void }> = {};
+  const r = render(<UndoProvider windowId="win-record-refetch"><KeyedForm api={api} /></UndoProvider>);
+
+  act(() => { api.arrive!('first record', 'A'); });
+  await flush();
+  type(api, 'typed on A');
+  await flush();
+  // Same record, same value as on screen (the form's guard would normally
+  // skip the set; here the set is a no-op for the slice either way).
+  act(() => { api.arrive!('typed on A', 'A'); });
+  await flush();
+  await flush();
+
+  pressKey('z', { meta: true });
+  await flush();
+  assert.equal(valueOf(r), 'first record', 'the edit is still there to undo');
+
+  r.unmount();
+  closeAllWindows();
+});
+
 // ── Recording ─────────────────────────────────────────────────────────────
 
 test('a re-render that changes nothing records no step', async () => {
