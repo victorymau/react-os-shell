@@ -463,13 +463,17 @@ export function useProductionTimeline(opts: UseProductionTimelineOpts): Producti
 function TimelineScrubber({
   startMs, endMs, reports, markers, valueMs, activeId,
   onChange, onPickReport, onOpenReport, onOpenMarker, onDragStart, renderReportPreview,
-  playback, edgeCaptions,
+  reportLabel, playback, edgeCaptions,
 }: {
   startMs: number;
   endMs: number;
   edgeCaptions?: TimelineTrackProps['edgeCaptions'];
   reports: TimelineReport[];
   markers: TimelineMarker[];
+  /** What a report is called on the bar — see `ProductionTimelineProps`. The
+   *  track puts the mark's label in the caption, the popover header, the dot's
+   *  accessible name and its `title`, so one function reaches all four. */
+  reportLabel: (report: TimelineReport) => string;
   valueMs: number;
   /** Passed straight to the track, which owns the travel between two reports. */
   playback?: TimelineTrackPlayback;
@@ -489,7 +493,7 @@ function TimelineScrubber({
     key: report.id,
     ms,
     kind: 'report',
-    label: report.progress_number,
+    label: reportLabel(report),
     // The report's own preview wins. `renderReportPreview` is the convenience
     // for a caller whose reports come straight off an API and cannot each carry
     // one, not an override of a preview somebody attached deliberately.
@@ -533,7 +537,7 @@ function TimelineScrubber({
           ariaLabel: 'Scrub the production timeline',
           valueText: (ms) => {
             const report = reportAt(ms);
-            return report ? `${report.progress_number} · ${fmtSliderDate(ms)}` : fmtSliderDate(ms);
+            return report ? `${reportLabel(report)} · ${fmtSliderDate(ms)}` : fmtSliderDate(ms);
           },
         }}
         // The window's ends are the start anchor's caption and, at the right,
@@ -593,6 +597,35 @@ export interface ProductionTimelineProps {
    * needs no change.
    */
   onScrubProgress?: (state: TimelineScrubProgress | null) => void;
+  /**
+   * What a report is CALLED, everywhere the bar writes its identity: the caption
+   * over the thumb, that caption's Open button, the popover header, each dot's
+   * accessible name and `title`, the slider's `aria-valuetext` and the
+   * "Showing …" line. Defaults to the report's own `progress_number`, which is
+   * what the admin window wants.
+   *
+   * It is here for a portal that must not show one. A production-progress report
+   * is an internal document with an identity of its own (`PP#10147`), and the
+   * customer portal was printing that number in six places on a card about the
+   * customer's order — "the customer portal must not show the standalone
+   * production-progress identity anywhere" (Henry, 2026-09-15, translated).
+   * `(report) => fmtSliderDate(new Date(report.date).getTime())` puts the date
+   * there instead; `() => 'Progress report'` names the kind and nothing else.
+   *
+   * It names a report, not a snapshot: the synthetic anchors the hook can build
+   * reach it too (`Start`, and `Estimated` for a caller driving the hook itself),
+   * so a function that reads only `progress_number` stays right for them.
+   */
+  reportLabel?: (report: TimelineReport) => string;
+  /**
+   * The whole text of the button that returns the thumb to the current report,
+   * which otherwise reads `Back to <reportLabel(that report)>`.
+   *
+   * The companion to `reportLabel` for the one place the identity is not a mark
+   * on the bar: a portal that has hidden the number needs a way to say where the
+   * button goes without naming it — "Back to latest".
+   */
+  resetLabel?: string;
   /** The card's heading, in sentence case. Defaults to "Production progress";
    *  the PO number is the card's subject, not part of its title. */
   heading?: string;
@@ -665,13 +698,14 @@ function useReportPlayback(stops: number[], goTo: (ms: number) => void) {
 export default function ProductionTimeline({
   snapshot, onPickReport, onOpenReport, onOpenMarker, renderReportPreview,
   onScrubProgress, heading = 'Production progress', edgeCaptions,
+  reportLabel = (report) => report.progress_number, resetLabel,
 }: ProductionTimelineProps) {
   const {
     reports, markers, poNumber,
     startMs, endMs, totalLeadDays,
     scrubMs, setScrubMs,
     displayed,
-    scrubbedAway, resetToCurrent, currentReportProgressNumber,
+    scrubbedAway, resetToCurrent, currentReportId, currentReportProgressNumber,
   } = snapshot;
 
   // Ascending, because playback walks forward through the build; the hook takes
@@ -694,6 +728,13 @@ export default function ProductionTimeline({
     .reduce((s, it) => s + (Number(it.stock_qty) || 0), 0);
   const overall = displayed ? calcReportOverall(displayed) : 0;
 
+  // The report the reset button goes back to, named the way every other report
+  // on the bar is named. `reportLabel` is a function of the REPORT and the
+  // snapshot hands out only the number, so look the report up — and keep the
+  // number for a current report that is not in the list this bar was given.
+  const currentReport = reports.find((report) => report.id === currentReportId);
+  const currentLabel = currentReport ? reportLabel(currentReport) : currentReportProgressNumber;
+
   return (
     <div className="shrink-0">
       <TimelineCard
@@ -710,10 +751,10 @@ export default function ProductionTimeline({
         ]}
         actions={
           <>
-            {scrubbedAway && currentReportProgressNumber && (
+            {scrubbedAway && (resetLabel ?? currentLabel) && (
               <button type="button" onClick={() => { play.stop(); resetToCurrent(); }}
                 className="text-xs text-blue-600 underline-offset-4 hover:underline font-medium">
-                Back to {currentReportProgressNumber}
+                {resetLabel ?? `Back to ${currentLabel}`}
               </button>
             )}
             {/* The glyph follows the state: a triangle while paused, two bars
@@ -734,7 +775,7 @@ export default function ProductionTimeline({
             <p className="rosh-tl-status text-gray-800">
               {displayed ? (
                 <>
-                  Showing <b className="font-medium">{displayed.progress_number}</b>
+                  Showing <b className="font-medium">{reportLabel(displayed)}</b>
                   <span className="text-gray-500">
                     {' · '}{fmtSliderDate(new Date(displayed.date).getTime())}
                     {' · '}{Math.round(overall)}% overall
@@ -758,7 +799,9 @@ export default function ProductionTimeline({
               {shipmentMarkers.length > 0 && (
                 <span className="border-gray-200 text-gray-500">
                   <i aria-hidden="true" className="rosh-tl-glyph is-diamond"
-                    style={{ background: 'var(--tl-shipment)' }} />
+                    style={{ background: 'var(--tl-shipment)', color: 'var(--tl-on-kind)' }}>
+                    <TimelineGlyph name="truck" />
+                  </i>
                   Shipment
                 </span>
               )}
@@ -787,6 +830,7 @@ export default function ProductionTimeline({
           onOpenReport={onOpenReport}
           onOpenMarker={onOpenMarker}
           renderReportPreview={renderReportPreview}
+          reportLabel={reportLabel}
           edgeCaptions={edgeCaptions}
           onDragStart={play.stop}
           // Arriving moves the slider and nothing else. `onPickReport` is what a

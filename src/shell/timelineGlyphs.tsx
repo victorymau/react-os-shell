@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
 /**
- * The four shapes that carry meaning on a timeline, plus the flag that opens
+ * The five shapes that carry meaning on a timeline, plus the flag that opens
  * one.
  *
  * Their own file because two places draw them and they must agree: the dots on
@@ -10,7 +10,7 @@ import type { ReactNode } from 'react';
  * which is what the chip row did before it was a chip row, with a rotated
  * square standing in for both a shipment and an inspection.
  */
-export type TimelineGlyphName = 'check' | 'doc' | 'flask' | 'flag';
+export type TimelineGlyphName = 'check' | 'doc' | 'flask' | 'flag' | 'truck';
 
 const PATHS: Record<TimelineGlyphName, ReactNode> = {
   // Completion.
@@ -29,6 +29,25 @@ const PATHS: Record<TimelineGlyphName, ReactNode> = {
   flask: (
     <path d="M4.6 1.8h2.8M5.4 1.8v3.1L3.3 9.3a.9.9 0 0 0 .8 1.3h3.8a.9.9 0 0 0 .8-1.3L6.6 4.9V1.8"
       fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+  ),
+  /**
+   * Goods moving — a shipment.
+   *
+   * A box, a cab and two wheels, because the diamond alone was not saying it:
+   * every kind on the bar is painted in the one accent now and the GLYPH is what
+   * tells them apart, so the shipment was a plain accent lozenge among accent
+   * discs. Wheels as filled dots rather than outlined circles — at the 9 px a
+   * diamond gives its glyph, a 0.9 px ring closes up into a blob.
+   */
+  truck: (
+    <>
+      <path d="M1.8 2.9h4.9v4.4H1.8z" fill="none" stroke="currentColor" strokeWidth="1.2"
+        strokeLinejoin="round" />
+      <path d="M6.7 4.4h1.6l1.5 1.7v1.2H6.7z" fill="none" stroke="currentColor" strokeWidth="1.2"
+        strokeLinejoin="round" />
+      <circle cx="3.5" cy="8.7" r="1" fill="currentColor" />
+      <circle cx="8.4" cy="8.7" r="1" fill="currentColor" />
+    </>
   ),
   // The opening milestone.
   flag: (

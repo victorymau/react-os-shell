@@ -611,6 +611,9 @@ html.rosh-reduce-transparency *::after {
 .rosh-tl-glyph.is-diamond { border-radius: 2px; transform: rotate(45deg) scale(0.82); }
 .rosh-tl-glyph.is-disc { border-radius: 50%; }
 .rosh-tl-glyph svg { width: 7px; height: 7px; }
+/* Upright and smaller inside a chip's diamond, for the reason the rail's
+   diamond gives — at legend size there is even less room in the corners. */
+.rosh-tl-glyph.is-diamond svg { width: 6px; height: 6px; transform: rotate(-45deg); }
 
 .rosh-tl-body { display: grid; grid-template-columns: minmax(0, 1fr) 156px; gap: 20px; }
 .rosh-tl-body.is-solo { grid-template-columns: minmax(0, 1fr); }
@@ -706,7 +709,10 @@ html.rosh-reduce-transparency *::after {
 }
 .rosh-tl-node.is-current svg { width: 9px; height: 9px; }
 .rosh-tl-node.is-diamond { border-radius: 3px; width: 14px; height: 14px; --rosh-tl-rot: 45deg; }
-.rosh-tl-node.is-diamond svg { transform: rotate(-45deg); }
+/* A glyph inside a diamond is turned back upright, and drawn a pixel smaller
+   than one in a disc: the square a 14px diamond inscribes is under 10px across,
+   so the 10px a disc gives its glyph would touch the rotated corners. */
+.rosh-tl-node.is-diamond svg { width: 9px; height: 9px; transform: rotate(-45deg); }
 .rosh-tl-node.is-ghost {
   width: 10px; height: 10px; background: var(--surface);
   border: 1.5px dashed var(--line-strong); box-shadow: none; cursor: default;
@@ -833,6 +839,15 @@ html.rosh-reduce-transparency *::after {
 .rosh-tl-popover li { display: flex; gap: 8px; justify-content: space-between; font-size: 11px; }
 
 .rosh-tl-hit { position: absolute; left: -10px; right: -10px; cursor: pointer; touch-action: none; }
+/* The marks stand ABOVE that strip, and this one declaration is the whole of it.
+   `ThumbLayer` draws the strip after the list of dots and neither had a z-index,
+   so the strip won the paint order and took every pointer event aimed at a mark:
+   no hover, no focus, no click, on every track with a thumb — which is every
+   production scrubber. 4 is above the strip (auto) and below the thumb (5) and
+   the bubble (6), so the disc the reader has hold of still stays on top. The
+   strip keeps every pixel no dot is standing on, which is what leaves the drag
+   where it was: see the note over the strip in `TimelineTrack.tsx`. */
+.rosh-tl-nodes .rosh-tl-node { z-index: 4; }
 /* The magnet. A drag reports a stop change the moment the pointer crosses the
    halfway line, and these 120ms carry the disc, its chip and the fill there
    together — which is what makes six reports read as six settlings rather than

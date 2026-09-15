@@ -77,6 +77,37 @@ test('every class the track names has a rule in ui.css', () => {
   assert.deepEqual(missing, [], `classes with no rule in ui.css: ${missing.join(', ')}`);
 });
 
+test('the marks stand above the scrubber hit strip, and under the thumb and the bubble', () => {
+  // The scrubber draws a 24px `.rosh-tl-hit` strip over the rail so a 6px line
+  // can be pressed by a hand. It is rendered AFTER the list of dots, and while
+  // neither declared a z-index the strip won the paint order and took every
+  // pointer event aimed at a mark: no hover popover, no click, no `onOpen`, on
+  // every track with a thumb. The stacking order IS the fix, so it is asserted
+  // where a regression would be written rather than only in the browser lane —
+  // jsdom does no hit testing, which is why the specs below could never have
+  // caught it.
+  const root = process.env.REPO_ROOT ?? resolve(import.meta.dirname, '..');
+  const sheet = readFileSync(join(root, 'src/ui.css'), 'utf-8');
+  /** The z-index one rule declares, or null where it declares none. */
+  const layerOf = (selector: string): number | null => {
+    const at = sheet.indexOf(`${selector} {`);
+    assert.notEqual(at, -1, `no \`${selector}\` rule in ui.css`);
+    const declared = /z-index:\s*(-?\d+)/.exec(sheet.slice(at, sheet.indexOf('}', at)));
+    return declared ? Number(declared[1]) : null;
+  };
+
+  // `auto` is 0 for this comparison: both are painted in the layer's own
+  // stacking context, where a declared 0 and an auto tie and DOM order breaks it.
+  const strip = layerOf('.rosh-tl-hit') ?? 0;
+  const mark = layerOf('.rosh-tl-nodes .rosh-tl-node');
+  const thumb = layerOf('.rosh-tl-thumb');
+  const bubble = layerOf('.rosh-tl-bubble, .rosh-tl-popover');
+  assert.ok(mark !== null, 'the marks declare no z-index, so the hit strip is over them again');
+  assert.ok(mark > strip, `a mark at ${mark} is under the hit strip at ${strip}`);
+  assert.ok(thumb !== null && mark < thumb, `a mark at ${mark} is over the thumb at ${thumb}`);
+  assert.ok(bubble !== null && thumb < bubble, `the bubble at ${bubble} is under the thumb`);
+});
+
 // ── The accessible shape ────────────────────────────────────────────────────
 
 test('the card is two ordered lists: what happened, and what has not', () => {

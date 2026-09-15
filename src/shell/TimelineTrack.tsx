@@ -33,7 +33,7 @@ export type { TimelineScrubProgress } from './timelinePlayback';
 export type TimelineTrackKind =
   | 'default'    // accent disc, a flag on the one that opened the programme
   | 'dfm'        // accent disc with a document — an engineering iteration
-  | 'shipment'   // accent diamond — goods moving
+  | 'shipment'   // accent diamond with a truck — goods moving
   | 'testing'    // accent disc with a flask — a test, a sign-off, a mould check
   | 'completion' // success disc with a check — the thing finished
   | 'inspection' // accent disc with a flask — a QC report filed against the order
@@ -108,6 +108,10 @@ export interface TimelineMarker {
   kind: TimelineMarkerKind;
   /** Short label shown in the tooltip (e.g. "GR#10001"). */
   label: string;
+  /** Which glyph sits inside the dot, overriding the one its `kind` draws. For a
+   *  consumer whose two shipments are not the same event — a container leaving
+   *  the factory and a courier bag of samples. */
+  glyph?: TimelineGlyphName;
   /** Optional second line for the tooltip. */
   detail?: string;
   /** Rich content for the hover/focus popover — see `TimelineTrackItem`. The
@@ -442,7 +446,11 @@ const KIND_STYLES: Record<TimelineTrackKind, KindStyle> = {
   // programme, not on every milestone whose kind nobody set.
   default: {},
   dfm: { glyph: 'doc', token: 'var(--tl-dfm)' },
-  shipment: { diamond: true, token: 'var(--tl-shipment)' },
+  // A truck inside the diamond. The shape alone was not enough once every kind
+  // was painted in the one accent: "the shipment does not show" (Henry,
+  // 2026-09-15, translated) — an accent lozenge among accent discs, with no
+  // glyph and, on a scrubber, no caption unless the pointer was on it.
+  shipment: { diamond: true, glyph: 'truck', token: 'var(--tl-shipment)' },
   testing: { glyph: 'flask', token: 'var(--tl-testing)' },
   completion: { glyph: 'check', token: 'var(--tl-completion)' },
   // A disc with a flask, not a diamond: a diamond is goods moving, and a bar
@@ -464,6 +472,7 @@ const GLYPH_KIND: Partial<Record<TimelineGlyphName, TimelineTrackKind>> = {
   doc: 'dfm',
   flask: 'testing',
   check: 'completion',
+  truck: 'shipment',
 };
 
 /** The kind a mark is drawn in, after a named glyph has had its say. */
@@ -1491,6 +1500,29 @@ function ThumbLayer({
 
   return (
     <>
+      {/* The rail's hit target: 24 px of it, because a 6 px rail is not a thing a
+          hand can press. It is wider than the rail and it is drawn AFTER the
+          marks, and for as long as neither had a z-index that made it a lid —
+          every mark on every track with a thumb sat under it, so a hover opened
+          no popover, a focus ring was the only thing keyboard focus produced, and
+          a click on a report scrubbed the rail instead of selecting the report.
+          The bubble, the `onClick`, the `onOpen` and the hovered caption were all
+          wired and all unreachable.
+
+          The fix is one line of CSS and it belongs on the MARKS, not here:
+          `.rosh-tl-nodes .rosh-tl-node { z-index: 4 }` lifts them over this strip
+          (auto) and leaves them under the thumb (5) and the bubble (6). Which
+          keeps all four behaviours the scrubber needs at once — a press on the
+          bare rail starts a drag, because the strip still owns every pixel no dot
+          is standing on; a press on a dot activates it and starts no drag,
+          because the event never reaches this element; hover and focus reach
+          every kind of mark; and the tab order is untouched, since it is the
+          DOM's, and nothing moved in the DOM.
+
+          Taking the pointer off the strip instead — `pointer-events: none`, with
+          the handlers moved to the rail — was the other candidate, and it was
+          turned down for giving the 6 px rail back as the only place a drag can
+          begin, which is the thing this strip exists to avoid. */}
       <div className="rosh-tl-hit" aria-hidden="true" data-timeline-part="hit"
         style={{ top: `${geo.rail - 9}px`, height: `${RAIL_PX + 18}px` }}
         onPointerDown={(event) => { beginDrag(event); moveTo(msFromEvent(event.clientX)); }}
@@ -1656,7 +1688,7 @@ export default function TimelineTrack({
         dateText,
         detail: marker.detail,
         preview: marker.preview,
-        glyph: KIND_STYLES[marker.kind].glyph,
+        glyph: marker.glyph ?? KIND_STYLES[marker.kind].glyph,
         role: 'key' as NodeRole,
         widthPx: measured[key] || estimateLabelWidth(marker.label, dateText),
         // A marker is context, not part of the programme: it never folds into

@@ -12,6 +12,8 @@ import assert from 'node:assert/strict';
 // First — installs the DOM globals before react-dom evaluates.
 import { act, pressKey, render } from './dom';
 import { fakeFrames } from './frames';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { TimelineGlyph, type TimelineGlyphName } from '../src/shell/timelineGlyphs';
 import ProductionTimeline, {
   useProductionTimeline,
   calcOverall,
@@ -174,6 +176,70 @@ test('the bar names the PO, states its window and lead time, and legends the kin
   assert.match(text, /Shipment/);
   assert.match(text, /Inspection/);
   assert.equal(container.querySelectorAll('button[aria-label^="PP-"]').length, 2, 'one dot per report');
+  unmount();
+});
+
+// ── The shipment says it is one ─────────────────────────────────────────────
+
+/** The `d` of every path in a piece of markup, which is what identifies a glyph
+ *  without pinning the attribute order two renderers happen to write. */
+const paths = (html: string) => [...html.matchAll(/ d="([^"]+)"/g)].map((m) => m[1]);
+
+const glyphPaths = (name: TimelineGlyphName) =>
+  paths(renderToStaticMarkup(<TimelineGlyph name={name} />));
+
+test('a shipment is a diamond with a truck in it, on the rail and in the legend', () => {
+  // "The shipment does not show" (Henry, 2026-09-15, translated). It had no
+  // glyph: once every kind was painted in the one accent, the note above
+  // `KIND_STYLES` — the glyph is what tells the kinds apart — left the shipment
+  // as the kind that had nothing to tell them with, and on a scrubber it is not
+  // captioned either unless the pointer is on it.
+  const markers: TimelineMarker[] = [
+    { id: 'gi', date: '2026-05-12', kind: 'shipment', label: 'GI-1' },
+    { id: 'qc', date: '2026-05-13', kind: 'inspection', label: 'QC-1' },
+  ];
+  function Bar() {
+    const snap = useProductionTimeline({ ...BASE, poStatus: 'completed', markers });
+    return <ProductionTimeline snapshot={snap} onPickReport={() => {}} />;
+  }
+  const { container, unmount } = render(<Bar />);
+
+  const truck = glyphPaths('truck');
+  assert.ok(truck.length >= 2, 'the truck glyph draws nothing');
+
+  const diamond = container.querySelector('.rosh-tl-node.is-diamond');
+  assert.ok(diamond, 'no shipment dot on the rail');
+  assert.deepEqual(paths(diamond.innerHTML), truck, 'the shipment dot is a bare diamond again');
+
+  // And it is not the inspection's flask: two kinds, two glyphs, one colour.
+  const disc = container.querySelector('[aria-label^="QC-1"]');
+  assert.ok(disc);
+  assert.deepEqual(paths(disc.innerHTML), glyphPaths('flask'));
+  assert.notDeepEqual(paths(diamond.innerHTML), paths(disc.innerHTML));
+
+  // The legend draws from the same file, so a chip cannot describe a shape the
+  // rail stopped drawing.
+  const chip = [...container.querySelectorAll('.rosh-tl-legend > span')]
+    .find((span) => (span.textContent ?? '').includes('Shipment'));
+  assert.ok(chip, 'no shipment chip in the legend');
+  assert.deepEqual(paths(chip.innerHTML), truck, 'the legend chip is still a bare diamond');
+  unmount();
+});
+
+test('a marker may name its own glyph, for two shipments that are not the same event', () => {
+  const markers: TimelineMarker[] = [
+    { id: 'gi', date: '2026-05-12', kind: 'shipment', label: 'GI-1' },
+    { id: 'sample', date: '2026-05-13', kind: 'shipment', label: 'Samples', glyph: 'doc' },
+  ];
+  function Bar() {
+    const snap = useProductionTimeline({ ...BASE, poStatus: 'completed', markers });
+    return <ProductionTimeline snapshot={snap} onPickReport={() => {}} />;
+  }
+  const { container, unmount } = render(<Bar />);
+  assert.deepEqual(paths(container.querySelector('[aria-label^="GI-1"]')!.innerHTML), glyphPaths('truck'));
+  assert.deepEqual(paths(container.querySelector('[aria-label^="Samples"]')!.innerHTML), glyphPaths('doc'));
+  // Both are still shipments — the override is the glyph, not the shape.
+  assert.equal(container.querySelectorAll('.rosh-tl-node.is-diamond').length, 2);
   unmount();
 });
 
@@ -404,6 +470,80 @@ test('renderReportPreview fills the reports that carry none, and never overrides
   // not — as a SET, because how many times the card renders is not a promise.
   assert.deepEqual([...new Set(asked)], ['PP-1']);
   view.unmount();
+});
+
+// ── Whose identity the bar prints ───────────────────────────────────────────
+
+test('reportLabel renames the report everywhere the bar states its identity', () => {
+  // "The customer portal must not show the standalone production-progress
+  // identity anywhere" (Henry, 2026-09-15, translated). `PP#10147` is an
+  // internal document number, and the card was printing it in six places on a
+  // window about the customer's own order — the caption over the thumb, the
+  // popover header, the dot's accessible name and title, the slider's value
+  // text, and the status line. All six read the same two strings, so one
+  // function reaches all six.
+  const view = bar({ reports: REPORTS, reportLabel: (report) => `Update ${report.date}` });
+  const { container } = view;
+  const text = container.textContent ?? '';
+
+  assert.match(text, /Showing Update 2026-05-20/, 'the status line');
+  assert.ok(container.querySelector('[aria-label^="Update 2026-05-20"]'), "the dot's accessible name");
+  assert.match(
+    container.querySelector('[role="slider"]')!.getAttribute('aria-valuetext') ?? '',
+    /^Update 2026-05-20 · /,
+    'what a screen reader reads for the slider value',
+  );
+  assert.match(
+    container.querySelector('[data-timeline-part="label"]')?.textContent ?? '',
+    /Update 2026-05-20/,
+    'the one caption a scrubber draws',
+  );
+  // The whole point: the number is nowhere on the card.
+  assert.doesNotMatch(text, /PP-/, `the report number survived somewhere: ${text}`);
+  view.unmount();
+
+  // And the admin window, which passes none of this, is untouched.
+  const plain = bar({ reports: REPORTS });
+  assert.match(plain.container.textContent ?? '', /Showing PP-2/);
+  assert.ok(plain.container.querySelector('[aria-label^="PP-2"]'), 'the default is progress_number');
+  plain.unmount();
+});
+
+/** The card with a current report, so the reset affordance has somewhere to go.
+ *  Clicking another dot is what scrubs away from it — the same gesture a reader
+ *  makes. */
+function withCurrent(rest: Partial<React.ComponentProps<typeof ProductionTimeline>> = {}) {
+  function Bar() {
+    const snap = useProductionTimeline({
+      ...BASE, poStatus: 'completed', currentReportId: 'r2', currentReportDate: '2026-05-20',
+    });
+    return <ProductionTimeline snapshot={snap} onPickReport={() => {}} {...rest} />;
+  }
+  const view = render(<Bar />);
+  // The earliest report, by position rather than by name: the name is what half
+  // of these specs are changing.
+  act(() => { view.container.querySelectorAll<HTMLElement>('[data-timeline-node="item"]')[0].click(); });
+  const reset = () => view.container
+    .querySelector('.rosh-tl-head-actions button:not(.rosh-tl-play)');
+  return { ...view, reset };
+}
+
+test('the reset button names the current report the same way, and resetLabel replaces it', () => {
+  const plain = withCurrent();
+  assert.equal(plain.reset()?.textContent, 'Back to PP-2', 'the default admin wording');
+  plain.unmount();
+
+  const renamed = withCurrent({ reportLabel: (report) => `Update ${report.date}` });
+  assert.equal(
+    renamed.reset()?.textContent, 'Back to Update 2026-05-20',
+    'the button names the report the way the rest of the bar does',
+  );
+  renamed.unmount();
+
+  // A portal that has hidden the identity says where the button goes instead.
+  const named = withCurrent({ reportLabel: () => 'Progress report', resetLabel: 'Back to latest' });
+  assert.equal(named.reset()?.textContent, 'Back to latest');
+  named.unmount();
 });
 
 test('calcOverall weights the four in-flight stages, capped per stage', () => {
