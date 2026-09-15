@@ -488,6 +488,63 @@ export function clusterMarks<M extends ClusterMark>(
 }
 
 /**
+ * The widest a mark is drawn, and therefore the closest two of them may be
+ * pitched before one is printed over the other: `.rosh-tl-node.is-key` is 16 px
+ * across, and every other role (14 px current, 14 px diamond, 10 px dot) is
+ * narrower. Centres nearer than this overlap.
+ */
+export const MARK_OVERLAP_PX = 16;
+
+/** The `kind` a fold of two or more kinds carries. Deliberately not a
+ *  `TimelineTrackKind`: there is no glyph that is true of a shipment and an
+ *  inspection at once, so a mixed fold draws a neutral `×N` pill instead. */
+export const MIXED_KIND = 'mixed';
+
+/**
+ * Fold runs of marks whose DOTS would be drawn on top of each other.
+ *
+ * The other half of `clusterMarks`, and a different collision: that one asks
+ * whether two LABELS clear each other and folds only iterations of one kind,
+ * because `DFM ×4` is a true sentence about four drawings and a lie about three
+ * drawings and a shipment. This one asks whether the two 14–16 px DOTS clear
+ * each other, and at that range the kinds no longer matter — "marks that are too
+ * close overlap each other" (Henry, 2026-09-15, translated, looking at two
+ * shipments three days apart on a customer's order). A mark hidden under another
+ * mark cannot be hovered, read or counted, whatever it is.
+ *
+ * So a run of two or more marks closer than `minGapPx` folds, of any kinds, and
+ * the fold reports whether its members share one kind — the caller draws that
+ * kind's shape and glyph with a `×N` beside it, and a neutral `×N` pill for a
+ * mixed run.
+ *
+ * Decided on the coordinates handed in, which the track takes BEFORE any
+ * magnification: a fold that dissolved because the axis opened around it would
+ * take with it the mark the pointer used to open it, and re-fold the moment it
+ * went. The track keeps the fold's identity and chooses to draw it open, which
+ * is the same picture with no feedback in it.
+ */
+export function clusterOverlaps<M extends ClusterMark>(
+  marks: M[],
+  minGapPx: number = MARK_OVERLAP_PX,
+): ClusterGroup<M>[] {
+  const out: ClusterGroup<M>[] = [];
+  let i = 0;
+  while (i < marks.length) {
+    let end = i + 1;
+    while (end < marks.length && marks[end].x - marks[end - 1].x < minGapPx) end += 1;
+    if (end - i === 1) {
+      out.push({ type: 'item', mark: marks[i] });
+    } else {
+      const members = marks.slice(i, end);
+      const kinds = new Set(members.map((mark) => mark.kind));
+      out.push({ type: 'cluster', kind: kinds.size === 1 ? members[0].kind : MIXED_KIND, members });
+    }
+    i = end;
+  }
+  return out;
+}
+
+/**
  * The name a `×N` pill carries.
  *
  * The trailing revision number comes off the first member's label, because the

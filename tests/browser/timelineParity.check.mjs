@@ -108,11 +108,24 @@ export default async function check(page, { pageErrors, open }) {
   const pill = page.locator('[data-testid="mould"] [data-timeline-part="cluster"]');
   assert.equal(await pill.count(), 1);
   assert.match(await pill.innerText(), /DFM ×4/);
-  // And they are still four dots on the rail at their own dates.
+  // And they are still on the rail at their own dates — the two that have a date
+  // to themselves as their own dots, and the three that share 7 November as one
+  // fold, because three dots on one coordinate is one dot and two nobody can
+  // see. (This asserted seven separate dots until 2026-09-15, which is exactly
+  // the overlap Henry reported.)
   assert.equal(
-    await page.locator('[data-testid="mould"] [data-timeline-node="item"]').count(), 7,
+    await page.locator('[data-testid="mould"] [data-timeline-node="item"]').count(), 4,
     'the pill stands for the revisions without removing them',
   );
+  const sameDay = page.locator('[data-testid="mould"] [data-timeline-node="fold"]');
+  assert.equal(await sameDay.count(), 1, 'the three milestones on 7 November are one fold');
+  assert.equal(await sameDay.getAttribute('data-timeline-count'), '3');
+  for (const label of ['DFM v3', 'DFM v4', 'DFM Confirmed']) {
+    assert.ok(
+      (await sameDay.getAttribute('aria-label')).includes(label),
+      `the fold does not name ${label}`,
+    );
+  }
 
   // A phase bracket is a box with a border and no text, so "it rendered" is a
   // claim about geometry — and it shipped once as a `div` with no rule at all,
@@ -311,10 +324,15 @@ export default async function check(page, { pageErrors, open }) {
   await page.waitForTimeout(320);
 
   // ── Preview: the popover survives the trip from the dot into it ───────────
-  const dfmok = page.locator('[data-testid="mould"] [aria-label^="DFM Confirmed"]');
-  await dfmok.hover();
+  // Through the FOLD, because DFM Confirmed shares 7 November with two drawings:
+  // three dots on one coordinate are one dot, and no magnification separates a
+  // coordinate from itself — so the fold's popover is where those three live,
+  // each with the card it would have shown on its own.
+  const sameDayFold = page.locator('[data-testid="mould"] [data-timeline-node="fold"]');
+  await sameDayFold.hover();
   const bubble = page.locator('[data-timeline-part="tooltip"]');
   await bubble.waitFor();
+  assert.match(await bubble.innerText(), /DFM Confirmed/);
   assert.match(await bubble.innerText(), /3D model approved/);
   const bubbleBox = await bubble.boundingBox();
   await page.mouse.move(bubbleBox.x + bubbleBox.width / 2, bubbleBox.y + bubbleBox.height / 2, { steps: 8 });

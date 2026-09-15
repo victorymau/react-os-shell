@@ -301,15 +301,23 @@ const CLUSTER: Milestone[] = [
 ];
 
 /**
- * Three unlike kinds on one day: nothing to fold (a `×N` over three different
- * kinds would be a lie), two lanes, so the third label has nowhere to go and
+ * Four unlike kinds over a week, each on its own date and each far enough from
+ * its neighbour that no dot is folded away — but with two lanes and a start
+ * caption to fit around, one of the four labels still finds nowhere to go and
  * collapses to a reveal.
+ *
+ * It used to be three of them on ONE day, which is a different case now: marks
+ * that close are drawn on top of each other, so the rail folds them and the
+ * question of where their labels go never arises. The lane overflow is still
+ * real — two lanes hold two labels — so the fixture keeps the case and spreads
+ * the dates.
  */
-const UNLIKE_SAME_DAY: Milestone[] = [
+const CROWDED_LANES: Milestone[] = [
   { key: 'start', label: 'Kickoff', date: '2025-01-01' },
   { key: 'safety', label: 'Safety Tests', date: '2025-06-10', kind: 'testing', onClick: () => {} },
-  { key: 'ship', label: 'Sample Shipped', date: '2025-06-10', kind: 'shipment', onClick: () => {} },
-  { key: 'ready', label: 'Production Ready', date: '2025-06-10', kind: 'completion', onClick: () => {} },
+  { key: 'ship', label: 'Sample Shipped', date: '2025-06-12', kind: 'shipment', onClick: () => {} },
+  { key: 'ready', label: 'Production Ready', date: '2025-06-14', kind: 'completion', onClick: () => {} },
+  { key: 'pack', label: 'Packing Signed', date: '2025-06-16', kind: 'testing', onClick: () => {} },
 ];
 
 /** The names actually drawn in a lane. The lane labels are `aria-hidden` (the
@@ -336,7 +344,7 @@ const unhover = (el: Element) => act(() => {
   el.dispatchEvent(new window.MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }));
 });
 
-test('a run of same-kind revisions folds into one pill, and every member keeps its dot', () => {
+test('a run of same-kind revisions folds into one pill, and into one dot on the rail', () => {
   const view = render(<MilestoneTimeline title="Mould Development" milestones={CLUSTER} />);
 
   const labels = drawnLabels(view.container);
@@ -346,11 +354,23 @@ test('a run of same-kind revisions folds into one pill, and every member keeps i
   assert.match(pill.textContent ?? '', /DFM ×5/);
   assert.ok(labels.includes('Safety Tests'), 'the milestone that is not a revision keeps its label');
 
-  // The pill never lies about position: every member is still a dot on the rail
-  // at its own coordinate, and still announces itself.
+  // The five are on ONE day, which is one coordinate: five dots there were five
+  // dots printed on top of each other — "marks that are too close overlap each
+  // other" (Henry, 2026-09-15, translated). They are one fold now, which says
+  // how many it stands for and names every one of them, because they are not on
+  // the rail to be hovered. (This spec used to assert the five separate dots.)
   for (const n of [1, 2, 3, 4, 5]) {
-    assert.ok(dot(view.container, `DFM v${n}`), `DFM v${n} keeps its dot`);
+    assert.equal(
+      view.container.querySelector(`[aria-label^="DFM v${n} ·"]`), null,
+      `DFM v${n} is still drawn under its neighbours`,
+    );
   }
+  const fold = view.container.querySelector('[data-timeline-node="fold"]');
+  assert.ok(fold, 'the five same-day revisions are one fold');
+  assert.equal(fold.getAttribute('data-timeline-count'), '5');
+  const name = fold.getAttribute('aria-label') ?? '';
+  for (const n of [1, 2, 3, 4, 5]) assert.match(name, new RegExp(`DFM v${n} · 10/06/2025`));
+  assert.match(view.container.textContent ?? '', /×5/, 'and the count is drawn beside it');
   view.unmount();
 });
 
@@ -384,7 +404,7 @@ test('the pill opens a popover listing every member, and Escape closes it', () =
 });
 
 test('a label that fits no lane reveals on hover and hides again on leave', () => {
-  const view = render(<MilestoneTimeline title="Mould Development" milestones={UNLIKE_SAME_DAY} />);
+  const view = render(<MilestoneTimeline title="Mould Development" milestones={CROWDED_LANES} />);
   const drawn = drawnLabels(view.container);
   const collapsedLabel = ['Safety Tests', 'Sample Shipped', 'Production Ready']
     .find((label) => !drawn.includes(label));
@@ -402,7 +422,7 @@ test('a label that fits no lane reveals on hover and hides again on leave', () =
 });
 
 test('keyboard focus reveals it too — a dot is a button whether or not it is clickable', () => {
-  const view = render(<MilestoneTimeline title="Mould Development" milestones={UNLIKE_SAME_DAY} />);
+  const view = render(<MilestoneTimeline title="Mould Development" milestones={CROWDED_LANES} />);
   const drawn = drawnLabels(view.container);
   const collapsedLabel = ['Safety Tests', 'Sample Shipped', 'Production Ready']
     .find((label) => !drawn.includes(label))!;
@@ -419,13 +439,26 @@ test('keyboard focus reveals it too — a dot is a button whether or not it is c
 test('the dot still announces and titles itself whether or not its label is drawn', () => {
   // The reveal and the pill are visual affordances. Nothing about either may be
   // the only route to the fact: the dot carries the label and the date itself.
-  const view = render(<MilestoneTimeline title="Mould Development" milestones={CLUSTER} />);
-  const folded = dot(view.container, 'DFM v5');
+  const view = render(<MilestoneTimeline title="Mould Development" milestones={CROWDED_LANES} />);
+  const collapsed = dot(view.container, 'Safety Tests');
   const shown = fmtSliderDate(day('2025-06-10'));
   assert.equal(shown, '10/06/2025', 'the default date format, with nothing stored');
-  assert.equal(folded.getAttribute('aria-label'), `DFM v5 · ${shown}`);
-  assert.equal(folded.getAttribute('title'), `DFM v5 • ${shown}`);
+  assert.equal(collapsed.getAttribute('aria-label'), `Safety Tests · ${shown}`);
+  assert.equal(collapsed.getAttribute('title'), `Safety Tests • ${shown}`);
   view.unmount();
+
+  // And a fold, which is the one mark standing for things that are NOT drawn,
+  // carries every one of them — a list that exists only in a popover would be
+  // reachable by pointer alone.
+  const folded = render(<MilestoneTimeline title="Mould Development" milestones={CLUSTER} />);
+  const fold = folded.container.querySelector('[data-timeline-node="fold"]')!;
+  assert.equal(fold.getAttribute('aria-label'), `5 events · ${[1, 2, 3, 4, 5]
+    .map((n) => `DFM v${n} · ${shown}`).join(', ')}`);
+  assert.equal(
+    fold.getAttribute('title'), [1, 2, 3, 4, 5].map((n) => `DFM v${n} • ${shown}`).join('\n'),
+    'and its tooltip says the same thing to a pointer',
+  );
+  folded.unmount();
 });
 
 test('a milestone opens its document from the popover, and onClick is only the fallback', () => {
@@ -721,8 +754,18 @@ test('001F/1813 folds the revisions, labels the rest, and marks the tail it comp
   }
   assert.equal((html.match(/data-timeline-part="cluster"/g) ?? []).length, 1, 'one pill');
   assert.match(html, /DFM ×4/, 'and it says how many revisions it stands for');
-  // Every revision still has its own dot, at its own date.
-  for (const n of [1, 2, 3, 4]) assert.match(html, new RegExp(`aria-label="DFM v${n} · `));
+  // The two revisions on their own dates keep their own dots; the three that
+  // share 7 November are one fold, because three dots on one coordinate are two
+  // dots nobody can see. The fold's kinds differ — two drawings and a sign-off —
+  // so it is the neutral `×3` pill rather than a document disc pretending to
+  // speak for a test as well.
+  for (const n of [1, 2]) assert.match(html, new RegExp(`aria-label="DFM v${n} · `));
+  const folds = html.match(/data-timeline-node="fold"[^>]*/g) ?? [];
+  assert.equal(folds.length, 1, `expected one fold, in: ${html}`);
+  assert.match(folds[0], /data-timeline-count="3"/);
+  for (const label of ['DFM v3', 'DFM v4', 'DFM Confirmed']) {
+    assert.match(html, new RegExp(`${label} · 07/11/2025`), `${label} is named by the fold`);
+  }
 
   // One break glyph, on the 282-day tail. The four stretches that were only
   // WIDENED to the floor are not marked: they read as short already, and a glyph

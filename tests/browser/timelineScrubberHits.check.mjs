@@ -125,6 +125,63 @@ export default async (page, { pageErrors }) => {
   await mark('GI#8802').evaluate((el) => el.blur());
   await moveAway(page);
 
+  // ── Two shipments a day apart are one mark until the pointer asks ─────────
+  // Henry, 2026-09-15 (translated), on the customer's order SO#35456: "marks
+  // that are too close overlap each other". Ten pixels apart on this window and
+  // sixteen across, GI#8810 and GI#8811 were one dot over another — the second
+  // unhoverable, unreadable and uncounted. They fold into one mark that says how
+  // many, and the magnification the pointer asks for is what hands each of them
+  // back its own dot and its own popover.
+  const fold = page.locator(`${TRACK} [data-timeline-node="fold"]`);
+  assert.equal(await fold.count(), 1, 'the two shipments are still drawn on top of each other');
+  assert.equal(await fold.getAttribute('data-timeline-count'), '2');
+  const foldName = await fold.getAttribute('aria-label');
+  for (const label of ['GI#8810', 'GI#8811']) {
+    assert.ok(foldName.includes(label), `the fold does not name ${label}: ${foldName}`);
+    assert.equal(
+      await page.locator(`${TRACK} [aria-label^="${label}"]`).count(), 0,
+      `${label} is drawn under its neighbour again`,
+    );
+  }
+  assert.equal(await page.locator(`${TRACK} .rosh-tl-count`).innerText(), '×2', 'the count is drawn');
+
+  // The keyboard's route to what a fold stands for: focus lists the members in
+  // the popover. It deliberately does NOT open the run — the button would
+  // unmount under the focus it was just given.
+  await fold.evaluate((el) => el.focus());
+  await bubble.waitFor({ timeout: 3000 });
+  const listed = await bubble.innerText();
+  for (const label of ['GI#8810', 'GI#8811']) {
+    assert.ok(listed.includes(label), `the fold's popover does not list ${label}: ${listed}`);
+  }
+  assert.equal(await fold.count(), 1, 'focus opened the run');
+  await page.keyboard.press('Escape');
+  await fold.evaluate((el) => el.blur());
+  await moveAway(page);
+
+  // The pointer arriving is what opens it: the axis magnifies and the run is
+  // drawn as itself. Measured after the 240 ms the axis takes to open, because a
+  // box read mid-tween is a box that has moved by the time it is used.
+  await pointTo(page, fold);
+  const members = ['GI#8810', 'GI#8811'].map((label) => page.locator(`${TRACK} [aria-label^="${label}"]`));
+  await members[0].waitFor({ timeout: 3000 });
+  await members[1].waitFor({ timeout: 3000 });
+  await page.waitForTimeout(420);
+  const spread = [await centreOf(members[0]), await centreOf(members[1])];
+  assert.ok(
+    spread[1].x - spread[0].x >= 16,
+    `the opened run is ${spread[1].x - spread[0].x}px wide — still overlapping`,
+  );
+  // And each is hoverable on its own, which is the whole point of opening it.
+  await page.mouse.move(spread[1].x, spread[1].y);
+  await bubble.waitFor({ timeout: 3000 });
+  assert.match(await bubble.innerText(), /1 x 40HQ to Fremantle/, "the second shipment's own popover");
+  assert.deepEqual(await logLines(page), [], 'hovering a fold activated something');
+
+  await moveAway(page);
+  await page.waitForTimeout(700);
+  assert.equal(await fold.count(), 1, 'the run never folded again once the pointer left');
+
   // ── Clicking a marker reaches the marker, and moves no thumb ───────────────
   // A marker is context rather than progress: the snapshot under the bar is not
   // its to change, so the press must not be read as a scrub either.

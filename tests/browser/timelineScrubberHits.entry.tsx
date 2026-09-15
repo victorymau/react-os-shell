@@ -66,6 +66,20 @@ function Page() {
       preview: <span>1 x 40HQ to Port Botany</span>,
       onClick: (marker) => note(`click:${marker.id}`),
     },
+    // Two shipments a day apart — ten pixels on this window, where a mark is
+    // sixteen. Drawn as themselves, one is printed over the other.
+    {
+      id: 'gi-2a', date: '2026-05-28', kind: 'shipment', label: 'GI#8810',
+      detail: '2 x 20GP',
+      preview: <span>2 x 20GP to Fremantle</span>,
+      onClick: (marker) => note(`click:${marker.id}`),
+    },
+    {
+      id: 'gi-2b', date: '2026-05-29', kind: 'shipment', label: 'GI#8811',
+      detail: '1 x 40HQ',
+      preview: <span>1 x 40HQ to Fremantle</span>,
+      onClick: (marker) => note(`click:${marker.id}`),
+    },
   ];
 
   const snapshot = useProductionTimeline({

@@ -7,8 +7,9 @@ import { registerModalEscapeInterceptor } from './escapeInterceptors';
 import { TimelineGlyph, type TimelineGlyphName } from './timelineGlyphs';
 import { stagger } from '../charts/effects';
 import {
-  clampLabelLeft, clusterLabel, clusterMarks, compressTimeAxis, estimateLabelWidth,
-  packLabelLanes, FALLBACK_TRACK_PX, TRACK_LABEL_LANE_COUNT,
+  clampLabelLeft, clusterLabel, clusterMarks, clusterOverlaps, compressTimeAxis,
+  estimateLabelWidth, packLabelLanes, FALLBACK_TRACK_PX, MARK_OVERLAP_PX, MIXED_KIND,
+  TRACK_LABEL_LANE_COUNT,
   type ClusterGroup, type CompressedAxis,
 } from './timelineGeometry';
 import {
@@ -404,6 +405,16 @@ const SNAP_FLASH_MS = 460;
  *  the grace the pointer dismisses it on the way. */
 const BUBBLE_GRACE_MS = 160;
 
+/** How long an opened fold survives a pointer that is on nothing. Longer than
+ *  the bubble's grace, because the pointer has to cross whatever gap the
+ *  magnification just opened between the fold and its first member. */
+const FOLD_GRACE_MS = 260;
+
+/** How far past its outermost member an opened fold still counts as being under
+ *  the pointer. A mark's own half-width, and a little: the run springs apart
+ *  around the pointer, and a reader looking at what it opened has not left it. */
+const FOLD_REACH_PX = 16;
+
 /** Does the machine ask for stillness? Read once per card, as `Modal` reads it —
  *  a media query consulted during render would make render impure, and a user who
  *  changes the setting is one window open away from the new answer. */
@@ -559,6 +570,39 @@ interface Mark {
   isItem: boolean;
 }
 
+/**
+ * One thing the rail actually draws: a mark, or a FOLD standing for a run of
+ * marks too close together to be drawn apart.
+ *
+ * A fold is the answer to "marks that are too close overlap each other" (Henry,
+ * 2026-09-15, translated): under one mark's width a dot is printed over its
+ * neighbour, and a mark nobody can see is a mark nobody can hover, read or
+ * count. One node stands in for the run, says how many, and opens the axis
+ * around itself when the pointer arrives — at which point the run is drawn as
+ * itself again, every member back on its own date with its own popover.
+ *
+ * `members` is the whole run; `mark` is the one mark a single node draws and
+ * `null` for a fold, which is the discriminator.
+ */
+interface RailNode {
+  key: string;
+  mark: Mark | null;
+  members: Mark[];
+  /** Where it is drawn: the mark's own x, or the run's midpoint. */
+  x: number;
+  /** The one kind the run shares, or `MIXED_KIND` where it shares none. */
+  kind: string;
+  /**
+   * Can this fold be opened at all? A run over two or three DATES springs apart
+   * when the axis magnifies around it; a run that is all one date is one
+   * coordinate, and no magnification will ever separate a coordinate from
+   * itself. Those two want opposite things from a pointer — the first should
+   * open, the second has nothing to open and must say what it stands for in a
+   * popover instead.
+   */
+  openable: boolean;
+}
+
 /** Every `data-*` a part of the track carries, so a spec or a browser check can
  *  name a part without keying on a class the design may restyle. */
 type NodeButtonProps = ComponentPropsWithRef<'button'> & { [key: `data-${string}`]: string | undefined };
@@ -568,6 +612,25 @@ const detailText = (detail: ReactNode): string => (typeof detail === 'string' ? 
 function accessibleName(mark: Mark): string {
   const detail = detailText(mark.detail);
   return `${mark.label} · ${mark.dateText}${detail ? ` · ${detail}` : ''}`;
+}
+
+/**
+ * What a fold is called, to a screen reader and in its own popover.
+ *
+ * Every member by name, because a fold is the one mark on the rail that stands
+ * for things which are not drawn: leaving them to the hover would make them
+ * reachable by pointer alone, and the list is the whole point of folding.
+ */
+function foldName(members: Mark[]): string {
+  return `${members.length} events · ${members.map(accessibleName).join(', ')}`;
+}
+
+/** The dates a fold covers — one date where the run shares a day, the two ends
+ *  where it does not. */
+function foldDates(members: Mark[]): string {
+  const first = members[0].dateText;
+  const last = members[members.length - 1].dateText;
+  return first === last ? first : `${first} – ${last}`;
 }
 
 // ─── Hooks ───────────────────────────────────────────────────────────────────
@@ -1108,35 +1171,45 @@ function PhaseBracket({ phase, geo, xOf }: {
  * that is not `aria-hidden`: the rest restates the dot's own accessible name,
  * but a control has to be reachable.
  */
-function ActiveLabel({ marks, trackPx, geo, activeKey, hoveredKey, currentKey }: {
-  marks: Mark[];
+function ActiveLabel({ nodes, trackPx, geo, activeKey, hoveredKey, currentKey }: {
+  nodes: RailNode[];
   trackPx: number;
   geo: TrackGeometry;
   activeKey: string | null;
   hoveredKey: string | null;
   currentKey: string | null;
 }) {
-  const mark = marks.find((m) => m.key === hoveredKey) ?? marks.find((m) => m.key === activeKey) ?? null;
-  if (!mark) return null;
-  const { onOpen } = mark;
+  const holds = (node: RailNode, key: string | null) =>
+    key !== null && (node.key === key || node.members.some((member) => member.key === key));
+  const node = nodes.find((n) => n.key === hoveredKey)
+    ?? nodes.find((n) => holds(n, activeKey))
+    ?? null;
+  if (!node) return null;
+  // A fold has no one label to draw and no one document to open: it is `×N` over
+  // the days it covers, and the popover under it is where the members are named.
+  const mark = node.mark;
+  const name = mark ? mark.label : `×${node.members.length}`;
+  const dateText = mark ? mark.dateText : foldDates(node.members);
+  const widthPx = mark ? mark.widthPx : estimateLabelWidth(name, dateText);
+  const onOpen = mark?.onOpen;
   return (
     <div data-timeline-part="label"
-      className={`rosh-tl-label${mark.key === hoveredKey ? ' is-hot' : ''}${mark.key === currentKey ? ' is-current' : ''}`}
+      className={`rosh-tl-label${node.key === hoveredKey ? ' is-hot' : ''}${holds(node, currentKey) ? ' is-current' : ''}`}
       style={{
-        left: `${clampLabelLeft(mark.x, mark.widthPx, trackPx)}px`,
+        left: `${clampLabelLeft(node.x, widthPx, trackPx)}px`,
         top: `${geo.laneB}px`,
-        width: `${mark.widthPx}px`,
+        width: `${widthPx}px`,
         height: `${geo.laneH}px`,
       }}>
       {onOpen ? (
         <button type="button" className="rosh-tl-name rosh-tl-open" data-timeline-part="open"
-          aria-label={`Open ${mark.label}`} onClick={onOpen}>
-          {mark.label}
+          aria-label={`Open ${name}`} onClick={onOpen}>
+          {name}
         </button>
       ) : (
-        <span className="rosh-tl-name" aria-hidden="true">{mark.label}</span>
+        <span className="rosh-tl-name" aria-hidden="true">{name}</span>
       )}
-      <span className="rosh-tl-date" aria-hidden="true">{mark.dateText}</span>
+      <span className="rosh-tl-date" aria-hidden="true">{dateText}</span>
     </div>
   );
 }
@@ -1610,6 +1683,10 @@ export default function TimelineTrack({
   const tipRef = useRef<HTMLDivElement>(null);
   const nodeRefs = useRef(new Map<string, HTMLButtonElement>());
   const graceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const zoomGraceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** A mark to focus once it exists — the first member of a fold that has just
+   *  been opened, which is not in the DOM until the render that opens it. */
+  const focusAfterRenderRef = useRef<string | null>(null);
   const [measured, setMeasured] = useState<Record<string, number>>({});
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
   const [bubbleKey, setBubbleKey] = useState<string | null>(null);
@@ -1718,10 +1795,29 @@ export default function TimelineTrack({
   const groupKey = (group: ClusterGroup<Mark>) =>
     (group.type === 'cluster' ? `cluster-${group.members[0].key}` : group.mark.key);
 
-  // What is magnified: the pill under the pointer or pinned open, else whatever
-  // the caller asked for.
-  const zoomedGroup = groups.find((group) => group.type === 'cluster'
-    && groupKey(group) === (openCluster ?? previewCluster ?? zoomKey));
+  // The DOTS' own collision, which is a different question from the labels' and
+  // is asked on every bar: two marks nearer than one mark's width are drawn on
+  // top of each other whatever their kinds, and the one underneath cannot be
+  // hovered, read or counted. Decided here, before the magnification, so that
+  // opening a fold cannot dissolve the fold that is being opened — what opening
+  // changes is whether it is DRAWN folded, a few lines below.
+  const railGroups = clusterOverlaps(marks);
+  /** A fold's key. Its own namespace, so hovering a fold on the rail cannot be
+   *  mistaken for hovering the `×N` LABEL pill of the same run in lane mode. */
+  const foldKey = (group: ClusterGroup<Mark>) =>
+    (group.type === 'cluster' ? `fold-${group.members[0].key}` : group.mark.key);
+  /** Which fold a mark belongs to, for the marks that are in one. */
+  const foldOwner = new Map<string, string>();
+  for (const group of railGroups) {
+    if (group.type !== 'cluster') continue;
+    for (const member of group.members) foldOwner.set(member.key, foldKey(group));
+  }
+
+  // What is magnified: the pill or the fold under the pointer, the pill pinned
+  // open, else whatever the caller asked for.
+  const zoomTarget = openCluster ?? previewCluster ?? zoomKey;
+  const zoomedGroup = groups.find((group) => group.type === 'cluster' && groupKey(group) === zoomTarget)
+    ?? railGroups.find((group) => group.type === 'cluster' && foldKey(group) === zoomTarget);
   const focusOf = (mark: Mark) => ({ x: mark.baseX, widthPx: mark.widthPx });
   const zoomFocus = zoomedGroup && zoomedGroup.type === 'cluster'
     ? zoomedGroup.members.map(focusOf)
@@ -1740,7 +1836,65 @@ export default function TimelineTrack({
   // actually drawn rather than the ones before a magnification. The mould card
   // is always this case: its window opens on its first milestone.
   const startCrowded = marks.some((mark) => mark.x < START_MARK_PX);
-  const zoomedKey = zoomed && zoomedGroup ? groupKey(zoomedGroup) : null;
+  const zoomedKey = zoomed && zoomedGroup ? zoomTarget : null;
+
+  /**
+   * What the rail draws, once the folds have had their say.
+   *
+   * A fold is drawn as one node UNLESS the axis has opened around it, in which
+   * case its members are drawn as themselves — that is the whole of "open a
+   * fold": the magnification spreads the run past a mark's width and the run
+   * stops needing to be folded. Keyed on the fold rather than on the geometry
+   * the magnification produced, so a fold cannot dissolve itself and re-fold on
+   * the next frame.
+   *
+   * Under 320 px the card is vertical, one row per mark, where nothing can
+   * overlap anything: there every mark is its own node again.
+   */
+  const single = (mark: Mark): RailNode =>
+    ({ key: mark.key, mark, members: [mark], x: mark.x, kind: mark.kind, openable: false });
+  /** Has the magnification actually bought the run room? A fold drawn open whose
+   *  members still overlap would be the bug with an extra step in it. */
+  const apart = (members: Mark[]) =>
+    members.every((member, i) => i === 0 || member.x - members[i - 1].x >= MARK_OVERLAP_PX);
+  const railNodes: RailNode[] = vertical ? marks.map(single) : railGroups.flatMap((group) => {
+    if (group.type === 'item') return [single(group.mark)];
+    const key = foldKey(group);
+    if (key === zoomedKey && apart(group.members)) return group.members.map(single);
+    const xs = group.members.map((member) => member.x);
+    return [{
+      key,
+      mark: null,
+      members: group.members,
+      x: xs.reduce((sum, x) => sum + x, 0) / xs.length,
+      kind: group.kind,
+      openable: new Set(group.members.map((member) => member.ms)).size > 1,
+    }];
+  });
+  /** The node a mark is drawn by — itself, or the fold that swallowed it. */
+  const drawnKeyOf = new Map<string, string>();
+  for (const node of railNodes) for (const member of node.members) drawnKeyOf.set(member.key, node.key);
+
+  /**
+   * The stretch an opened fold occupies, and the reason it stays open.
+   *
+   * An open fold is not drawn, so the pointer that opened it is left resting on
+   * whatever the magnification moved out of the way — usually bare rail between
+   * two members that have just sprung apart. Holding the fold open for as long
+   * as the pointer is anywhere over its run is what the label pill gets for
+   * free by being a separate control in another band; here it has to be
+   * measured. `x` is post-magnification, which is what makes this the span the
+   * reader is actually looking at.
+   */
+  const openFoldGroup = railGroups.find(
+    (group) => group.type === 'cluster' && foldKey(group) === zoomedKey,
+  );
+  const openRun = openFoldGroup && openFoldGroup.type === 'cluster'
+    ? {
+      from: Math.min(...openFoldGroup.members.map((member) => member.x)) - FOLD_REACH_PX,
+      to: Math.max(...openFoldGroup.members.map((member) => member.x)) + FOLD_REACH_PX,
+    }
+    : null;
 
   // A zoom opens and closes over 240ms, and the transition that carries it is
   // only armed around the change — a positional transition left on permanently
@@ -1983,13 +2137,27 @@ export default function TimelineTrack({
 
   const closeOverlays = useCallback(() => {
     clearTimeout(graceRef.current);
+    clearTimeout(zoomGraceRef.current);
     setHoveredKey(null);
     setBubbleKey(null);
     setOpenCluster(null);
     setPreviewCluster(null);
     setZoomKey(null);
   }, []);
-  useEffect(() => () => clearTimeout(graceRef.current), []);
+  useEffect(() => () => {
+    clearTimeout(graceRef.current);
+    clearTimeout(zoomGraceRef.current);
+  }, []);
+
+  // The focus a fold handed to its first member, once that member is drawn. No
+  // dependency list: the render that opens the fold is the one that creates the
+  // button, and the ref is cleared as it is spent.
+  useEffect(() => {
+    const key = focusAfterRenderRef.current;
+    if (!key) return;
+    focusAfterRenderRef.current = null;
+    nodeRefs.current.get(key)?.focus();
+  });
 
   // WCAG 1.4.13: content shown on hover or focus is dismissible without moving
   // the pointer or the focus. Through the shell's interceptor seam rather than a
@@ -2018,8 +2186,8 @@ export default function TimelineTrack({
     el.style.setProperty('--rosh-tl-arrow', `${half + (x - left)}px`);
   }, [trackPx]);
 
-  const bubbleMark = marks.find((mark) => mark.key === bubbleKey) ?? null;
-  const bubbleX = bubbleMark ? bubbleMark.x : 0;
+  const bubbleNode = railNodes.find((node) => node.key === bubbleKey) ?? null;
+  const bubbleX = bubbleNode ? bubbleNode.x : 0;
   useMeasureEffect(() => { aimBubble(tipRef.current, bubbleX); }, [aimBubble, bubbleX]);
 
   // The snap highlight: a mark the thumb has just passed lights up for a moment,
@@ -2038,7 +2206,9 @@ export default function TimelineTrack({
     const timers: ReturnType<typeof setTimeout>[] = [];
     for (const mark of marks) {
       if (mark.x <= previous || mark.x > x) continue;
-      const el = nodeRefs.current.get(mark.key);
+      // A mark inside a fold flashes through the fold that is standing in for
+      // it, so a scrub across a folded pair still reads as events being passed.
+      const el = nodeRefs.current.get(drawnKeyOf.get(mark.key) ?? mark.key);
       if (!el) continue;
       el.classList.add('is-hit');
       timers.push(setTimeout(() => el.classList.remove('is-hit'), SNAP_FLASH_MS));
@@ -2050,10 +2220,13 @@ export default function TimelineTrack({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [thumbValue]);
 
-  const order = marks.map((mark) => mark.key);
+  // The tab order is what is DRAWN: a fold is one stop that names its members,
+  // not several stops for buttons that are not on the page.
+  const order = railNodes.map((node) => node.key);
+  const currentDrawn = resolvedCurrent ? drawnKeyOf.get(resolvedCurrent) ?? null : null;
   const tabKey = focusKey && order.includes(focusKey)
     ? focusKey
-    : resolvedCurrent && order.includes(resolvedCurrent) ? resolvedCurrent : order[0];
+    : currentDrawn && order.includes(currentDrawn) ? currentDrawn : order[0];
 
   const onListKeyDown = (event: React.KeyboardEvent) => {
     const from = order.indexOf((event.target as HTMLElement).dataset?.timelineKey ?? '');
@@ -2067,6 +2240,30 @@ export default function TimelineTrack({
     event.preventDefault();
     setFocusKey(order[to]);
     nodeRefs.current.get(order[to])?.focus();
+  };
+
+  /**
+   * Opening and closing a fold.
+   *
+   * An open fold is NOT drawn — its members are, spread apart — so the node the
+   * pointer opened unmounts under the pointer and its own `mouseleave` never
+   * arrives. The grace is what carries the magnification across that gap to
+   * whichever member has taken its place; a pointer that landed on neither lets
+   * it expire, and a mark belonging to no fold closes it at once. The layer's
+   * `mouseover` is the backstop: anywhere on the track that is not a mark and
+   * not the popover releases it.
+   */
+  const keepFold = () => clearTimeout(zoomGraceRef.current);
+  const openFold = (key: string) => { keepFold(); setZoomKey(key); };
+  const closeFold = () => { keepFold(); setZoomKey(null); };
+  const releaseFold = () => {
+    clearTimeout(zoomGraceRef.current);
+    zoomGraceRef.current = setTimeout(() => setZoomKey(null), FOLD_GRACE_MS);
+  };
+  /** A mark's pointer arriving: keep the fold it belongs to, close any other. */
+  const enterMark = (key: string) => {
+    if (zoomedKey && foldOwner.get(key) === zoomedKey) keepFold();
+    else closeFold();
   };
 
   const showBubble = (key: string) => {
@@ -2095,15 +2292,58 @@ export default function TimelineTrack({
       if (el) nodeRefs.current.set(mark.key, el);
       else nodeRefs.current.delete(mark.key);
     },
-    onMouseEnter: () => showBubble(mark.key),
-    onMouseLeave: () => hideBubble(mark.key),
-    onFocus: () => { showBubble(mark.key); setFocusKey(mark.key); },
-    onBlur: () => hideBubble(mark.key),
+    onMouseEnter: () => { enterMark(mark.key); showBubble(mark.key); },
+    onMouseLeave: () => { releaseFold(); hideBubble(mark.key); },
+    onFocus: () => { enterMark(mark.key); showBubble(mark.key); setFocusKey(mark.key); },
+    onBlur: () => { releaseFold(); hideBubble(mark.key); },
     onPointerDown: (event) => event.stopPropagation(),
     onClick: (event) => {
       event.stopPropagation();
       mark.onClick?.();
       if (mark.isItem) onActivate?.(mark.key);
+    },
+  });
+
+  /**
+   * A fold's node. It activates nothing — one of several is not a choice — so
+   * what a pointer does is OPEN it, where there is anything to open: the axis
+   * magnifies, the run is drawn as itself, and each member is a mark with its own
+   * popover again. A fold that is all one date cannot be opened by any
+   * magnification, so the pointer gets the list instead, in the popover.
+   *
+   * Focus never opens one — the button would unmount under the focus it was just
+   * given — so the keyboard is offered the same list, and Enter opens the run and
+   * moves the focus to its first member, which is how a keyboard reaches marks
+   * that were folded away.
+   */
+  const foldProps = (node: RailNode): NodeButtonProps => ({
+    type: 'button',
+    'data-timeline-node': 'fold',
+    'data-timeline-key': node.key,
+    'data-timeline-count': String(node.members.length),
+    'aria-label': foldName(node.members),
+    'aria-describedby': bubbleKey === node.key ? tipId : undefined,
+    title: node.members.map((member) => `${member.label} • ${member.dateText}`).join('\n'),
+    tabIndex: node.key === tabKey ? 0 : -1,
+    ref: (el: HTMLButtonElement | null) => {
+      if (el) nodeRefs.current.set(node.key, el);
+      else nodeRefs.current.delete(node.key);
+    },
+    onMouseEnter: () => {
+      if (node.openable) openFold(node.key);
+      else showBubble(node.key);
+    },
+    onMouseLeave: () => { releaseFold(); hideBubble(node.key); },
+    onFocus: () => { keepFold(); showBubble(node.key); setFocusKey(node.key); },
+    onBlur: () => { releaseFold(); hideBubble(node.key); },
+    onPointerDown: (event) => event.stopPropagation(),
+    onClick: (event) => {
+      event.stopPropagation();
+      if (!node.openable) { showBubble(node.key); return; }
+      openFold(node.key);
+      const first = node.members[0];
+      setFocusKey(first.key);
+      focusAfterRenderRef.current = first.key;
     },
   });
 
@@ -2130,7 +2370,23 @@ export default function TimelineTrack({
               lags behind it, and a pause would then keep sliding for another
               120 ms after the frame that froze it. */}
           <div ref={layerRef}
-            className={`rosh-tl-layer${zoomTweening ? ' is-zooming' : ''}${glide ? ' is-gliding' : ''}`}>
+            className={`rosh-tl-layer${zoomTweening ? ' is-zooming' : ''}${glide ? ' is-gliding' : ''}`}
+            // What holds an opened fold open, and what lets it go. The fold's own
+            // node is gone the moment it opens — the run is drawn in its place —
+            // so its `mouseleave` never comes and the pointer is left on bare
+            // rail between two members that have just sprung apart. So the run's
+            // whole stretch is the hover region, measured rather than drawn: no
+            // element to intercept a press meant for the rail, and no dependence
+            // on which of the spread marks the pointer happens to be nearest.
+            onMouseMove={(event) => {
+              if (!openRun) return;
+              const box = layerRef.current?.getBoundingClientRect();
+              if (!box) return;
+              const x = event.clientX - box.left;
+              if (x >= openRun.from && x <= openRun.to) keepFold();
+              else releaseFold();
+            }}
+            onMouseLeave={releaseFold}>
             <MeasuringRow marks={marks} innerRef={measureRef} />
             <TrackRail axis={view} geo={geo} fillTo={fillTo} reveal={reveal} trackPx={trackPx}
               tweened={!!thumb} />
@@ -2156,7 +2412,36 @@ export default function TimelineTrack({
               <PhaseBracket key={phase.key} phase={phase} geo={geo} xOf={view.xByMs} />
             ))}
             <ol className="rosh-tl-nodes" aria-label={ariaLabel} onKeyDown={onListKeyDown}>
-              {marks.map((mark, index) => {
+              {railNodes.map((node, index) => {
+                const holds = (key: string | null) =>
+                  key !== null && node.members.some((member) => member.key === key);
+                const top = `${geo.rail + RAIL_PX / 2}px`;
+                const entrance = reveal ? stagger(index, step) : {};
+                if (!node.mark) {
+                  // A fold. Same kind throughout: that kind's shape and glyph,
+                  // with the count beside it. Mixed: a neutral `×N` pill, because
+                  // no glyph is true of a shipment and an inspection at once.
+                  const mixed = node.kind === MIXED_KIND;
+                  const dressing = nodeDressing(mixed ? 'default' : node.kind as TimelineTrackKind, 'key');
+                  const glyph = mixed ? undefined : KIND_STYLES[node.kind as TimelineTrackKind]?.glyph;
+                  return (
+                    <li key={node.key} {...(holds(resolvedCurrent) ? { 'aria-current': 'step' as const } : {})}>
+                      <button {...foldProps(node)}
+                        className={`${dressing.className} is-fold${mixed ? ' is-mixed' : ''}${holds(activeKey) ? ' is-active' : ''}${reveal ? ' rosh-tl-pop' : ''}`}
+                        style={{ ...dressing.style, left: `${node.x}px`, top, ...entrance }}>
+                        {glyph && <TimelineGlyph name={glyph} />}
+                        {mixed && <span aria-hidden="true" className="rosh-tl-foldnum">×{node.members.length}</span>}
+                      </button>
+                      {!mixed && (
+                        <i aria-hidden="true" className={`rosh-tl-count${reveal ? ' rosh-tl-fade' : ''}`}
+                          style={{ left: `${node.x}px`, top }}>
+                          ×{node.members.length}
+                        </i>
+                      )}
+                    </li>
+                  );
+                }
+                const mark = node.mark;
                 const dressing = nodeDressing(mark.kind, mark.role);
                 const { glyph } = mark;
                 return (
@@ -2166,8 +2451,8 @@ export default function TimelineTrack({
                       style={{
                         ...dressing.style,
                         left: `${mark.x}px`,
-                        top: `${geo.rail + RAIL_PX / 2}px`,
-                        ...(reveal ? stagger(index, step) : {}),
+                        top,
+                        ...entrance,
                       }}>
                       {glyph && <TimelineGlyph name={glyph} />}
                       {mark.role === 'current' && (
@@ -2190,7 +2475,7 @@ export default function TimelineTrack({
               />
             ) : (
               <ActiveLabel
-                marks={marks} trackPx={trackPx} geo={geo}
+                nodes={railNodes} trackPx={trackPx} geo={geo}
                 activeKey={activeKey} hoveredKey={hoveredKey} currentKey={resolvedCurrent}
               />
             )}
@@ -2202,26 +2487,54 @@ export default function TimelineTrack({
                 to the real thing. It is hoverable, focusable and dismissed by
                 Escape either way (WCAG 1.4.13): moving the pointer off the dot
                 and into the card must not take it away. */}
-            {bubbleMark && (
+            {bubbleNode && (
               <div ref={tipRef} id={tipId} role="tooltip"
-                className={`rosh-tl-bubble${bubbleMark.preview ? ' is-preview' : ''}`}
+                className={`rosh-tl-bubble${bubbleNode.members.some((member) => member.preview) ? ' is-preview' : ''}`}
                 data-timeline-part="tooltip"
                 style={{ top: `${geo.rail + RAIL_PX + 6}px` }}
-                onMouseEnter={() => showBubble(bubbleMark.key)}
-                onMouseLeave={() => hideBubble(bubbleMark.key)}
-                onFocus={() => showBubble(bubbleMark.key)}
-                onBlur={() => hideBubble(bubbleMark.key)}>
-                <span className="rosh-tl-name">{bubbleMark.label}</span>
-                <span className="rosh-tl-date">{bubbleMark.dateText}</span>
-                {bubbleMark.preview
-                  ? <div className="rosh-tl-preview" data-timeline-part="preview">{bubbleMark.preview}</div>
-                  : bubbleMark.detail && <span className="rosh-tl-detail">{bubbleMark.detail}</span>}
-                {(bubbleMark.onOpen ?? bubbleMark.onClick) && (
-                  <button type="button" className="rosh-tl-bubble-open text-blue-600"
-                    data-timeline-part="bubble-open"
-                    onClick={() => (bubbleMark.onOpen ?? bubbleMark.onClick)?.()}>
-                    Open
-                  </button>
+                onMouseEnter={() => { keepFold(); showBubble(bubbleNode.key); }}
+                onMouseLeave={() => { releaseFold(); hideBubble(bubbleNode.key); }}
+                onFocus={() => { keepFold(); showBubble(bubbleNode.key); }}
+                onBlur={() => { releaseFold(); hideBubble(bubbleNode.key); }}>
+                {bubbleNode.mark ? (
+                  <>
+                    <span className="rosh-tl-name">{bubbleNode.mark.label}</span>
+                    <span className="rosh-tl-date">{bubbleNode.mark.dateText}</span>
+                    {bubbleNode.mark.preview
+                      ? <div className="rosh-tl-preview" data-timeline-part="preview">{bubbleNode.mark.preview}</div>
+                      : bubbleNode.mark.detail && <span className="rosh-tl-detail">{bubbleNode.mark.detail}</span>}
+                    {(bubbleNode.mark.onOpen ?? bubbleNode.mark.onClick) && (
+                      <button type="button" className="rosh-tl-bubble-open text-blue-600"
+                        data-timeline-part="bubble-open"
+                        onClick={() => (bubbleNode.mark?.onOpen ?? bubbleNode.mark?.onClick)?.()}>
+                        Open
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  /* A fold names every member it is standing for, with its date
+                     and with whatever that member would have shown in a popover
+                     of its own. A run over several dates springs apart when the
+                     pointer opens it and each member is a mark again — but a run
+                     that is all ONE date can never be opened, because no
+                     magnification separates a coordinate from itself, and this
+                     list is then the only place its members exist. */
+                  <div className="rosh-tl-fold-list" data-timeline-part="fold-members">
+                    <p className="rosh-tl-popover-head">×{bubbleNode.members.length}</p>
+                    <ol>
+                      {bubbleNode.members.map((member) => (
+                        <li key={member.key}>
+                          <p className="rosh-tl-foldrow">
+                            <span>{member.label}</span>
+                            <span className="rosh-tl-date">{member.dateText}</span>
+                          </p>
+                          {member.preview
+                            ? <div className="rosh-tl-preview" data-timeline-part="preview">{member.preview}</div>
+                            : member.detail && <span className="rosh-tl-detail">{member.detail}</span>}
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
                 )}
               </div>
             )}

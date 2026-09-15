@@ -1,6 +1,6 @@
 ---
 bump: minor
-title: Every mark on the production scrubber takes its own pointer
+title: Every mark takes its own pointer, and none is drawn under another
 ---
 
 - **A mark on a scrubber can be hovered, focused and clicked again — it could not
@@ -26,6 +26,36 @@ title: Every mark on the production scrubber takes its own pointer
   the stage is stacked. The claim is asserted in the browser lane
   (`tests/browser/timelineScrubberHits`), with a real pointer and one
   `document.elementFromPoint`.
+
+- **No two marks are drawn on top of each other any more.** "Marks that are too
+  close overlap each other" (Henry, 2026-09-15, translated, looking at a
+  customer's order with two shipments a few days apart). A mark is 14–16 px
+  across, a day on a ten-week window is ten: the second shipment was printed over
+  the first, where it could not be hovered, read or counted — and so was every
+  same-day milestone on every mould card, three of them on 001F/1813 alone.
+
+  A run of marks whose centres are closer than one mark's width now folds into
+  ONE mark carrying `×N` — its kind's own shape and glyph where the run shares a
+  kind (a shipment diamond with a truck and a `×2`), a neutral `×N` pill where it
+  does not, and either way an accessible name that lists every member with its
+  date. It is a different collision from the `DFM ×N` LABEL pill, which asks
+  whether two labels clear each other and folds only iterations of one kind;
+  `clusterOverlaps` asks whether the two DOTS clear each other, where the kinds
+  have stopped mattering. Both are unchanged in what they already did.
+
+  A pointer opens a fold: the axis magnifies around the run — the same
+  magnification a `×N` pill asks for — and each member is a mark of its own again,
+  with its own popover and its own Open. A run that is all one DATE cannot be
+  opened, because no magnification separates a coordinate from itself, so its
+  popover lists every member with its date and with the preview that member would
+  have shown alone. Keyboard focus never opens a fold (the button would unmount
+  under the focus it was given); it gets that list, and Enter opens the run and
+  moves the focus to its first member.
+
+  Folding is a DRAWING decision and nothing else: the scrubber's stops,
+  `onActivate`, `aria-valuemax`, playback and the fill are all still computed from
+  every mark, so a report inside a fold is still a rung the thumb rests on and
+  still activates when it is picked.
 
 - **A shipment looks like a shipment.** `KIND_STYLES.shipment` had no glyph, and
   once every kind was painted in the one accent the diamond was an accent lozenge

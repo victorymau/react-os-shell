@@ -69,8 +69,12 @@ const REPORTS: TimelineReport[] = [
   { id: 'r1', progress_number: 'PP#10140', date: '2026-04-30', est_completion_date: '2026-06-30', items: [part(1)] },
 ];
 
+/** An inspection and a shipment, each far enough from a weekly report that the
+ *  rail draws every one of them: two marks nearer than one mark's width fold
+ *  into a `×N`, which `timelineScrubberHits` is the scenario for. The QC report
+ *  used to sit the day before PP#10143 and is the case that found it. */
 const MARKERS: TimelineMarker[] = [
-  { id: 'gi-1', date: '2026-05-20', kind: 'inspection', label: 'QC#4471', detail: 'Sample pulled' },
+  { id: 'gi-1', date: '2026-05-17', kind: 'inspection', label: 'QC#4471', detail: 'Sample pulled' },
   { id: 'gi-2', date: '2026-06-25', kind: 'shipment', label: 'GI#8802', detail: '1 x 40HQ' },
 ];
 

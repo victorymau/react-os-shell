@@ -151,8 +151,8 @@ test('a current report pins the slider, scrubbing away is detectable, and reset 
 
 test('the bar names the PO, states its window and lead time, and legends the kinds it has', () => {
   const markers: TimelineMarker[] = [
-    { id: 'gi', date: '2026-05-12', kind: 'shipment', label: 'GI-1' },
-    { id: 'qc', date: '2026-05-13', kind: 'inspection', label: 'QC-1' },
+    { id: 'gi', date: '2026-05-08', kind: 'shipment', label: 'GI-1' },
+    { id: 'qc', date: '2026-05-24', kind: 'inspection', label: 'QC-1' },
   ];
   function Bar() {
     const snap = useProductionTimeline({ ...BASE, poStatus: 'completed', markers });
@@ -195,8 +195,8 @@ test('a shipment is a diamond with a truck in it, on the rail and in the legend'
   // as the kind that had nothing to tell them with, and on a scrubber it is not
   // captioned either unless the pointer is on it.
   const markers: TimelineMarker[] = [
-    { id: 'gi', date: '2026-05-12', kind: 'shipment', label: 'GI-1' },
-    { id: 'qc', date: '2026-05-13', kind: 'inspection', label: 'QC-1' },
+    { id: 'gi', date: '2026-05-08', kind: 'shipment', label: 'GI-1' },
+    { id: 'qc', date: '2026-05-24', kind: 'inspection', label: 'QC-1' },
   ];
   function Bar() {
     const snap = useProductionTimeline({ ...BASE, poStatus: 'completed', markers });
@@ -228,8 +228,8 @@ test('a shipment is a diamond with a truck in it, on the rail and in the legend'
 
 test('a marker may name its own glyph, for two shipments that are not the same event', () => {
   const markers: TimelineMarker[] = [
-    { id: 'gi', date: '2026-05-12', kind: 'shipment', label: 'GI-1' },
-    { id: 'sample', date: '2026-05-13', kind: 'shipment', label: 'Samples', glyph: 'doc' },
+    { id: 'gi', date: '2026-05-08', kind: 'shipment', label: 'GI-1' },
+    { id: 'sample', date: '2026-05-24', kind: 'shipment', label: 'Samples', glyph: 'doc' },
   ];
   function Bar() {
     const snap = useProductionTimeline({ ...BASE, poStatus: 'completed', markers });
@@ -469,6 +469,50 @@ test('renderReportPreview fills the reports that carry none, and never overrides
   // Asked about the report that needed one and never about the one that did
   // not — as a SET, because how many times the card renders is not a promise.
   assert.deepEqual([...new Set(asked)], ['PP-1']);
+  view.unmount();
+});
+
+// ── Marks too close to be drawn apart ───────────────────────────────────────
+
+test('two reports a day apart fold into one mark, and the scrubber still reaches both', () => {
+  // "Marks that are too close overlap each other" (Henry, 2026-09-15,
+  // translated, on a customer's order with two shipments a few days apart). A
+  // day is ten pixels on this window, and a report ring is sixteen: one of the
+  // two was drawn under the other, where it could not be hovered, read or
+  // counted. Folding is a DRAWING decision and nothing else — the thumb still
+  // has a stop on each of them, and each still activates its own report.
+  const near1: TimelineReport = { ...R1, id: 'n1', progress_number: 'PP-9', date: '2026-05-20' };
+  const near2: TimelineReport = { ...R2, id: 'n2', progress_number: 'PP-10', date: '2026-05-21' };
+  const picked: string[] = [];
+  const view = bar({ reports: [near2, near1], onPickReport: (id) => picked.push(id) });
+  const at = (selector: string) => view.container.querySelector<HTMLElement>(selector);
+  const items = () => view.container.querySelectorAll<HTMLElement>('[data-timeline-node="item"]');
+
+  const fold = at('[data-timeline-node="fold"]');
+  assert.ok(fold, 'the two reports are still drawn on top of each other');
+  assert.equal(fold.getAttribute('data-timeline-count'), '2');
+  assert.match(fold.getAttribute('aria-label') ?? '', /PP-9 · 20\/05\/2026, PP-10 · 21\/05\/2026/);
+  assert.equal(items().length, 0, 'and neither is drawn twice');
+  assert.equal(
+    fold.closest('li')?.getAttribute('aria-current'), 'step',
+    '"you are here" is on the fold that holds the current report',
+  );
+
+  // The slider is untouched: two stops, and the thumb is on the later report.
+  const slider = at('[role="slider"]')!;
+  assert.equal(slider.getAttribute('aria-valuemax'), '1', 'both reports are still stops');
+  assert.match(slider.getAttribute('aria-valuetext') ?? '', /^PP-10 · /);
+  pressKey('ArrowLeft', { target: slider });
+  assert.match(at('.rosh-tl-status')!.textContent ?? '', /Showing PP-9/, 'the arrows still step reports');
+
+  // Opening the fold spreads the run and hands each report back its own dot.
+  act(() => { fold.click(); });
+  const open = items();
+  assert.equal(open.length, 2, 'the fold opened into its members');
+  const xs = [...open].map((dot) => parseFloat(dot.style.left));
+  assert.ok(xs[1] - xs[0] >= 16, `the members are still ${xs[1] - xs[0]}px apart after opening`);
+  act(() => { open[0].click(); });
+  assert.deepEqual(picked, ['n1'], 'and a member activates its own report');
   view.unmount();
 });
 
