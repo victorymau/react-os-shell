@@ -6,6 +6,7 @@ import { DAY_MS, fmtSliderDate } from './timelineDates';
 import { registerModalEscapeInterceptor } from './escapeInterceptors';
 import { TimelineGlyph, type TimelineGlyphName } from './timelineGlyphs';
 import { stagger } from '../charts/effects';
+import { popupBounds } from '../forms/dropdownPosition';
 import {
   clampLabelLeft, clusterLabel, clusterMarks, clusterOverlaps, compressTimeAxis,
   estimateLabelWidth, packLabelLanes, FALLBACK_TRACK_PX, MARK_OVERLAP_PX, MIXED_KIND,
@@ -430,6 +431,9 @@ const EDGE_INSET_PX = 10;
  *  and can never come back, since there is then nothing left to observe. */
 const PENDING_COLUMN_PX = 156;
 const BODY_GAP_PX = 20;
+
+/** The least room a hover bubble keeps from the edge of the window it is in. */
+const BUBBLE_WINDOW_GAP_PX = 8;
 
 /** Two rows of pending, then a real button for the rest. A `title` is invisible
  *  on touch, so it cannot be the only way to read what was folded. */
@@ -2438,20 +2442,42 @@ export default function TimelineTrack({
     });
   }, [overlayOpen, closeOverlays]);
 
-  // Clamp a bubble inside the track, then aim its arrow at the dot it describes.
-  // Written straight to the node: its own width is only known once it is in the
-  // DOM, and putting that in state would re-render on every hover.
+  // Clamp a bubble inside the track, then inside the window the timeline sits
+  // in, then aim its arrow at the dot it describes. Written straight to the
+  // node: its own width is only known once it is in the DOM, and putting that
+  // in state would re-render on every hover.
+  //
+  // The window clamp is UI-11's rule for anything anchored to a control: the
+  // bubble is drawn inside the track's layer, not portalled, so a window
+  // narrower than its track (or a track scrolled sideways) would otherwise cut
+  // it off at the window's edge. `popupBounds` is the same box the dropdowns
+  // keep to — the owning shell window intersected with the viewport.
   const aimBubble = useCallback((el: HTMLDivElement | null, x: number) => {
     if (!el) return;
     const half = el.offsetWidth / 2;
-    const left = half > 0 ? Math.max(half, Math.min(x, trackPx - half)) : x;
+    let left = half > 0 ? Math.max(half, Math.min(x, trackPx - half)) : x;
+    const layer = el.parentElement;
+    if (half > 0 && layer) {
+      const bounds = popupBounds(el);
+      const origin = layer.getBoundingClientRect().left;
+      const min = bounds.left + BUBBLE_WINDOW_GAP_PX + half - origin;
+      const max = bounds.right - BUBBLE_WINDOW_GAP_PX - half - origin;
+      if (min <= max) left = Math.max(min, Math.min(left, max));
+    }
     el.style.left = `${left}px`;
     el.style.setProperty('--rosh-tl-arrow', `${half + (x - left)}px`);
   }, [trackPx]);
 
   const bubbleNode = railNodes.find((node) => node.key === bubbleKey) ?? null;
   const bubbleX = bubbleNode ? bubbleNode.x : 0;
-  useMeasureEffect(() => { aimBubble(tipRef.current, bubbleX); }, [aimBubble, bubbleX]);
+  // Keyed on WHICH bubble as well as where: the first dot of a track sits at
+  // x = 0, which is also the value `bubbleX` holds while no bubble is open, so
+  // opening that dot's bubble changed nothing this effect watched. The bubble
+  // then kept the stylesheet's position and its `translateX(-50%)` hung half
+  // of it off the left edge of the window.
+  useMeasureEffect(() => {
+    aimBubble(tipRef.current, bubbleX);
+  }, [aimBubble, bubbleKey, bubbleX]);
 
   // The snap highlight: a mark the thumb has just passed lights up for a moment,
   // so a scrub that crosses four reports reads as four events rather than as a
@@ -2559,7 +2585,9 @@ export default function TimelineTrack({
     'data-timeline-key': mark.key,
     'aria-label': accessibleName(mark),
     'aria-describedby': bubbleKey === mark.key ? tipId : undefined,
-    title: `${mark.label} • ${mark.dateText}`,
+    // No `title`: the bubble already shows the label and the date, and the
+    // browser drew its own tooltip for the same text beside it — a second
+    // copy the page cannot place, left behind on the desktop.
     tabIndex: mark.key === tabKey ? 0 : -1,
     ref: (el: HTMLButtonElement | null) => {
       if (el) nodeRefs.current.set(mark.key, el);
@@ -2596,7 +2624,6 @@ export default function TimelineTrack({
     'data-timeline-count': String(node.members.length),
     'aria-label': foldName(node.members),
     'aria-describedby': bubbleKey === node.key ? tipId : undefined,
-    title: node.members.map((member) => `${member.label} • ${member.dateText}`).join('\n'),
     tabIndex: node.key === tabKey ? 0 : -1,
     ref: (el: HTMLButtonElement | null) => {
       if (el) nodeRefs.current.set(node.key, el);

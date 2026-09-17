@@ -361,6 +361,61 @@ test('one tab stop, and the arrows walk the rail', () => {
   view.unmount();
 });
 
+test('the bubble of a dot on the first day is placed like any other', () => {
+  // The first dot sits at x = 0 — the same value the track holds for "no
+  // bubble open" — so the effect that places the bubble never ran for it, and
+  // the stylesheet's `translateX(-50%)` hung half the bubble off the window's
+  // left edge (SO#33555's "Order Placed", cut to "der Placed").
+  const view = render(track());
+  const first = dots(view.container).find((d) => d.dataset.timelineKey === 'start')!;
+  act(() => { first.focus(); });
+  const tip = view.container.querySelector<HTMLElement>('[role="tooltip"]')!;
+  assert.match(tip.textContent ?? '', /Project Initiated/);
+  assert.equal(tip.style.left, '0px', 'placed, not left to the stylesheet');
+  view.unmount();
+});
+
+test('a bubble stays inside the window that owns the timeline', () => {
+  // UI-11: anything anchored to a control keeps to its window. jsdom lays
+  // nothing out, so the window, the layer and the bubble's width are stubbed.
+  const proto = window.HTMLElement.prototype;
+  const rect = proto.getBoundingClientRect;
+  const width = Object.getOwnPropertyDescriptor(proto, 'offsetWidth')!;
+  const box = (left: number, w: number) => ({
+    x: left, y: 0, left, right: left + w, width: w, top: 0, bottom: 600, height: 600,
+    toJSON: () => ({}),
+  }) as DOMRect;
+  proto.getBoundingClientRect = function stub(this: HTMLElement) {
+    if (this.matches('[data-modal-panel]')) return box(100, 300);
+    if (this.matches('.rosh-tl-layer')) return box(90, 1000);
+    return box(0, 0);
+  };
+  Object.defineProperty(proto, 'offsetWidth', {
+    configurable: true,
+    get(this: HTMLElement) { return this.matches('[role="tooltip"]') ? 200 : 0; },
+  });
+  try {
+    const view = render(<div data-modal-panel>{track()}</div>);
+    const open = (key: string) => {
+      const node = dots(view.container).find((d) => d.dataset.timelineKey === key)!;
+      act(() => { node.focus(); });
+      return view.container.querySelector<HTMLElement>('[role="tooltip"]')!;
+    };
+    // The window spans 100–400 on screen and the layer starts at 90, so a
+    // 200px bubble (8px from each edge) may be centred from 118 to 202.
+    const first = open('start');
+    assert.equal(first.style.left, '118px', 'pushed right, off the window\'s left edge');
+    assert.equal(first.style.getPropertyValue('--rosh-tl-arrow'), '-18px',
+      'and its arrow still aims at the dot');
+    const last = open('done');
+    assert.equal(last.style.left, '202px', 'pulled left, off the window\'s right edge');
+    view.unmount();
+  } finally {
+    proto.getBoundingClientRect = rect;
+    Object.defineProperty(proto, 'offsetWidth', width);
+  }
+});
+
 test('a tooltip appears on focus, is dismissible with Escape, and describes its dot', () => {
   // WCAG 1.4.13 — and `aria-describedby` on the dot, because a screen reader
   // announces the description of the element that HAS focus.

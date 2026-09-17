@@ -436,7 +436,7 @@ test('keyboard focus reveals it too — a dot is a button whether or not it is c
   view.unmount();
 });
 
-test('the dot still announces and titles itself whether or not its label is drawn', () => {
+test('the dot still announces itself whether or not its label is drawn', () => {
   // The reveal and the pill are visual affordances. Nothing about either may be
   // the only route to the fact: the dot carries the label and the date itself.
   const view = render(<MilestoneTimeline title="Mould Development" milestones={CROWDED_LANES} />);
@@ -444,20 +444,27 @@ test('the dot still announces and titles itself whether or not its label is draw
   const shown = fmtSliderDate(day('2025-06-10'));
   assert.equal(shown, '10/06/2025', 'the default date format, with nothing stored');
   assert.equal(collapsed.getAttribute('aria-label'), `Safety Tests · ${shown}`);
-  assert.equal(collapsed.getAttribute('title'), `Safety Tests • ${shown}`);
+  // No native `title`. The bubble shows the same label and date on hover AND on
+  // focus, so the browser's own tooltip was a second copy of it — one the page
+  // cannot place, which a production Sales Order window showed stranded at the
+  // corner of the window behind it.
+  assert.equal(collapsed.hasAttribute('title'), false);
+  act(() => { collapsed.focus(); });
+  const tip = view.container.querySelector('[role="tooltip"]')!;
+  assert.match(tip.textContent ?? '', new RegExp(`Safety Tests.*${shown.replaceAll('/', '\\/')}`));
   view.unmount();
 
   // And a fold, which is the one mark standing for things that are NOT drawn,
-  // carries every one of them — a list that exists only in a popover would be
-  // reachable by pointer alone.
+  // names every one of them — to a screen reader in its name, and to a pointer
+  // or a keyboard in the bubble that opens on it.
   const folded = render(<MilestoneTimeline title="Mould Development" milestones={CLUSTER} />);
-  const fold = folded.container.querySelector('[data-timeline-node="fold"]')!;
+  const fold = folded.container.querySelector<HTMLElement>('[data-timeline-node="fold"]')!;
   assert.equal(fold.getAttribute('aria-label'), `5 events · ${[1, 2, 3, 4, 5]
     .map((n) => `DFM v${n} · ${shown}`).join(', ')}`);
-  assert.equal(
-    fold.getAttribute('title'), [1, 2, 3, 4, 5].map((n) => `DFM v${n} • ${shown}`).join('\n'),
-    'and its tooltip says the same thing to a pointer',
-  );
+  assert.equal(fold.hasAttribute('title'), false);
+  act(() => { fold.focus(); });
+  const members = folded.container.querySelector('[data-timeline-part="fold-members"]')!;
+  for (const n of [1, 2, 3, 4, 5]) assert.match(members.textContent ?? '', new RegExp(`DFM v${n}`));
   folded.unmount();
 });
 
