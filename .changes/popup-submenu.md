@@ -36,6 +36,12 @@ title: PopupSubmenu — a nested menu inside a PopupMenu
   that fixed the Start menu's stale-timer bug — so sibling submenus are
   exclusive and submenus nest to any depth.
 
+  A long submenu scrolls: `maxHeight` (a number of px or any CSS length, e.g.
+  `'min(60vh, 420px)'`) caps the panel, and it is never taller than the
+  viewport less its 8px gutters even when none is passed. A `disabled`
+  `PopupMenuItem` inside a submenu is skipped by the arrow keys, takes no
+  click, and leaves the menu open.
+
   The panel is portalled to `<body>` and layered above the menu it came from.
   A press inside it is not a click outside the menu. Choosing an item inside a
   submenu closes the whole menu through the root `PopupMenu`'s `onClose`; items

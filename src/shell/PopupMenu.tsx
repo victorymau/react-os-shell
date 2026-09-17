@@ -287,6 +287,10 @@ export interface PopupSubmenuProps {
   className?: string;
   /** The submenu panel's minimum width. */
   minWidth?: number;
+  /** The tallest the panel may grow before its items scroll — a long target
+   *  list, say `'min(60vh, 420px)'`. Never taller than the viewport less its
+   *  8px gutters, whatever is passed. */
+  maxHeight?: number | string;
 }
 
 const chevron = (
@@ -324,7 +328,7 @@ function focusables(panel: HTMLElement | null): HTMLElement[] {
  * bottom — the Start menu's placement rules, from `menuPath.ts`. Choosing an
  * item inside closes the whole menu (the root `PopupMenu`'s `onClose`).
  */
-export function PopupSubmenu({ label, icon, children, disabled, className = '', minWidth = 180 }: PopupSubmenuProps) {
+export function PopupSubmenu({ label, icon, children, disabled, className = '', minWidth = 180, maxHeight }: PopupSubmenuProps) {
   const tree = useContext(MenuTreeContext);
   const key = useId();
   const rowRef = useRef<HTMLButtonElement>(null);
@@ -479,9 +483,14 @@ export function PopupSubmenu({ label, icon, children, disabled, className = '', 
           role="menu"
           data-popup-menu-tree={tree.id}
           data-popup-submenu-panel
-          className={`fixed rounded-2xl ${density === 'tight' ? 'py-1' : density === 'large' ? 'py-2' : 'py-1.5'}`}
+          className={`fixed rounded-2xl overflow-x-hidden overflow-y-auto overscroll-contain ${density === 'tight' ? 'py-1' : density === 'large' ? 'py-2' : 'py-1.5'}`}
           style={{
             left: anchor!.left, top: anchor!.y, minWidth,
+            // The viewport cap always applies, so a long list scrolls rather
+            // than running off the screen even when no maxHeight is passed.
+            maxHeight: maxHeight === undefined
+              ? 'calc(100vh - 16px)'
+              : `min(${typeof maxHeight === 'number' ? `${maxHeight}px` : maxHeight}, calc(100vh - 16px))`,
             zIndex: layerOf(tree.root.current) + depth + 1,
             animation: `${anchor!.flipped ? 'popup-submenu-in-left' : 'popup-submenu-in'} 0.1s ease-out`,
             ...glassStyle(),

@@ -303,3 +303,128 @@ test('a disabled submenu row does not open', () => {
     assert.equal(document.querySelector(PANEL), null);
   } finally { view.unmount(); }
 });
+
+test('a disabled row inside a submenu: skipped by the keys, and a click does nothing', () => {
+  reset();
+  let closed = 0;
+  const chosen: string[] = [];
+  const view = render(
+    <PopupMenu portal onClose={() => { closed += 1; }}>
+      <PopupSubmenu label="Move to">
+        <PopupMenuLabel>Gallery</PopupMenuLabel>
+        <PopupMenuItem disabled onClick={() => chosen.push('current')}>Current slot</PopupMenuItem>
+        <PopupMenuItem onClick={() => chosen.push('hero')}>Hero</PopupMenuItem>
+        <PopupMenuDivider />
+        <PopupMenuItem disabled onClick={() => chosen.push('full')}>Full slot</PopupMenuItem>
+        <PopupMenuItem onClick={() => chosen.push('archive')}>Archive</PopupMenuItem>
+      </PopupSubmenu>
+    </PopupMenu>,
+  );
+  try {
+    const row = document.querySelector<HTMLButtonElement>(ROW)!;
+    const key = (el: Element, k: string) => {
+      act(() => { el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })); });
+    };
+    const button = (label: string) =>
+      [...document.querySelectorAll<HTMLButtonElement>(`${PANEL} button`)].find(b => b.textContent === label)!;
+
+    act(() => { row.focus(); });
+    key(row, 'ArrowRight');
+    assert.equal(document.activeElement, button('Hero'), 'focus lands on the first ENABLED item');
+    key(document.activeElement!, 'ArrowDown');
+    assert.equal(document.activeElement, button('Archive'), 'the disabled row is skipped');
+    key(document.activeElement!, 'ArrowDown');
+    assert.equal(document.activeElement, button('Hero'), 'wraps past the disabled first row');
+    key(document.activeElement!, 'Home');
+    assert.equal(document.activeElement, button('Hero'));
+
+    assert.equal(button('Current slot').disabled, true);
+    act(() => { button('Current slot').dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })); });
+    assert.deepEqual(chosen, [], 'no onClick');
+    assert.equal(closed, 0, 'and the menu stays open');
+    assert.ok(document.querySelector(PANEL), 'the submenu too');
+  } finally { view.unmount(); }
+});
+
+test('a long submenu scrolls inside its max height', () => {
+  reset();
+  const view = render(
+    <PopupMenu portal onClose={() => {}}>
+      <PopupSubmenu label="Move to" maxHeight="min(60vh, 420px)">
+        {Array.from({ length: 40 }, (_, i) => <PopupMenuItem key={i}>Target {i}</PopupMenuItem>)}
+      </PopupSubmenu>
+      <PopupSubmenu label="Numeric" maxHeight={300}>
+        <PopupMenuItem>One</PopupMenuItem>
+      </PopupSubmenu>
+      <PopupSubmenu label="Default">
+        <PopupMenuItem>One</PopupMenuItem>
+      </PopupSubmenu>
+    </PopupMenu>,
+  );
+  try {
+    const rows = [...document.querySelectorAll<HTMLButtonElement>(ROW)];
+    const openRow = (i: number) => {
+      act(() => { rows[i].dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })); });
+      return document.querySelector<HTMLElement>(PANEL)!;
+    };
+
+    let panel = openRow(0);
+    assert.ok(panel.classList.contains('overflow-y-auto'), 'the panel scrolls');
+    assert.equal(panel.querySelectorAll('button').length, 40);
+    // jsdom's CSS parser drops min()/calc(), so read the attribute React wrote.
+    assert.match(panel.getAttribute('style') ?? '', /max-height: min\(min\(60vh, 420px\), calc\(100vh - 16px\)\)/);
+
+    panel = openRow(1);
+    assert.match(panel.getAttribute('style') ?? '', /max-height: min\(300px, calc\(100vh - 16px\)\)/);
+
+    panel = openRow(2);
+    assert.match(panel.getAttribute('style') ?? '', /max-height: calc\(100vh - 16px\)/, 'capped to the viewport by default');
+  } finally { view.unmount(); }
+});
+
+test('a panel taller than the screen is pinned to the top gutter, not pushed off it', () => {
+  reset();
+  BOXES[1] = { selector: ROW, left: 104, top: 400, width: 192, height: 30 };
+  BOXES[2] = { selector: PANEL, left: 0, top: 0, width: 180, height: 2000 };
+  const m = mount();
+  try {
+    m.click(m.row());
+    assert.equal(m.panel()!.style.top, '8px');
+  } finally { m.unmount(); }
+});
+
+test('a nested submenu under a flipped one keeps going left', () => {
+  reset();
+  const INNER_ROW = '[data-popup-submenu-panel] [data-popup-submenu-row]';
+  BOXES = [
+    { selector: ROOT, left: 1000, top: 50, width: 200, height: 80 },
+    // The outer panel flips to 1000 - 4 - 180 = 816; its row sits inside it.
+    { selector: INNER_ROW, left: 820, top: 90, width: 172, height: 30 },
+    { selector: ROW, left: 1004, top: 90, width: 192, height: 30 },
+    { selector: PANEL, left: 816, top: 90, width: 180, height: 100 },
+  ];
+  const view = render(
+    <PopupMenu portal onClose={() => {}}>
+      <PopupSubmenu label="Outer">
+        <PopupSubmenu label="Inner"><PopupMenuItem>Deep</PopupMenuItem></PopupSubmenu>
+      </PopupSubmenu>
+    </PopupMenu>,
+  );
+  try {
+    const outer = document.querySelector<HTMLButtonElement>(ROW)!;
+    act(() => { outer.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })); });
+    const outerPanel = document.querySelector<HTMLElement>(PANEL)!;
+    assert.equal(outerPanel.dataset.flipped, 'true');
+
+    const inner = outerPanel.querySelector<HTMLButtonElement>(ROW)!;
+    act(() => { inner.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })); });
+    const panels = [...document.querySelectorAll<HTMLElement>(PANEL)];
+    assert.equal(panels.length, 2, 'both levels open');
+    // The inner panel's owner is the outer panel at 816: room on the right
+    // exists (996 + 4 + 180 < 1272) but it keeps heading left, as the Start
+    // menu does, so the levels don't fold back over each other.
+    assert.equal(panels[1].dataset.flipped, 'true');
+    assert.equal(panels[1].style.left, `${816 - 4 - 180}px`);
+    assert.ok(Number(panels[1].style.zIndex) > Number(panels[0].style.zIndex), 'layered above its parent');
+  } finally { view.unmount(); }
+});
