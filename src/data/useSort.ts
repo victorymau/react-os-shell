@@ -11,6 +11,20 @@ function isValidSort(v: unknown): v is SortState {
     (s.direction === 'asc' || s.direction === 'desc');
 }
 
+/** The part of a column `useSort` reads — `ColumnDef` and `EntityList`'s own
+ *  column both fit. */
+export interface SortableColumn {
+  key: string;
+  sortField?: string;
+}
+
+/** Is `field` one the table offers? Same rule `ResizableTable` uses to make a
+ *  header clickable: `sortField ?? key`, never `_select`, and `sortField: ''`
+ *  switches the sort off. */
+function isOffered(columns: ReadonlyArray<SortableColumn>, field: string): boolean {
+  return columns.some(c => (c.sortField ?? (c.key !== '_select' ? c.key : '')) === field && field !== '');
+}
+
 /**
  * Sort-state hook used by list pages. Returns:
  * - `sort` — current `{ field, direction }`
@@ -33,12 +47,25 @@ function isValidSort(v: unknown): v is SortState {
  * `<QueryClientProvider>` in either form: with no provider above it the probe
  * falls back to a client the package owns (see `useDefaultColumnConfig`), and
  * the `tableId`-less form issues no request at all, as before.
+ *
+ * Pass `options.columns` (the same array the table gets) and a sort the
+ * columns do not offer is replaced by the page default in `sort` and
+ * `ordering` — a save on a column since given `sortField: ''`, or on a key
+ * whose column now sorts on another `sortField`. Without it that stale save
+ * goes out as `?ordering=` on every open; DRF drops a term it cannot order by,
+ * so the list comes back unsorted for good. Without `columns` nothing is
+ * checked, as before.
  */
-export function useSort(defaultField: string, defaultDir: 'asc' | 'desc' = 'asc', tableId?: string) {
+export function useSort(
+  defaultField: string,
+  defaultDir: 'asc' | 'desc' = 'asc',
+  tableId?: string,
+  options?: { columns?: ReadonlyArray<SortableColumn> },
+) {
   const { prefs, save } = useShellPrefs();
   const prefKey = tableId ? `sort_${tableId}` : null;
 
-  const [sort, setSort] = useState<SortState>(() => {
+  const [chosen, setSort] = useState<SortState>(() => {
     if (prefKey) {
       if (isValidSort(prefs[prefKey])) return prefs[prefKey];
       try {
@@ -82,6 +109,11 @@ export function useSort(defaultField: string, defaultDir: 'asc' | 'desc' = 'asc'
     try { localStorage.setItem(`sort-config-${tableId}`, JSON.stringify(dflt)); } catch { /* ignore */ }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tableId, defaultConfig]);
+
+  const columns = options?.columns;
+  const sort: SortState = !columns || isOffered(columns, chosen.field)
+    ? chosen
+    : { field: defaultField, direction: defaultDir };
 
   const onSort = (field: string) => {
     touchedRef.current = true;

@@ -127,6 +127,7 @@ export { default as useTableNav } from './data/useTableNav';
 export { useColumnConfig } from './data/useColumnConfig';
 export { useInfiniteScroll } from './data/useInfiniteScroll';
 export { useSort } from './data/useSort';
+export type { SortableColumn } from './data/useSort';
 
 // ── Display primitives that reach an optional peer ──
 // (The peer-free ones — Card, Banner, Tabs, Avatar, … — come through `./ui`.)
