@@ -12,5 +12,11 @@ title: useSort drops a saved sort the columns do not offer
   and `ordering` now fall back to the page default instead. The rule is the
   table's own: `sortField ?? key`, never `_select`.
 
-  Backward compatible: without `columns` nothing is checked. `SortableColumn`
-  is exported for callers that type the array themselves.
+  Backward compatible: without `columns` nothing is checked — and an EMPTY
+  array counts as not given, because a list page whose columns are not built
+  yet (permission-filtered, or keyed off a fetch) is not a table that offers no
+  sort. Read the other way it sent the page default on the first render and the
+  saved sort once the columns arrived: two requests per open, the first of them
+  sorted wrongly. `SortableColumn` is exported for callers that type the array
+  themselves; it is not `DataTable`'s column, which nests inside groups and
+  offers a sort on `sortable`.

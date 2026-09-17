@@ -8,10 +8,12 @@
  * and returns the list unsorted, so the list stays unsorted for good.
  *
  * Given `columns`, `useSort` falls back to the page default whenever the saved
- * field is not one of them offers. Without `columns` it behaves as before.
+ * field is not one of them offers. Without `columns` it behaves as before, and
+ * an empty array counts as "not given" — see the last spec.
  */
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { useEffect, useState } from 'react';
 import { render, flush, waitFor } from './dom';
 import { setShellApiClient, type AxiosInstance } from '../src/api/client';
 import { __resetOwnedQueryClient } from '../src/data/useDefaultColumnConfig';
@@ -119,4 +121,26 @@ test('without columns the hook behaves as before', async (t) => {
   t.after(unmount);
   await flush();
   assert.equal(ref.current!.ordering, 'stock');
+});
+
+test('columns that arrive after the first render do not flip the ordering', async (t) => {
+  adminSort = null;
+  // A sort the columns DO offer, so the only question is the empty first
+  // render. Reading `[]` as "offers nothing" sent the default out first and
+  // the saved sort second: two requests per open, the first sorted wrongly.
+  localStorage.clear();
+  localStorage.setItem('sort-config-late', JSON.stringify({ field: 'stock', direction: 'asc' }));
+  const seen: string[] = [];
+  function Probe() {
+    const [cols, setCols] = useState<ColumnDef[]>([]);
+    useEffect(() => { setCols([{ key: 'part_number', label: 'Part Number' }, { key: 'stock', label: 'Stock' }]); }, []);
+    const { ordering } = useSort('part_number', 'desc', 'late', { columns: cols });
+    if (seen[seen.length - 1] !== ordering) seen.push(ordering);
+    return null;
+  }
+  const r = render(<Probe />);
+  t.after(r.unmount);
+  await flush();
+  await flush();
+  assert.deepEqual(seen, ['stock'], `the ordering changed mid-flight: ${JSON.stringify(seen)}`);
 });

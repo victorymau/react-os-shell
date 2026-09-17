@@ -12,7 +12,13 @@ function isValidSort(v: unknown): v is SortState {
 }
 
 /** The part of a column `useSort` reads — `ColumnDef` and `EntityList`'s own
- *  column both fit. */
+ *  column both fit.
+ *
+ *  Not `DataTable`: its columns nest inside groups and it offers a sort on
+ *  `sortable`, not on `sortField ?? key`. `DataTableColumn` satisfies this
+ *  interface structurally, so passing one typechecks and then drops sorts the
+ *  table does offer. `DataTable` owns its own sort state through
+ *  `onSortChange`. */
 export interface SortableColumn {
   key: string;
   sortField?: string;
@@ -53,8 +59,9 @@ function isOffered(columns: ReadonlyArray<SortableColumn>, field: string): boole
  * `ordering` — a save on a column since given `sortField: ''`, or on a key
  * whose column now sorts on another `sortField`. Without it that stale save
  * goes out as `?ordering=` on every open; DRF drops a term it cannot order by,
- * so the list comes back unsorted for good. Without `columns` nothing is
- * checked, as before.
+ * so the list comes back unsorted for good. Without `columns` — or while the
+ * array is still empty, which is a list page whose columns are not built yet
+ * rather than a table that offers no sort — nothing is checked, as before.
  */
 export function useSort(
   defaultField: string,
@@ -110,7 +117,12 @@ export function useSort(
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tableId, defaultConfig]);
 
-  const columns = options?.columns;
+  // An EMPTY list is not an answer about what the table offers, it is a list
+  // page whose columns have not been built yet — permission-filtered, or keyed
+  // off a fetch. Reading it as "offers nothing" sent the page default on the
+  // first render and the saved sort once the columns arrived: two requests per
+  // open, the first of them sorted wrongly.
+  const columns = options?.columns?.length ? options.columns : undefined;
   const sort: SortState = !columns || isOffered(columns, chosen.field)
     ? chosen
     : { field: defaultField, direction: defaultDir };
