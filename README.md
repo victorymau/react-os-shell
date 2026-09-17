@@ -195,7 +195,7 @@ Items with `perms` are filtered through `<ShellAuthProvider value={{ hasAnyPerm 
   perms: ['view_supplierpricesheet'], allPerms: ['view_supplier_prices'] },
 ```
 
-Reach for `allPerms` whenever the permission that lists a destination is broader than the one its page enforces — otherwise the row renders and then refuses on click. Both fields work on sections as well as items, and on nested children.
+Reach for `allPerms` whenever the permission that lists a destination is broader than the one its page enforces — otherwise the row renders and then refuses on click. Both fields work on sections, on the items inside them, on top-level items passed beside the sections (`{ to: '/', label: 'Home' }` above), and on nested children, in the Start menu, the sidebar and the mobile sheet alike.
 
 #### Nesting
 

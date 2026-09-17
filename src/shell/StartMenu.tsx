@@ -292,7 +292,12 @@ export default function StartMenu({
   // Use the "vertical" (sidebar-style) layout for top, left, right taskbar positions.
   // Only the bottom taskbar uses the original layout (top items first, ERP after divider).
   const isVertical = taskbarPosition !== 'bottom';
-  const topItems = navSections.filter(item => !isSection(item)) as NavItem[];
+  // Top-level rows pass the same permission + reachability test as the rows in
+  // a section. Read raw, a row gated on `perms`/`allPerms` showed to users who
+  // could not open it — only the mobile sheet above checked — and still counted
+  // toward `hasAppsGroup`, so a hidden row kept its divider.
+  const topItems = (navSections.filter(item => !isSection(item)) as NavItem[])
+    .filter(item => navVisible(item, hasAnyPerm) && isReachable(item, hasAnyPerm));
   const erpSections = navSections.filter(item => isSection(item) && erpLabels.has((item as NavSection).label));
   const systemSections = navSections.filter(item => isSection(item) && systemLabels.has((item as NavSection).label));
   const footerSections = navSections.filter(item => isSection(item) && footerLabels.has((item as NavSection).label));

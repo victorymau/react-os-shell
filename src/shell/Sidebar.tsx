@@ -88,8 +88,11 @@ export default function Sidebar({
     });
   };
 
-  // Top-level items vs sections, mirroring StartMenu's split.
-  const topItems = navSections.filter(item => !isSection(item)) as NavItem[];
+  // Top-level items vs sections, mirroring StartMenu's split — and its
+  // permission + reachability filter on the top-level rows, which the divider
+  // below is derived from.
+  const topItems = (navSections.filter(item => !isSection(item)) as NavItem[])
+    .filter(item => navVisible(item, hasAnyPerm) && isReachable(item, hasAnyPerm));
   const erpSections = navSections.filter(item => isSection(item) && erpLabels.has((item as NavSection).label)) as NavSection[];
   const systemSections = navSections.filter(item => isSection(item) && systemLabels.has((item as NavSection).label)) as NavSection[];
   const footerSections = navSections.filter(item => isSection(item) && footerLabels.has((item as NavSection).label)) as NavSection[];
@@ -227,10 +230,13 @@ export default function Sidebar({
     );
   };
 
-  const renderSectionAccordion = (section: NavSection | VirtualSection, isErp: boolean) => {
-    const items = 'perms' in section
-      ? getVisibleItems(section as NavSection)
-      : (section as VirtualSection).items;
+  // `isVirtual` is passed, not sniffed: this used to test `'perms' in section`,
+  // which is false for a real section that sets no `perms` of its own, so every
+  // row inside one skipped the permission filter.
+  const renderSectionAccordion = (section: NavSection | VirtualSection, isErp: boolean, isVirtual = false) => {
+    const items = isVirtual
+      ? section.items
+      : getVisibleItems(section as NavSection);
     if (items.length === 0) return null;
     const isOpen = expanded.has(section.label);
     return (
@@ -339,7 +345,7 @@ export default function Sidebar({
             {/* ERP sections then system sections — same order as StartMenu's vertical layout. */}
             {erpSections.map(s => renderSectionAccordion(s, true))}
             {systemSections.map(s => renderSectionAccordion(s, false))}
-            {virtualSections.map(v => renderSectionAccordion(v, false))}
+            {virtualSections.map(v => renderSectionAccordion(v, false, true))}
             {/* Footer items + sections: pinned just above the profile, divided from the rest. */}
             {(footerSections.length > 0 || footerItems.length > 0) && <div className="border-t border-white/15 my-1.5 mx-2" />}
             {footerSections.map(s => renderSectionAccordion(s, false))}
