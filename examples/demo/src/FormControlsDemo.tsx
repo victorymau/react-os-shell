@@ -8,6 +8,7 @@ import {
   PopupMenuItem,
   PopupMenuDivider,
   PopupMenuLabel,
+  PopupSubmenu,
   toast,
   type SearchableOption,
   type MediaUploadGridItem,
@@ -29,7 +30,7 @@ const GALLERY_SEED: MediaUploadGridItem[] = [
  *   hover-× to clear, Enter picks a unique match, free-text and async-search
  *   modes, and a right-adornment slot for status pills.
  * - <PopupMenu> — the same frosted-glass menu the shell uses for every
- *   context menu, opened here from a button.
+ *   context menu, opened here from a button, with a <PopupSubmenu>.
  */
 
 const COUNTRIES: SearchableOption[] = [
@@ -211,6 +212,7 @@ export default function FormControlsDemo() {
         <p className="mt-1 text-sm text-gray-500">
           The same frosted-glass menu behind every shell context menu —
           labels, items, dividers, danger styling — opened from a button here.
+          “Move to” is a <code>PopupSubmenu</code>: hover it, or use the arrow keys.
         </p>
       </div>
       <button
@@ -226,6 +228,15 @@ export default function FormControlsDemo() {
           <PopupMenuLabel>Sales order</PopupMenuLabel>
           <PopupMenuItem onClick={() => { toast.success('Duplicated.'); setMenu(null); }}>Duplicate</PopupMenuItem>
           <PopupMenuItem onClick={() => { toast.success('Exported as PDF.'); setMenu(null); }}>Export PDF</PopupMenuItem>
+          {/* An item inside a submenu closes the whole menu through onClose. */}
+          <PopupSubmenu label="Move to">
+            <PopupMenuLabel>Warehouses</PopupMenuLabel>
+            <PopupMenuItem onClick={() => toast.success('Moved to Sydney.')}>Sydney</PopupMenuItem>
+            <PopupMenuItem onClick={() => toast.success('Moved to Melbourne.')}>Melbourne</PopupMenuItem>
+            <PopupMenuDivider />
+            <PopupMenuLabel>Other</PopupMenuLabel>
+            <PopupMenuItem onClick={() => toast.success('Archived.')}>Archive</PopupMenuItem>
+          </PopupSubmenu>
           <PopupMenuDivider />
           <PopupMenuItem danger onClick={() => { toast.error('Cancelled.'); setMenu(null); }}>Cancel order</PopupMenuItem>
         </PopupMenu>
