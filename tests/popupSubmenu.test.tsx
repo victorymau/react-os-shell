@@ -177,6 +177,40 @@ test('Escape closes the submenu only, not the menu under it', () => {
   } finally { m.unmount(); }
 });
 
+test('with two levels open, Escape closes one level at a time, deepest first', () => {
+  reset();
+  let closed = 0;
+  const view = render(
+    <PopupMenu portal onClose={() => { closed += 1; }}>
+      <PopupSubmenu label="Outer">
+        <PopupMenuItem>Sibling</PopupMenuItem>
+        <PopupSubmenu label="Inner"><PopupMenuItem>Deep</PopupMenuItem></PopupSubmenu>
+      </PopupSubmenu>
+    </PopupMenu>,
+  );
+  const key = (el: Element, k: string) => {
+    act(() => { el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })); });
+  };
+  const panels = () => document.querySelectorAll(PANEL).length;
+  try {
+    const outer = document.querySelector<HTMLButtonElement>(ROW)!;
+    key(outer, 'ArrowRight');
+    const inner = document.querySelector<HTMLElement>(PANEL)!.querySelector<HTMLButtonElement>(ROW)!;
+    key(inner, 'ArrowRight');
+    assert.equal(panels(), 2, 'both levels open');
+    assert.equal(document.activeElement?.textContent, 'Deep');
+
+    key(document.activeElement!, 'Escape');
+    assert.equal(panels(), 1, 'only the inner level closed');
+    assert.equal(document.activeElement, inner, 'focus is back on the row that opened it');
+
+    key(inner, 'Escape');
+    assert.equal(panels(), 0, 'then the outer level');
+    assert.equal(document.activeElement, outer);
+    assert.equal(closed, 0, 'the root menu is still open');
+  } finally { view.unmount(); }
+});
+
 test('choosing an item inside closes the whole menu', () => {
   reset();
   let closed = 0;

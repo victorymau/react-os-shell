@@ -317,7 +317,7 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 | `MediaUploadGrid` | The gallery sibling: thumbnails, an Add tile, per-thumb remove, drag-and-keyboard reorder, optional cover badge. `onFiles` receives EVERY file of a multi-file drop or dialog pick; `onPick` defers to a library picker. `maxFiles` counts against the items held. |
 | `StartMenu` / `Desktop` / `WindowManagerProvider` | Used internally by `Layout`; rarely instantiated directly. |
 | `Modal`, `ModalActions`, `CopyButton`, `CancelButton` | Window primitive supporting standard / compact / widget styles. |
-| `PopupMenu`, `PopupMenuItem`, `PopupMenuDivider`, `PopupMenuLabel` | Right-click / context-menu primitive. |
+| `PopupMenu`, `PopupMenuItem`, `PopupMenuDivider`, `PopupMenuLabel`, `PopupSubmenu` | Right-click / context-menu primitive; `PopupSubmenu` is a row that opens a nested menu. |
 | `ShellContextMenu` | The shell-wide right-click menu, already mounted by `Layout` (`<Layout contextMenu={false}>` turns it off). Mount it yourself only on a screen rendered outside the layout. See [Right-click menu](#right-click-menu). |
 | `DropdownMenu` | Trigger-owned action menu with shared dismissal and keyboard behaviour. Use `side="top"` for a trigger in a bottom action bar; the default `side="bottom"` suits toolbar and row actions. |
 | `ConfirmProvider`, `confirm` | Imperative `confirm({ title, body })` returning a Promise<boolean>. |

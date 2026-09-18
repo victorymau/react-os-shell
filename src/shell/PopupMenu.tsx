@@ -362,12 +362,16 @@ export function PopupSubmenu({ label, icon, children, disabled, className = '', 
   };
 
   // Escape through the shell's interceptor seam: inside a window, `Modal`
-  // takes Escape in the capture phase and would close the whole window. The
-  // deepest open submenu registered last, so it is asked first.
+  // takes Escape in the capture phase and would close the whole window.
   useEffect(() => {
     if (!isOpen) return;
     return registerModalEscapeInterceptor(e => {
       if (e.key !== 'Escape') return false;
+      // Registration order cannot say which submenu is deepest: React runs a
+      // parent's effects after its children's, so once both re-render the
+      // outer submenu is the newest registrant and is asked first. Defer to
+      // the open path instead — a deeper level open under this one takes it.
+      if (tree && tree.path.length > depth + 1) return false;
       closeSelf(true);
       return true;
     });
