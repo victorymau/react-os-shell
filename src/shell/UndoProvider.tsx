@@ -1,5 +1,7 @@
-import { createContext, useCallback, useContext, useEffect, useId, useMemo, useReducer, useRef, useState } from 'react';
-import { useIsActiveWindow } from './Modal';
+import { useCallback, useContext, useEffect, useId, useMemo, useReducer, useRef, useState } from 'react';
+import { ModalActions, useEnclosingModalId, useIsActiveWindow, useModalFooterOpen } from './Modal';
+import UndoControls from './UndoControls';
+import { UndoContext, type UndoContextValue, type UndoSlice as Slice } from './undoContext';
 import { useShellAuth } from './ShellAuth';
 import {
   undoReducer,
@@ -10,33 +12,8 @@ import {
   type UndoHotkeyEvent,
 } from '../hooks/undoHistory';
 
-interface Slice {
-  /** The value as this slice last saw it — the "before" of a pending change. */
-  getLast: () => unknown;
-  /** Pre-arm the slice so a value it is about to receive is not recorded. */
-  setLast: (v: unknown) => void;
-  apply: (v: unknown) => void;
-}
+export type { UndoContextValue, UndoSlice } from './undoContext';
 
-interface UndoContextValue {
-  register: (id: string, slice: Slice) => void;
-  unregister: (id: string) => void;
-  /** `change` is the slice's before/after; while a baseline settles it is what
-   *  decides whether a record landed (a value differing by content) or the
-   *  same one came round again in a fresh object. */
-  record: (label: string, coalesceKey: string | null, change?: { prev: unknown; next: unknown }) => void;
-  undo: () => void;
-  redo: () => void;
-  clear: () => void;
-  baseline: (key?: string | number | null) => void;
-  canUndo: boolean;
-  canRedo: boolean;
-  undoLabel: string | null;
-  redoLabel: string | null;
-  enabled: boolean;
-}
-
-const UndoContext = createContext<UndoContextValue | null>(null);
 
 /**
  * Runaway detection: this many steps in a row, with no pause longer than
@@ -112,11 +89,29 @@ export interface UndoProviderProps {
 export function UndoProvider({ children, canEdit = true, perms, windowId }: UndoProviderProps) {
   const [state, dispatch] = useReducer(undoReducer, emptyUndoState);
   const slices = useRef(new Map<string, Slice>());
+  // How many slices are registered, as state rather than the map's size: the
+  // map is a ref and changes to it do not render, and "does this window have a
+  // form in it" is exactly what the footer needs to re-render on.
+  const [sliceCount, setSliceCount] = useState(0);
+  const hasState = sliceCount > 0;
+  // Read-only claims from inside the form — `useUndoCanEdit(false)`. Counted,
+  // so two components claiming it and one unmounting leaves the other's claim
+  // standing. This is how a form whose state lives in the same component as
+  // its markup says "read-only" to the provider WindowManager mounted above it:
+  // nesting a `<UndoProvider canEdit={false}>` in its JSX would only cover the
+  // children, while its own hooks would keep registering with the outer stack.
+  const [readOnlyClaims, setReadOnlyClaims] = useState(0);
+  // The other direction: `useUndoCanEdit(true)` from a window that edits in
+  // place (a detail with inline cells behind a permission). The footer shows
+  // the pair for a window the shell knows to be editing — a draft, a
+  // duplicate, Edit mode — and otherwise only for one that has said so.
+  const [editClaims, setEditClaims] = useState(0);
+  const declaredEditable = editClaims > 0;
   const { hasAnyPerm } = useShellAuth();
 
   // Read-only means nothing to take back. Gating here rather than on the
   // buttons keeps a stale ⌘Z from stepping a form the user may not change.
-  const enabled = canEdit && (perms && perms.length > 0 ? hasAnyPerm(perms) : true);
+  const enabled = canEdit && readOnlyClaims === 0 && (perms && perms.length > 0 ? hasAnyPerm(perms) : true);
 
   // One user action can move several slices in the same commit — a bulk import
   // fills the line items and resets the grid. Their effects all run before the
@@ -133,8 +128,46 @@ export function UndoProvider({ children, canEdit = true, perms, windowId }: Undo
     return values;
   }, []);
 
-  const register = useCallback((id: string, slice: Slice) => { slices.current.set(id, slice); }, []);
-  const unregister = useCallback((id: string) => { slices.current.delete(id); }, []);
+  const register = useCallback((id: string, slice: Slice) => {
+    if (!slices.current.has(id)) setSliceCount(c => c + 1);
+    slices.current.set(id, slice);
+  }, []);
+  const unregister = useCallback((id: string) => {
+    if (slices.current.delete(id)) setSliceCount(c => c - 1);
+  }, []);
+  const claimReadOnly = useCallback((on: boolean) => { setReadOnlyClaims(c => c + (on ? 1 : -1)); }, []);
+  const claimEditable = useCallback((on: boolean) => { setEditClaims(c => c + (on ? 1 : -1)); }, []);
+  // Whether the form has mounted its own `<UndoControls />`. The shell fills
+  // in a pair only where there is none: a form written before the shell did
+  // this keeps its pair where it deliberately put it — a plain overlay with no
+  // window footer to portal into, say — and shows one, not two.
+  const [ownMountClaims, setOwnMountClaims] = useState(0);
+  const handMounted = ownMountClaims > 0;
+  const claimOwnMount = useCallback((on: boolean) => { setOwnMountClaims(c => c + (on ? 1 : -1)); }, []);
+  // A provider nested inside a window that is itself read-only says so to the
+  // stack above it. The form's own `useUndoableState` calls sit in the same
+  // component as the nested provider and so register with the OUTER stack; a
+  // nested `canEdit={false}` that only shadowed the children would leave that
+  // stack live — ⌘Z stepping a locked record, and the footer offering a pair
+  // for it. Forwarding the claim makes the documented pattern mean what it
+  // says: this window's record may not be edited.
+  const parent = useContext(UndoContext);
+  const parentClaimReadOnly = parent?.claimReadOnly;
+  useEffect(() => {
+    if (!parentClaimReadOnly || enabled) return;
+    parentClaimReadOnly(true);
+    return () => parentClaimReadOnly(false);
+  }, [parentClaimReadOnly, enabled]);
+  // And a hand mount inside a nested provider is a hand mount for the window:
+  // the form's own `useUndoableState` calls registered with the stack ABOVE,
+  // so without this the outer stack never hears the claim and the footer puts
+  // a live pair next to the form's own — two pairs on an editable sample.
+  const parentClaimOwnMount = parent?.claimOwnMount;
+  useEffect(() => {
+    if (!parentClaimOwnMount || !handMounted) return;
+    parentClaimOwnMount(true);
+    return () => parentClaimOwnMount(false);
+  }, [parentClaimOwnMount, handMounted]);
 
   // Runaway guard. A slice registered with a value that is freshly allocated
   // on every render — `useUndoable(rows.filter(r => r.on), ...)` rather than a
@@ -329,11 +362,40 @@ export function UndoProvider({ children, canEdit = true, perms, windowId }: Undo
 
   const value = useMemo<UndoContextValue>(() => ({
     register, unregister, record, undo, redo, clear, baseline, canUndo, canRedo, enabled,
+    hasState, handMounted, claimOwnMount, claimReadOnly, declaredEditable, claimEditable,
     undoLabel: canUndo ? state.past[state.past.length - 1].label : null,
     redoLabel: canRedo ? state.future[0].label : null,
-  }), [register, unregister, record, undo, redo, clear, baseline, canUndo, canRedo, enabled, state.past, state.future]);
+  }), [register, unregister, record, undo, redo, clear, baseline, canUndo, canRedo, enabled,
+    hasState, handMounted, claimOwnMount, claimReadOnly, declaredEditable, claimEditable, state.past, state.future]);
 
-  return <UndoContext.Provider value={value}>{children}</UndoContext.Provider>;
+  // The controls are the shell's to show, not the form's to remember. A stack
+  // with state in it and a user who may edit gets its Undo/Redo pair in the
+  // window footer, left slot, without the form mounting anything. Which
+  // component puts it there depends on where the provider sits: one mounted
+  // inside a window — a form's own `<UndoProvider canEdit=…>` — portals it
+  // through `ModalActions` like any other footer action, here. The one
+  // `WindowManager` mounts sits ABOVE the `<Modal>` and has no footer to reach,
+  // so there the Modal reads this context and renders the pair itself.
+  //
+  // A nested pair follows the same footer terms as the window's: it joins a
+  // footer that is there for other reasons and never creates one, and the
+  // mobile chrome, which hides the footer, gets nothing (`useModalFooterOpen`
+  // answers both, and the portal is `quiet`, so the pair is never itself the
+  // reason the bar shows). What stands in for the window's editing check is
+  // this provider's own `canEdit`: the form that nested it has already said
+  // whether the record may be edited, which is exactly the fact the provider
+  // `WindowManager` mounts cannot know — and a dialog, which has no editing
+  // state of its own, would otherwise lose its pair.
+  const insideModal = useEnclosingModalId() !== '';
+  const footerOpen = useModalFooterOpen();
+  const showsOwnControls = insideModal && enabled && hasState && !handMounted && footerOpen;
+
+  return (
+    <UndoContext.Provider value={value}>
+      {showsOwnControls && <ModalActions position="left" quiet><UndoControls auto /></ModalActions>}
+      {children}
+    </UndoContext.Provider>
+  );
 }
 
 export interface UndoControlsApi {
@@ -380,6 +442,9 @@ export interface UndoControlsApi {
   /** False when the user may not edit this record, so custom UI can hide
    *  itself the way `UndoControls` does. */
   enabled: boolean;
+  /** True once the form has registered any state — the window has something
+   *  an Undo could act on, and the shell shows the controls for it. */
+  hasState: boolean;
 }
 
 /**
@@ -399,7 +464,39 @@ export function useUndo(): UndoControlsApi {
     undoLabel: ctx?.undoLabel ?? null,
     redoLabel: ctx?.redoLabel ?? null,
     enabled: ctx?.enabled ?? false,
+    hasState: ctx?.hasState ?? false,
   };
+}
+
+/**
+ * Tell the enclosing stack whether this record may be edited right now.
+ *
+ * `enabled` is otherwise the provider's own claim (`canEdit`, `perms`), and
+ * the provider `WindowManager` mounts around every window makes none — it
+ * knows nothing about the record inside. A form that does know says so here:
+ *
+ *     useUndoCanEdit(!isLocked);
+ *
+ * and while the value is false the stack records nothing, ⌘Z is left to the
+ * browser, and the footer shows no controls. A nested
+ * `<UndoProvider canEdit={false}>` in the form's JSX says the same thing: it
+ * shadows the stack for its children and forwards the read-only claim to the
+ * stack above it — the one the form's own `useUndoableState` calls, made above
+ * it in the tree, register with. Either form of the claim makes the whole
+ * window read-only; the hook just needs no extra element. `useUndoCanEdit(true)`
+ * is the positive claim: a window that edits in place outside Edit mode asks
+ * the footer for the pair with it.
+ */
+export function useUndoCanEdit(canEdit: boolean) {
+  const ctx = useContext(UndoContext);
+  const claimReadOnly = ctx?.claimReadOnly;
+  const claimEditable = ctx?.claimEditable;
+  useEffect(() => {
+    const claim = canEdit ? claimEditable : claimReadOnly;
+    if (!claim) return;
+    claim(true);
+    return () => claim(false);
+  }, [claimReadOnly, claimEditable, canEdit]);
 }
 
 export interface UndoableOptions {

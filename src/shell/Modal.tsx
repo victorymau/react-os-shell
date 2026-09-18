@@ -13,6 +13,8 @@ import WindowErrorBoundary from './WindowErrorBoundary';
 import { useShellPrefs } from './ShellPrefs';
 import { boxFillsWorkArea, computeMaximizedBox, growBoxToWidth, isSidebarStripReserved, readAlwaysMaximizedFlag, scrollerIsFluid, widthToFit } from './workArea';
 import { runEscapeInterceptors } from './escapeInterceptors';
+import { UndoContext } from './undoContext';
+import UndoControls from './UndoControls';
 
 /** Context that passes the modal's unique ID to children */
 const ModalIdContext = createContext<string>('');
@@ -170,8 +172,25 @@ interface ModalActionsCtx {
   notify: () => void;
   active: boolean;
   isDirty: boolean;
+  /** The footer bar is showing, and for a reason other than the shell's own
+   *  Undo/Redo pair: the window is not a widget, compact, app-styled or on the
+   *  mobile chrome, and something else is in it. */
+  footerOpen: boolean;
 }
 const ModalActionsContext = createContext<ModalActionsCtx | null>(null);
+
+/**
+ * Whether the enclosing `<Modal>`'s footer bar is showing for a reason other
+ * than the shell's own Undo/Redo pair; false outside a Modal.
+ *
+ * A provider nested inside a window reads it to put its pair in the footer on
+ * the same terms the window's own pair gets: it joins a footer that is there
+ * for other reasons and never creates one, and the mobile chrome, which hides
+ * the footer, gets nothing.
+ */
+export function useModalFooterOpen(): boolean {
+  return useContext(ModalActionsContext)?.footerOpen ?? false;
+}
 
 /**
  * The id of the `<Modal>` this component is rendered inside, or `''` outside one.
@@ -197,7 +216,14 @@ export function useModalActive(): boolean {
   return ctx?.active ?? (activationOrder.length <= 1 || activeId != null);
 }
 
-export function ModalActions({ children, position = 'right' }: { children: React.ReactNode; position?: 'left' | 'right' }) {
+export function ModalActions({ children, position = 'right', quiet = false }: {
+  children: React.ReactNode;
+  position?: 'left' | 'right';
+  /** @internal Content that joins a footer but is no reason to show one — the
+   *  shell's own Undo/Redo pair. It does not tell the Modal the footer has
+   *  content. */
+  quiet?: boolean;
+}) {
   const ctx = useContext(ModalActionsContext);
   const [target, setTarget] = useState<HTMLElement | null>(null);
 
@@ -205,7 +231,7 @@ export function ModalActions({ children, position = 'right' }: { children: React
     if (!ctx) return;
     const ref = position === 'left' ? ctx.leftRef : ctx.rightRef;
     const check = () => {
-      if (ref.current) { setTarget(ref.current); ctx.notify(); return true; }
+      if (ref.current) { setTarget(ref.current); if (!quiet) ctx.notify(); return true; }
       return false;
     };
     if (check()) return;
@@ -213,7 +239,7 @@ export function ModalActions({ children, position = 'right' }: { children: React
     const t = setInterval(() => { if (check()) clearInterval(t); }, 50);
     const cleanup = setTimeout(() => clearInterval(t), 2000);
     return () => { clearInterval(t); clearTimeout(cleanup); };
-  }, [ctx, position]);
+  }, [ctx, position, quiet]);
 
   if (!target) return null;
   return createPortal(children, target);
@@ -359,6 +385,11 @@ interface ModalProps {
   actions?: React.ReactNode;
   /** Footer actions (left side) — alternative to ModalActions portal */
   actionsLeft?: React.ReactNode;
+  /** The window is in an editing state — a draft, a duplicate, or Edit mode
+   *  on a detail — which is when the footer shows Undo/Redo for the form's
+   *  stack of its own accord. `WindowManager` sets it; a window that edits in
+   *  place says `useUndoCanEdit(true)` instead. */
+  editing?: boolean;
   /** Allow the window to be pinned on top of all others */
   allowPinOnTop?: boolean;
   /** Initial position hint */
@@ -1273,7 +1304,7 @@ export function ExposeBackdrop() {
 }
 
 
-export default function Modal({ open, onClose, title, icon, copyText, size = 'lg', dirty = false, onNext, onPrev, footer, bodyScroll, onMinimize, initialBox, actions, actionsLeft, allowPinOnTop, initialPosition, widget, compact, appStyle, flushBody, autoHeight, autoMinHeight, autoWidth, widgetMenu, dimensions, windowKey, openedFromKey, accentRgb, children }: ModalProps) {
+export default function Modal({ open, onClose, title, icon, copyText, size = 'lg', dirty = false, onNext, onPrev, footer, bodyScroll, onMinimize, initialBox, actions, actionsLeft, editing = false, allowPinOnTop, initialPosition, widget, compact, appStyle, flushBody, autoHeight, autoMinHeight, autoWidth, widgetMenu, dimensions, windowKey, openedFromKey, accentRgb, children }: ModalProps) {
   const isMobile = useIsMobile();
   // Mobile swipe-from-left-edge gesture: track horizontal offset of the panel.
   // 0 = at rest. While the user is dragging from the left edge, this grows
@@ -1410,6 +1441,27 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   // consumer JSX props get a new identity every render and would thrash the
   // measurement effect's dependency array.
   const hasFooterContent = !!(footer || actions || actionsLeft) || hasActions;
+  // Undo/Redo for the window's form, shown by the shell rather than mounted
+  // by the form. The stack is the one `WindowManager` mounts ABOVE this Modal
+  // (`UndoProvider windowId={item.id}`), which is why the footer reads it
+  // rather than the provider portalling in through `ModalActions` as a
+  // provider nested inside a window does. Only the window's own Modal shows
+  // it — a dialog a form opens is a Modal inside a Modal, and the enclosing id
+  // says so — only once the form has registered state, so a list window or a
+  // detail with nothing to take back gets no dead pair, and only where the
+  // form has not mounted a pair of its own. It joins a footer that is there
+  // for other reasons and never conjures one: a window that had no footer bar
+  // keeps having none, and the mobile chrome hides the footer altogether.
+  // And it shows only where the window is known to be editing — a draft, a
+  // duplicate, Edit mode (`editing`, from WindowManager) — or where the form
+  // has said so (`useUndoCanEdit(true)`): a detail view holds state it may
+  // not let this user change, behind a status or a permission the shell
+  // cannot see, and offering a live pair there is not the shell's call.
+  const undoCtx = useContext(UndoContext);
+  const nestedInWindow = useContext(ModalIdContext) !== '';
+  const showsUndo = !!undoCtx && !nestedInWindow && undoCtx.enabled && undoCtx.hasState
+    && (editing || undoCtx.declaredEditable)
+    && !undoCtx.handMounted && hasFooterContent && !widget && !compact && !appStyle && !isMobile;
   // Every window must surface a clickable icon — it's the only entry point
   // to the window menu. Fall back to a generic "window" glyph when the
   // consumer hasn't supplied one. Consumer icons rarely include explicit
@@ -1510,12 +1562,18 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
   useEffect(() => { if (!exposeActive) setExposeHovered(false); }, [exposeActive]);
 
 
-  // Track whether ModalActions portal has content (either left or right)
+  // Track whether ModalActions portal has content (either left or right).
+  // The shell's own Undo/Redo pair, portalled in by a provider nested in the
+  // window, does not count: it joins a footer that is there for other reasons,
+  // and counting it would keep the bar open after everything else had gone.
   useEffect(() => {
     const r = actionsRef.current;
     const l = actionsLeftRef.current;
     if (!r && !l) return;
-    const check = () => setHasActions((r?.childElementCount ?? 0) + (l?.childElementCount ?? 0) > 0);
+    const counted = (el: HTMLElement | null) => el
+      ? Array.from(el.children).filter(c => (c as HTMLElement).dataset.undoControls !== 'shell').length
+      : 0;
+    const check = () => setHasActions(counted(r) + counted(l) > 0);
     check();
     const obs = new MutationObserver(check);
     if (r) obs.observe(r, { childList: true });
@@ -2897,7 +2955,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
 
         {/* BODY */}
         <ModalIdContext.Provider value={modalId}>
-        <ModalActionsContext.Provider value={{ rightRef: actionsRef as React.RefObject<HTMLDivElement | null>, leftRef: actionsLeftRef as React.RefObject<HTMLDivElement | null>, notify: () => setHasActions(true), active: isActive, isDirty }}>
+        <ModalActionsContext.Provider value={{ rightRef: actionsRef as React.RefObject<HTMLDivElement | null>, leftRef: actionsLeftRef as React.RefObject<HTMLDivElement | null>, notify: () => setHasActions(true), active: isActive, isDirty, footerOpen: hasFooterContent && !widget && !compact && !appStyle && !isMobile }}>
         <div
           ref={bodyRef}
           {...(widget ? { onPointerDown: startDrag, onContextMenu: (e: React.MouseEvent) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }); } } : {})}
@@ -2942,6 +3000,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
           className={`px-4 py-2 border-t border-gray-200 shrink-0 flex items-center justify-between text-xs select-none cursor-move${isActive ? ' backdrop-blur-sm' : ''}${widget || compact || appStyle || isMobile || !hasFooterContent ? ' hidden' : ''}`}
           style={{ touchAction: 'none', backgroundColor: isActive ? `rgb(var(--window-footer-rgb) / var(--active-header-opacity, 0.8))` : `rgb(var(--window-footer-rgb) / var(--inactive-header-opacity, 0.7))` }}>
           <div className="flex items-center gap-2 min-w-0">
+            {showsUndo && <UndoControls auto />}
             {actionsLeft}
             <div ref={actionsLeftRef} data-modal-actions-left className="flex items-center gap-2" />
             {footer}
