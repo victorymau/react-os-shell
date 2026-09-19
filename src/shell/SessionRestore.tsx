@@ -16,13 +16,20 @@
  *  - Restore runs ONCE per mount, and only when no window is already open —
  *    a deep link that opened a window before this ran wins, we never stack
  *    a stale session on top of it.
- *  - Persisting starts only after the restore attempt, so mounting with an
- *    empty desktop cannot overwrite the saved set it was about to replay.
+ *  - Persisting starts only after the restore attempt, and writes only when
+ *    the open windows differ from the saved set — the set the restore read,
+ *    then the set last written. So a mount, replayed or not, writes nothing
+ *    until the user opens or closes a window, and a consumer's adapter
+ *    re-rendering (a new `save` each render) writes nothing either.
  *    Saves are debounced — opening five windows writes once.
  *  - The saved refs are read from the prefs available AT MOUNT. The bundled
  *    localStorage adapter is synchronous, so that is simply "the prefs"; a
  *    consumer whose prefs hydrate later misses the restore for that load
- *    rather than restoring at a surprising moment mid-session.
+ *    rather than restoring at a surprising moment mid-session — and keeps its
+ *    saved set, because the empty desktop it mounted onto is not a change.
+ *  - Geometry is not session state. Moving or resizing a window changes no
+ *    ref, so it writes nothing here; each window's box is Modal's, kept in
+ *    browser localStorage (`erp_window_positions`).
  *  - Part-number lookup windows are not restored: they open through a search
  *    round-trip, not the registry, and a stale lookup re-running a search at
  *    login is a surprise rather than a restoration.
@@ -54,27 +61,39 @@ export function toSessionRefs(openWindows: MinimizedItem[]): SessionWindowRef[] 
   return refs;
 }
 
+/** Whether two ref lists name the same windows in the same order. Compared
+ *  field by field, not as JSON: a backend may hand the saved refs back with
+ *  their keys reordered (Postgres `jsonb` sorts them), which is no change. */
+export function sameSessionRefs(a: SessionWindowRef[], b: SessionWindowRef[]): boolean {
+  return a.length === b.length && a.every((r, i) => (
+    r.type === b[i].type && r.route === b[i].route && r.entityType === b[i].entityType
+    && r.entityId === b[i].entityId && r.label === b[i].label
+  ));
+}
+
 const SAVE_DEBOUNCE_MS = 800;
 
 export default function SessionWindowRestore() {
   const { openWindows, openEntity, openPage } = useWindowManager();
   const { prefs, save } = useShellPrefs();
   const restoredRef = useRef(false);
+  // The set the prefs hold, as far as this mount knows: what the restore
+  // read, then what was last written.
+  const savedRef = useRef<SessionWindowRef[]>([]);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // ── Restore, once, at mount ──
   useEffect(() => {
     if (restoredRef.current) return;
     restoredRef.current = true;
+    const saved: SessionWindowRef[] = Array.isArray(prefs.session_windows) ? prefs.session_windows : [];
+    savedRef.current = saved;
     if (prefs.restore_windows === false) return;
     if (openWindows.length > 0) return;
-    const saved: SessionWindowRef[] = Array.isArray(prefs.session_windows) ? prefs.session_windows : [];
     for (const w of saved) {
       if (w.type === 'page' && w.route) openPage(w.route);
       else if (w.type === 'entity' && w.entityType && w.entityId) openEntity(w.entityType, w.entityId, undefined, w.label, w.route);
     }
-    // The restore itself changes openWindows, which the persist effect below
-    // will re-save — same refs, harmless, and it confirms the round-trip.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -83,7 +102,15 @@ export default function SessionWindowRestore() {
     if (!restoredRef.current) return;
     clearTimeout(saveTimer.current);
     const refs = toSessionRefs(openWindows);
-    saveTimer.current = setTimeout(() => save({ session_windows: refs }), SAVE_DEBOUNCE_MS);
+    // The desktop matches the saved set: nothing to write. This is what keeps
+    // a mount whose prefs had not arrived from writing its empty desktop over
+    // the set it never saw. It runs after the clear, so a window opened and
+    // closed again inside the debounce cancels its own pending write.
+    if (sameSessionRefs(refs, savedRef.current)) return;
+    saveTimer.current = setTimeout(() => {
+      savedRef.current = refs;
+      save({ session_windows: refs });
+    }, SAVE_DEBOUNCE_MS);
     return () => clearTimeout(saveTimer.current);
   }, [openWindows, save]);
 
