@@ -9,7 +9,7 @@
  * by `storageKey` — so the package works out of the box for a backend-less
  * consumer.
  */
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from 'react';
 
 export interface ShellPrefsAdapter {
   /** The current prefs object. The shell reads its known keys directly off
@@ -56,11 +56,44 @@ export function useLocalStoragePrefs(
   return { prefs, save };
 }
 
-/** Returns the active prefs adapter. When no provider is mounted, returns a
- *  no-op adapter that reads as empty and silently drops saves — components
- *  still render, but persistence is a no-op. */
+/** Stable no-provider adapter: reads as empty, drops saves. One instance, so
+ *  a component with no provider above it is not handed a new `save` (and a new
+ *  effect dependency) on every render. */
+const NO_PROVIDER: ShellPrefsAdapter = { prefs: {}, save: () => {} };
+
+/** The adapter exactly as the consumer supplied it — its `save` MAY reject.
+ *
+ *  A consumer whose adapter reports a failed write is how the shell knows a
+ *  write did not land, which is what lets `SessionWindowRestore` retry one
+ *  rather than record a lost write as saved. That component is the only caller
+ *  that wants this; everything else wants `useShellPrefs`. Exported from the
+ *  module for it and for the spec, not from the package index. */
+export function useShellPrefsAdapter(): ShellPrefsAdapter {
+  return useContext(ShellPrefsContext) ?? NO_PROVIDER;
+}
+
+/** Returns the active prefs adapter. When no provider is mounted, reads as
+ *  empty and silently drops saves — components still render, but persistence
+ *  is a no-op.
+ *
+ *  `save` here NEVER REJECTS. Nearly every caller fires and forgets —
+ *  `save({ desktop_bg: bg })` inside an onChange, with the result discarded —
+ *  and an adapter that reports a failed write turns each of those into an
+ *  unhandled rejection, one per failed PATCH, across the shell and every
+ *  consumer. So the rejection is swallowed once here rather than at a dozen
+ *  call sites that would each have to remember. `await save(…)` still works;
+ *  it just resolves whether or not the write landed.
+ *
+ *  A caller that must know reads `useShellPrefsAdapter` instead. */
 export function useShellPrefs(): ShellPrefsAdapter {
-  const ctx = useContext(ShellPrefsContext);
-  if (ctx) return ctx;
-  return { prefs: {}, save: () => {} };
+  const { prefs, save: rawSave } = useShellPrefsAdapter();
+  const save = useCallback((patch: Record<string, any>) => {
+    const result = rawSave(patch);
+    // Stay thenable for `await save(…)`, but settled either way. Duck-typed:
+    // an adapter may hand back any thenable, not a native Promise.
+    return result && typeof (result as Promise<void>).then === 'function'
+      ? (result as Promise<void>).catch(() => {})
+      : result;
+  }, [rawSave]);
+  return useMemo(() => ({ prefs, save }), [prefs, save]);
 }
