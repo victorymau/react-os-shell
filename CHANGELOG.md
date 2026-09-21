@@ -24,6 +24,21 @@ All notable changes to this project will be documented in this file. The format 
   by field, so a backend that returns them with their keys reordered (Postgres
   `jsonb` sorts them) is not a change.
 
+  A write counts as saved when it SETTLES, not when it is fired. Advancing the
+  moment the save was dispatched meant a rejected write left the shell
+  believing a lost set had landed: every later comparison came out equal and
+  the write was never retried, so the server kept the set from before the
+  change for the rest of the session. A rejection now leaves the saved set
+  alone and the next change writes the whole list again. The set being written
+  is held while it is in flight, so the gap between firing and settling does
+  not re-arm a second write of the same set.
+
+  This last part only does its work if the consumer's adapter lets a failed
+  save reach the shell. An adapter that catches its own rejection before
+  returning — `patch(...).catch(() => {}).then(...)` — resolves whether the
+  request succeeded or failed, and the shell cannot tell the two apart. Move
+  the catch after the then, or let the promise reject.
+
   Moving or resizing a window still writes nothing to prefs, as before:
   geometry is not session state. Each window's box belongs to `Modal`, kept in
   browser localStorage (`erp_window_positions`).
