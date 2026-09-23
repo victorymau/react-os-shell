@@ -364,6 +364,7 @@ function RestoredRegistryModal({ item, onClose, onMinimize, accentRgb }: { item:
       openedFromKey={item.openedFrom}
       size={(entry.size || '2xl') as any}
       dirty={dirty}
+      editing={editing || isDraft || isDuplicate}
       dimensions={entry.dimensions}
       autoHeight={entry.autoHeight}
       autoMinHeight={entry.autoMinHeight}
