@@ -38,7 +38,7 @@
 import { useEffect, useRef } from 'react';
 
 import { useWindowManager, type MinimizedItem } from './WindowManager';
-import { useShellPrefs } from './ShellPrefs';
+import { useShellPrefsAdapter } from './ShellPrefs';
 
 export interface SessionWindowRef {
   type: 'page' | 'entity';
@@ -76,7 +76,10 @@ const SAVE_DEBOUNCE_MS = 800;
 
 export default function SessionWindowRestore() {
   const { openWindows, openEntity, openPage } = useWindowManager();
-  const { prefs, save } = useShellPrefs();
+  // The RAW adapter, not useShellPrefs: this is the one caller that needs a
+  // failed write to come back as a rejection, so the write is retried rather
+  // than recorded as saved. useShellPrefs swallows it for everyone else.
+  const { prefs, save } = useShellPrefsAdapter();
   const restoredRef = useRef(false);
   // The set the prefs hold, as far as this mount knows: what the restore
   // read, then what was last written.
