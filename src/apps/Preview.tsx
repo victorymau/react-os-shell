@@ -515,12 +515,16 @@ function DxfPanel({ url, filename, onDownload, onEmail }: DxfPanelProps) {
         });
         if (cancelled || !containerRef.current) return;
 
-        // clearColor must be a THREE.Color (Library calls .getHex()).
-        let three: any = null;
-        try { three = await import(/* @vite-ignore */ 'three' as any); } catch {}
-        const ClearColor = three?.Color ?? null;
+        // clearColor must be a THREE.Color (Library calls .getHex()). Clone
+        // dxf-viewer's own default rather than `import('three')`: a bare
+        // specifier never resolves in the browser, and the rejected import
+        // fires `vite:preloadError`, which the stale-chunk handler read as a
+        // missed deploy and reloaded the page.
         const viewerOpts: any = { autoResize: true };
-        if (ClearColor) viewerOpts.clearColor = new ClearColor(0xffffff);
+        const defaultClear = DxfViewer.DefaultOptions?.clearColor;
+        if (typeof defaultClear?.clone === 'function') {
+          viewerOpts.clearColor = defaultClear.clone().setHex(0xffffff);
+        }
         viewer = new DxfViewer(containerRef.current, viewerOpts);
         viewerRef.current = viewer;
 

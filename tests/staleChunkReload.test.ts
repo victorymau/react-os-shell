@@ -144,6 +144,34 @@ test('a garbage stamp in storage counts as no stamp', () => {
   }
 });
 
+test('a rejected bare-specifier import is not a missing chunk and never reloads', () => {
+  // Vite's preload wrapper dispatches the event for ANY rejected dynamic
+  // import. The DXF preview's `import('three')` probe rejected this way on
+  // every open and the portal reloaded (regis/Wheelwright, 2026-09-24). The
+  // messages are the ones Chromium and WebKit gave in that reproduction, plus
+  // Firefox's wording for the same failure.
+  let reloads = 0;
+  const storage = new MemoryStorage();
+  const uninstall = installStaleChunkReload({ reload: () => { reloads += 1; }, storage, now: () => 1_000 });
+  try {
+    for (const message of [
+      "Failed to resolve module specifier 'three'",
+      "Module name, 'three' does not resolve to a valid URL.",
+      'The specifier “three” was a bare specifier, but was not remapped to anything.',
+    ]) {
+      const event = quiet(() => fire(new TypeError(message)));
+      assert.equal(event.defaultPrevented, false, `${message}: Vite must rethrow so the caller's catch runs`);
+    }
+    assert.equal(reloads, 0);
+    assert.equal(storage.getItem(STALE_CHUNK_RELOAD_KEY), null, 'no cooldown is spent on a non-chunk failure');
+
+    quiet(() => fire());
+    assert.equal(reloads, 1, 'a genuinely missing chunk still reloads afterwards');
+  } finally {
+    uninstall();
+  }
+});
+
 test('uninstalling stops listening', () => {
   let reloads = 0;
   const uninstall = installStaleChunkReload({ reload: () => { reloads += 1; }, storage: null });
