@@ -21,6 +21,9 @@ import { glassStyle } from '../utils/glass';
 import { INPUT_BASE } from '../forms/styles';
 import { useDropdownPosition, MENU_MAX_HEIGHT } from '../forms/dropdownPosition';
 import { useShellStrings } from './strings';
+import { registerModalEscapeInterceptor } from './escapeInterceptors';
+import { onOverlayOpen } from './overlayEvents';
+import { Z_LAYERS } from './zLayers';
 
 export interface SearchableOption {
   value: string;
@@ -107,6 +110,28 @@ export default function SearchableSelect({
   const triggerRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const adornRef = useRef<HTMLDivElement>(null);
+  // Read by the handlers that can run between a close and the re-render that
+  // follows it — a blur the close itself caused, or an overlay opening in the
+  // same commit — so a menu that has already closed is never closed twice
+  // (and never commits free text on its way out after a pick).
+  const openRef = useRef(open);
+  openRef.current = open;
+  // True for the length of a pointer press inside the portalled menu. Pressing
+  // its padding, its "no matches" line or its scrollbar moves focus to <body>,
+  // and that blur must not read as focus leaving the control.
+  const menuPressRef = useRef(false);
+
+  /** Close the menu. `commit` applies the free-text rule every "the user
+   *  moved on" path shares — outside press, Tab, focus leaving, an overlay
+   *  opening: typed text that is not the current value becomes the value. */
+  const closeMenu = (commit: boolean) => {
+    if (!openRef.current) return;
+    openRef.current = false;
+    const typed = search.trim();
+    if (commit && allowFreeText && typed && typed !== value) onChange(typed);
+    setOpen(false);
+    setSearch('');
+  };
 
   // Reserve input padding for the right adornment so long labels truncate
   // in front of it instead of running underneath. Measured (adornment width
@@ -137,20 +162,39 @@ export default function SearchableSelect({
   // (outside `wrapRef`), so the check has to treat clicks inside EITHER the
   // trigger wrap or the portaled menu as "inside" — otherwise scrolling the
   // menu or clicking a wide option would dismiss it.
+  //
+  // An overlay opening (⌘K's search palette, a Dialog) closes it too: the menu
+  // is layered above the overlay layer, so left open it floats crisp over the
+  // overlay's backdrop — see `overlayEvents.ts`.
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
       const t = e.target as Node;
       if (wrapRef.current?.contains(t) || menuRef.current?.contains(t)) return;
-      if (allowFreeText && search.trim() && search.trim() !== value) {
-        onChange(search.trim());
-      }
-      setOpen(false);
-      setSearch('');
+      closeMenu(true);
     };
     document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    const offOverlay = onOverlayOpen(() => closeMenu(true));
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      offOverlay();
+    };
   }, [open, allowFreeText, search, value, onChange]);
+
+  // Esc closes the menu first, WITHOUT closing the window or dialog around it.
+  // Modal's Escape handler runs on window in the CAPTURE phase, ahead of the
+  // input's own onKeyDown, so the interceptor seam is the only way to get
+  // there first — the same registration `Select` makes. The onKeyDown branch
+  // below still covers a plain page, where the seam's own drain calls this.
+  useEffect(() => {
+    if (!open) return;
+    return registerModalEscapeInterceptor(e => {
+      if (e.key !== 'Escape' || !openRef.current) return false;
+      closeMenu(false);
+      triggerRef.current?.blur();
+      return true;
+    });
+  }, [open]);
 
   // Dedupe by `value` — call sites occasionally feed option lists that
   // contain the same id twice (a server returning a row twice across pages,
@@ -183,7 +227,25 @@ export default function SearchableSelect({
   }, [dedupedOptions, search, onSearchChange]);
 
   return (
-    <div ref={wrapRef} className="relative group">
+    <div
+      ref={wrapRef}
+      className="relative group"
+      // Focus leaving BOTH the field and the menu closes it — clicking into
+      // another window's field, a script moving focus, anything the outside
+      // press and the Tab key do not see. React's onBlur is `focusout`, and it
+      // bubbles through the portal along the React tree, so a blur inside the
+      // menu arrives here too.
+      onBlur={e => {
+        const next = e.relatedTarget as Node | null;
+        if (next && (wrapRef.current?.contains(next) || menuRef.current?.contains(next))) return;
+        if (menuPressRef.current) return;
+        // The browser window lost focus, not the field: activeElement still
+        // points at the input, and the menu should be there when the user
+        // comes back.
+        if (document.activeElement === triggerRef.current) return;
+        closeMenu(true);
+      }}
+    >
       {/* Combobox-style trigger: shows the selected label when closed,
           and becomes the search field when focused — typing filters
           the option list directly, no separate search box. */}
@@ -202,29 +264,21 @@ export default function SearchableSelect({
             e.preventDefault();
             if (filtered.length === 1) {
               onChange(filtered[0].value);
-              setOpen(false);
-              setSearch('');
+              closeMenu(false);
             } else if (allowFreeText && search.trim()) {
               onChange(search.trim());
-              setOpen(false);
-              setSearch('');
+              closeMenu(false);
               triggerRef.current?.blur();
             }
           } else if (e.key === 'Escape') {
-            setOpen(false);
-            setSearch('');
+            closeMenu(false);
             triggerRef.current?.blur();
           } else if (e.key === 'Tab') {
             // Tab moves focus to the next field; close/clear the dropdown so the
             // body-portaled results don't linger over the neighbour (BG#00359).
             // No preventDefault — let Tab advance focus as usual (covers
-            // Shift+Tab too). The free-text-commit guard mirrors the outside-
-            // mousedown handler so no new commit behaviour is introduced.
-            if (allowFreeText && search.trim() && search.trim() !== value) {
-              onChange(search.trim());
-            }
-            setOpen(false);
-            setSearch('');
+            // Shift+Tab too). The free-text commit is the outside-press rule.
+            closeMenu(true);
           }
         }}
         placeholder={placeholder || noneLabel}
@@ -233,7 +287,7 @@ export default function SearchableSelect({
         disabled={disabled}
       />
       {value && !disabled && (
-        <ClearButton ariaLabel={strings.select.clear} onClear={() => { onChange(''); setOpen(false); setSearch(''); }} />
+        <ClearButton ariaLabel={strings.select.clear} onClear={() => { onChange(''); closeMenu(false); }} />
       )}
       {rightAdornment && !open && (
         <div ref={adornRef} className={`absolute top-1/2 -translate-y-1/2 ${value && !disabled ? 'right-8' : 'right-2'} flex items-center gap-1 flex-nowrap justify-end pointer-events-none`}>
@@ -243,6 +297,11 @@ export default function SearchableSelect({
       {open && createPortal(
         <div
           ref={menuRef}
+          onMouseDownCapture={() => {
+            menuPressRef.current = true;
+            // Cleared after the press's default action (the focus move) has run.
+            setTimeout(() => { menuPressRef.current = false; }, 0);
+          }}
           // The dropdown must sit ABOVE the modal layer, not below it.
           //
           // It was z-[400], under Dialog and Drawer at z-[9999] — so a Select
@@ -253,8 +312,9 @@ export default function SearchableSelect({
           // Above the toasts too, deliberately: a menu is open only while the
           // user is holding it open, and a notification arriving underneath it
           // is better than one that covers what they are choosing from.
-          className="fixed z-[10000] rounded-2xl overflow-hidden"
+          className="fixed rounded-2xl overflow-hidden"
           style={{
+            zIndex: Z_LAYERS.popup,
             left: menuPos?.left,
             right: menuPos?.right,
             top: menuPos?.top,
@@ -275,7 +335,7 @@ export default function SearchableSelect({
                 <button
                   key={o.value}
                   type="button"
-                  onMouseDown={() => { onChange(o.value); setOpen(false); setSearch(''); }}
+                  onMouseDown={() => { onChange(o.value); closeMenu(false); }}
                   className={`w-full overflow-hidden text-left px-3 py-1.5 text-sm hover:bg-gray-50 flex items-center justify-between gap-2 whitespace-nowrap ${value === o.value ? 'text-blue-600 font-medium bg-blue-50/50' : 'text-gray-700'}`}
                 >
                   <span className="min-w-0 flex-1 truncate">{o.label}</span>

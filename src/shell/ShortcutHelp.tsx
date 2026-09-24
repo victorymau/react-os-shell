@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Dialog, DialogBackdrop, DialogPanel } from '@headlessui/react';
 import { CMD_ENTER, CMD_S, CMD_K, CMD_DOT, CMD_A, CMD_Z, CMD_SHIFT_Z, ALT_SHIFT_D, ALT_SHIFT_E, ALT_SHIFT_N, MOD, SHIFT, ENTER } from './Kbd';
+import { useDismissPopupsOnOpen } from './useDismissPopupsOnOpen';
+import { Z_LAYERS } from './zLayers';
 
 const sections = [
   {
@@ -75,8 +77,14 @@ export default function ShortcutHelp() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
+  // An overlay like the palette and Dialog: opening it closes the popups that
+  // would otherwise float above its backdrop (see `overlayEvents.ts`). The
+  // `?` key never fires from a text field, but a menu or the server-status
+  // card can be open, and `toggle-shortcut-help` arrives from anywhere.
+  useDismissPopupsOnOpen(open);
+
   return (
-    <Dialog open={open} onClose={() => setOpen(false)} className="relative z-[9999]">
+    <Dialog open={open} onClose={() => setOpen(false)} className="relative" style={{ zIndex: Z_LAYERS.overlay }}>
       <DialogBackdrop className="fixed inset-0 bg-black/30 transition-opacity" />
       <div className="fixed inset-0 flex items-center justify-center p-6">
         <DialogPanel className="w-full max-w-md rounded-lg bg-white shadow-xl">

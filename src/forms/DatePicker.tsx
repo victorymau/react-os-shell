@@ -31,6 +31,8 @@ import { useDropdownPosition } from './dropdownPosition';
 import { toISODate } from './DateRangePicker';
 import { inputClasses, type InputSize } from './styles';
 import { registerModalEscapeInterceptor } from '../shell/escapeInterceptors';
+import { onOverlayOpen } from '../shell/overlayEvents';
+import { Z_LAYERS } from '../shell/zLayers';
 
 /** What a native date input speaks, and what this component stores. */
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -135,7 +137,13 @@ const DatePicker = forwardRef<HTMLInputElement, DatePickerProps>(function DatePi
       setOpen(false);
     };
     document.addEventListener('pointerdown', onPointerDown, true);
-    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+    // An overlay opening closes the calendar: it is layered above the overlay
+    // layer and would otherwise float over it (see `overlayEvents.ts`).
+    const offOverlay = onOverlayOpen(() => setOpen(false));
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      offOverlay();
+    };
   }, [open]);
 
   // Escape, on the shell's interceptor seam rather than a listener of our own.
@@ -221,10 +229,11 @@ const DatePicker = forwardRef<HTMLInputElement, DatePickerProps>(function DatePi
           id={panelId}
           role="dialog"
           aria-label={ariaLabel ?? 'Choose a date'}
-          // Portalled to <body>, so this must clear Dialog's z-[9999] layer.
+          // Portalled to <body>, so this must clear Dialog's overlay layer.
           // Otherwise the calendar is visible only behind the dialog scrim.
-          className="fixed z-[10000] w-72 rounded-xl border border-gray-200 bg-white p-3 shadow-lg"
+          className="fixed w-72 rounded-xl border border-gray-200 bg-white p-3 shadow-lg"
           style={{
+            zIndex: Z_LAYERS.popup,
             left: pos?.left, right: pos?.right, top: pos?.top, bottom: pos?.bottom,
             // Hidden for the first paint until the layout effect measures the
             // trigger, so the panel never flashes at (0,0).

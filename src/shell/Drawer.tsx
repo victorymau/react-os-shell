@@ -14,6 +14,8 @@
 import { useEffect, useId, useRef, type ReactNode, type RefObject } from 'react';
 import { useFocusTrap, useScrollLock } from './focusTrap';
 import { registerModalEscapeInterceptor } from './escapeInterceptors';
+import { useDismissPopupsOnOpen } from './useDismissPopupsOnOpen';
+import { Z_LAYERS } from './zLayers';
 
 export type DrawerSide = 'right' | 'left' | 'bottom';
 export type DrawerSize = 'sm' | 'md' | 'lg';
@@ -84,6 +86,10 @@ export default function Drawer({
   const bodyId = useId();
   const titleId = useId();
 
+  // Same as Dialog: opening closes the popups open elsewhere, which sit above
+  // the overlay layer and would float over the scrim.
+  useDismissPopupsOnOpen(open);
+
   useFocusTrap(panelRef, open, initialFocus);
   useScrollLock(open);
 
@@ -104,7 +110,7 @@ export default function Drawer({
   const panelStyle = isBottom ? { maxHeight: '85vh' } : undefined;
 
   return (
-    <div className="fixed inset-0 z-[9999]" role="presentation">
+    <div className="fixed inset-0" style={{ zIndex: Z_LAYERS.overlay }} role="presentation">
       <div className="fixed inset-0 bg-black/30" onClick={blocking ? undefined : onClose} aria-hidden="true" />
       <div
         ref={panelRef}

@@ -23,6 +23,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { VERSION } from '../version';
+import { onOverlayOpen } from './overlayEvents';
+import { Z_LAYERS } from './zLayers';
 
 const DEFAULT_POLL_MS = 15_000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 5_000;
@@ -232,7 +234,8 @@ export default function ServerStatusIndicator({
     if (open && popRef.current) placePopover();
   }, [open, placePopover]);
 
-  // Click-outside + Escape closes the popover.
+  // Click-outside + Escape closes the popover, and so does an overlay opening:
+  // the card is on the popup layer, above the overlay (see `overlayEvents.ts`).
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
@@ -246,9 +249,11 @@ export default function ServerStatusIndicator({
     };
     window.addEventListener('mousedown', onDown);
     window.addEventListener('keydown', onKey);
+    const offOverlay = onOverlayOpen(() => setOpen(false));
     return () => {
       window.removeEventListener('mousedown', onDown);
       window.removeEventListener('keydown', onKey);
+      offOverlay();
     };
   }, [open]);
 
@@ -300,7 +305,7 @@ export default function ServerStatusIndicator({
           ref={popRef}
           role="dialog"
           aria-label="Server connection details"
-          style={{ position: 'fixed', left: popPos.left, top: popPos.top, width: 320, zIndex: 10_000 }}
+          style={{ position: 'fixed', left: popPos.left, top: popPos.top, width: 320, zIndex: Z_LAYERS.popup }}
           className="rounded-lg border border-gray-200 bg-white shadow-lg overflow-hidden text-gray-800"
         >
           {/* Header — status pill + headline timing. */}

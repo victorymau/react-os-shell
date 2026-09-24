@@ -24,6 +24,8 @@ import { glassStyle } from '../utils/glass';
 import { inputClasses } from './styles';
 import { MENU_MAX_HEIGHT, POPUP_MAX_WIDTH, useDropdownPosition } from './dropdownPosition';
 import { useShellStrings } from '../shell/strings';
+import { onOverlayOpen } from '../shell/overlayEvents';
+import { Z_LAYERS } from '../shell/zLayers';
 
 export interface TagInputOption {
   value: string;
@@ -90,7 +92,16 @@ export default function TagInput({
   };
 
   // Close on outside pointer-down — the menu is portaled, so "inside" means
-  // the field wrap OR the menu (see SearchableSelect).
+  // the field wrap OR the menu (see SearchableSelect). An overlay opening is
+  // treated the same way (see `overlayEvents.ts`): the menu is layered above
+  // the overlay layer and would otherwise float over it.
+  //
+  // The overlay path reads the handler through a ref, because an overlay can
+  // open in the SAME commit as a pick (a parent opening a dialog from
+  // `onChange`): the listener still subscribed then is the previous render's,
+  // and its `value` and typed text are the ones from before the pick.
+  const dismissRef = useRef<() => void>(() => {});
+  dismissRef.current = () => { commitFreeText(); setOpen(false); };
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
@@ -100,7 +111,11 @@ export default function TagInput({
       setOpen(false);
     };
     document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    const offOverlay = onOverlayOpen(() => dismissRef.current());
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      offOverlay();
+    };
   });
 
   const hasMenu = options.length > 0;
@@ -189,8 +204,9 @@ export default function TagInput({
           // Above the toasts too, deliberately: a menu is open only while the
           // user is holding it open, and a notification arriving underneath it
           // is better than one that covers what they are choosing from.
-          className="fixed z-[10000] rounded-2xl overflow-hidden"
+          className="fixed rounded-2xl overflow-hidden"
           style={{
+            zIndex: Z_LAYERS.popup,
             left: menuPos?.left,
             right: menuPos?.right,
             top: menuPos?.top,

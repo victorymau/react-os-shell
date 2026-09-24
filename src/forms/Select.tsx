@@ -33,6 +33,8 @@ import { MENU_MAX_HEIGHT, useDropdownPosition } from './dropdownPosition';
 import { glassStyle } from '../utils/glass';
 import { useIsMobile } from '../shell/useIsMobile';
 import { registerModalEscapeInterceptor } from '../shell/escapeInterceptors';
+import { onOverlayOpen } from '../shell/overlayEvents';
+import { Z_LAYERS } from '../shell/zLayers';
 
 export interface SelectOption {
   value: string;
@@ -205,7 +207,9 @@ const ListboxSelect = forwardRef<HTMLSelectElement, SelectProps>(function Listbo
 
   // Close on outside pointer-down. The list is portaled to <body> (outside
   // wrapRef), so a click inside EITHER the trigger wrap or the portaled list
-  // counts as inside.
+  // counts as inside. An overlay opening closes it too — the list is layered
+  // above the overlay layer (see `overlayEvents.ts`) — without taking focus
+  // back, since the overlay is about to claim it.
   useEffect(() => {
     if (!open) return;
     const handler = (e: PointerEvent) => {
@@ -214,7 +218,11 @@ const ListboxSelect = forwardRef<HTMLSelectElement, SelectProps>(function Listbo
       close(false);
     };
     document.addEventListener('pointerdown', handler);
-    return () => document.removeEventListener('pointerdown', handler);
+    const offOverlay = onOverlayOpen(() => close(false));
+    return () => {
+      document.removeEventListener('pointerdown', handler);
+      offOverlay();
+    };
   }, [open, close]);
 
   // Keep the active option scrolled into view as it moves.
@@ -355,8 +363,9 @@ const ListboxSelect = forwardRef<HTMLSelectElement, SelectProps>(function Listbo
           // Above the toasts too, deliberately: a menu is open only while the
           // user is holding it open, and a notification arriving underneath it
           // is better than one that covers what they are choosing from.
-          className="fixed z-[10000] overflow-y-auto rounded-2xl py-1"
+          className="fixed overflow-y-auto rounded-2xl py-1"
           style={{
+            zIndex: Z_LAYERS.popup,
             left: menuPos?.left,
             top: menuPos?.top,
             bottom: menuPos?.bottom,

@@ -15,6 +15,8 @@
 import { useEffect, useId, useRef, type ReactNode, type RefObject } from 'react';
 import { useFocusTrap, useScrollLock } from './focusTrap';
 import { registerModalEscapeInterceptor } from './escapeInterceptors';
+import { useDismissPopupsOnOpen } from './useDismissPopupsOnOpen';
+import { Z_LAYERS } from './zLayers';
 
 export type DialogSize = 'sm' | 'md' | 'lg';
 
@@ -67,6 +69,12 @@ export default function Dialog({
   const showClose = !blocking && !footer;
   const titleId = useId();
 
+  // Opening closes every popup still open elsewhere: they sit on the popup
+  // layer, above this one, and would float over the scrim. A popup inside this
+  // dialog is unaffected — it cannot be open yet, and it only subscribes while
+  // open (see `overlayEvents.ts`).
+  useDismissPopupsOnOpen(open);
+
   useFocusTrap(panelRef, open, initialFocus);
   useScrollLock(open);
 
@@ -88,7 +96,7 @@ export default function Dialog({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[9999]" role="presentation">
+    <div className="fixed inset-0" style={{ zIndex: Z_LAYERS.overlay }} role="presentation">
       {/* No handler here. The dismissal layer below is also `fixed inset-0`
           and sits on top of this, so a click in this region never reaches the
           scrim — an onClick here would be unreachable in every case, and two
