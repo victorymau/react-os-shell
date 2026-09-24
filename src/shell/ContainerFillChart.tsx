@@ -1,9 +1,10 @@
 /**
  * ContainerFillChart — visualises a loading list as one or more shipping
  * containers and their fill percentage. The volume of each line is
- * `quantity * volumePerUnit`; the chart sizes containers (20ft = 33 m³, 40ft
- * = 67 m³, preferring 20ft when the volume fits within +5%) and draws a fill
- * bar per container slot.
+ * `quantity * volumePerUnit` unless the consumer supplies the line's volume
+ * itself; the chart sizes containers (20ft = 33 m³, 40ft = 67 m³, preferring
+ * 20ft when the volume fits within +5%) and draws a fill bar per container
+ * slot.
  *
  * Dual-bar mode (instruction vs loaded): when actual quantities exist on the
  * items, each container row layers two bars — blue for instruction volume,
@@ -12,7 +13,11 @@
  *
  * Product-agnostic: this component does NO fetching. The per-unit volume of
  * each item is supplied by the consumer via `getVolume(item)` (typically a
- * lookup into a part-number → volume map the app fetched). Quantity and
+ * lookup into a part-number → volume map the app fetched). When one unit of
+ * volume is not one piece — goods packed many pieces to a carton, whose
+ * catalogue volume is the carton's — `getInstructionVolume` /
+ * `getActualVolume` hand over each line's total instead, and the piece counts
+ * in the header stay piece counts. Quantity and
  * "new" extraction default to the common `quantity` / `actual_qty` / `_isNew`
  * field names but are overridable so the chart isn't tied to any one shape.
  */
@@ -29,13 +34,34 @@ export interface ContainerFillItem {
 }
 
 export interface ContainerFillChartProps<T = ContainerFillItem> {
-  /** Line items to chart. Each contributes `qty * getVolume(item)` to the total. */
+  /**
+   * Line items to chart. Each contributes `qty * getVolume(item)` to the total,
+   * or what `getInstructionVolume` / `getActualVolume` return for it.
+   */
   items: T[];
   /**
    * Per-unit volume (m³) for an item. The lifted app concern — return 0 when
-   * unknown. Total volume per item is `quantity * getVolume(item)`.
+   * unknown. Total volume per item is `quantity * getVolume(item)`. Optional
+   * only because a consumer supplying both line-volume accessors below has no
+   * use for it; with neither, a chart without it has no volume to show.
    */
-  getVolume: (item: T) => number;
+  getVolume?: (item: T) => number;
+  /**
+   * Total volume (m³) of one line on the INSTRUCTION side, replacing
+   * `getVolume(item) * instruction qty`. For a line whose volume does not
+   * scale with its piece count — accessories shipped hundreds to a carton,
+   * where the catalogue volume is one carton's — the consumer does the carton
+   * math and returns the result. Return 0 when unknown. The piece counts in
+   * the header still come from the quantity accessors.
+   */
+  getInstructionVolume?: (item: T) => number;
+  /**
+   * Total volume (m³) of one line on the ACTUAL/loaded side, replacing
+   * `getVolume(item) * actual qty` — the counterpart of
+   * `getInstructionVolume`. It does not decide whether the loaded layer is
+   * drawn: that still follows the actual quantities.
+   */
+  getActualVolume?: (item: T) => number;
   /**
    * Single-bar quantity source when no actuals are present:
    *  - 'instruction' (default): use the instruction quantity.
@@ -68,12 +94,15 @@ const toInt = (v: unknown) => (typeof v === 'number' ? v : parseInt(String(v ?? 
 
 /**
  * Container-fill chart for shipping loading lists. Presentational only — pass
- * `getVolume` to inject per-unit volumes; the chart owns the container math and
- * the instruction-vs-loaded dual-bar rendering.
+ * `getVolume` to inject per-unit volumes (or the line-volume accessors to inject
+ * whole-line volumes); the chart owns the container math and the
+ * instruction-vs-loaded dual-bar rendering.
  */
 export default function ContainerFillChart<T = ContainerFillItem>({
   items,
   getVolume,
+  getInstructionVolume,
+  getActualVolume,
   qtyField = 'instruction',
   showNewIndicator = false,
   getInstructionQty = (item) => (item as ContainerFillItem).quantity,
@@ -107,8 +136,11 @@ export default function ContainerFillChart<T = ContainerFillItem>({
   // Per-mode totals.
   const totalQtyInstr = filledLines.reduce((s, l) => s + qtyInstr(l), 0);
   const totalQtyActual = filledLines.reduce((s, l) => s + qtyActual(l), 0);
-  const totalVolumeInstr = filledLines.reduce((s, l) => s + getVolume(l) * qtyInstr(l), 0);
-  const totalVolumeActual = filledLines.reduce((s, l) => s + getVolume(l) * qtyActual(l), 0);
+  const unitVolume = (l: T) => getVolume?.(l) ?? 0;
+  const lineVolumeInstr = getInstructionVolume ?? ((l: T) => unitVolume(l) * qtyInstr(l));
+  const lineVolumeActual = getActualVolume ?? ((l: T) => unitVolume(l) * qtyActual(l));
+  const totalVolumeInstr = filledLines.reduce((s, l) => s + lineVolumeInstr(l), 0);
+  const totalVolumeActual = filledLines.reduce((s, l) => s + lineVolumeActual(l), 0);
 
   // The display volume drives container sizing + count. In dual mode we use the
   // larger of the two totals so neither layer gets visually clipped; in single
