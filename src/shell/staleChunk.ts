@@ -114,6 +114,11 @@ export function installStaleChunkReload(options: StaleChunkReloadOptions = {}): 
 
   const onPreloadError = (event: Event) => {
     const payload = (event as Event & { payload?: unknown }).payload;
+    // Vite dispatches this for ANY rejected dynamic import it wraps, not only
+    // a missing chunk — an optional peer probed by its bare package name
+    // rejects the same way, and its caller already catches that.
+    // Reloading on that threw the whole portal away on every DXF preview.
+    if (!isStaleChunkError(payload)) return;
     const at = now();
     const last = readLastReload(storage);
     if (last !== null && at - last < cooldownMs) {
