@@ -13,6 +13,7 @@ import WindowErrorBoundary from './WindowErrorBoundary';
 import { useShellPrefs } from './ShellPrefs';
 import { boxFillsWorkArea, computeMaximizedBox, growBoxToWidth, isSidebarStripReserved, readAlwaysMaximizedFlag, scrollerIsFluid, widthToFit } from './workArea';
 import { runEscapeInterceptors } from './escapeInterceptors';
+import { Z_LAYERS } from './zLayers';
 import { UndoContext } from './undoContext';
 import UndoControls from './UndoControls';
 
@@ -1019,7 +1020,7 @@ if (typeof window !== 'undefined') window.addEventListener('deactivate-all-modal
 function getZForModal(id: string): number {
   const idx = activationOrder.indexOf(id);
   if (idx === -1) return -1; // Behind everything — hidden below listing page
-  return 50 + idx * 10;
+  return Z_LAYERS.window + idx * Z_LAYERS.windowStep;
 }
 export function getActiveModalId() {
   return activationOrder[activationOrder.length - 1] || null;
@@ -1511,7 +1512,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
     window.addEventListener('window-title-update', handler);
     return () => window.removeEventListener('window-title-update', handler);
   }, [modalId]);
-  const [zIndex, setZIndex] = useState(50);
+  const [zIndex, setZIndex] = useState<number>(Z_LAYERS.window);
   const isActive = useIsActiveModal(modalId);
   const isMinimized = useIsMinimizedModal(modalId);
 
@@ -2813,7 +2814,7 @@ export default function Modal({ open, onClose, title, icon, copyText, size = 'lg
           // The measurement effect adjusts box.h to hug the content; rendering
           // at a definite height the whole way through means fill-height
           // content (flex-1 / h-full) never collapses to the floor.
-          zIndex: pinnedOnTop ? 999 : zIndex + 1, width: box.w, height: box.h, top: box.y,
+          zIndex: pinnedOnTop ? Z_LAYERS.pinnedWindow : zIndex + 1, width: box.w, height: box.h, top: box.y,
           ...(widget && widgetAnchor === 'right' ? { right: window.innerWidth - box.x - box.w } : { left: box.x }),
           ...(zIndex < 0 && !pinnedOnTop ? { display: 'none' } : {}),
           ...(exposeStyle ?? {}),

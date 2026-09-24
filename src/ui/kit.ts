@@ -304,6 +304,11 @@ export { useFocusTrap, useScrollLock } from '../shell/focusTrap';
 export { ConfirmProvider, useConfirm, confirm, confirmDestructive, prompt } from '../shell/ConfirmDialog';
 export { default as GlobalSearch } from '../shell/GlobalSearch';
 export type { GlobalSearchProps, SearchResult, SearchProvider, SearchConfig } from '../shell/GlobalSearch';
+// Layering: the shell's z-index scale, and the event an overlay dispatches as
+// it opens so every portalled popup closes instead of floating over it.
+export { Z_LAYERS } from '../shell/zLayers';
+export type { ZLayer } from '../shell/zLayers';
+export { dismissPopups, OVERLAY_OPEN_EVENT } from '../shell/overlayEvents';
 
 // ── Data primitives (pageless — no react-query, no axios) ──
 export { default as EditableGrid } from '../shell/EditableGrid';

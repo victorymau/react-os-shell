@@ -30,6 +30,8 @@ import { createPortal } from 'react-dom';
 import Calendar from './Calendar';
 import { useDropdownPosition } from './dropdownPosition';
 import { glassStyle } from '../utils/glass';
+import { onOverlayOpen } from '../shell/overlayEvents';
+import { Z_LAYERS } from '../shell/zLayers';
 
 export interface DateRangePickerProps {
   /** Start of the range as `YYYY-MM-DD`, or '' when unset. */
@@ -140,7 +142,14 @@ export default function DateRangePicker({
       setOpen(false);
     };
     document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    // An overlay opening closes the panel: it is layered above the overlay
+    // layer and would otherwise float over it (see `overlayEvents.ts`). The
+    // pending range is discarded, as an outside press discards it.
+    const offOverlay = onOverlayOpen(() => setOpen(false));
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      offOverlay();
+    };
   }, [open]);
 
   const handleOpen = () => {
@@ -239,10 +248,11 @@ export default function DateRangePicker({
           ref={panelRef}
           role="dialog"
           aria-label="Date range"
-          // Portalled, so this must clear Dialog's and Drawer's z-[9999] layer:
+          // Portalled, so this must clear Dialog's and Drawer's overlay layer:
           // a range filter inside a dialog is where this control usually lives.
-          className="fixed z-[10000] rounded-2xl p-4"
+          className="fixed rounded-2xl p-4"
           style={{
+            zIndex: Z_LAYERS.popup,
             left: pos?.left, right: pos?.right, top: pos?.top, bottom: pos?.bottom,
             // The panel states its own size. `max-content` is the calendar plus
             // the presets column at whatever font size the reader has, and the

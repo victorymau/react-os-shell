@@ -15,6 +15,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { ConfirmProvider } from '../src/shell/ConfirmDialog';
 import { WindowManagerProvider, useWindowManager } from '../src/shell/WindowManager';
 import { setShellWindowRegistry } from '../src/windowRegistry/types';
+import { Z_LAYERS } from '../src/shell/zLayers';
 
 const MULTI = '/taskbar-group-multi';
 const SINGLE = '/taskbar-group-single';
@@ -171,8 +172,8 @@ test('right-clicking a tab drops the hover thumbnails, and they stack below the 
   await flush();
   assert.equal(preview(), null, 'asking for the menu dismissed the thumbnails');
   assert.match(document.body.textContent ?? '', /Close all \(2\)/, 'and the group menu opened');
-  const menu = Array.from(document.querySelectorAll<HTMLElement>('div')).find(el => /z-\[400\]/.test(el.className));
-  assert.ok(menu, 'the menu is a PopupMenu at z-400');
+  const menu = document.querySelector<HTMLElement>('[data-popup-menu-tree]');
+  assert.equal(menu?.style.zIndex, String(Z_LAYERS.menu), 'the menu is a PopupMenu at z-400');
 
   // Sliding back over the tab while the menu is up must not bring them back.
   hoverTab(MULTI);

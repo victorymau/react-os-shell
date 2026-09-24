@@ -20,6 +20,7 @@ import assert from 'node:assert/strict';
 import { render, act } from './dom';
 import TagInput from '../src/forms/TagInput';
 import { popupBounds } from '../src/forms/dropdownPosition';
+import { Z_LAYERS } from '../src/shell/zLayers';
 
 interface Rect { selector: string; left: number; width: number; top?: number; height?: number }
 
@@ -58,7 +59,8 @@ function openMenu(opts: {
   );
   const field = container.querySelector('input[role="combobox"]') as HTMLInputElement;
   act(() => { field.focus(); });
-  const menu = document.querySelector('.z-\\[10000\\]') as HTMLElement;
+  // The popup layer is an inline z-index (`Z_LAYERS.popup`), not a class.
+  const menu = document.querySelector(`[style*="z-index: ${Z_LAYERS.popup}"]`) as HTMLElement;
   assert.ok(menu, 'menu opens');
   return {
     left: menu.style.left, right: menu.style.right, maxWidth: menu.style.maxWidth, unmount,

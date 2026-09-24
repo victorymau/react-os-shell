@@ -321,7 +321,7 @@ All exports are named — `import { Modal, ... } from 'react-os-shell'`.
 | `ShellContextMenu` | The shell-wide right-click menu, already mounted by `Layout` (`<Layout contextMenu={false}>` turns it off). Mount it yourself only on a screen rendered outside the layout. See [Right-click menu](#right-click-menu). |
 | `DropdownMenu` | Trigger-owned action menu with shared dismissal and keyboard behaviour. Use `side="top"` for a trigger in a bottom action bar; the default `side="bottom"` suits toolbar and row actions. |
 | `ConfirmProvider`, `confirm` | Imperative `confirm({ title, body })` returning a Promise<boolean>. |
-| `GlobalSearch` | Cmd-K command palette. Pass `providers: SearchProvider[]` to add results. |
+| `GlobalSearch` | Cmd-K command palette. Pass `providers: SearchProvider[]` to add results. Portalled to `<body>` on the overlay layer (`Z_LAYERS.overlay`), so it covers every window, pinned or not; opening it closes any open popup (`dismissPopups`). |
 | `ShortcutHelp` | The keyboard cheatsheet shown on `?`. |
 | `NotificationBell` | Taskbar bell — config via `<Layout notifications={…}>`. |
 | `BugReportDetail` | Used inside an entity-window registry entry; reads from `<BugReportConfigProvider>`. |
@@ -673,6 +673,8 @@ so an app importing from both has one hook.
 | `severityOf(value, warn?, crit?)` | The `SeverityTone` (`success` \| `warning` \| `danger`) a reading earns against **inclusive** bounds; `null` when there's no reading or no usable bounds — the shell hardcodes no threshold. Backs `MetricBar`; use it to roll a `SidebarNavItem severity` up. |
 | `isSeverityTone(value)` | Type guard for the three tones. Validate a backend rollup with it at the fetch boundary, where a bad token can still be reported against its payload, rather than letting it surface as a wrong pixel. |
 | `toast.success / .error / .info` | Toast notifications — auto-mounts container. |
+| `Z_LAYERS` | The shell's z-index scale: `window` 50 (+ `windowStep` 10 per window above), `menu` 400, `pinnedWindow` 999, `overlay` 9999 (the palette, `Dialog`, `Drawer`, the shortcut sheet), `popup` 10000 (portalled listboxes, calendars, the server-status card). Popups sit above overlays so one opened inside a dialog is not drawn behind it. Apply as inline `zIndex` — an interpolated `z-[…]` class is invisible to Tailwind's scan. |
+| `dismissPopups()`, `OVERLAY_OPEN_EVENT` | An overlay calls `dismissPopups()` as it opens; every open kit popup (`Select`, `SearchableSelect`, `TagInput`, `DatePicker`, `DateRangePicker`, `PopupMenu` via its `onClose`, `ServerStatusIndicator`) closes rather than floating over the overlay. The kit's own overlays already call it. A consumer's own popup listens for `OVERLAY_OPEN_EVENT` on `window` while open. |
 | `Kbd` constants — `MOD`, `ALT`, `SHIFT`, `ENTER`, `ALT_SHIFT_E`, `CMD_K`, … | Symbol constants for rendering keyboard shortcuts. |
 
 ## Why it exists

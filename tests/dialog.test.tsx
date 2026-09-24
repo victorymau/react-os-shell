@@ -7,6 +7,7 @@ import { createRoot, act } from './dom';
 import Dialog from '../src/shell/Dialog';
 import { ConfirmProvider, confirm, confirmDestructive } from '../src/shell/ConfirmDialog';
 import { runEscapeInterceptors } from '../src/shell/escapeInterceptors';
+import { Z_LAYERS } from '../src/shell/zLayers';
 
 /**
  * 4.18.0 rebuilt the imperative dialogs on the package's own `Dialog` so that
@@ -267,24 +268,28 @@ test('a dropdown opened inside a dialog renders above it', () => {
   // simply were not there.
   //
   // Read from the source rather than from a render: the menu portals to <body>
-  // and jsdom computes no stacking, so what can be checked is the number each
-  // component ships, which is the thing that was wrong.
-  const root = process.env.REPO_ROOT ?? resolve(import.meta.dirname, '..');
-  const layerOf = (file: string, marker: RegExp) => {
-    const src = readFileSync(join(root, 'src', file), 'utf-8');
-    const line = src.split('\n').find(l => marker.test(l)) ?? '';
-    return Number(/z-\[(\d+)\]/.exec(line)?.[1] ?? NaN);
-  };
+  // and jsdom computes no stacking, so what can be checked is the layer each
+  // component ships, which is the thing that was wrong. The layers are named
+  // entries of `Z_LAYERS` now (`src/shell/zLayers.ts`) rather than literals,
+  // so the claim is two-part: the popup layer is above the overlay layer, and
+  // each component is on the layer it should be. `dismissPopups.test.tsx`
+  // makes the same claim against a render, one component at a time.
+  assert.ok(Z_LAYERS.popup > Z_LAYERS.overlay, 'the popup layer is above the modal layer');
 
-  const modal = layerOf('shell/Dialog.tsx', /fixed inset-0 z-\[/);
-  for (const [file, marker] of [
-    ['forms/Select.tsx', /fixed z-\[\d+\] overflow-y-auto/],
-    ['forms/DatePicker.tsx', /fixed z-\[\d+\] w-72/],
-    ['shell/SearchableSelect.tsx', /fixed z-\[\d+\] rounded-2xl/],
-    ['forms/TagInput.tsx', /fixed z-\[\d+\] rounded-2xl/],
-    ['forms/DateRangePicker.tsx', /fixed z-\[\d+\] rounded-2xl/],
-  ] as const) {
-    assert.ok(layerOf(file, marker) > modal, `${file} must open above the modal layer (${modal})`);
+  const root = process.env.REPO_ROOT ?? resolve(import.meta.dirname, '..');
+  const src = (file: string) => readFileSync(join(root, 'src', file), 'utf-8');
+
+  assert.match(src('shell/Dialog.tsx'), /zIndex: Z_LAYERS\.overlay/, 'Dialog is on the overlay layer');
+  for (const file of [
+    'forms/Select.tsx',
+    'forms/DatePicker.tsx',
+    'shell/SearchableSelect.tsx',
+    'forms/TagInput.tsx',
+    'forms/DateRangePicker.tsx',
+  ]) {
+    assert.match(src(file), /zIndex: Z_LAYERS\.popup/, `${file} must open above the modal layer`);
+    // In a class, that is — the history in the comments still names the old numbers.
+    assert.doesNotMatch(src(file), /className="[^"]*\bz-\[\d+\]/, `${file} carries no z-index class beside the scale`);
   }
 });
 

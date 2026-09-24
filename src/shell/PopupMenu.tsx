@@ -6,6 +6,8 @@ import { createPortal } from 'react-dom';
 import { glassStyle, GLASS_DIVIDER } from '../utils/glass';
 import { keepsNativeMenu } from './contextMenuTarget';
 import { registerModalEscapeInterceptor } from './escapeInterceptors';
+import { onOverlayOpen } from './overlayEvents';
+import { Z_LAYERS } from './zLayers';
 import { clampMenuTop, closeMenuBelow, menuPanelLeft, openMenuLevel, type MenuAnchor } from './menuPath';
 
 /**
@@ -111,7 +113,15 @@ export function PopupMenu({ children, style, className = '', onClose, minWidth =
     const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('pointerdown', handleClick);
     window.addEventListener('keydown', handleKey);
-    return () => { window.removeEventListener('pointerdown', handleClick); window.removeEventListener('keydown', handleKey); };
+    // An overlay opening (⌘K's palette, a Dialog) is an outside interaction
+    // the pointer listener never sees; left open, the menu would sit over the
+    // overlay's backdrop or behind it (see `overlayEvents.ts`).
+    const offOverlay = onOverlayOpen(onClose);
+    return () => {
+      window.removeEventListener('pointerdown', handleClick);
+      window.removeEventListener('keydown', handleKey);
+      offOverlay();
+    };
   }, [onClose, treeId]);
 
   // After render, clamp position to viewport boundaries
@@ -162,6 +172,7 @@ export function PopupMenu({ children, style, className = '', onClose, minWidth =
   });
 
   const density = getDensity();
+  const ownsZ = /(^|[\s:])!?z-/.test(className);
 
   // A right-click on an open menu is not a request for another menu. Claiming
   // it stops the shell-wide `ShellContextMenu` (which stands down on a
@@ -170,9 +181,11 @@ export function PopupMenu({ children, style, className = '', onClose, minWidth =
   const menu = (
     <div ref={ref}
       data-popup-menu-tree={treeId}
-      className={`fixed z-[400] rounded-2xl ${density === 'tight' ? 'py-1' : density === 'large' ? 'py-2' : 'py-1.5'} ${className}`}
+      className={`fixed rounded-2xl ${density === 'tight' ? 'py-1' : density === 'large' ? 'py-2' : 'py-1.5'} ${className}`}
       onContextMenu={e => { if (!keepsNativeMenu(e.target)) e.preventDefault(); }}
-      style={{ minWidth, animation: 'popup-in 0.12s ease-out', ...glassStyle(), ...style }}>
+      // The menu layer is inline now, and an inline z-index beats any class —
+      // so a caller that layered its menu with a `z-…` class keeps its own.
+      style={{ ...(ownsZ ? {} : { zIndex: Z_LAYERS.menu }), minWidth, animation: 'popup-in 0.12s ease-out', ...glassStyle(), ...style }}>
       <MenuTreeContext.Provider value={tree}>{children}</MenuTreeContext.Provider>
       <style>{`@keyframes popup-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }`}</style>
     </div>
@@ -303,7 +316,7 @@ const chevron = (
  *  at <body>, since a portalled submenu is compared against that, not against
  *  whatever the root menu is nested inside. */
 function layerOf(el: HTMLElement | null): number {
-  let z = 400;
+  let z: number = Z_LAYERS.menu;
   for (let node = el; node && node !== document.body; node = node.parentElement) {
     const value = parseInt(getComputedStyle(node).zIndex, 10);
     if (!Number.isNaN(value)) z = value;

@@ -17,7 +17,10 @@
  * in one barrel, where `export *` loses to an explicit export silently.
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { glassStyle as getGlassStyle } from '../utils/glass';
+import { useDismissPopupsOnOpen } from './useDismissPopupsOnOpen';
+import { Z_LAYERS } from './zLayers';
 
 export interface SearchResult {
   /** Category label, e.g. "Sales Order". */
@@ -82,6 +85,11 @@ export default function GlobalSearch({ providers, typeIcons, placeholder = 'Sear
     return () => window.removeEventListener('keydown', handler);
   }, [open]);
 
+  // A popup open underneath — a SearchableSelect's list in the window the user
+  // was editing — sits on the popup layer, above this overlay, and closes on
+  // nothing ⌘K does. Tell it to (see `overlayEvents.ts`).
+  useDismissPopupsOnOpen(open);
+
   useEffect(() => {
     if (open) {
       setTimeout(() => inputRef.current?.focus(), 50);
@@ -121,9 +129,13 @@ export default function GlobalSearch({ providers, typeIcons, placeholder = 'Sear
 
   if (!open) return null;
 
-  return (
-    <div className="fixed inset-0 z-[200] flex items-start justify-center pt-[15vh]" onClick={() => setOpen(false)}>
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+  // Portalled to <body> on the overlay layer. At z-[200], rendered wherever
+  // `Layout` put it, it sat under a dozen stacked windows, every pinned window
+  // and every Dialog — and a window's stacking context could hold it down
+  // whatever number it carried.
+  return createPortal(
+    <div data-global-search="" className="fixed inset-0 flex items-start justify-center pt-[15vh]" style={{ zIndex: Z_LAYERS.overlay }} onClick={() => setOpen(false)}>
+      <div data-global-search-backdrop="" className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div className="relative z-10 w-full max-w-xl rounded-2xl overflow-hidden" onClick={e => e.stopPropagation()} style={getGlassStyle()}>
         {/* Search input */}
         <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200">
@@ -188,6 +200,7 @@ export default function GlobalSearch({ providers, typeIcons, placeholder = 'Sear
           <span className="flex items-center gap-1"><kbd className="rounded border border-gray-300 px-1 py-0.5 font-medium">Esc</kbd> close</span>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
